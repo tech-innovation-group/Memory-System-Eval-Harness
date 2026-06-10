@@ -1,0 +1,49 @@
+memory_type: preferences
+description: |
+  User preference memory for LoCoMo-style evaluation.
+  Capture what a named person likes, dislikes, wants, habitually does, or uses
+  to destress. Preserve speaker and concrete details.
+
+  - Store different preference topics as separate files.
+  - Preserve exact activity/style/material/place terms, for example
+    "contemporary dance", "dancing to destress", "Marley flooring",
+    "natural light", "by the water".
+  - Preserve whether the preference belongs to Jon, Gina, Caroline, Melanie,
+    or another speaker.
+  - If two people share a preference, write both names and the shared activity.
+  - Include dates or message ranges when available.
+directory: "viking://user/{{ user_space }}/memories/preferences"
+filename_template: "{{ user }}/{{ topic }}.md"
+enabled: true
+
+overview_template: |-
+  # Preferences Overview
+  {% if items %}**User:** {{ items[0].file_content.user }}
+  **Topic:** {{ items[0].file_content.topic }}{% endif %}
+  {% for item in items %}
+  - [{{ item.file_content.topic }}](./{{ item.file_name }})
+  {% endfor %}
+
+fields:
+  - name: user
+    type: string
+    description: |
+      Username or speaker name for the preference owner.
+    merge_op: immutable
+
+  - name: topic
+    type: string
+    description: |
+      Preference topic in Chinese or English. If English, use lowercase with
+      underscores, max 3 words. Store different topics separately.
+    merge_op: immutable
+
+  - name: content
+    type: string
+    description: |
+      Preference content in markdown. Include:
+      - Owner name and any other person who shares the preference.
+      - Exact preference/activity/style/material/place terms.
+      - Date or event source if available.
+      - Do not replace exact evidence with vague phrases.
+    merge_op: patch

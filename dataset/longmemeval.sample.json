@@ -1,0 +1,23 @@
+[
+  {
+    "id": "lme_sample_001",
+    "messages": [
+      {"timestamp": "2024-01-03", "role": "user", "content": "Maya said her preferred morning drink is jasmine tea."},
+      {"timestamp": "2024-01-04", "role": "assistant", "content": "Noted that Maya prefers jasmine tea in the morning."}
+    ],
+    "question": "What morning drink does Maya prefer?",
+    "answer": "jasmine tea",
+    "query_time": "2024-01-05",
+    "category": "preference"
+  },
+  {
+    "id": "lme_sample_002",
+    "history": [
+      {"time": "2024-02-10", "speaker": "Noah", "text": "Noah stored his passport in the blue desk drawer before the trip."}
+    ],
+    "query": "Where did Noah put his passport?",
+    "gold_answer": "the blue desk drawer",
+    "query_time": "2024-02-11",
+    "category": "fact"
+  }
+]

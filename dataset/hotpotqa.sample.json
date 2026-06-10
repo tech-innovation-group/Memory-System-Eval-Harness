@@ -1,0 +1,36 @@
+[
+  {
+    "id": "hotpot_sample_001",
+    "question": "Which city is the birthplace of the author of The Hobbit?",
+    "answer": "Bloemfontein",
+    "category": "multi-hop",
+    "context": [
+      {
+        "title": "The Hobbit",
+        "sentences": [
+          "The Hobbit is a fantasy novel by J. R. R. Tolkien."
+        ]
+      },
+      {
+        "title": "J. R. R. Tolkien",
+        "sentences": [
+          "J. R. R. Tolkien was born in Bloemfontein."
+        ]
+      }
+    ]
+  },
+  {
+    "id": "hotpot_sample_002",
+    "question": "What sport is associated with the event won by the team from Brazil?",
+    "answer": "football",
+    "category": "bridge",
+    "context": [
+      {
+        "title": "Brazil national team",
+        "sentences": [
+          "The Brazil national team has won major international football tournaments."
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,17 @@
+# Keep generated/local artifacts out of source archives.
+.env* export-ignore
+judge.conf export-ignore
+judge-cli.conf export-ignore
+runs/ export-ignore
+dist/ export-ignore
+outputs/ export-ignore
+reports/ export-ignore
+generated-reports/ export-ignore
+.tmp/ export-ignore
+workspace/ export-ignore
+openviking_workspace*/ export-ignore
+echomem_workspace*/ export-ignore
+external/ export-ignore
+dataset/full/ export-ignore
+web/static/generated-reports/ export-ignore
+static/generated-reports/ export-ignore

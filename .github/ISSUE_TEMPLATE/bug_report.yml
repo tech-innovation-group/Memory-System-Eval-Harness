@@ -1,0 +1,65 @@
+name: Bug report
+description: Report a UI, runtime, import, QA, Judge, or report generation issue.
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. Please do not paste API keys, `.env.local`, `judge.conf`, full `runs/`, or memory workspace contents.
+  - type: input
+    id: version
+    attributes:
+      label: Workbench version or commit
+      description: Paste the commit hash, release tag, or the cache version shown by the web UI.
+      placeholder: "20260607e or commit hash"
+    validations:
+      required: true
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Memory backend
+      options:
+        - OpenViking
+        - EchoMem / EchoMemory
+    validations:
+      required: true
+  - type: input
+    id: dataset
+    attributes:
+      label: Dataset
+      description: Dataset id or file name. Do not paste private data.
+      placeholder: "locomo10"
+    validations:
+      required: true
+  - type: input
+    id: account
+    attributes:
+      label: Account
+      description: Account name used in the workbench.
+      placeholder: "default"
+  - type: input
+    id: run_id
+    attributes:
+      label: Run id
+      description: If available, paste the run id from Results.
+      placeholder: "echomemory_qa_..."
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened?
+      description: Include the visible error, redacted log excerpt, and page name.
+      placeholder: "The QA task stopped after 12 rows. Redacted log excerpt..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      placeholder: "QA should continue or show a retryable model error."
+  - type: textarea
+    id: safe_artifacts
+    attributes:
+      label: Safe artifacts
+      description: Paste safe paths or summaries only. Do not attach secrets or full workspace data.
+      placeholder: "report.html path, CSV row count, preflight summary"

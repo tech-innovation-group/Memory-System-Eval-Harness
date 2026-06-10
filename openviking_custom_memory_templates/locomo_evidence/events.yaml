@@ -1,0 +1,79 @@
+memory_type: events
+description: |
+  # Guidelines
+  This schema is optimized for LoCoMo-style long-term conversation evaluation.
+  It should still store normal event memories, but it must preserve concrete
+  evidence that could later answer benchmark questions.
+
+  - Extract every real-world occurrence discussed in the conversation. The
+    conversation is the medium, not the event.
+  - Preserve exact dates, relative-time resolutions, speaker names, places,
+    objects, materials, activities, preferences, emotions, and causal links.
+  - Do not compress attribute lists into vague summaries. Keep details such as
+    "by the water", "natural light", "Marley flooring", visited city names,
+    job titles, school names, competition types, and opening dates.
+  - Preserve evaluative phrases that may later be queried, for example
+    "positivity and determination", "confidence", "support", "stress relief",
+    or "ideal mentor".
+  - When a message mentions an image caption or search query, include those
+    concrete visual/query details if they support the event.
+  - For each extracted event, include speaker attribution and the message index
+    range. Use the session time to convert relative dates to YYYY-MM-DD.
+  - Prefer concise but complete bullet-style evidence over broad narrative.
+  - Never use gold QA answers or benchmark labels. Extract only from the
+    conversation content.
+directory: "viking://user/{{ user_space }}/memories/events"
+filename_template: "{{ extract_context.get_year(ranges) }}/{{ extract_context.get_month(ranges) }}/{{ extract_context.get_day(ranges) }}/{{ event_name }}.md"
+enabled: true
+operation_mode: "add_only"
+content_template: |
+  {{extract_context.get_first_message_time_with_weekday_from_ranges(ranges|default(''))|default('N/A')}} ChatLog:
+  {{ extract_context.get_event_content(ranges, summary, 0) }}
+
+overview_template: |-
+  # Events Overview
+  {% if items %}**Date:** {{ extract_context.get_year(items[0].file_content.ranges|default(''))|default('') }}/{{ extract_context.get_month(items[0].file_content.ranges|default(''))|default('') }}/{{ extract_context.get_day(items[0].file_content.ranges|default(''))|default('') }}{% endif %}
+  {% for item in items %}
+  - [{{ item.file_content.summary }}](./{{ item.file_name }})
+  {% endfor %}
+
+fields:
+  - name: event_name
+    type: string
+    description: |
+      Output a real-world event name only.
+      Rules:
+      1. Can be Chinese or English;
+      2. If English: all lowercase, use underscore instead of space, maximum 3 words;
+      3. Never include any date, time, year or number;
+      4. Must be the actual real-life event being discussed, NOT the chat/conversation itself;
+      5. Forbidden format: person name + chat, chat about xxx, daily talk;
+      6. Output only the event name, no extra explanation.
+    merge_op: immutable
+
+  - name: goal
+    type: string
+    description: |
+      Summarize the purpose of this event in 5 words or less.
+
+  - name: summary
+    type: string
+    description: |
+      Write a compact evidence-preserving event memory in markdown.
+      Must include:
+      - Date/time in YYYY-MM-DD when available.
+      - Speaker attribution.
+      - Specific facts, attributes, places, object/material names, preferences,
+        and causal links.
+      - Relevant image captions or query text when present.
+      - Message index references when useful.
+      Avoid generic summaries that drop concrete details.
+
+  - name: ranges
+    type: string
+    description: |
+      Conversation message index ranges to extract. Supports:
+      - Range: "start-end" (e.g., "0-3" means messages 0 to 3)
+      - Single index: "N" (e.g., "7" means only message 7)
+      - Mixed: "0-3,7,15-20" (ranges and single indices combined)
+    merge_op: immutable

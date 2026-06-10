@@ -1,0 +1,74 @@
+{
+  "datasets": [
+    {
+      "id": "locomo-full",
+      "name": "LoCoMo Full",
+      "path": "full/locomo.json",
+      "format": "locomo",
+      "description": "Canonical full LoCoMo dataset path. If this file exists, the UI and server prefer it as the default LoCoMo dataset."
+    },
+    {
+      "id": "locomo10",
+      "name": "LoCoMo 10",
+      "path": "locomo10.json",
+      "format": "locomo",
+      "description": "Bundled LoCoMo 10-sample benchmark for local import, QA and report validation."
+    },
+    {
+      "id": "longmemeval-sample",
+      "name": "LongMemEval Sample",
+      "path": "longmemeval.sample.json",
+      "format": "longmemeval",
+      "description": "Small LongMemEval-compatible sample bundled for open-source demos and small-sample validation."
+    },
+    {
+      "id": "longmemeval-s-cleaned-full",
+      "name": "LongMemEval-S Cleaned Full",
+      "path": "full/longmemeval_s_cleaned.json",
+      "format": "longmemeval",
+      "description": "Full LongMemEval-S cleaned split for official-style 500-row scoring."
+    },
+    {
+      "id": "chenmo",
+      "name": "ChenMo",
+      "path": "chenmo_evaluation_scenario.md",
+      "format": "chenmo",
+      "description": "Bundled ChenMo long-memory reasoning scenario for EchoMemory-style report demos."
+    },
+    {
+      "id": "evolvingevents-sample",
+      "name": "EvolvingEvents Sample",
+      "path": "evolvingevents.sample.json",
+      "format": "evolvingevents",
+      "description": "Small event-evolution sample bundled for MemoryBench validation; use a full dataset path for benchmark accuracy."
+    },
+    {
+      "id": "hotpotqa-sample",
+      "name": "HotpotQA Sample",
+      "path": "hotpotqa.sample.json",
+      "format": "hotpotqa",
+      "description": "Small multi-hop QA sample bundled for MemoryBench validation; use a full dataset path for benchmark accuracy."
+    },
+    {
+      "id": "hotpotqa-dev-distractor",
+      "name": "HotpotQA Dev Distractor",
+      "path": "full/hotpotqa_dev_distractor.json",
+      "format": "hotpotqa",
+      "description": "Full HotpotQA distractor validation split converted from the official HuggingFace parquet; 7,405 examples."
+    },
+    {
+      "id": "proagentbench-sample",
+      "name": "proAgentBench Sample",
+      "path": "proagentbench.sample.json",
+      "format": "proagentbench",
+      "description": "Small task-oriented agent benchmark sample bundled for MemoryBench validation; use a full dataset path for benchmark accuracy."
+    },
+    {
+      "id": "tau2bench-sample",
+      "name": "tau2-bench Sample",
+      "path": "tau2bench.sample.json",
+      "format": "tau2bench",
+      "description": "Small tool-task benchmark sample bundled for MemoryBench validation; use a full dataset path for benchmark accuracy."
+    }
+  ]
+}

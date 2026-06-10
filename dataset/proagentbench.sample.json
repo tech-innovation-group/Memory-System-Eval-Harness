@@ -1,0 +1,28 @@
+[
+  {
+    "id": "proagent_sample_001",
+    "task": "Schedule a follow-up with Alex after the design review.",
+    "question": "What should the agent schedule?",
+    "answer": "a follow-up with Alex after the design review",
+    "category": "scheduling",
+    "events": [
+      {
+        "time": "2026-03-01",
+        "text": "The design review finished and Alex asked for a follow-up meeting."
+      }
+    ]
+  },
+  {
+    "id": "proagent_sample_002",
+    "task": "Find the latest invoice total for the vendor renewal.",
+    "question": "What information does the agent need to retrieve?",
+    "answer": "the latest invoice total for the vendor renewal",
+    "category": "retrieval",
+    "events": [
+      {
+        "time": "2026-03-02",
+        "text": "The renewal workflow depends on the most recent vendor invoice total."
+      }
+    ]
+  }
+]

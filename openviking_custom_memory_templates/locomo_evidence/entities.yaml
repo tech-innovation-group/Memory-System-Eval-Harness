@@ -1,0 +1,52 @@
+memory_type: entities
+description: |
+  Entity memory for LoCoMo-style evaluation.
+  Each page represents one person, place, object, organization, activity, or
+  other recurring entity. Preserve facts that support later QA.
+
+  - Keep speaker-specific facts separate when possible.
+  - Preserve concrete facts with dates, places, names, activities, emotions,
+    preferences, and causal relations.
+  - Do not merge unrelated people into one generic entity.
+  - Keep fine-grained details such as dance style, visited cities, business
+    plans, studio requirements, support groups, school events, competitions,
+    hobbies, and stress-relief activities.
+  - When a fact comes from an event memory, link or mention the event/date.
+directory: "viking://user/{{ user_space }}/memories/entities"
+filename_template: "{{ category }}/{{ name }}.md"
+enabled: true
+
+overview_template: |-
+  # Entities Overview
+  {% if items %}**Category:** {{ items[0].file_content.category }}{% endif %}
+  {% for item in items %}
+  - [{{ item.file_content.name }}](./{{ item.file_name }})
+  {% endfor %}
+
+fields:
+  - name: category
+    type: string
+    description: |
+      Category name in Chinese or English. If English, use lowercase with
+      underscores, max 3 words, for example person, place, object, activity,
+      organization.
+    merge_op: immutable
+
+  - name: name
+    type: string
+    description: |
+      Entity name in Chinese or English. If English, use lowercase with
+      underscores, max 3 words.
+    merge_op: immutable
+
+  - name: content
+    type: string
+    description: |
+      Detailed Zettelkasten card content in markdown format.
+      Preserve concrete evidence with bullets:
+      - Dated facts and source event when available.
+      - Speaker attribution.
+      - Important attributes, preferences, roles, places, relationships, and
+        causal links.
+      - Avoid broad summaries that remove exact terms likely to be queried.
+    merge_op: patch

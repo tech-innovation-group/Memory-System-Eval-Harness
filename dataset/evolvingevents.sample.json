@@ -1,0 +1,24 @@
+[
+  {
+    "id": "ee_sample_001",
+    "events": [
+      {"timestamp": "2024-03-01", "event": "The city library meetup was scheduled for Room A."},
+      {"timestamp": "2024-03-03", "event": "The city library meetup moved from Room A to Room C."}
+    ],
+    "question": "Where is the city library meetup after the schedule update?",
+    "answer": "Room C",
+    "query_time": "2024-03-04",
+    "category": "updated_event"
+  },
+  {
+    "id": "ee_sample_002",
+    "events": [
+      {"timestamp": "2024-04-08", "event": "Aria planned to submit the budget draft on Friday."},
+      {"timestamp": "2024-04-09", "event": "Aria changed the budget draft deadline to Monday."}
+    ],
+    "question": "What is Aria's latest budget draft deadline?",
+    "answer": "Monday",
+    "query_time": "2024-04-10",
+    "category": "temporal_update"
+  }
+]

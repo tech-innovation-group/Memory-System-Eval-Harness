@@ -1,0 +1,41 @@
+# Local secrets and credentials
+.env
+.env.*
+.env.local
+!.env.example
+!env.example
+!env.echomem.example
+judge.conf
+judge-cli.conf
+
+# Runtime outputs and generated handoff packages
+runs/
+dist/
+outputs/
+reports/
+generated-reports/
+.tmp/
+
+# Local memory workspaces and external source checkouts
+workspace/
+openviking_workspace*/
+echomem_workspace*/
+external/
+dataset/full/
+
+# Historical static reports. Only the live UI entry points are public.
+web/static/*.html
+!web/static/index.html
+!web/static/product-roadmap.html
+web/static/generated-reports/
+static/*.html
+!static/index.html
+!static/product-roadmap.html
+
+# Logs, caches, and OS/editor noise
+*.log
+server.log
+server_*.log
+__pycache__/
+*.py[cod]
+.DS_Store

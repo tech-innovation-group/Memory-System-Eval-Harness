@@ -1,0 +1,52 @@
+name: Memory backend integration
+description: Ask for help connecting an OpenViking or EchoMem/EchoMemory backend.
+title: "[Backend]: "
+labels: ["memory-backend", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Current delivery scope is OpenViking + EchoMem/EchoMemory. Do not include API keys, `.env.local`, `judge.conf`, `runs/`, or memory workspace files.
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Backend type
+      options:
+        - OpenViking
+        - EchoMem / EchoMemory
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: Adapter doctor / contract result
+      description: Paste the redacted output from `python3 scripts/adapter_doctor.py --format markdown --strict` or the Web backend self-check.
+      placeholder: "Status: ok/warn/fail..."
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime path or URL
+      description: Use redacted/local path or service URL. Do not paste tokens.
+      placeholder: "/absolute/path/to/EchoMem or http://127.0.0.1:19080"
+  - type: textarea
+    id: sdk_contract
+    attributes:
+      label: EchoMem SDK contract status
+      description: EchoMem users can paste the safe summary from `/api/echomem-contract`.
+      placeholder: "Required failures: 0; warnings: ..."
+  - type: textarea
+    id: evidence_shape
+    attributes:
+      label: Evidence shape
+      description: Paste a redacted example of evidence fields returned by your backend.
+      placeholder: "{content, uri, score, trace} with private text removed"
+  - type: textarea
+    id: question
+    attributes:
+      label: Integration question
+      placeholder: "What should I change so LoCoMo import or retrieval works?"
+    validations:
+      required: true
+

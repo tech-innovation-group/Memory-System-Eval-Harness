@@ -1,0 +1,36 @@
+[
+  {
+    "id": "tau2_sample_001",
+    "question": "Which tool should be used to check an order status?",
+    "answer": "order_status.lookup",
+    "category": "tool-selection",
+    "tools": [
+      {
+        "name": "order_status.lookup",
+        "description": "Look up the current status of a customer order."
+      }
+    ],
+    "events": [
+      {
+        "role": "user",
+        "content": "Can you check whether order A100 has shipped?"
+      }
+    ]
+  },
+  {
+    "id": "tau2_sample_002",
+    "question": "What should the agent ask before cancelling the subscription?",
+    "answer": "confirmation from the user",
+    "category": "policy",
+    "events": [
+      {
+        "role": "user",
+        "content": "Cancel my subscription if you are sure it is inactive."
+      },
+      {
+        "role": "policy",
+        "content": "Cancellation requires explicit user confirmation."
+      }
+    ]
+  }
+]

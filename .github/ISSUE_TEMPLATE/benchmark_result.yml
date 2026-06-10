@@ -1,0 +1,61 @@
+name: Benchmark result
+description: Share a LoCoMo smoke or full benchmark result safely.
+title: "[Result]: "
+labels: ["benchmark-result", "needs-review"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share only redacted benchmark summaries. Do not attach API keys, `.env.local`, `judge.conf`, full `runs/`, or memory workspace data.
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Memory backend
+      options:
+        - OpenViking
+        - EchoMem / EchoMemory
+    validations:
+      required: true
+  - type: input
+    id: dataset
+    attributes:
+      label: Dataset
+      placeholder: "locomo10, conv-30, or full LoCoMo"
+    validations:
+      required: true
+  - type: input
+    id: qa_count
+    attributes:
+      label: QA count
+      placeholder: "10 / 81 / 1540"
+  - type: input
+    id: score
+    attributes:
+      label: Score
+      description: Accuracy or pending-Judge status.
+      placeholder: "85.2% or pending Judge"
+  - type: input
+    id: models
+    attributes:
+      label: Models
+      description: Model names only, no tokens.
+      placeholder: "answer=gpt-5.5; judge=gpt-5.5"
+  - type: textarea
+    id: config
+    attributes:
+      label: Config snapshot
+      description: Paste redacted config: backend, account, workspace style, top-k, prompt mode, context composition.
+      placeholder: "backend=echomemory; account=...; top_k=..."
+  - type: textarea
+    id: failure_buckets
+    attributes:
+      label: Failure buckets
+      description: Paste report first-screen buckets such as model/API issue, no evidence, unknown with evidence, time reasoning.
+      placeholder: "unknown_with_evidence=..., no_relevant_memory=..."
+  - type: textarea
+    id: report
+    attributes:
+      label: Report path or summary
+      description: Local path or markdown summary is enough. Do not upload private report contents unless redacted.
+      placeholder: "runs/.../report.html"
+

@@ -1,0 +1,42 @@
+name: Preflight
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Static and handoff gates
+    runs-on: ubuntu-latest
+    env:
+      LOCOMO_EVAL_PORT: "19181"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Syntax checks
+        run: |
+          python3 -m py_compile server.py memory/runs.py memory/report_export.py memory/reports.py
+          bash -n preflight.sh
+          node --check web/static/app.js
+          node --check static/app.js
+
+      - name: Public boundary scan
+        run: |
+          ./preflight.sh

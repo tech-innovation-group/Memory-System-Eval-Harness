@@ -1,0 +1,160 @@
+{
+  "updated_at": "2026-06-07",
+  "benchmarks": [
+    {
+      "dataset_format": "longmemeval",
+      "split": "longmemeval_s_cleaned",
+      "official_metric": "overall_accuracy",
+      "local_supported_metric": "overall_accuracy",
+      "local_status": "official-style evaluator wired; full 500-row real-LLM run completed on 2026-06-06",
+      "official_requirements": [
+        "Use the released LongMemEval cleaned split.",
+        "Submit one JSONL prediction per question with question_id and hypothesis.",
+        "Evaluate with the LongMemEval LLM judge style and report overall/task-averaged/abstention accuracy."
+      ],
+      "sota": {
+        "model": "Chain-of-Note + GPT-4o reader",
+        "score": 0.924,
+        "metric": "accuracy",
+        "source": "LongMemEval paper/reference baseline; not a same-runner memory-backend leaderboard SOTA"
+      },
+      "public_claimed_sota": {
+        "model": "Claude Opus 4.6 / Wizwand LongMemEvalS leaderboard",
+        "score": 0.956,
+        "metric": "overall_score",
+        "source": "Non-official public aggregator; methodology must be audited before strict comparison"
+      },
+      "sources": [
+        "https://openreview.net/forum?id=pZiyCaVuti",
+        "https://arxiv.org/abs/2410.10813",
+        "https://github.com/xiaowu0162/LongMemEval",
+        "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned"
+      ],
+      "local_comparability": "cautious_same_task_official_style_judge",
+      "source_verified_at": "2026-06-07",
+      "notes": "The official repo documents 500 examples per split and a question_id/hypothesis JSONL evaluation flow; it also now points to LongMemEval-V2, so this local score must be scoped to LongMemEval-S cleaned. Treat the Chain-of-Note + GPT-4o number as a paper/reference baseline, not a memory-backend leaderboard SOTA."
+    },
+    {
+      "dataset_format": "hotpotqa",
+      "split": "distractor_dev",
+      "official_metric": "joint_f1",
+      "local_supported_metric": "answer_f1",
+      "local_status": "answer EM/F1 scorer wired; supporting-fact and joint EM/F1 not yet available",
+      "official_requirements": [
+        "Submit predictions containing both answer and supporting-fact sentence maps.",
+        "Report answer EM/F1, supporting-fact EM/F1, and joint EM/F1.",
+        "Use joint F1 for official distractor leaderboard comparison."
+      ],
+      "sota": {
+        "model": "Beam Retrieval",
+        "score": 0.7754,
+        "metric": "joint_f1",
+        "source": "HotpotQA official distractor leaderboard"
+      },
+      "sources": [
+        "https://hotpotqa.github.io/",
+        "https://github.com/hotpotqa/hotpot"
+      ],
+      "local_comparability": "not_official_leaderboard_comparable_answer_only",
+      "source_verified_at": "2026-06-07",
+      "notes": "Current OpenViking CSV emits answers only. The local score after completion can be answer EM/F1, but it must not be reported as official HotpotQA joint F1 or leaderboard comparable."
+    },
+    {
+      "dataset_format": "tau2bench",
+      "split": "base_all_domains",
+      "official_metric": "pass_1_overall",
+      "local_supported_metric": "tau2_official_runner_progress",
+      "local_status": "official tau2 runner wired and running on base domains with real gpt-5.5 agent/user simulator calls; current scores are intermediate until all required domains/trials complete",
+      "official_requirements": [
+        "Use tau2 run, not generic memory QA.",
+        "Run all four official text/knowledge domains: airline, retail, telecom, and banking_knowledge.",
+        "Run banking_knowledge with a declared retrieval_config before claiming Overall leaderboard comparability.",
+        "Use identical agent/user model settings across runs.",
+        "Use 4 or more trials for stable Pass^k submission guidance."
+      ],
+      "sota": {
+        "model": "see live tau2 leaderboard",
+        "score": null,
+        "metric": "Pass^1",
+        "source": "taubench.com live leaderboard"
+      },
+      "sources": [
+        "https://taubench.com/",
+        "https://github.com/sierra-research/tau2-bench",
+        "https://github.com/sierra-research/tau2-bench/blob/main/docs/leaderboard-submission.md"
+      ],
+      "local_comparability": "official_runner_not_final_submission",
+      "source_verified_at": "2026-06-07",
+      "notes": "The current local run is useful official-runner evidence, but it is not a final leaderboard submission until all required domains and trials are complete. The official repo now presents tau3-bench updates with text, voice, and knowledge tracks; use base split for backward-compatible text evaluation, and include banking_knowledge before claiming overall leaderboard comparability. OpenViking generic QA is never a tau2 official score."
+    },
+    {
+      "dataset_format": "proagentbench",
+      "split": "full_asset_not_local",
+      "official_metric": "need_help_and_intention_metrics",
+      "local_supported_metric": null,
+      "local_status": "official multimodal/SQLite runner not wired; current JSON page runs MemoryBench OpenViking memory-QA validation; full HF asset is large imagefolder/SQLite/screenshot data, not present locally",
+      "official_requirements": [
+        "Use the full ProAgentBench event/screenshot/SQLite asset, not the local two-row JSON sample.",
+        "Evaluate proactive timing with Accuracy/Precision/Recall/F1.",
+        "Evaluate intention classification with Accuracy/Precision/Recall/F1 or the paper's intention metric.",
+        "Use the official or paper-equivalent runner, parser, split protocol, and multimodal inputs where required."
+      ],
+      "sota": {
+        "model": "paper baselines only until official leaderboard/code is wired",
+        "score": null,
+        "metric": "Accuracy/Precision/Recall/F1 and Intention Accuracy",
+        "source": "ProAgentBench paper and HuggingFace dataset card"
+      },
+      "paper_references": [
+        {
+          "model": "DeepSeek-V3.2 prompt baseline",
+          "metric": "timing_accuracy",
+          "score": 0.644,
+          "source": "ProAgentBench paper Table 2"
+        },
+        {
+          "model": "DeepSeek-V3.2 CoT prompt baseline",
+          "metric": "timing_f1",
+          "score": 0.713,
+          "source": "ProAgentBench paper Table 2"
+        },
+        {
+          "model": "LLaMA-3.1-8B SFT baseline",
+          "metric": "real_world_timing_f1",
+          "score": 0.785,
+          "source": "ProAgentBench paper Table 3"
+        }
+      ],
+      "sources": [
+        "https://huggingface.co/datasets/qv9n2xk7m1z8pt4/ProAgentBench",
+        "https://arxiv.org/abs/2602.04482"
+      ],
+      "local_comparability": "not_comparable_sample_only",
+      "source_verified_at": "2026-06-07",
+      "notes": "The public full asset is imagefolder/SQLite/screenshot-based and substantially larger than the local simplified sample; the Hugging Face card currently reports 143,550 rows and 87.2 GB. A formal official score needs a separate proactive-agent runner; MemoryBench OpenViking QA/Judge is reported separately."
+    },
+    {
+      "dataset_format": "evolvingevents",
+      "split": "unknown",
+      "official_metric": null,
+      "local_supported_metric": null,
+      "local_status": "official dataset/source not identified; current JSON page runs MemoryBench OpenViking memory-QA validation",
+      "official_requirements": [
+        "Identify an authoritative official dataset, questions, gold labels, scorer, and metric.",
+        "Do not report sample/generic QA scores as official benchmark scores."
+      ],
+      "sota": {
+        "model": "unknown",
+        "score": null,
+        "metric": null,
+        "source": null
+      },
+      "sources": [
+        "Focused local/web audit 2026-06-06: no authoritative official EvolvingEvents benchmark dataset/scorer located"
+      ],
+      "local_comparability": "not_comparable_no_official_source",
+      "source_verified_at": "2026-06-07",
+      "notes": "Keep this blocked for formal scoring until the official dataset and metric are identified. Focused search found similarly named temporal/evolving-memory benchmarks, but not an authoritative EvolvingEvents dataset/scorer matching the local sample. Any M-FLOW demo/self-reported numbers are insufficient for a reproducible SOTA comparison without data and scorer."
+    }
+  ]
+}
