@@ -89,7 +89,7 @@
     {
       "view": "readmeView",
       "label": "README",
-      "purpose": "External handoff, EchoMemory onboarding, screenshot guide, and safe sharing boundary."
+      "purpose": "External handoff, EchoMemory onboarding, text guide, and safe sharing boundary."
     }
   ],
   "formal_benchmark_priority": [
@@ -110,10 +110,7 @@
       "web/static/index.html",
       "web/static/app.js",
       "web/static/styles.css",
-      "web/static/product-roadmap.html",
-      "web/static/readme-assets/echomemory_onboarding_system_config.png",
-      "web/static/readme-assets/echomemory_onboarding_locomo_import.png",
-      "web/static/readme-assets/echomemory_onboarding_locomo_qa.png"
+      "web/static/product-roadmap.html"
     ],
     "historical_static_policy": "Other HTML files under web/static are experiment history or generated reports, not public entrypoints.",
     "do_not_ship": [

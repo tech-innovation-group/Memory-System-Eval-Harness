@@ -1226,7 +1226,7 @@ def preflight_share_summary(
         f"- Runtime: {runtime_status.get('label') or runtime_status.get('kind') or '-'}",
         f"- Runtime root/url: {runtime_status.get('root') or runtime_status.get('url') or '-'}",
         f"- Answer model: {answer.get('model') or '-'}; token_set={bool(answer.get('token_set'))}",
-        f"- Judge model: {judge.get('model') or '-'}; token_set={bool(judge.get('token_set'))}",
+        f"- 判分模型: {judge.get('model') or '-'}; token_set={bool(judge.get('token_set'))}",
         f"- EchoMemory embedding token_set={bool(echomemory.get('embedding_token_set'))}; chat token_set={bool(echomemory.get('chat_token_set'))}",
         f"- Secrets redacted: {bool(security_status.get('secrets_redacted'))}",
         "- Required fixes: " + (", ".join(f"{item.get('id')}:{item.get('title')}" for item in fixes if item.get("priority") != "ok") or "none"),
@@ -1735,10 +1735,7 @@ def handoff_audit() -> dict[str, Any]:
         "web/static/styles.css",
         "web/static/product-roadmap.html",
     ]
-    unexpected_public_files = [
-        rel for rel in contract_public_files
-        if rel not in core_public_files and not rel.startswith("web/static/readme-assets/")
-    ]
+    unexpected_public_files = [rel for rel in contract_public_files if rel not in core_public_files]
     mirrored_public_files = set(contract_public_files)
     for rel in list(mirrored_public_files):
         if rel.startswith("web/static/"):
@@ -1760,7 +1757,7 @@ def handoff_audit() -> dict[str, Any]:
         "public_static_contract",
         "公开静态入口契约",
         "ok" if not public_static_failures else "fail",
-        "公开入口包含核心 UI 四件套和 README 截图资源；其它 web/static HTML 仍视为历史实验或生成报告，不作为外发入口。" if not public_static_failures else "公开静态入口契约不一致。",
+        "公开入口只包含核心 UI 四件套；其它 web/static HTML 仍视为历史实验或生成报告，不作为外发入口。" if not public_static_failures else "公开静态入口契约不一致。",
         "required",
         {
             "contract_public_static_files": contract_public_files,
@@ -2053,7 +2050,7 @@ def delivery_boundary_gate(audit: dict[str, Any] | None = None, doctor: dict[str
             "id": "public_files",
             "title": "公开静态入口",
             "status": (checks_by_id.get("public_static_contract") or {}).get("status") or "warn",
-            "detail": "公开入口包含核心 UI 四件套和 README 截图资源；历史 HTML 不作为外发入口。",
+            "detail": "公开入口只包含核心 UI 四件套；历史 HTML 不作为外发入口。",
             "evidence": public_files,
         },
         {
@@ -2503,14 +2500,12 @@ def handoff_package(
         {"path": "web/static/app.js", "reason": "主前端交互逻辑。", "required": True, "exists": (ROOT / "web" / "static" / "app.js").exists()},
         {"path": "web/static/styles.css", "reason": "主前端样式。", "required": True, "exists": (ROOT / "web" / "static" / "styles.css").exists()},
         {"path": "web/static/product-roadmap.html", "reason": "20k-star 产品方案和 24 小时迭代路线图。", "required": True, "exists": (ROOT / "web" / "static" / "product-roadmap.html").exists()},
-        {"path": "web/static/readme-assets/", "reason": "README 侧边栏页使用的外部接入截图。", "required": True, "exists": (ROOT / "web" / "static" / "readme-assets").exists()},
         {"path": "static/index.html", "reason": "兼容旧入口的 HTML 镜像。", "required": True, "exists": (ROOT / "static" / "index.html").exists()},
         {"path": "static/app.js", "reason": "兼容旧入口的前端逻辑镜像。", "required": True, "exists": (ROOT / "static" / "app.js").exists()},
         {"path": "static/styles.css", "reason": "兼容旧入口的样式镜像。", "required": True, "exists": (ROOT / "static" / "styles.css").exists()},
         {"path": "static/product-roadmap.html", "reason": "兼容旧入口的产品方案镜像。", "required": True, "exists": (ROOT / "static" / "product-roadmap.html").exists()},
-        {"path": "static/readme-assets/", "reason": "兼容旧入口的 README 截图镜像。", "required": True, "exists": (ROOT / "static" / "readme-assets").exists()},
         {"path": "memory/", "reason": "记忆后端契约、adapter、报告导出和任务编排。", "required": True, "exists": (ROOT / "memory").exists()},
-        {"path": "scripts/", "reason": "LoCoMo 导入、QA、Judge、报告和 adapter doctor 脚本。", "required": True, "exists": (ROOT / "scripts").exists()},
+        {"path": "scripts/", "reason": "LoCoMo 导入、QA、判分、报告和 adapter doctor 脚本。", "required": True, "exists": (ROOT / "scripts").exists()},
         {"path": "dataset/manifest.json", "reason": "数据集注册表。完整大数据可由接收方按路径补齐。", "required": True, "exists": (ROOT / "dataset" / "manifest.json").exists()},
         {"path": "dataset/locomo10.json", "reason": "LoCoMo 小样本核验数据。", "required": True, "exists": (ROOT / "dataset" / "locomo10.json").exists()},
         {"path": "README.md", "reason": "项目概览。", "required": True, "exists": (ROOT / "README.md").exists()},
@@ -3690,7 +3685,7 @@ def agent_alignment_status(payload: dict[str, Any] | None = None) -> dict[str, A
     elif not latest_alignment.get("comparable"):
         next_actions.append("把当前 QA 参数切到 VikingBoat 可比模式：Top-K 30、tool loop on、tool set vikingbot_native_safe，并关闭额外兜底。")
     if same_judge.get("status") != "ok":
-        next_actions.append("补一轮同 Judge 对比：MemoryBench Agent aligned run vs OpenViking/VikingBoat reference run。")
+        next_actions.append("补一轮同判分模型对比：MemoryBench Agent aligned run vs OpenViking/VikingBoat reference run。")
     if not next_actions:
         next_actions.append("可以用最新可比 run 做后端差异分析；不要把对话页人工测试当正式分数。")
     status = "ok" if latest_alignment.get("comparable") else "warn"
@@ -4288,7 +4283,7 @@ def acceptance_matrix(
             "模型与密钥配置",
             model_step.get("status") or "fail",
             "required",
-            "Answer、Judge 以及 EchoMemory embedding/chat 只检查是否配置，不返回真实 key。",
+            "Answer、判分以及 EchoMemory embedding/chat 只检查是否配置，不返回真实 key。",
             model_step.get("action") or "补齐模型配置。",
             model_step.get("evidence") or {},
         ),
@@ -4297,7 +4292,7 @@ def acceptance_matrix(
             "报告生成链路",
             "ok" if report_files_ok else "fail",
             "required",
-            "具备 CSV/Judge summary 到 HTML 报告的生成脚本和 Web 导出服务。",
+            "具备 CSV/判分摘要 到 HTML 报告的生成脚本和 Web 导出服务。",
             "补齐 generate_html_report.py 或 memory/report_export.py。",
             {"generate_script": str(ROOT / "scripts/generate_html_report.py"), "report_export": str(ROOT / "memory/report_export.py")},
         ),
@@ -5706,7 +5701,7 @@ def ensure_task_model_preflight(
     if result.get("ok"):
         return
     role = str(result.get("role") or "agent").lower()
-    role_label = "Judge" if role == "judge" else "答案模型"
+    role_label = "判分模型" if role == "judge" else "答案模型"
     raise ValueError(
         f"{role_label}预检失败："
         f"{result.get('model') or ''} @ {result.get('base_url') or ''} "
