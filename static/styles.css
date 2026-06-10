@@ -11631,58 +11631,68 @@ pre.log,
   word-break: break-word;
 }
 
+#readmeView ::selection {
+  background: #dbeafe;
+  color: #111827;
+}
+
+#readmeView .readme-text-stack {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
 #readmeView .readme-critical {
   display: grid;
-  gap: 8px;
-  padding: 12px 14px;
-  border: 1px solid #f3c5c5;
-  border-radius: 6px;
-  background: #fff7f7;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 #readmeView .readme-critical p,
 #readmeView .critical-note {
   margin: 0;
-  color: #8f1d1d;
-  font-size: 12px;
-  line-height: 1.55;
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 #readmeView .critical-text {
-  color: #b42318;
-  font-weight: 800;
+  color: inherit;
+  font-weight: 700;
 }
 
-#readmeView .onboarding-summary-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+#readmeView .onboarding-text-stack .readme-card {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  gap: 6px;
 }
 
-#readmeView .onboarding-step-text-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+#readmeView .onboarding-text-stack .readme-card + .readme-card {
+  padding-top: 8px;
+  border-top: 1px solid #e5e7eb;
+}
+
+#readmeView .onboarding-text-stack .readme-card span {
+  color: #111827;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+#readmeView .onboarding-text-stack .readme-card li,
+#readmeView .onboarding-text-stack .readme-card p {
+  color: #374151;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 @media (max-width: 1400px) {
   #readmeView .readme-grid {
     grid-template-columns: repeat(3, minmax(180px, 1fr));
-  }
-
-  #readmeView .onboarding-summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  #readmeView .onboarding-step-text-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 900px) {
-  #readmeView .readme-grid {
-    grid-template-columns: 1fr;
-  }
-
-  #readmeView .readme-hero {
-    grid-template-columns: 1fr;
-    align-items: start;
   }
 }
 
@@ -11701,13 +11711,16 @@ pre.log,
   #readmeView .readme-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
 
-  #readmeView .onboarding-summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+@media (max-width: 900px) {
+  #readmeView .readme-grid {
+    grid-template-columns: 1fr;
   }
 
-  #readmeView .onboarding-step-text-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  #readmeView .readme-hero {
+    grid-template-columns: 1fr;
+    align-items: start;
   }
 }
 

@@ -2033,7 +2033,7 @@ function renderBackendIsolationSummary() {
         <p>${escapeHtml(layout.folders)}</p>
       </article>
       <article>
-        <span>Workspace 来源</span>
+        <span>工作空间来源</span>
         <strong>${escapeHtml(generated ? "自动生成" : (workspace ? "手动指定" : "未配置"))}</strong>
         <code>${escapeHtml(workspace || "-")}</code>
       </article>
@@ -2103,7 +2103,7 @@ function accountDirectoryItems(isolation = {}, workspace = "", account = "", bac
   const actualRoot = isolation.storage_root || isolation.viking_root || "";
   const matches = Boolean(workspace && isolation.workspace === workspace && actualRoot === expectedRoot);
   const labels = currentBackend === "echomemory"
-    ? ["Workspace", "Account", "Sessions", "Users", "Agents"]
+    ? ["工作空间", "账户", "会话", "用户记忆", "Agent 记忆"]
     : ["根目录", "账户", "会话", "用户记忆", "Agent 记忆"];
   return [
     [labels[0], matches ? isolation.workspace_exists : null],
@@ -2485,9 +2485,9 @@ function renderHandoffDashboard(data, targetId = "handoffDashboardPanel") {
       <span>当前路径</span>
       <strong>数据集与记忆空间</strong>
       <dl class="smoke-plan-kv">
-        <dt>Dataset</dt><dd><code>${escapeHtml(dataset.path || "-")}</code></dd>
-        <dt>Workspace</dt><dd><code>${escapeHtml(workspace.workspace || "-")}</code></dd>
-        <dt>Storage</dt><dd><code>${escapeHtml(workspace.storage_root || "-")}</code></dd>
+        <dt>数据集</dt><dd><code>${escapeHtml(dataset.path || "-")}</code></dd>
+        <dt>工作空间</dt><dd><code>${escapeHtml(workspace.workspace || "-")}</code></dd>
+        <dt>存储根</dt><dd><code>${escapeHtml(workspace.storage_root || "-")}</code></dd>
       </dl>
     </article>
     ${cards.map((card) => `
@@ -3052,9 +3052,9 @@ function renderSmokePlan(data, targetId = "smokePlanPanel") {
       <span>当前路径</span>
       <strong>数据集与记忆空间</strong>
       <dl class="smoke-plan-kv">
-        <dt>Dataset</dt><dd><code>${escapeHtml(dataset.path || "-")}</code></dd>
-        <dt>Workspace</dt><dd><code>${escapeHtml(workspace.workspace || "-")}</code></dd>
-        <dt>Storage</dt><dd><code>${escapeHtml(workspace.storage_root || "-")}</code></dd>
+        <dt>数据集</dt><dd><code>${escapeHtml(dataset.path || "-")}</code></dd>
+        <dt>工作空间</dt><dd><code>${escapeHtml(workspace.workspace || "-")}</code></dd>
+        <dt>存储根</dt><dd><code>${escapeHtml(workspace.storage_root || "-")}</code></dd>
       </dl>
     </article>
     ${steps.map((step, index) => `
@@ -3905,23 +3905,23 @@ function renderSystemPreflight(data = state.systemPreflight) {
       backendAdapter.missing_recommended_capabilities?.length ? `建议补齐能力：${backendAdapter.missing_recommended_capabilities.join(", ")}` : "",
       backendAdapter.missing_optional_methods?.length ? `建议补齐方法：${backendAdapter.missing_optional_methods.join(", ")}` : "",
     ])}
-    ${preflightCard("Workspace", workspace.status, workspace.storage_root || workspace.workspace || "-", [
-      workspace.workspace_exists ? "workspace 存在" : "workspace 不存在",
+    ${preflightCard("工作空间", workspace.status, workspace.storage_root || workspace.workspace || "-", [
+      workspace.workspace_exists ? "工作空间存在" : "工作空间不存在",
       workspace.storage_root_exists ? "存储根目录存在" : "存储根目录未创建",
       workspace.layout ? `布局：${workspace.layout}` : "",
     ])}
-    ${preflightCard("Dataset", dataset.status, datasetLabel, [
+    ${preflightCard("数据集", dataset.status, datasetLabel, [
       dataset.exists ? "文件存在" : "文件不存在",
       dataset.path || "",
     ])}
-    ${preflightCard("Models", models.status, modelLabel, [
+    ${preflightCard("模型", models.status, modelLabel, [
       models.answer?.base_url_set ? "Answer 地址已配置" : "Answer 地址未配置",
       models.judge?.base_url_set ? "判分地址已配置" : "判分地址未配置",
       models.echomemory?.embedding_token_set ? "EchoMemory embedding token 已配置" : "EchoMemory embedding token 未检测到",
       models.echomemory?.chat_token_set ? "EchoMemory chat token 已配置" : "EchoMemory chat token 未检测到",
       (models.answer?.token_set || models.judge?.token_set || models.echomemory?.embedding_token_set || models.echomemory?.chat_token_set) ? "至少一个 token 来源已设置" : "未检测到环境 token",
     ])}
-    ${preflightCard("Runtime", runtime.status, runtime.url || runtime.root || runtime.label || "-", [
+    ${preflightCard("运行时", runtime.status, runtime.url || runtime.root || runtime.label || "-", [
       runtime.kind || "",
       runtime.probe?.ok ? "服务探测成功" : (runtime.message || runtime.probe?.error || ""),
       runtime.explicit_root === false && !runtime.default_root ? "EchoMemory root 未显式设置" : "",
@@ -4247,7 +4247,7 @@ function datasetTypeLabel(format) {
   if (key === "hotpotqa") return "HotpotQA";
   if (key === "proagentbench") return "proAgentBench";
   if (key === "tau2bench") return "Tau2-bench";
-  return format ? String(format) : "Dataset";
+  return format ? String(format) : "数据集";
 }
 
 const LOCOMO_CATEGORY_LABELS = {
@@ -4868,11 +4868,11 @@ function flowArtifactRows(data = {}) {
   const latestQa = artifacts.latest_qa || {};
   const latestReport = artifacts.latest_report || {};
   return [
-    ["Dataset", dataset.path],
-    ["Workspace", workspace.storage_root || workspace.workspace],
-    ["Memory Root", imported.memory_root || imported.account_path],
+    ["数据集", dataset.path],
+    ["工作空间", workspace.storage_root || workspace.workspace],
+    ["记忆根目录", imported.memory_root || imported.account_path],
     ["QA CSV", latestQa.output_file],
-    ["Report", latestReport.report_html],
+    ["报告", latestReport.report_html],
   ].filter(([, value]) => value);
 }
 
@@ -5234,7 +5234,7 @@ function renderLocomoOverview() {
         <strong>${escapeHtml(taskProgressText)}</strong>
       </div>
       <div class="overview-metrics">
-        ${locomoOverviewMetric("Rows", summary.rows ?? "-")}
+        ${locomoOverviewMetric("结果行", summary.rows ?? "-")}
         ${locomoOverviewMetric("Tokens", summary.total_injection_tokens_est || summary.answer_total_tokens || "-")}
         ${locomoOverviewMetric("Evidence", outputCsv ? "已记录" : "-")}
       </div>
@@ -6400,13 +6400,13 @@ async function validateSelectedDatasetCard(path) {
   const data = await api(`/api/dataset?path=${encodeURIComponent(path)}`);
   renderKpis("datasetKpis", [
     ["数据集类型", datasetTypeLabel(data.format)],
-    ["Samples", data.samples ?? "-"],
-    ["Questions", data.questions ?? "-"],
+    ["样本数", data.samples ?? "-"],
+    ["题目数", data.questions ?? "-"],
   ]);
   renderDatasetCategories(data);
   if ($("datasetRunnerNote")) {
     $("datasetRunnerNote").innerHTML = `
-      <p><strong>${escapeHtml(datasetTypeLabel(data.format))} 已加入系统</strong> · ${escapeHtml(data.samples ?? "-")} samples · ${escapeHtml(data.questions ?? "-")} 题</p>
+      <p><strong>${escapeHtml(datasetTypeLabel(data.format))} 已加入系统</strong> · ${escapeHtml(data.samples ?? "-")} 个样本 · ${escapeHtml(data.questions ?? "-")} 题</p>
       <p class="dataset-next-step">${escapeHtml(datasetRunnerNote(data.format, data.runner_note, "可在历史结果中查看对应测试报告。"))}</p>
     `;
   }
@@ -6427,7 +6427,7 @@ function renderChenmoDatasetCard() {
       <span>${escapeHtml(datasetTypeLabel(item.format))}</span>
       <strong>${escapeHtml(item.name || "ChenMo")}</strong>
       <small>${escapeHtml(item.description || "")}</small>
-      <em>${item.exists ? `${escapeHtml(item.samples ?? "-")} samples · ${escapeHtml(item.questions ?? "-")} questions` : "missing"}</em>
+      <em>${item.exists ? `${escapeHtml(item.samples ?? "-")} 个样本 · ${escapeHtml(item.questions ?? "-")} 题` : "missing"}</em>
       <code>${escapeHtml(item.path || "")}</code>
     </article>
   `;
@@ -6439,9 +6439,9 @@ async function validateChenmoDataset() {
   const data = await api(`/api/dataset?path=${encodeURIComponent(path)}`);
   renderKpis("chenmoKpis", [
     ["数据集类型", datasetTypeLabel(data.format)],
-    ["Samples", data.samples ?? "-"],
-    ["Turns", data.memory_events_total ?? "-"],
-    ["Questions", data.questions ?? "-"],
+    ["样本数", data.samples ?? "-"],
+    ["轮次数", data.memory_events_total ?? "-"],
+    ["题目数", data.questions ?? "-"],
   ]);
   renderDatasetCategories(data, "chenmoCategoryPanel");
   if ($("chenmoStatus")) {
@@ -6473,10 +6473,10 @@ async function openChenmoRun() {
   const accuracy = Number(summary.accuracy);
   renderKpis("chenmoKpis", [
     ["状态", record.status || "-"],
-    ["Rows", summary.rows ?? "-"],
-    ["Passed", summary.correct ?? "-"],
-    ["Failed", summary.wrong ?? "-"],
-    ["Pass Rate", Number.isFinite(accuracy) ? `${(accuracy * 100).toFixed(1)}%` : "-"],
+    ["结果行", summary.rows ?? "-"],
+    ["通过", summary.correct ?? "-"],
+    ["失败", summary.wrong ?? "-"],
+    ["通过率", Number.isFinite(accuracy) ? `${(accuracy * 100).toFixed(1)}%` : "-"],
   ]);
   if ($("chenmoStatus")) {
     $("chenmoStatus").innerHTML = `
@@ -6622,9 +6622,9 @@ function renderGenericBenchmarkKpis(key, data) {
   const format = String(data.format || "").toLowerCase() === "generic" ? config.adapterFormat : (data.format || config.adapterFormat);
   renderKpis(config.kpis, [
     ["数据集类型", datasetTypeLabel(format)],
-    ["Samples", data.samples ?? "-"],
-    ["Questions", data.questions ?? "-"],
-    ["Memory events", data.memory_events_total ?? "-"],
+    ["样本数", data.samples ?? "-"],
+    ["题目数", data.questions ?? "-"],
+    ["记忆事件", data.memory_events_total ?? "-"],
     ["加载模式", data.runner_status === "large_dataset_lazy" ? "大文件 lazy" : "已读取"],
   ]);
 }
@@ -6772,7 +6772,7 @@ async function loadDataset() {
     renderKpis("datasetKpis", [
       ["LoCoMo 状态", "未选择"],
       ["识别到的格式", datasetTypeLabel(data.format)],
-      ["Questions", data.questions ?? "-"],
+      ["题目数", data.questions ?? "-"],
     ]);
     renderKpis("questionSelectionKpis", [
       ["题目范围", "0/0"],
@@ -6949,8 +6949,8 @@ async function validateLongMemDataset() {
   });
   renderKpis("longMemKpis", [
     ["数据集类型", datasetTypeLabel(data.format)],
-    ["Samples", data.samples ?? "-"],
-    ["Questions", data.questions ?? "-"],
+    ["样本数", data.samples ?? "-"],
+    ["题目数", data.questions ?? "-"],
     ["加载模式", data.runner_status === "large_dataset_lazy" ? "大文件 lazy" : "已读取"],
   ]);
   const sampleLike = /(^|[/.])[^/]*sample[^/]*\.(jsonl?|ndjson)$/i.test(path);
@@ -7084,7 +7084,7 @@ async function runLongMemDiagnostic() {
   showView("longMemEvalView", {preserveScroll: true});
   $("longMemRunResult").innerHTML = `
     <article class="path-row">
-      <span>Task</span>
+      <span>任务</span>
       <code>${escapeHtml(task?.id || state.taskId || "")}</code>
     </article>
     <article class="path-row">
@@ -7134,7 +7134,7 @@ async function injectLongMemMemory() {
   if ($("longMemImportResult")) {
     $("longMemImportResult").innerHTML = `
       <article class="path-row">
-        <span>Task</span>
+        <span>任务</span>
         <code>${escapeHtml(task?.id || state.taskId || "")}</code>
       </article>
       <p>已启动记忆注入：只写入 LongMemEval source documents 并生成 import summary，不调用答案模型或判分。</p>
@@ -8839,12 +8839,12 @@ async function refreshEchoMemoryImportSummary(path) {
       : `EchoMemory 导入结束但需要检查：未完成样本 ${incomplete}。`;
   renderKpis("commitKpis", [
     ["模式", smoke ? "单 session 测试" : "正式导入"],
-    ["完整性", complete ? "complete" : (asyncSettling ? "pending_async_memory" : "incomplete")],
+    ["完整性", complete ? "完整" : (asyncSettling ? "后台补齐中" : "未完成")],
     ["样本数", summary.samples ?? records.length ?? "-"],
     ["对话消息", `${submitted || "-"} / ${expected || "-"}`],
     ["检索就绪", `${retrievalReady || 0} / ${summary.samples ?? records.length ?? "-"}`],
     ["后端", "EchoMemory"],
-    ["Workspace", workspace || "-"],
+    ["工作空间", workspace || "-"],
   ]);
   const importFolder = dirname(path);
   $("importMemoryPreview").innerHTML = `
@@ -9057,7 +9057,7 @@ async function refreshCommitSummary(path) {
   toast(complete ? (smoke ? "单 session 注入测试完成，记忆已落盘" : "导入完成，记忆已落盘") : "导入结束，请检查完整性");
   renderKpis("commitKpis", [
     ["模式", smoke ? "单 session 测试" : "正式导入"],
-    ["完整性", first.integrity || (summary.incomplete_samples ? "incomplete" : "complete")],
+    ["完整性", first.integrity === "complete" ? "完整" : (first.integrity === "incomplete" ? "未完成" : (summary.incomplete_samples ? "未完成" : "完整"))],
     ["会话数", summary.samples ?? "-"],
     ["对话消息", `${summary.submitted_messages ?? "-"} / ${summary.expected_messages ?? "-"}`],
     ["待处理", first.pending_message_count_after_commit ?? "-"],
@@ -9137,12 +9137,12 @@ function renderIntegrity(data) {
       `).join("") || "<p>没有 session 明细。</p>"}
     </details>
     <div class="path-row">
-      <span>Summary</span>
+      <span>摘要</span>
       <code>${escapeHtml(data.summary_path || "")}</code>
       <button class="path-copy" type="button" data-copy="${escapeHtml(data.summary_path || "")}">复制</button>
     </div>
     <div class="path-row">
-      <span>${escapeHtml(data.backend === "echomemory" ? "EchoMemory Root" : "Memory Root")}</span>
+      <span>${escapeHtml(data.backend === "echomemory" ? "EchoMemory 根目录" : "记忆根目录")}</span>
       <code>${escapeHtml(data.memory_root || "")}</code>
       <button class="path-copy" type="button" data-copy="${escapeHtml(data.memory_root || "")}">复制</button>
     </div>
@@ -9396,7 +9396,7 @@ function renderChatMemorySpace(record = null) {
         </div>
       ` : ""}
       <div class="memory-space-path">
-        <span>Workspace</span>
+        <span>工作空间</span>
         <code>${escapeHtml(info.workspace || "未配置")}</code>
         ${info.workspace ? copyButtonHtml(info.workspace) : ""}
       </div>
@@ -9652,7 +9652,7 @@ function renderChatDebugStrip(record = null) {
     ${chatDebugMetric("LoCoMo 对齐", alignment.value, alignment.detail, alignment.tone)}
     ${chatDebugMetric("上下文来源", contextSourceValue, contextSourceDetail, workbenchSupported ? "" : "warn")}
     ${chatDebugMetric("读写边界", saveState, saveDetail, record?.committed ? "ok" : (newMessages > 0 ? "warn" : ""))}
-    ${chatDebugMetric("Workspace", compactPath(workspace || "未配置"), storageRoot ? `存储根：${compactPath(storageRoot, 24, 32)}` : "导入或系统配置后生成路径")}
+    ${chatDebugMetric("工作空间", compactPath(workspace || "未配置"), storageRoot ? `存储根：${compactPath(storageRoot, 24, 32)}` : "导入或系统配置后生成路径")}
     ${chatDebugMetric("召回参数", `Top-K ${topK}`, "对话页只读检索使用该数量")}
     ${chatDebugMetric("待保存上下文", `${stats.messages} 条 / ${stats.tokens} tokens`, `建议阈值 ${thresholds.messages} 条 / ${thresholds.tokens} tokens`)}
   `;
@@ -9692,12 +9692,12 @@ function renderArchiveChatDetails(record = {}) {
     ["对话记录", record.harness_transcript_path || record.transcript_path],
   ].filter(([, value]) => value !== undefined && value !== null && String(value) !== "");
   const backendRows = backend === "echomemory" ? [
-    ["接入方式", "EchoMemory local SDK"],
-    ["EchoMemory Root", record.echomem_root],
+    ["接入方式", "EchoMemory 本地 SDK"],
+    ["EchoMemory 根目录", record.echomem_root],
     ["Runtime 配置", record.echomem_config],
     ["记忆根目录", paths.memory_root],
-    ["Account 目录", paths.account_dir],
-    ["Sessions 目录", paths.sessions_dir],
+    ["账户目录", paths.account_dir],
+    ["会话目录", paths.sessions_dir],
     ["Atoms 目录", paths.atoms_dir],
     ["会话目录", paths.session_dir],
     ["用户目录", paths.user_dir],
@@ -11857,7 +11857,7 @@ function renderRunAudit(detail = {}, candidateRecord = {}, summary = {}, runDir 
       </div>
       <div class="run-audit-grid">
         ${runAuditMetric("空间", row.account)}
-        ${runAuditMetric("Workspace", row.workspace)}
+        ${runAuditMetric("工作空间", row.workspace)}
         ${runAuditMetric("样本", row.sample)}
         ${runAuditMetric("选题", questionText, row.questions && row.questions !== "-" ? "已指定题目" : "未指定或全量")}
         ${runAuditMetric("检索模式", row.retrieval_mode)}
@@ -12009,22 +12009,22 @@ async function exportRunReport() {
   const gateRows = Array.from(text.matchAll(/^- (Run completion|VikingBoat parameter alignment|VikingBot parameter alignment|Memory import integrity|Import log failures|QA coverage|Judge completion|Model final failures|QA log warnings): `([^`]+)` · ([^\n]+)/gm))
     .map((m) => ({label: m[1], status: m[2], detail: m[3]}));
   const digestRows = [
-    ["Gate", reportField("Gate status")],
-    ["Verdict", reportField("Gate verdict")],
-    ["Audit", reportField("Audit status")],
-    ["Expected", reportField("Dataset expected questions")],
-    ["Rows", reportField("Rows")],
-    ["Missing", reportField("Missing questions")],
-    ["Retryable", reportField("Retryable failed questions")],
+    ["门禁", reportField("Gate status")],
+    ["结论", reportField("Gate verdict")],
+    ["审计", reportField("Audit status")],
+    ["应测题数", reportField("Dataset expected questions")],
+    ["结果行", reportField("Rows")],
+    ["缺失题数", reportField("Missing questions")],
+    ["可重跑失败题", reportField("Retryable failed questions")],
     ["待判分", reportField("Pending Judge rows") !== "-" ? reportField("Pending Judge rows") : reportField("Pending Judge")],
     ["正式判分", reportField("Formal Judge score")],
-    ["Model retries", reportField("Model/API retry warnings")],
-    ["Retry rows", reportField("Model retry rows")],
-    ["Import samples", reportField("Complete samples")],
-    ["Import log", reportField("Import log failures")],
-    ["QA log", reportField("QA log warnings")],
-    ["Messages", reportField("Submitted messages")],
-    ["Memories", reportField("Extracted memories")],
+    ["模型重试", reportField("Model/API retry warnings")],
+    ["重试行数", reportField("Model retry rows")],
+    ["完整样本", reportField("Complete samples")],
+    ["导入日志", reportField("Import log failures")],
+    ["QA 日志", reportField("QA log warnings")],
+    ["提交消息", reportField("Submitted messages")],
+    ["抽取记忆", reportField("Extracted memories")],
   ];
   const wrongCount = (text.match(/^### \d+\. `/gm) || []).length;
   const clusterLines = text.split("\n").filter((line) => line.startsWith("- ") && line.includes(" cases")).slice(0, 4);
