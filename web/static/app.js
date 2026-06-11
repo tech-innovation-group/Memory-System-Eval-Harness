@@ -34,6 +34,8 @@ const state = {
   chatContextPreviewLoading: false,
   selectedRunSummary: null,
   lastJudgeSummary: null,
+  lastQaDiagnostics: null,
+  lastQaDiagnosticsInput: "",
   lastJudgeValidation: null,
   importedMemoryStatus: null,
   currentImportTask: null,
@@ -89,12 +91,15 @@ const ACCOUNT_LIST_KEY = "locomoEval.accountList";
 const ACTIVE_ACCOUNT_KEY = "locomoEval.activeAccount";
 const ACCOUNT_CONFIG_PREFIX = "locomoEval.accountConfig.";
 const CHAT_DRAFT_PREFIX = "locomoEval.chatDraft.";
-const UI_REFRESH_VERSION = "20260611uifix32";
+const UI_REFRESH_VERSION = "20260611uixlate13";
 const ACTIVE_TASK_STATUSES = new Set(["queued", "running", "stopping"]);
 const TERMINAL_TASK_STATUSES = new Set(["succeeded", "failed", "done", "cancelled", "canceled"]);
 const VIKINGBOAT_LITE_TOP_K = 30;
 const VIKINGBOAT_LITE_TOOL_SEARCH_LIMIT = 20;
 const VIKINGBOAT_LITE_MAX_ITERATIONS = 50;
+const RETRIEVAL_COUNT_LABEL = "召回条数";
+const TOOL_SEARCH_LABEL = "工具检索";
+const MAX_ITERATION_LABEL = "最大迭代";
 const UI_ACTION_LOCKS = new Set();
 
 function uiActionLocked(key) {
@@ -158,29 +163,118 @@ function currentLocomoSampleScope() {
 
 function currentImportSampleScope() {
   const select = $("importSample");
-  const value = select?.value || "all";
   const optionText = select?.selectedOptions?.[0]?.textContent?.trim() || "全部 conv";
+  const selected = parseImportSampleSelection(select?.value || "all", optionText);
   const dataset = currentLocomoDataset();
-  if (value === "all") {
+  if (selected.isAll) {
     return {
-      value,
+      value: selected.rawValue,
+      baseValue: selected.baseValue,
+      smoke: false,
       isAll: true,
       label: "全部 conv",
       optionText,
       questionCount: Number(dataset?.questions || 0),
     };
   }
-  const parts = optionText.split("·").map((part) => part.trim()).filter(Boolean);
-  const sampleId = parts.find((part) => /^conv-\d+$/i.test(part)) || optionText;
   const optionCountMatch = optionText.match(/·\s*(\d+)\s*题/);
   const optionCount = optionCountMatch ? Number(optionCountMatch[1]) : 0;
   return {
-    value,
+    value: selected.rawValue,
+    baseValue: selected.baseValue,
+    smoke: selected.smoke,
     isAll: false,
-    label: sampleId,
+    label: selected.smoke ? `${selected.sampleId || optionText} · 单 session 测试` : (selected.sampleId || optionText),
     optionText,
     questionCount: optionCount,
   };
+}
+
+const IMPORT_SINGLE_SESSION_SUFFIX = "__single_session_test";
+
+function parseImportSampleSelection(rawValue = $("importSample")?.value || "all", optionText = $("importSample")?.selectedOptions?.[0]?.textContent?.trim() || "") {
+  const value = String(rawValue || "all");
+  const smoke = value.endsWith(IMPORT_SINGLE_SESSION_SUFFIX);
+  const baseValue = smoke ? value.slice(0, -IMPORT_SINGLE_SESSION_SUFFIX.length) : value;
+  const parts = String(optionText || "").split("·").map((part) => part.trim()).filter(Boolean);
+  const sampleId = baseValue === "all"
+    ? ""
+    : (
+      parts.find((part) => /^conv-\d+$/i.test(part))
+      || state.questions.find((q) => String(q.sample_index) === String(baseValue) || q.sample_id === baseValue)?.sample_id
+      || ""
+    );
+  return {
+    rawValue: value,
+    baseValue: baseValue || "all",
+    smoke,
+    isAll: baseValue === "all",
+    optionText: optionText || "",
+    sampleId,
+  };
+}
+
+function importSmokeTestReady(selection = parseImportSampleSelection()) {
+  return Boolean(selection && !selection.isAll && (selection.sampleId || selection.baseValue));
+}
+
+function singleSessionImportTaskExtra() {
+  const selected = parseImportSampleSelection();
+  const sampleLabel = selected.sampleId || currentImportSampleScope().label || selected.baseValue || "locomo";
+  return {
+    sample: selected.baseValue || "all",
+    max_sessions: 1,
+    name: `locomo ${memoryBackendLabel(currentMemoryBackend())} ${sampleLabel} 单 session 注入测试`,
+  };
+}
+
+function locomoQaSampleOptionLabel(row = {}) {
+  const questions = formatInt(row.questions || 0);
+  const sessions = Number(row.sessions || 0);
+  const sessionText = sessions > 0 ? ` · ${formatInt(sessions)} 段 session` : "";
+  return `${row.index} · ${row.sample_id} · ${questions} 题${sessionText}`;
+}
+
+function locomoImportSampleOptionLabel(row = {}) {
+  const questions = formatInt(row.questions || 0);
+  const sessions = Number(row.sessions || 0);
+  const events = Number(row.events || 0);
+  const scopeText = sessions > 0 ? `${formatInt(sessions)} 段 session` : `${formatInt(events)} 条事件`;
+  return `${row.index} · ${row.sample_id} · ${scopeText} · ${questions} 题`;
+}
+
+function refreshImportActionLabels() {
+  const backend = currentMemoryBackend();
+  const backendLabel = memoryBackendLabel(backend);
+  const datasetFormat = normalizeDatasetFormat(currentLocomoDataset()?.format || "");
+  const locomoReady = datasetFormat === "locomo";
+  const selection = parseImportSampleSelection();
+  const importBusy = isMemoryImportKind(state.currentImportTask?.kind || "") && isTaskActive(state.currentImportTask);
+  const sampleName = selection.sampleId || selection.baseValue || "当前 conv";
+  const commitButton = $("commitImport");
+  if (commitButton) {
+    commitButton.disabled = !locomoReady || importBusy;
+    commitButton.textContent = selection.smoke ? "运行单 session 测试" : "导入所选对话";
+    commitButton.title = importBusy
+      ? "导入任务运行中，请稍候"
+      : (
+        selection.smoke
+          ? `只向 ${backendLabel} 写入 ${sampleName} 的 1 段 session，用于快速验证注入链路`
+          : `把“导入对话”选择的范围写入 ${backendLabel}`
+      );
+  }
+  const smokeButton = $("importSmokeTest");
+  if (smokeButton) {
+    const canSmoke = locomoReady && importSmokeTestReady(selection);
+    smokeButton.disabled = !canSmoke || importBusy;
+    smokeButton.title = importBusy
+      ? "导入任务运行中，请稍候"
+      : (
+        canSmoke
+          ? `只向 ${backendLabel} 写入 ${sampleName} 的 1 段 session，用于快速验证注入链路`
+          : "请先选择一个具体 conv，再做单 session 注入测试"
+      );
+  }
 }
 
 function activeLocomoQaTask() {
@@ -261,20 +355,20 @@ function locomoQaLaunchGate(preflight = state.systemPreflight, options = {}) {
   const answerTokenReady = Boolean(answer.token_set || (backend === "echomemory" && echomemoryModels.chat_token_set));
   if (!answer.base_url_set) {
     return {
-      value: "Answer 模型地址未配置",
+      value: "回答模型地址未配置",
       detail: backend === "echomemory"
         ? "请先在系统配置填写 Agent 模型地址，或确认默认回答模型地址已生效。"
-        : "请先在系统配置填写 Answer 模型地址。",
+        : "请先在系统配置填写回答模型地址。",
       tone: "warn",
       blocking: true,
     };
   }
   if (!answerTokenReady) {
     return {
-      value: "Answer 模型 token 未配置",
+      value: "回答模型密钥未配置",
       detail: backend === "echomemory"
-        ? "请在系统配置填写 Agent token，或确认 EchoMemory chat token 已生效。"
-        : "请在系统配置填写 token，或确认环境变量已生效。",
+        ? "请在系统配置填写 Agent 密钥，或确认 EchoMemory chat 密钥已生效。"
+        : "请在系统配置填写密钥，或确认环境变量已生效。",
       tone: "warn",
       blocking: true,
     };
@@ -328,6 +422,11 @@ function refreshLocomoQaActionLabels() {
   const launchTitle = "正在准备当前问答任务，请稍候";
   const loading = state.locomoQuestionsLoading;
   const busyTask = activeLocomoQaTask();
+  const busyTaskStatus = busyTask ? taskStatusLabel(busyTask) : "";
+  const busyTaskText = busyTaskStatus ? `${busyTaskStatus}...` : "运行中...";
+  const busyTaskTitle = busyTask
+    ? `已有问答任务${busyTaskStatus || "运行中"}，任务 ID：${busyTask.id || "-"}`
+    : "";
   const launchGate = !clickLocked && !launchPending && !submitting && !loading && !busyTask
     ? locomoQaLaunchGate()
     : {blocking: false, value: "", detail: "", tone: "ok"};
@@ -339,7 +438,13 @@ function refreshLocomoQaActionLabels() {
   const runOne = $("runOpenVikingQa");
   if (runOne) {
     runOne.disabled = disabled || selectedInScope === 0;
-    runOne.textContent = submitting ? submitText : (launchPending ? launchText : "跑选中题");
+    runOne.textContent = submitting
+      ? submitText
+      : launchPending
+        ? launchText
+        : busyTask
+          ? busyTaskText
+          : "跑选中题";
     runOne.title = submitting
       ? submitTitle
       : clickLocked
@@ -349,7 +454,7 @@ function refreshLocomoQaActionLabels() {
       : loading
         ? "题目范围切换中，请稍候"
         : busyTask
-          ? "已有问答任务运行中，先等当前任务结束"
+          ? busyTaskTitle
           : launchGate.blocking
             ? launchBlockedTitle
           : selectedInScope === 0
@@ -361,7 +466,13 @@ function refreshLocomoQaActionLabels() {
   const runFull = $("runOpenVikingFullQa");
   if (runFull) {
     runFull.disabled = disabled;
-    runFull.textContent = submitting ? submitText : (launchPending ? launchText : (scope.isAll ? "跑全部 LoCoMo" : "跑当前 conv 全部题"));
+    runFull.textContent = submitting
+      ? submitText
+      : launchPending
+        ? launchText
+        : busyTask
+          ? busyTaskText
+          : (scope.isAll ? "跑全部 LoCoMo" : "跑当前 conv 全部题");
     runFull.title = submitting
       ? submitTitle
       : clickLocked
@@ -371,7 +482,7 @@ function refreshLocomoQaActionLabels() {
       : loading
         ? "题目范围切换中，请稍候"
         : busyTask
-          ? "已有问答任务运行中，先等当前任务结束"
+          ? busyTaskTitle
           : launchGate.blocking
             ? launchBlockedTitle
           : (scope.isAll
@@ -1775,11 +1886,11 @@ async function testSystemModel(role) {
     body: JSON.stringify(payload),
   });
   if (data.ok) {
-    setModelPreflightStatus(role, `OK · ${data.model || cfg.model} 可用`, "ok");
+    setModelPreflightStatus(role, `通过 · ${data.model || cfg.model} 可用`, "ok");
     toast(`${label} 模型可用`);
   } else {
     const detail = [data.status, data.error].filter(Boolean).join(" · ");
-    setModelPreflightStatus(role, `FAIL · ${detail || "模型不可用"}`, "bad");
+    setModelPreflightStatus(role, `失败 · ${detail || "模型不可用"}`, "bad");
     toast(`${label} 模型预检失败`);
   }
   return data;
@@ -1878,17 +1989,6 @@ function updateBackendUi() {
   const importKind = importTaskKindForBackend(backend);
   const echoFastImport = currentEchoMemoryImportMode() === "fast";
   renderGlobalBackendBadge();
-  if ($("commitImport")) {
-    $("commitImport").textContent = "导入所选对话";
-    $("commitImport").title = `把“导入对话”选择的范围写入 ${backendLabel}`;
-  }
-  if ($("importSmokeTest")) {
-    $("importSmokeTest").textContent = "单 session 测试";
-    $("importSmokeTest").title = importSmokeTestReady()
-      ? `用当前 conv 的 1 个 session 验证 ${backendLabel} 注入链路`
-      : "请先选择一个具体 conv";
-    $("importSmokeTest").disabled = !importSmokeTestReady();
-  }
   if ($("importWorkspaceLabel")) {
     $("importWorkspaceLabel").textContent = `${shortLabel} workspace`;
   }
@@ -1909,13 +2009,13 @@ function updateBackendUi() {
   if ($("backendConnectionSummary")) {
     $("backendConnectionSummary").textContent = backend === "echomemory"
       ? "EchoMemory 本地 SDK 与抽取模型"
-      : "OpenViking 服务连接与抽取模型";
+      : "OpenViking 服务状态与抽取模型";
   }
   if ($("probeOpenViking")) {
     $("probeOpenViking").textContent = backend === "echomemory" ? "检查 EchoMemory SDK" : "检测 OpenViking 服务";
     $("probeOpenViking").title = backend === "echomemory"
       ? "检查 EchoMemory adapter 是否注册，本地 SDK 由导入任务实际调用"
-      : "检测 OpenViking 服务连接";
+      : "检测 OpenViking 服务状态";
   }
   if ($("runOpenVikingQa")) {
     $("runOpenVikingQa").title = `${backendLabel} 只运行已勾选题目`;
@@ -1933,12 +2033,13 @@ function updateBackendUi() {
     if ($("ovApiKeyLabel")) {
       $("ovApiKeyLabel").textContent = backend === "echomemory"
         ? "EchoMemory 服务 Key（通常可留空）"
-        : "OpenViking 服务 API Key（本地可留空）";
+        : "OpenViking 服务 API 密钥（本地可留空）";
     }
     $("ovApiKey").placeholder = backend === "echomemory"
       ? "EchoMemory 后端通常读取本地环境变量，可留空"
       : "OpenViking root/api key，本地 dev 模式可留空";
   }
+  refreshImportActionLabels();
   renderImportReadinessPanel();
   renderQaReadinessPanel();
   renderJudgeReadinessPanel();
@@ -1983,7 +2084,7 @@ function backendStorageLayout(backend = "openviking") {
   if (normalized === "echomemory") {
     return {
       layout: "workspace/<account>/<account>",
-      writeSurface: "EchoMemory local SDK",
+      writeSurface: "EchoMemory 本地 SDK",
       folders: "sessions / users / agents",
       note: "EchoMemory fork 或图记忆模块应把该目录作为当前账户的干净记忆空间。",
     };
@@ -2307,7 +2408,7 @@ function renderHandoffAudit(data, targetId = "handoffAuditPanel") {
       <article class="handoff-audit-card muted">
         <span>正在审计</span>
         <strong>检查当前交付入口</strong>
-        <p>不会读取或返回真实 API Key。</p>
+        <p>不会读取或返回真实 API 密钥。</p>
       </article>
     `;
     return;
@@ -2349,7 +2450,7 @@ function renderDeliveryBoundaryGate(data, targetId = "deliveryBoundaryPanel") {
       <article class="handoff-audit-card muted">
         <span>等待检查</span>
         <strong>只读交付边界</strong>
-        <p>不会导入数据、调用模型、读取 API Key 或修改 workspace。</p>
+        <p>不会导入数据、调用模型、读取 API 密钥或修改 workspace。</p>
       </article>
     `;
     return;
@@ -2377,12 +2478,12 @@ function renderDeliveryBoundaryGate(data, targetId = "deliveryBoundaryPanel") {
       </div>
       <strong>${escapeHtml(data.scope || "OpenViking + EchoMemory")}</strong>
       <p>${escapeHtml(data.checked_at || "")} · Agent ${escapeHtml(data.agent_label || "MemoryBench Agent")}</p>
-      ${data.markdown ? copyButtonHtml(data.markdown, "复制边界 Markdown") : ""}
+      ${data.markdown ? copyButtonHtml(data.markdown, "复制边界 Markdown 文本") : ""}
     </article>
     <article class="handoff-audit-card ${preflightTone(data.status)}">
       <span>后端范围</span>
       <strong>${escapeHtml(registered.join(", ") || "-")}</strong>
-      <p>expected: ${escapeHtml(expected.join(", ") || "-")}</p>
+      <p>期望后端：${escapeHtml(expected.join(", ") || "-")}</p>
     </article>
     <article class="handoff-audit-card ${sidebar.length === 9 ? "ok" : "warn"}">
       <span>侧边栏</span>
@@ -2424,7 +2525,7 @@ function renderHandoffDashboard(data, targetId = "handoffDashboardPanel") {
       <article class="handoff-dashboard-card muted">
         <span>等待检查</span>
         <strong>服务启动后自动读取</strong>
-        <p>只返回状态、路径、布尔值和占位符命令，不返回 API Key。</p>
+        <p>只返回状态、路径、布尔值和占位符命令，不返回 API 密钥。</p>
       </article>
     `;
     return;
@@ -2588,7 +2689,7 @@ async function runHandoffDashboard(targetIds = ["handoffDashboardPanel", "handof
       warnings: [],
       next_actions: [error.message || "检查服务是否启动"],
       quick_start: [],
-      do_not_share: [".env.local", "judge.conf", "runs/", "workspaces", "真实 API Key"],
+      do_not_share: [".env.local", "judge.conf", "runs/", "workspaces", "真实 API 密钥"],
       markdown: `# LoCoMo Memory Eval Handoff Dashboard\n\n- Status: fail\n- Error: ${error.message || "unknown"}`,
     };
     targetIds.forEach((id) => renderHandoffDashboard(data, id));
@@ -2692,9 +2793,9 @@ function renderGithubLaunchKit(data, targetId = "githubLaunchKitReadmePanel") {
       <ul class="github-launch-list">${safety.map((item) => `<li><span>${escapeHtml(item)}</span></li>`).join("")}</ul>
     </article>
     <article class="github-launch-card ${demo.report_html ? "ok" : "warn"}">
-      <span>Demo 报告</span>
-      <strong>${demo.report_html ? "检测到最近 HTML 报告" : "还没有可用 Demo 报告"}</strong>
-      <p><code>${escapeHtml(demo.report_html || "先跑 1 个 conversation 小样本核验，再导出 report.html")}</code></p>
+      <span>演示报告</span>
+      <strong>${demo.report_html ? "检测到最近 HTML 报告" : "还没有可用演示报告"}</strong>
+      <p><code>${escapeHtml(demo.report_html || "先跑 1 组小样本对话核验，再导出 HTML 报告文件（report.html）")}</code></p>
     </article>
   `;
   bindCopyButtons(`#${targetId}`);
@@ -2720,7 +2821,7 @@ async function runGithubLaunchKit(targetIds = ["githubLaunchKitReadmePanel"], si
       cards: [{title: "请求失败", status: "fail", detail: error.message || "检查服务是否启动"}],
       quickstart: {commands: [], sample: "-", one_question: "-"},
       issue_templates: [],
-      safety: [".env.local、judge.conf、runs、workspace 和真实 API Key 不要外发。"],
+      safety: [".env.local、judge.conf、runs、workspace 和真实 API 密钥 不要外发。"],
       echo_mem_integration: [],
       demo_report: {},
       architecture_mermaid: "",
@@ -2740,7 +2841,7 @@ function renderReadiness(data, targetId = "readinessPanel") {
       <article class="readiness-card muted">
         <span>等待检查</span>
         <strong>读取当前状态后显示</strong>
-        <p>只返回状态、路径和布尔值，不返回 API Key。</p>
+        <p>只返回状态、路径和布尔值，不返回 API 密钥。</p>
       </article>
     `;
     return;
@@ -2847,7 +2948,7 @@ function renderAcceptanceMatrix(data, targetId = "acceptanceMatrixPanel") {
       <article class="acceptance-card muted">
         <span>等待检查</span>
         <strong>读取当前交付验收状态</strong>
-        <p>只返回状态、路径和布尔值，不返回 API Key。</p>
+        <p>只返回状态、路径和布尔值，不返回 API 密钥。</p>
       </article>
     `;
     return;
@@ -2883,7 +2984,7 @@ function renderAcceptanceMatrix(data, targetId = "acceptanceMatrixPanel") {
     <article class="acceptance-card next ${nextActions.length ? preflightTone(data.status) : "ok"}">
       <span>下一步</span>
       <strong>${nextActions.length ? "先处理这些项" : "可以交给外部测试者做小样本核验"}</strong>
-      <ul>${(nextActions.length ? nextActions : ["进入 LoCoMo评测，先跑 conv-30 少量 QA 并判分当前结果，再扩展到全量。"]).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      <ul>${(nextActions.length ? nextActions : ["进入 LoCoMo 评测，先跑 conv-30 少量 QA 并判分当前结果，再扩展到全量。"]).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
     </article>
     ${items.map((item) => {
       const evidence = acceptanceEvidenceText(item.evidence);
@@ -2999,7 +3100,7 @@ function renderSmokePlan(data, targetId = "smokePlanPanel") {
       <article class="smoke-plan-card muted">
         <span>等待生成</span>
         <strong>只读测试计划</strong>
-        <p>不会导入数据、调用模型、执行判分或返回 API Key。</p>
+        <p>不会导入数据、调用模型、执行判分或返回 API 密钥。</p>
       </article>
     `;
     return;
@@ -3214,7 +3315,7 @@ function renderAdapterDoctor(data, targetId = "adapterDoctorPanel") {
       <article class="handoff-audit-card muted">
         <span>等待自检</span>
         <strong>只检查后端边界和契约</strong>
-        <p>不会导入数据、检索记忆或返回 API Key。</p>
+        <p>不会导入数据、检索记忆或返回 API 密钥。</p>
       </article>
     `;
     return;
@@ -3241,14 +3342,14 @@ function renderAdapterDoctor(data, targetId = "adapterDoctorPanel") {
         <em>${escapeHtml(preflightLabel(data.status))}</em>
       </div>
       <strong>${escapeHtml(data.status === "ok" ? "只注册 OpenViking + EchoMemory" : "后端边界需要确认")}</strong>
-      <p>registered: ${escapeHtml(registered.join(", ") || "-")} · expected: ${escapeHtml(expected.join(", ") || "-")}</p>
-      ${data.markdown ? copyButtonHtml(data.markdown, "复制自检 Markdown") : ""}
+      <p>已注册：${escapeHtml(registered.join(", ") || "-")} · 期望：${escapeHtml(expected.join(", ") || "-")}</p>
+      ${data.markdown ? copyButtonHtml(data.markdown, "复制自检 Markdown 文本") : ""}
     </article>
     ${missing.length || unexpected.length ? `
       <article class="handoff-audit-card bad">
         <span>边界异常</span>
         <strong>缺失或多余后端</strong>
-        <p>missing: ${escapeHtml(missing.join(", ") || "none")} · unexpected: ${escapeHtml(unexpected.join(", ") || "none")}</p>
+        <p>缺失：${escapeHtml(missing.join(", ") || "无")} · 多余：${escapeHtml(unexpected.join(", ") || "无")}</p>
       </article>
     ` : ""}
     ${backends.map((backend) => `
@@ -3258,8 +3359,8 @@ function renderAdapterDoctor(data, targetId = "adapterDoctorPanel") {
           <em>${escapeHtml(preflightLabel(backend.contract_status))}</em>
         </div>
         <strong>${escapeHtml(backend.name || backend.id || "-")} · ${escapeHtml(backend.status || "-")}</strong>
-        <p>capabilities ${escapeHtml((backend.capabilities || []).length)} · missing required: ${escapeHtml((backend.missing_required || []).join(", ") || "none")}</p>
-        ${(backend.missing_recommended || []).length ? `<p>missing recommended: ${escapeHtml((backend.missing_recommended || []).join(", "))}</p>` : ""}
+        <p>能力 ${escapeHtml((backend.capabilities || []).length)} · 缺失必需项：${escapeHtml((backend.missing_required || []).join(", ") || "无")}</p>
+        ${(backend.missing_recommended || []).length ? `<p>缺失建议项：${escapeHtml((backend.missing_recommended || []).join(", "))}</p>` : ""}
       </article>
     `).join("")}
   `;
@@ -3296,8 +3397,8 @@ function renderAgentAlignment(data, targetId = "agentAlignmentPanel") {
     target.innerHTML = `
       <article class="handoff-audit-card muted">
         <span>等待检查</span>
-        <strong>读取最近 LoCoMo QA run</strong>
-        <p>不会调用模型、不会读取 API Key，只检查已有 manifest、summary 和报告证据。</p>
+        <strong>读取最近 LoCoMo QA 任务</strong>
+        <p>不会调用模型、不会读取 API 密钥，只检查已有任务清单、摘要和报告证据。</p>
       </article>
     `;
     return;
@@ -3307,7 +3408,7 @@ function renderAgentAlignment(data, targetId = "agentAlignmentPanel") {
       <article class="handoff-audit-card muted">
         <span>正在检查</span>
         <strong>读取 MemoryBench Agent 对齐证据</strong>
-        <p>检查 Prompt、Top-K、tool loop、tool set、额外兜底和同判分模型对比。</p>
+        <p>检查提示词、召回条数、工具循环、工具集合、额外兜底和同判分模型对比。</p>
       </article>
     `;
     return;
@@ -3320,7 +3421,7 @@ function renderAgentAlignment(data, targetId = "agentAlignmentPanel") {
   const sameJudge = data.same_judge_evidence || {};
   const nextActions = Array.isArray(data.next_actions) ? data.next_actions : [];
   const sameJudgeText = sameJudge.status === "ok"
-    ? `aligned ${percent(sameJudge.aligned?.accuracy)} / native ${percent(sameJudge.native?.accuracy)} / delta ${sameJudge.delta_pp ?? "-"}pp`
+    ? `对齐结果 ${percent(sameJudge.aligned?.accuracy)} / 原生结果 ${percent(sameJudge.native?.accuracy)} / 差值 ${sameJudge.delta_pp ?? "-"}pp`
     : (sameJudge.detail || "没有同判分模型对比证据");
   target.innerHTML = `
     <article class="handoff-audit-card summary ${preflightTone(data.status)}">
@@ -3328,10 +3429,10 @@ function renderAgentAlignment(data, targetId = "agentAlignmentPanel") {
         <span>Agent 可比性门禁</span>
         <em>${escapeHtml(preflightLabel(data.status))}</em>
       </div>
-      <strong>${escapeHtml(alignment.title || "等待可比 LoCoMo run")}</strong>
+      <strong>${escapeHtml(alignment.title || "等待可比 LoCoMo 结果")}</strong>
       <p>${escapeHtml(alignment.detail || "需要先生成 LoCoMo QA 结果。")}</p>
       <p>账户 ${escapeHtml(data.account || currentAccount())} · 后端 ${escapeHtml(memoryBackendLabel(data.backend || currentMemoryBackend()))} · 来源 ${escapeHtml(data.backend_source || "当前页面")}</p>
-      ${data.markdown ? copyButtonHtml(data.markdown, "复制 Agent 对齐 Markdown") : ""}
+      ${data.markdown ? copyButtonHtml(data.markdown, "复制 Agent 对齐 Markdown 文本") : ""}
     </article>
     <article class="handoff-audit-card ${preflightTone(alignment.status)}">
       <span>最新 ${escapeHtml(memoryBackendLabel(data.backend || currentMemoryBackend()))} LoCoMo QA</span>
@@ -3342,12 +3443,12 @@ function renderAgentAlignment(data, targetId = "agentAlignmentPanel") {
     <article class="handoff-audit-card ${sameJudge.status === "ok" ? "ok" : "warn"}">
       <span>同判分模型对比证据</span>
       <strong>${escapeHtml(sameJudgeText)}</strong>
-      <p>${escapeHtml(sameJudge.run_dir || "用于确认 MemoryBench Agent aligned run 与参考链路是否可比。")}</p>
+      <p>${escapeHtml(sameJudge.run_dir || "用于确认 MemoryBench Agent 对齐结果与参考链路是否可比。")}</p>
     </article>
     <article class="handoff-audit-card">
       <span>默认可比参数</span>
-      <strong>Top-K ${escapeHtml(defaults.initial_search_limit ?? "-")} · tool search ${escapeHtml(defaults.tool_search_limit ?? "-")} · max iter ${escapeHtml(defaults.max_iterations ?? "-")}</strong>
-      <p>score ${escapeHtml(defaults.initial_score_threshold ?? "-")} / ${escapeHtml(defaults.tool_min_score ?? "-")} · tool set ${escapeHtml(defaults.tool_set || "-")}</p>
+      <strong>${RETRIEVAL_COUNT_LABEL} ${escapeHtml(defaults.initial_search_limit ?? "-")} · ${TOOL_SEARCH_LABEL} ${escapeHtml(defaults.tool_search_limit ?? "-")} · ${MAX_ITERATION_LABEL} ${escapeHtml(defaults.max_iterations ?? "-")}</strong>
+      <p>初始阈值 ${escapeHtml(defaults.initial_score_threshold ?? "-")} / 工具阈值 ${escapeHtml(defaults.tool_min_score ?? "-")} · 工具集合 ${escapeHtml(defaults.tool_set || "-")}</p>
     </article>
     ${checks.map((check) => `
       <article class="handoff-audit-card ${preflightTone(check.status)}">
@@ -3404,7 +3505,7 @@ function renderAccountIsolationGate(data, targetId = "accountIsolationGatePanel"
       <article class="handoff-audit-card muted">
         <span>等待检查</span>
         <strong>读取当前账户 workspace</strong>
-        <p>不会调用模型、不会读取 API Key，只检查当前账户目录和共享关系。</p>
+        <p>不会调用模型、不会读取 API 密钥，只检查当前账户目录和共享关系。</p>
       </article>
     `;
     return;
@@ -3440,7 +3541,7 @@ function renderAccountIsolationGate(data, targetId = "accountIsolationGatePanel"
       </div>
       <strong>${escapeHtml(current.id || data.active_account || currentAccount())} · ${escapeHtml(memoryBackendLabel(current.backend || currentMemoryBackend()))}</strong>
       <p>${escapeHtml(statusDetail)}</p>
-      ${data.markdown ? copyButtonHtml(data.markdown, "复制账户隔离 Markdown") : ""}
+      ${data.markdown ? copyButtonHtml(data.markdown, "复制账户隔离 Markdown 文本") : ""}
     </article>
     <article class="handoff-audit-card ${escapeHtml(badge.tone || preflightTone(data.status))}">
       <span>当前账户状态</span>
@@ -3521,7 +3622,7 @@ function renderSetupPack(data, targetId = "setupPackPanel") {
       <article class="setup-pack-card muted">
         <span>等待生成</span>
         <strong>只生成占位符</strong>
-        <p>当前交付边界只包含 OpenViking 和 EchoMemory，不会读取或返回真实 API Key。</p>
+        <p>当前交付边界只包含 OpenViking 和 EchoMemory，不会读取或返回真实 API 密钥。</p>
       </article>
     `;
     return;
@@ -3591,7 +3692,7 @@ function renderSetupPack(data, targetId = "setupPackPanel") {
       <span>下一步</span>
       <strong>${nextActions.length ? "先处理门禁提示" : "可以开始测试"}</strong>
       <ul class="setup-pack-list">
-        ${(nextActions.length ? nextActions : ["进入 LoCoMo评测，校验数据集后导入一个 conversation 做小样本核验。"]).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+        ${(nextActions.length ? nextActions : ["进入 LoCoMo 评测，校验数据集后导入一个 conversation 做小样本核验。"]).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
       </ul>
     </article>
   `;
@@ -3617,7 +3718,7 @@ async function runSetupPack(targetIds = ["setupPackPanel", "setupPackReadmePanel
       env_template: "",
       commands: [],
       ui_steps: [],
-      do_not_share: [".env.local", "runs/", "workspaces", "真实 API Key"],
+      do_not_share: [".env.local", "runs/", "workspaces", "真实 API 密钥"],
       summary: `LoCoMo Memory Eval Connection Guide\n- Status: fail\n- Error: ${error.message || "unknown"}`,
     };
     targetIds.forEach((id) => renderSetupPack(data, id));
@@ -3755,7 +3856,7 @@ function renderEchoMemContract(data, targetId = "echomemContractPanel") {
       <article class="handoff-audit-card muted">
         <span>正在检查</span>
         <strong>读取 EchoMemory 接入契约</strong>
-        <p>只读检查，不会写 workspace，也不会返回 API Key。</p>
+        <p>只读检查，不会写 workspace，也不会返回 API 密钥。</p>
       </article>
     `;
     return;
@@ -3869,7 +3970,7 @@ function renderSystemPreflight(data = state.systemPreflight) {
       <article class="preflight-card muted wide">
         <span>等待检查</span>
         <strong>读取当前配置后显示</strong>
-        <p>预检不会返回 API Key，只显示是否已配置。</p>
+        <p>预检不会返回 API 密钥，只显示是否已配置。</p>
       </article>
     `;
     return;
@@ -3884,7 +3985,7 @@ function renderSystemPreflight(data = state.systemPreflight) {
     ? `${dataset.samples ?? 0} conv / ${dataset.questions ?? 0} QA`
     : (dataset.message || dataset.format || "数据集未就绪");
   const modelLabel = [
-    models.answer?.model ? `Answer ${models.answer.model}` : "",
+    models.answer?.model ? `回答 ${models.answer.model}` : "",
     models.judge?.model ? `判分 ${models.judge.model}` : "",
   ].filter(Boolean).join(" · ") || "模型未配置";
   target.innerHTML = `
@@ -3915,11 +4016,11 @@ function renderSystemPreflight(data = state.systemPreflight) {
       dataset.path || "",
     ])}
     ${preflightCard("模型", models.status, modelLabel, [
-      models.answer?.base_url_set ? "Answer 地址已配置" : "Answer 地址未配置",
+      models.answer?.base_url_set ? "回答模型地址已配置" : "回答模型地址未配置",
       models.judge?.base_url_set ? "判分地址已配置" : "判分地址未配置",
-      models.echomemory?.embedding_token_set ? "EchoMemory embedding token 已配置" : "EchoMemory embedding token 未检测到",
-      models.echomemory?.chat_token_set ? "EchoMemory chat token 已配置" : "EchoMemory chat token 未检测到",
-      (models.answer?.token_set || models.judge?.token_set || models.echomemory?.embedding_token_set || models.echomemory?.chat_token_set) ? "至少一个 token 来源已设置" : "未检测到环境 token",
+      models.echomemory?.embedding_token_set ? "EchoMemory embedding 密钥已配置" : "EchoMemory embedding 密钥未检测到",
+      models.echomemory?.chat_token_set ? "EchoMemory chat 密钥已配置" : "EchoMemory chat 密钥未检测到",
+      (models.answer?.token_set || models.judge?.token_set || models.echomemory?.embedding_token_set || models.echomemory?.chat_token_set) ? "至少一个密钥来源已设置" : "未检测到环境密钥",
     ])}
     ${preflightCard("运行时", runtime.status, runtime.url || runtime.root || runtime.label || "-", [
       runtime.kind || "",
@@ -3949,7 +4050,7 @@ function renderEchoMemorySourceCard(data = state.echomemorySourceStatus) {
       <article class="handoff-audit-card muted">
         <span>等待读取</span>
         <strong>检查 EchoMemory 本地源码</strong>
-        <p>不读取 API Key，不调用模型。</p>
+        <p>不读取 API 密钥，不调用模型。</p>
       </article>
     `;
     return;
@@ -4081,7 +4182,7 @@ function renderBackendLocalConfig(backend) {
       <article>
         <span>${escapeHtml(item.kind || "配置")}</span>
         <code>${escapeHtml(item.path || "-")}</code>
-        <ul>${extensionPlugins || yamlSummary || "<li><strong>summary</strong><span>已检测到配置文件</span></li>"}</ul>
+        <ul>${extensionPlugins || yamlSummary || "<li><strong>配置摘要</strong><span>已检测到配置文件</span></li>"}</ul>
       </article>
     `;
   }).join("");
@@ -4282,7 +4383,7 @@ const GENERIC_BENCHMARKS = {
     logBox: "chenmoLogBox",
     defaultDatasetId: "chenmo",
     emptyPathHint: "请填写 ChenMo Markdown 场景文件。",
-    metricNote: "OpenViking 小样本核验使用 MemoryBench memory-QA；EchoMemory 正式结果需要基于 version_0.0.6 重新运行。",
+    metricNote: "OpenViking 小样本核验使用 MemoryBench 记忆问答；EchoMemory 正式结果需要基于 version_0.0.6 重新运行。",
     officialEvalAfter: false,
     requiresOfficialRunner: false,
   },
@@ -4301,7 +4402,7 @@ const GENERIC_BENCHMARKS = {
     logBox: "evolvingEventsLogBox",
     defaultDatasetId: "evolvingevents-sample",
     emptyPathHint: "请填写 EvolvingEvents JSON / JSONL，或点击“使用示例数据”。",
-    metricNote: "输出 MemoryBench memory-QA 分数：写入事件上下文、OpenViking 检索、答案模型、判分和报告；官方 EvolvingEvents 指标单独标注，不冒充 SOTA 可比分数。",
+    metricNote: "输出 MemoryBench 记忆问答分数：写入事件上下文、OpenViking 检索、答案模型、判分和报告；官方 EvolvingEvents 指标单独标注，不冒充 SOTA 可比分数。",
     officialEvalAfter: false,
     requiresOfficialRunner: false,
   },
@@ -4321,7 +4422,7 @@ const GENERIC_BENCHMARKS = {
     defaultDatasetId: "hotpotqa-sample",
     preferredDatasetIds: ["hotpotqa-dev-distractor", "hotpotqa-sample"],
     emptyPathHint: "请填写 HotpotQA JSON / JSONL。",
-    metricNote: "运行后自动输出 HotpotQA answer EM/F1；supporting-fact/joint F1 需要后续生成支持句预测后才可对比官方完整榜。",
+    metricNote: "运行后自动输出 HotpotQA 答案 EM/F1；支持事实 / 联合 F1 指标需要后续生成支持句预测后才可对比官方完整榜。",
     officialEvalAfter: true,
     requiresOfficialRunner: false,
   },
@@ -4340,7 +4441,7 @@ const GENERIC_BENCHMARKS = {
     logBox: "proAgentBenchLogBox",
     defaultDatasetId: "proagentbench-sample",
     emptyPathHint: "请填写 proAgentBench JSON / JSONL。",
-    metricNote: "输出 MemoryBench task-memory QA 分数：任务上下文写入、OpenViking 检索、答案模型、判分和报告；proAgentBench 原始主动代理指标需要官方 runner 单独标注。",
+    metricNote: "输出 MemoryBench 任务记忆问答分数：任务上下文写入、OpenViking 检索、答案模型、判分和报告；proAgentBench 原始主动代理指标需要官方 runner 单独标注。",
     officialEvalAfter: false,
     requiresOfficialRunner: false,
   },
@@ -4359,14 +4460,14 @@ const GENERIC_BENCHMARKS = {
     logBox: "tauBenchLogBox",
     defaultDatasetId: "tau2bench-sample",
     emptyPathHint: "请填写 Tau2-bench JSON / JSONL。",
-    metricNote: "输出 MemoryBench tool-task memory-QA 分数：任务/知识上下文写入、OpenViking 检索、答案模型、判分和报告；Tau2-bench Pass^k/reward 仍以官方工具环境单独标注。",
+    metricNote: "输出 MemoryBench 工具任务记忆问答分数：任务/知识上下文写入、OpenViking 检索、答案模型、判分和报告；Tau2-bench Pass^k/reward 仍以官方工具环境单独标注。",
     officialEvalAfter: false,
     requiresOfficialRunner: false,
   },
 };
 
 function benchmarkMetricNote(config) {
-  return config.metricNote || "运行后输出 MemoryBench memory-QA + LLM + 判分准确率；官方原 benchmark 指标在报告中单独标注。";
+  return config.metricNote || "运行后输出 MemoryBench 记忆问答 + 大模型 + 判分准确率；官方原 benchmark 指标在报告中单独标注。";
 }
 
 function datasetRunnerNote(format, note = "", fallback = "") {
@@ -4406,7 +4507,7 @@ function renderGenericGateNotice(key, gate, data = null) {
   if (!target || gate.ok) return;
   target.innerHTML = `
     <p class="dataset-next-step bad-text"><strong>当前不能作为正式分数：</strong>${escapeHtml(gate.reason)}</p>
-    <p class="dataset-next-step">这页会固定停留在 ${escapeHtml(config.label)}；仍可启动小样本核验，完整数据路径会走正式 MemoryBench memory-QA 链路。</p>
+    <p class="dataset-next-step">这页会固定停留在 ${escapeHtml(config.label)}；仍可启动小样本核验，完整数据路径会走正式 MemoryBench 记忆问答链路。</p>
     <div class="panel-actions">
       ${benchmarkPlanLinkHtml()}
       <button class="secondary" type="button" data-view-jump="runsView">查看任务/报告</button>
@@ -4422,10 +4523,10 @@ function genericBenchmarkRunGate(key, path = genericBenchmarkPath(key), data = n
   const record = (state.datasetRegistry || []).find((item) => item.path === path || item.resolved_path === path) || {};
   if (!path) return {ok: false, reason: config.emptyPathHint};
   if (isSampleDatasetPath(path, record)) {
-    return {ok: false, reason: `${config.label} 当前选择的是 bundled sample，只能做小样本核验，不能作为正式 benchmark 分数。请填完整数据路径。`};
+    return {ok: false, reason: `${config.label} 当前选择的是内置 sample，只能做小样本核验，不能作为正式 benchmark 分数。请填完整数据路径。`};
   }
   if (config.requiresOfficialRunner) {
-    return {ok: false, reason: `${config.label} 还没有接入官方完整 runner/指标；不能作为官方原榜分数，避免把 MemoryBench memory-QA 当 SOTA 可比分数。`};
+    return {ok: false, reason: `${config.label} 还没有接入官方完整 runner/指标；不能作为官方原榜分数，避免把 MemoryBench 记忆问答当 SOTA 可比分数。`};
   }
   if (data && (!data.questions || data.questions === 0)) {
     return {ok: false, reason: `${config.label} 没有识别到题目，不能启动正式评测。`};
@@ -4662,9 +4763,9 @@ function locomoFlowMainView(view = "") {
 
 const LOCOMO_FLOW_CARDS = [
   {key: "openvikingView", view: "openvikingView", title: "记忆导入", detail: "校验数据集、导入 conv、检查完整性"},
-  {key: "evalView", view: "evalView", title: "问答测试", detail: "选择 QA、查看 relevant memory"},
+  {key: "evalView", view: "evalView", title: "问答测试", detail: "选择问答、查看相关记忆"},
   {key: "judgeView", view: "judgeView", title: "判分", detail: "检查结果文件并判分当前结果"},
-  {key: "runsView", view: "runsView", title: "导出报告", detail: "选择 run、生成并打开 HTML"},
+  {key: "runsView", view: "runsView", title: "导出报告", detail: "选择任务并生成 HTML 报告"},
 ];
 
 function benchmarkFlowContext(viewId = "") {
@@ -4688,7 +4789,7 @@ function benchmarkFlowCards(context = {}) {
     {key: "import", view: targetView, title: "记忆导入", detail: `${label}：选择数据、配置后端、准备写入记忆`},
     {key: "qa", view: targetView, title: "问答测试", detail: "加载题目、勾选样本、启动真实模型链路"},
     {key: "judge", view: targetView, title: "判分", detail: "自动判分 / 官方指标摘要随任务生成"},
-    {key: "report", view: "runsView", title: "导出报告", detail: "进入结果中心查看 run、summary 和报告"},
+    {key: "report", view: "runsView", title: "导出报告", detail: "进入结果中心查看任务、摘要和报告"},
   ];
 }
 
@@ -4871,7 +4972,7 @@ function flowArtifactRows(data = {}) {
     ["数据集", dataset.path],
     ["工作空间", workspace.storage_root || workspace.workspace],
     ["记忆根目录", imported.memory_root || imported.account_path],
-    ["QA CSV", latestQa.output_file],
+    ["QA 结果 CSV", latestQa.output_file],
     ["报告", latestReport.report_html],
   ].filter(([, value]) => value);
 }
@@ -4974,7 +5075,7 @@ function renderLocomoFlowStatusPanel(data) {
           ${data.markdown ? copyButtonHtml(data.markdown, "复制状态") : ""}
         </div>
       </div>
-      <p>${escapeHtml(data.checked_at || "")} · 状态来自后端文件、任务和报告产物；不会读取或返回 API Key。</p>
+      <p>${escapeHtml(data.checked_at || "")} · 状态来自后端文件、任务和报告产物；不会读取或返回 API 密钥。</p>
       ${flowStageRail(stages)}
       ${artifactRows.length ? `
         <div class="flow-artifact-panel">
@@ -5108,11 +5209,11 @@ function renderLocomoWorkbenchTrack() {
   const importStatus = importComplete ? "已完成" : (importRan ? "需确认" : (datasetReady ? "可导入" : "待校验"));
   const importDetail = [
     datasetReady ? `数据集 ${dataset.samples ?? "-"} conv / ${dataset.questions ?? "-"} QA` : "先校验 LoCoMo JSON",
-    `${backendLabel} · account ${currentAccount()}`,
-    importComplete ? "完整性 complete" : (importRan ? "导入已运行，请检查完整性" : "选择 conv 或全量导入"),
+    `${backendLabel} · 账户 ${currentAccount()}`,
+    importComplete ? "完整性已完成" : (importRan ? "导入已运行，请检查完整性" : "选择 conv 或全量导入"),
   ].join(" · ");
   const importMetric = importComplete
-    ? `summary ${imported.complete_count ?? "-"} / ${imported.summary_count ?? "-"} · memory ${imported.memory_files ?? "-"}`
+    ? `摘要 ${imported.complete_count ?? "-"} / ${imported.summary_count ?? "-"} · 记忆文件 ${imported.memory_files ?? "-"}`
     : (lastImport.sample_id || lastImport.sample || (datasetReady ? "选择 conv 或全量" : "LoCoMo JSON"));
   const cards = [
     {
@@ -5140,7 +5241,7 @@ function renderLocomoWorkbenchTrack() {
       title: "判分",
       status: judgeReady ? "已判分" : (outputCsv ? "待判分" : "等待 QA"),
       detail: judgeReady ? `准确率 ${percent(summary.accuracy)}` : "QA 完成后运行判分；未判分不会显示为 0%。",
-      metric: `rows ${summary.rows ?? "-"} · pending ${pending}`,
+      metric: `结果行 ${summary.rows ?? "-"} · 待判 ${pending}`,
       tone: judgeReady ? "ok" : (outputCsv ? "warn" : "todo"),
       view: "judgeView",
       action: judgeReady ? "查看判分" : "判分当前结果",
@@ -5149,8 +5250,8 @@ function renderLocomoWorkbenchTrack() {
       step: "4",
       title: "查看报告",
       status: reportPath ? "可打开" : (judgeReady ? "待生成" : "等待判分"),
-      detail: reportPath || "生成 HTML report，展示配置、token、evidence、context 和错误归因。",
-      metric: reportPath ? "report.html" : "HTML report + evidence trace",
+      detail: reportPath || "生成 HTML 报告，展示配置、Token 用量、证据、上下文和错误归因。",
+      metric: reportPath ? "HTML 报告文件" : "HTML 报告 + 证据追踪",
       tone: reportPath ? "ok" : (judgeReady ? "warn" : "todo"),
       view: "runsView",
       action: reportPath ? "看报告" : "生成报告",
@@ -5173,7 +5274,7 @@ function renderLocomoWorkbenchTrack() {
       </article>
       <article class="${escapeHtml(nextCard.tone || "todo")}">
         <span>下一步</span>
-        <strong>${escapeHtml(nextCard.title || "LoCoMo评测")}</strong>
+        <strong>${escapeHtml(nextCard.title || "LoCoMo 评测")}</strong>
       </article>
       <article>
         <span>Agent 边界</span>
@@ -5224,7 +5325,7 @@ function renderLocomoOverview() {
       <div class="overview-metrics">
         ${locomoOverviewMetric("Conv", dataset?.samples ?? "-")}
         ${locomoOverviewMetric("QA", dataset?.questions ?? "-")}
-        ${locomoOverviewMetric("完整性", lastImport.integrity || (imported.complete_count ? "complete" : "-"), importTone)}
+        ${locomoOverviewMetric("完整性", lastImport.integrity === "complete" ? "完整" : (imported.complete_count ? "完整" : "-"), importTone)}
       </div>
       <p>${escapeHtml(lastImport.workspace || dataset?.path || dataset?.resolved_path || "在记忆导入块填写 LoCoMo JSON，校验后选择 conv 并归档。")}</p>
     </article>
@@ -5235,10 +5336,10 @@ function renderLocomoOverview() {
       </div>
       <div class="overview-metrics">
         ${locomoOverviewMetric("结果行", summary.rows ?? "-")}
-        ${locomoOverviewMetric("Tokens", summary.total_injection_tokens_est || summary.answer_total_tokens || "-")}
-        ${locomoOverviewMetric("Evidence", outputCsv ? "已记录" : "-")}
+        ${locomoOverviewMetric("Token 估算", summary.total_injection_tokens_est || summary.answer_total_tokens || "-")}
+        ${locomoOverviewMetric("证据", outputCsv ? "已记录" : "-")}
       </div>
-      <p>${escapeHtml(outputCsv || "选择 QA 后运行问答测试，页面会显示进度、答案和 relevant memory。")}</p>
+      <p>${escapeHtml(outputCsv || "选择问答后运行测试，页面会显示进度、答案和相关记忆。")}</p>
     </article>
     <article class="overview-card ${qaTone}">
       <div class="overview-card-head">
@@ -5246,9 +5347,9 @@ function renderLocomoOverview() {
         <strong>${escapeHtml(runAccuracy)}</strong>
       </div>
       <div class="overview-metrics">
-        ${locomoOverviewMetric("Graded", summary.graded ?? "-")}
-        ${locomoOverviewMetric("Pending", pending)}
-        ${locomoOverviewMetric("Wrong", summary.wrong ?? "-")}
+        ${locomoOverviewMetric("已判", summary.graded ?? "-")}
+        ${locomoOverviewMetric("待判", pending)}
+        ${locomoOverviewMetric("错误", summary.wrong ?? "-")}
       </div>
       <p>${escapeHtml(outputCsv ? "QA 完成后运行判分；待判分不会显示为 0%。" : "等待问答测试结果。")}</p>
     </article>
@@ -5257,7 +5358,7 @@ function renderLocomoOverview() {
         <span>查看报告</span>
         <strong>${escapeHtml(reportPath ? "报告可打开" : "等待报告")}</strong>
       </div>
-      <p>${escapeHtml(reportPath || "报告应包含配置快照、模型、token、耗时、整体打分、evidence、context 和结果对比。")}</p>
+      <p>${escapeHtml(reportPath || "报告应包含配置快照、模型、Token 用量、耗时、整体打分、证据、上下文和结果对比。")}</p>
       <div class="overview-actions">
         <button class="secondary compact-button" type="button" data-view-jump="runsView">查看报告</button>
         <button class="secondary compact-button" type="button" data-view-jump="readmeView">交付说明</button>
@@ -5504,7 +5605,7 @@ function judgeModelReadiness() {
   const ok = Boolean(baseUrl && model && tokenSet);
   return {
     value: model || "未配置模型",
-    detail: `${baseUrl ? "Base URL 已填" : "Base URL 未填"} · ${tokenSet ? "API Key 已填" : "API Key 必填"}`,
+    detail: `${baseUrl ? "模型地址已填" : "模型地址未填"} · ${tokenSet ? "API 密钥已填" : "API 密钥必填"}`,
     tone: ok ? "ok" : "warn",
   };
 }
@@ -5624,6 +5725,12 @@ function renderJudgeReadinessPanel(summary = state.lastJudgeSummary || {}, task 
 
 function updateJudgeAndReportActionButtons({input = currentLocomoResultCsv(), judgeRunning = false} = {}) {
   const hasJudgeInput = Boolean(String(input || "").trim());
+  const activeDiagnostics = state.lastQaDiagnosticsInput === String(input || "").trim()
+    ? (state.lastQaDiagnostics || {})
+    : {};
+  const pendingRows = Number((state.lastJudgeSummary || {}).result_counts?.UNSCORED || 0);
+  const missingQuestions = Number(activeDiagnostics.missing_questions_count || 0);
+  const failedQuestions = Number(activeDiagnostics.retryable_failed_questions || 0);
   const judgeTitle = judgeRunning
     ? "判分正在运行中，请稍候"
     : hasJudgeInput
@@ -5635,11 +5742,37 @@ function updateJudgeAndReportActionButtons({input = currentLocomoResultCsv(), ju
     button.disabled = judgeRunning || !hasJudgeInput;
     button.title = judgeTitle;
   });
+  ["runJudgeSmoke3", "runJudgeSmoke3Bottom"].forEach((id) => {
+    const button = $(id);
+    if (!button) return;
+    button.hidden = !hasJudgeInput;
+    button.disabled = judgeRunning || !hasJudgeInput || pendingRows <= 0;
+    button.title = judgeRunning
+      ? "判分正在运行中，请稍候"
+      : !hasJudgeInput
+        ? "请先运行 QA 或选择一个结果文件"
+        : (pendingRows > 0 ? "抽样判分 3 条待判样本" : "当前结果没有待判样本");
+  });
+  const qaRunning = Boolean(isTaskActive(state.currentLocomoTask));
+  const retryConfigs = [
+    ["retryMissingQa", missingQuestions, "补跑缺失题", "当前结果没有缺失题"],
+    ["retryFailedQa", failedQuestions, "重跑失败题", "当前结果没有失败题"],
+  ];
+  retryConfigs.forEach(([id, count, label, emptyTitle]) => {
+    const button = $(id);
+    if (!button) return;
+    const available = hasJudgeInput && Number(count || 0) > 0;
+    button.hidden = !available;
+    button.disabled = qaRunning || !available;
+    button.title = qaRunning
+      ? "当前问答任务仍在运行，请稍候"
+      : (available ? `${label}：当前有 ${formatInt(count)} 题` : emptyTitle);
+  });
   const exportButton = $("exportRunReport");
   if (exportButton) {
     const hasRun = Boolean(state.selectedRunDir);
     exportButton.disabled = !hasRun;
-    exportButton.title = hasRun ? "为当前选中的结果目录生成报告" : "请先在结果列表里选择一个 run";
+    exportButton.title = hasRun ? "为当前选中的结果目录生成报告" : "请先在结果列表里选择一个任务";
   }
 }
 
@@ -5773,6 +5906,7 @@ function showView(viewId, options = {}) {
     refreshEchoMemorySourceCard().catch((e) => toast(e.message));
   }
   ensureLocomoDatasetLoadedForView(viewId);
+  updateWorkflowGuide();
   syncViewUrl(viewId, options);
   if (!options.preserveScroll) {
     stabilizeViewScroll(viewId);
@@ -5897,7 +6031,12 @@ function currentLocomoDataset() {
 }
 
 function updateWorkflowGuide() {
-  if (!$("workflowGuide")) return;
+  const workflowGuide = $("workflowGuide");
+  if (!workflowGuide) return;
+  const currentView = activeViewId();
+  const visible = !benchmarkFlowContext(currentView) && ["datasetView", "openvikingView", "evalView", "judgeView", "runsView"].includes(currentView);
+  workflowGuide.hidden = !visible;
+  if (!visible) return;
   const lastImport = readLastImport();
   const locomoDataset = currentLocomoDataset();
   const hasDataset = Boolean(locomoDataset && $("data")?.value?.trim());
@@ -6135,7 +6274,7 @@ async function loadLatestImportLogFallback() {
   if (runLog) {
     await loadLogPathIntoBox(runLog, "importLogBox");
   } else if (!box.dataset.logPath) {
-    box.textContent = "暂无运行中的导入任务，也没有找到历史导入 run.log。";
+    box.textContent = "暂无运行中的导入任务，也没有找到历史导入日志文件。";
   }
 }
 
@@ -6462,7 +6601,7 @@ async function openChenmoRun() {
     if ($("chenmoStatus")) {
       $("chenmoStatus").innerHTML = `
         <p><strong>ChenMo 当前没有可展示的 EchoMemory version_0.0.6 全量结果</strong></p>
-        <p class="dataset-next-step">历史 v0.0.4 run 不再作为当前基线；请重跑后从结果中心打开报告。</p>
+        <p class="dataset-next-step">历史 v0.0.4 运行结果不再作为当前基线；请重跑后从结果中心打开报告。</p>
       `;
     }
     return;
@@ -6490,14 +6629,14 @@ async function openChenmoRun() {
 
 async function exportChenmoReport() {
   if (!chenmoRunDir()) {
-    toast("ChenMo 当前没有 EchoMemory version_0.0.6 全量 run 可导出。");
+    toast("ChenMo 当前没有 EchoMemory version_0.0.6 全量结果可导出。");
     return;
   }
   const data = await api(`/api/report?run_dir=${encodeURIComponent(chenmoRunDir())}`);
   if ($("chenmoStatus")) {
     $("chenmoStatus").innerHTML = `
       <p><strong>ChenMo 报告已生成</strong></p>
-      <p class="dataset-next-step">Markdown：${escapeHtml(data.report_file || "-")}</p>
+      <p class="dataset-next-step">Markdown 报告：${escapeHtml(data.report_file || "-")}</p>
       <p class="dataset-next-step">HTML：${escapeHtml(data.report_html_file || "-")}</p>
     `;
   }
@@ -6574,7 +6713,7 @@ function renderGenericEntryStatus(key, path = "", record = {}) {
   $(config.status).innerHTML = `
     <p><strong>已进入 ${escapeHtml(config.label)} 评测页</strong>${size ? ` · ${escapeHtml(size)}` : ""}</p>
     <p class="dataset-next-step">${escapeHtml(path || config.emptyPathHint)}</p>
-    <p class="dataset-next-step">${escapeHtml(gate.ok ? "该入口会固定停留在当前数据集页面，启动后运行正式 MemoryBench OpenViking memory-QA：导入上下文、检索证据、调用答案模型、自动判分并可导出报告。" : gate.reason)}</p>
+    <p class="dataset-next-step">${escapeHtml(gate.ok ? "该入口会固定停留在当前数据集页面，启动后运行正式 MemoryBench OpenViking 记忆问答：导入上下文、检索证据、调用答案模型、自动判分并可导出报告。" : gate.reason)}</p>
     <p class="dataset-next-step">${escapeHtml(benchmarkMetricNote(config))}</p>
   `;
   updateGenericRunButton(key, record);
@@ -6596,10 +6735,10 @@ function initializeGenericBenchmarkDefaults() {
 	        || String(record.id || "").toLowerCase().includes("sample");
 	      const readinessLabel = sampleLike ? "示例数据已就绪" : "默认数据已就绪";
 	      const scopeNote = sampleLike
-	        ? "当前是 bundled sample。它用于小样本核验；换完整数据路径后可产出正式 MemoryBench 分数。"
-	        : "当前默认使用已注册数据文件；开始测试会运行正式 MemoryBench OpenViking memory-QA，官方原 benchmark 指标会在报告中单独标注。";
+	        ? "当前是内置 sample。它用于小样本核验；换完整数据路径后可产出正式 MemoryBench 分数。"
+	        : "当前默认使用已注册数据文件；开始测试会运行正式 MemoryBench OpenViking 记忆问答，官方原 benchmark 指标会在报告中单独标注。";
 	      $(config.status).innerHTML = `
-	        <p><strong>${escapeHtml(config.label)} ${escapeHtml(readinessLabel)}</strong> · ${escapeHtml(record.questions ?? "-")} 题 · ${escapeHtml(record.samples ?? "-")} samples</p>
+	        <p><strong>${escapeHtml(config.label)} ${escapeHtml(readinessLabel)}</strong> · ${escapeHtml(record.questions ?? "-")} 题 · ${escapeHtml(record.samples ?? "-")} 样本</p>
 	        <p class="dataset-next-step">${escapeHtml(record.path || "")}</p>
 	        <p class="dataset-next-step ${sampleLike ? "bad-text" : ""}">${escapeHtml(scopeNote)}</p>
 	        <p class="dataset-next-step">${escapeHtml(benchmarkMetricNote(config))}</p>
@@ -6625,7 +6764,7 @@ function renderGenericBenchmarkKpis(key, data) {
     ["样本数", data.samples ?? "-"],
     ["题目数", data.questions ?? "-"],
     ["记忆事件", data.memory_events_total ?? "-"],
-    ["加载模式", data.runner_status === "large_dataset_lazy" ? "大文件 lazy" : "已读取"],
+    ["加载模式", data.runner_status === "large_dataset_lazy" ? "大文件懒加载" : "已读取"],
   ]);
 }
 
@@ -6645,12 +6784,12 @@ async function validateGenericBenchmark(key) {
       ? `<p class="bad-text">需要检查字段映射：${escapeHtml(warnings.join("；"))}</p>`
       : "";
 	    const sampleHtml = sampleLike
-	      ? `<p class="dataset-next-step bad-text">当前路径是 bundled sample。它用于小样本核验，不作为正式分数。</p>`
+	      ? `<p class="dataset-next-step bad-text">当前路径是内置 sample。它用于小样本核验，不作为正式分数。</p>`
 	      : "";
 	    $(config.status).innerHTML = `
 	      ${warningHtml}
-	      <p><strong>${escapeHtml(config.label)} 校验完成</strong> · format ${escapeHtml(String(data.format || "").toLowerCase() === "generic" ? config.adapterFormat : (data.format || "-"))} · ${escapeHtml(data.resolved_path || path)}</p>
-	      <p class="dataset-next-step">${escapeHtml(datasetRunnerNote(data.format, data.runner_note, "运行正式 MemoryBench OpenViking memory-QA：写入样本上下文、检索证据、调用答案模型，并自动执行判分。"))}</p>
+	      <p><strong>${escapeHtml(config.label)} 校验完成</strong> · 格式 ${escapeHtml(String(data.format || "").toLowerCase() === "generic" ? config.adapterFormat : (data.format || "-"))} · ${escapeHtml(data.resolved_path || path)}</p>
+	      <p class="dataset-next-step">${escapeHtml(datasetRunnerNote(data.format, data.runner_note, "运行正式 MemoryBench OpenViking 记忆问答：写入样本上下文、检索证据、调用答案模型，并自动执行判分。"))}</p>
 	      ${sampleHtml}
 	      ${gate.ok ? "" : `<p class="dataset-next-step bad-text">${escapeHtml(gate.reason)}</p>`}
 	      <p class="dataset-next-step">${escapeHtml(benchmarkMetricNote(config))}</p>
@@ -6737,7 +6876,7 @@ async function runGenericBenchmark(key) {
         <code>${escapeHtml(runDir)}</code>
         <button class="path-copy" type="button" data-copy="${escapeHtml(runDir)}">复制</button>
       </article>
-	      <p>这一步运行 MemoryBench OpenViking memory-QA：写入 session 并 commit、检索长期记忆、调用答案模型、自动判分。${escapeHtml(benchmarkMetricNote(config))} 当前页会保留；右上角运行中入口显示进度，结果中心查看报告。若输入仍是 sample 文件，结果只代表小样本核验。</p>
+	      <p>这一步运行 MemoryBench OpenViking 记忆问答：写入会话并提交、检索长期记忆、调用答案模型、自动判分。${escapeHtml(benchmarkMetricNote(config))} 当前页会保留；右上角运行中入口显示进度，结果中心查看报告。若输入仍是 sample 文件，本次结果只代表小样本核验。</p>
 	      ${gate.ok ? "" : `<p class="dataset-next-step bad-text">正式分数门禁：${escapeHtml(gate.reason)} 本次仍作为小样本核验运行。</p>`}
 	      <p class="dataset-next-step">选题：${escapeHtml(selectedQuestions ? `${benchmarkQuestionState(key).selected.size} 题` : benchmarkCountLabel(effectiveCount))}</p>
       <div class="panel-actions">
@@ -6766,8 +6905,13 @@ async function loadDataset() {
     clearLocomoResultState();
     $("sample").innerHTML = "<option value='all'>全部 conv</option>";
     $("importSample").innerHTML = "<option value='all'>全部 conv</option>";
-    $("commitImport").disabled = true;
-    if ($("importSmokeTest")) $("importSmokeTest").disabled = true;
+    if ($("activeDatasetPill")) {
+      $("activeDatasetPill").textContent = `${datasetTypeLabel(data.format)} · 已跳转`;
+      $("activeDatasetPill").classList.toggle("ok", false);
+      $("activeDatasetPill").classList.toggle("bad", false);
+      $("activeDatasetPill").classList.toggle("muted", true);
+    }
+    refreshImportActionLabels();
     $("runTimeQuestions").disabled = true;
     renderKpis("datasetKpis", [
       ["LoCoMo 状态", "未选择"],
@@ -6818,22 +6962,28 @@ async function loadDataset() {
     $("activeDatasetPill").textContent = `${datasetTypeLabel(data.format)} · ${data.questions ?? "?"} 题 · ${lazy ? "大文件" : "已读取"}`;
     $("activeDatasetPill").classList.toggle("ok", !lazy);
     $("activeDatasetPill").classList.toggle("bad", false);
+    $("activeDatasetPill").classList.toggle("muted", lazy);
   }
   $("sample").innerHTML = "<option value='all'>全部 conv</option>";
   $("importSample").innerHTML = "<option value='all'>全部 conv</option>";
   for (const row of data.sample_rows || []) {
     const opt = document.createElement("option");
     opt.value = row.index;
-    opt.textContent = `${row.index} · ${row.sample_id} · ${row.questions} 题`;
+    opt.textContent = locomoQaSampleOptionLabel(row);
     $("sample").appendChild(opt);
 
     const importOpt = document.createElement("option");
     importOpt.value = row.index;
-    importOpt.textContent = `${row.index} · ${row.sample_id} · ${row.events ?? row.sessions ?? 0} events · ${row.questions} 题`;
+    importOpt.textContent = locomoImportSampleOptionLabel(row);
     $("importSample").appendChild(importOpt);
+    if (String(row.sample_id || "").trim() === "conv-30") {
+      const smokeOpt = document.createElement("option");
+      smokeOpt.value = `${row.index}${IMPORT_SINGLE_SESSION_SUFFIX}`;
+      smokeOpt.textContent = `${row.index} · conv-30 · 单 session 测试 · 1 段 session`;
+      $("importSample").appendChild(smokeOpt);
+    }
   }
-  $("commitImport").disabled = !isLocomo;
-  if ($("importSmokeTest")) $("importSmokeTest").disabled = !importSmokeTestReady();
+  refreshImportActionLabels();
   $("runTimeQuestions").disabled = !isLocomo;
   renderDatasetCategories(data);
   if ($("datasetRunnerNote")) {
@@ -6881,7 +7031,8 @@ async function loadDataset() {
     const avgQuestionsPerConv = data.samples && data.questions ? Math.round(data.questions / data.samples) : 0;
     $("datasetRunnerNote").innerHTML = `
       ${validationReport}
-      <p><strong>LoCoMo 已校验</strong> · ${escapeHtml(data.samples ?? "-")} conv · ${escapeHtml(data.questions ?? "-")} QA${avgQuestionsPerConv ? ` · 平均 ${escapeHtml(avgQuestionsPerConv)} QA/对话` : ""}</p>
+      <p><strong>LoCoMo 已校验</strong> · ${escapeHtml(data.samples ?? "-")} 个对话样本 · 共 ${escapeHtml(data.questions ?? "-")} 题${avgQuestionsPerConv ? ` · 平均 ${escapeHtml(avgQuestionsPerConv)} 题/样本` : ""}</p>
+      ${Number(data.samples || 0) > 1 ? "<p class=\"dataset-next-step\">“全部 conv”表示当前数据集里的全部对话样本总和，不是单个 conv。</p>" : ""}
     `;
   }
   if (data.runner_status === "large_dataset_lazy") {
@@ -6907,7 +7058,7 @@ async function loadDataset() {
   updateWorkflowGuide();
 
   // 生成校验摘要
-  const summary = `${datasetTypeLabel(data.format)} 校验完成：${data.samples || 0} 个对话，${data.questions || 0} 题目`;
+  const summary = `${datasetTypeLabel(data.format)} 校验完成：${data.samples || 0} 个对话样本，共 ${data.questions || 0} 题`;
   toast(summary);
   refreshLocomoFlowStatus(true).catch(() => {});
 }
@@ -6951,14 +7102,14 @@ async function validateLongMemDataset() {
     ["数据集类型", datasetTypeLabel(data.format)],
     ["样本数", data.samples ?? "-"],
     ["题目数", data.questions ?? "-"],
-    ["加载模式", data.runner_status === "large_dataset_lazy" ? "大文件 lazy" : "已读取"],
+    ["加载模式", data.runner_status === "large_dataset_lazy" ? "大文件懒加载" : "已读取"],
   ]);
   const sampleLike = /(^|[/.])[^/]*sample[^/]*\.(jsonl?|ndjson)$/i.test(path);
 	  $("longMemStatus").innerHTML = `
 	    <p><strong>${escapeHtml(datasetTypeLabel(data.format))} 校验完成</strong> · ${escapeHtml(data.resolved_path || path)}</p>
-	    <p class="dataset-next-step">${escapeHtml(datasetRunnerNote(data.format, data.runner_note, "运行正式 MemoryBench OpenViking memory-QA：写入样本上下文、检索证据、调用答案模型，并自动执行判分。"))}</p>
-	    <p class="dataset-next-step">运行后会额外输出 LongMemEval official-style summary：overall accuracy、task-averaged accuracy 和 abstention accuracy。</p>
-	    ${sampleLike ? `<p class="dataset-next-step bad-text">当前路径是 bundled sample。它用于小样本核验，不作为正式 LongMemEval 分数。</p>` : ""}
+	    <p class="dataset-next-step">${escapeHtml(datasetRunnerNote(data.format, data.runner_note, "运行正式 MemoryBench OpenViking 记忆问答：写入样本上下文、检索证据、调用答案模型，并自动执行判分。"))}</p>
+	    <p class="dataset-next-step">运行后会额外输出 LongMemEval 官方式摘要：overall accuracy、task-averaged accuracy 和 abstention accuracy。</p>
+	    ${sampleLike ? `<p class="dataset-next-step bad-text">当前路径是内置 sample。它用于小样本核验，不作为正式 LongMemEval 分数。</p>` : ""}
 	  `;
   const sample = $("longMemSample");
   if (sample) {
@@ -7062,7 +7213,7 @@ async function runLongMemDiagnostic() {
   const selectedQuestions = [...state.selectedLongMemQuestions].join(",");
   const effectiveCount = selectedQuestions ? 0 : count;
   const formalWarnings = [];
-  if (isSampleDatasetPath(path)) formalWarnings.push("当前路径是 bundled sample，不可作为正式 LongMemEval 分数");
+  if (isSampleDatasetPath(path)) formalWarnings.push("当前路径是内置 sample，不可作为正式 LongMemEval 分数");
   if (sample !== "all") formalWarnings.push("正式 LongMemEval 要求样本范围为全部样本");
   if (selectedQuestions || effectiveCount > 0) formalWarnings.push("正式 LongMemEval 要求题数为 0（全量）");
   const topK = Math.max(1, Number($("longMemTopK")?.value || 4));
@@ -7092,7 +7243,7 @@ async function runLongMemDiagnostic() {
       <code>${escapeHtml(task?.output_file || "")}</code>
       <button class="path-copy" type="button" data-copy="${escapeHtml(task?.output_file || "")}">复制</button>
     </article>
-    <p>任务已启动：OpenViking MemoryBench memory-QA 会完成 session commit、memory search、LLM answer、判分和 LongMemEval official-style summary。当前页会保留；右上角运行中入口显示进度，结果中心查看报告。</p>
+    <p>任务已启动：OpenViking MemoryBench 记忆问答会完成会话提交、记忆检索、大模型回答、判分和 LongMemEval 官方式摘要。当前页会保留；右上角运行中入口显示进度，结果中心查看报告。</p>
     <p class="dataset-next-step">选题：${escapeHtml(selectedQuestions ? `${state.selectedLongMemQuestions.size} 题` : benchmarkCountLabel(effectiveCount))}；样本范围：${escapeHtml(sample)}。</p>
     ${formalWarnings.length ? `<p class="dataset-next-step bad-text">正式分数门禁：${escapeHtml(formalWarnings.join("；"))}。本次仍作为小样本核验运行。</p>` : ""}
     <div class="panel-actions">
@@ -7137,7 +7288,7 @@ async function injectLongMemMemory() {
         <span>任务</span>
         <code>${escapeHtml(task?.id || state.taskId || "")}</code>
       </article>
-      <p>已启动记忆注入：只写入 LongMemEval source documents 并生成 import summary，不调用答案模型或判分。</p>
+      <p>已启动记忆注入：只写入 LongMemEval 原始文档并生成导入摘要，不调用答案模型或判分。</p>
       <p class="dataset-next-step">注入范围：${escapeHtml(selectedQuestions ? `${state.selectedLongMemQuestions.size} 道选中题` : benchmarkCountLabel(effectiveCount))}；样本范围：${escapeHtml(sample)}。</p>
       <div class="panel-actions">
         <button class="secondary" type="button" data-view-jump="runsView">查看任务/报告</button>
@@ -7277,7 +7428,7 @@ function qaSelectionReadiness() {
   if (!dataset) {
     return {
       value: "待校验数据集",
-      detail: "先在 LoCoMo评测的数据集步骤读取并校验 JSON。",
+      detail: "先在 LoCoMo 评测的数据集步骤读取并校验 JSON。",
       tone: "warn",
     };
   }
@@ -7356,7 +7507,7 @@ function qaModelReadiness() {
   const ok = Boolean(baseUrl && model && tokenSet);
   return {
     value: model || "未配置模型",
-    detail: `${baseUrl ? "Base URL 已填" : "Base URL 未填"} · ${tokenSet ? "token 已填" : "token 未填"}`,
+    detail: `${baseUrl ? "模型地址已填" : "模型地址未填"} · ${tokenSet ? "密钥已填" : "密钥未填"}`,
     tone: ok ? "ok" : "warn",
   };
 }
@@ -7365,7 +7516,7 @@ function memoryInjectModelReadiness(backend = currentMemoryBackend()) {
   if (normalizeMemoryBackend(backend) === "openviking") {
     return {
       value: "后端服务处理",
-      detail: "页面无需填写模型 token；OpenViking 服务负责归档/抽取。",
+      detail: "页面无需填写模型密钥；OpenViking 服务负责归档/抽取。",
       tone: "ok",
     };
   }
@@ -7376,7 +7527,7 @@ function memoryInjectModelReadiness(backend = currentMemoryBackend()) {
   const ok = Boolean(baseUrl && model && tokenSet);
   return {
     value: model || "未配置模型",
-    detail: `${baseUrl ? "Base URL 已填" : "Base URL 未填"} · ${tokenSet ? "token 已填" : "token 未填"}`,
+    detail: `${baseUrl ? "模型地址已填" : "模型地址未填"} · ${tokenSet ? "密钥已填" : "密钥未填"}`,
     tone: ok ? "ok" : "warn",
   };
 }
@@ -7407,7 +7558,7 @@ function renderQaReadinessPanel(task = null) {
   const modeValue = "MemoryBench Agent（VikingBoat 对齐）";
   const cards = [
     {
-      label: "Answer 模型",
+      label: "回答模型",
       ...modelReady,
     },
     {
@@ -7426,7 +7577,7 @@ function renderQaReadinessPanel(task = null) {
   const memoryNote = workspace
     ? `${importReady.value || "记忆状态"} · ${compactPath(storageRootForBackend(workspace, account, backend) || workspace, 46, 34)}`
     : "未找到记忆 workspace";
-  const agentNote = `${taskRunning ? "运行中" : modeValue} · Top-K ${VIKINGBOAT_LITE_TOP_K} · tool search ${VIKINGBOAT_LITE_TOOL_SEARCH_LIMIT} · max iter ${VIKINGBOAT_LITE_MAX_ITERATIONS}`;
+  const agentNote = `${taskRunning ? "运行中" : modeValue} · ${RETRIEVAL_COUNT_LABEL} ${VIKINGBOAT_LITE_TOP_K} · ${TOOL_SEARCH_LABEL} ${VIKINGBOAT_LITE_TOOL_SEARCH_LIMIT} · ${MAX_ITERATION_LABEL} ${VIKINGBOAT_LITE_MAX_ITERATIONS}`;
   target.innerHTML = `
     ${cards.map((card) => `
       <article class="${escapeHtml(card.tone || "")}">
@@ -7495,15 +7646,16 @@ function renderMemoryMismatchWarning() {
 }
 
 async function syncImportToEvalSample() {
-  const value = $("importSample")?.value || "";
-  if (!value || value === "all") return toast("请先选择一个具体导入 conv");
+  const selected = parseImportSampleSelection();
+  if (!selected.baseValue || selected.isAll) return toast("请先选择一个具体导入 conv");
   await mirrorImportSampleToQa({allowAll: false});
   showView("evalView");
   toast("已同步到评测 Conversation");
 }
 
 async function mirrorImportSampleToQa(options = {}) {
-  const value = $("importSample")?.value || "all";
+  const selected = parseImportSampleSelection();
+  const value = selected.baseValue || "all";
   const sample = $("sample");
   if (!sample) return;
   const allowAll = options.allowAll !== false;
@@ -7540,11 +7692,11 @@ async function probeOpenViking() {
   const label = memoryBackendLabel(backend);
   const status = String(data.status || data.status_text || (data.ok ? "ok" : "fail")).toLowerCase();
   const statusClass = data.ok ? "ok" : (status === "warn" ? "warn" : "bad");
-  const statusText = data.ok ? "OK" : (status === "warn" ? "WARN" : "ERR");
+  const statusText = data.ok ? "正常" : (status === "warn" ? "警告" : "错误");
   const target = data.url || data.root || data.message || "-";
   $("ovStatus").innerHTML = `
     <span class="check ${statusClass}">${statusText} · ${escapeHtml(target)}</span>
-    <span class="check ${statusClass}">backend ${escapeHtml(memoryBackendShortLabel(data.backend || backend))} · status ${escapeHtml(status || "-")}</span>
+    <span class="check ${statusClass}">后端 ${escapeHtml(memoryBackendShortLabel(data.backend || backend))} · 状态 ${escapeHtml(status || "-")}</span>
   `;
   setConnection(Boolean(data.ok), data.ok ? `${label} Ready` : `${label} 需要检查`);
 }
@@ -7552,17 +7704,6 @@ async function probeOpenViking() {
 function currentEchoMemoryImportMode() {
   const value = String($("echoImportMode")?.value || "fast").trim().toLowerCase();
   return value === "full" ? "full" : "fast";
-}
-
-function importSmokeTestReady() {
-  return Boolean(currentLocomoDataset()) && (($("importSample")?.value || "all") !== "all");
-}
-
-function singleSessionImportTaskExtra() {
-  return {
-    max_sessions: 1,
-    name: `locomo ${memoryBackendLabel(currentMemoryBackend())} 单 session 注入测试`,
-  };
 }
 
 function isSingleSessionImportSummary(summary = {}) {
@@ -7589,6 +7730,9 @@ function taskPayload(kind, extra = {}) {
   const echoImportMode = currentEchoMemoryImportMode();
   const echoFastImport = echomemoryCompatibleImportKind && echoImportMode === "fast";
   const defaultServicePort = "19080";
+  const importSelection = isMemoryImportKind(kind) ? parseImportSampleSelection() : null;
+  const importSample = importSelection ? (importSelection.baseValue || "all") : ($("sample").value || "all");
+  const importSmoke = Boolean(importSelection?.smoke);
   return {
     kind,
     runner: "local_agent",
@@ -7596,7 +7740,7 @@ function taskPayload(kind, extra = {}) {
     data: dataPath,
     dataset_format: datasetFormat,
     backend: currentMemoryBackend(),
-    sample: isMemoryImportKind(kind) ? ($("importSample").value || "all") : ($("sample").value || "all"),
+    sample: importSample,
     questions: selectedQuestions,
     judge_base_url: judgeCfg.baseUrl,
     judge_model: judgeCfg.model,
@@ -7626,6 +7770,10 @@ function taskPayload(kind, extra = {}) {
       commit_call_timeout_s: echoFastImport ? 90 : 300,
       flush_call_timeout_s: echoFastImport ? 15 : 600,
       flush_attempts: echoFastImport ? 0 : 2,
+    } : {}),
+    ...(isMemoryImportKind(kind) && importSmoke ? {
+      max_sessions: 1,
+      name: `locomo ${memoryBackendLabel(currentMemoryBackend())} ${importSelection?.sampleId || importSample} 单 session 注入测试`,
     } : {}),
     ...(openvikingQaKind ? vikingbotAlignedQaPayload() : {}),
     name: taskNameForKind(kind, datasetFormat),
@@ -7894,9 +8042,9 @@ function renderActiveTaskStrip(task = null) {
   const detailText = progress?.detail ? normalizeVisibleMemoryBackendName(progress.detail) : (task.output_file || "");
   const progressWidth = `${Math.max(0, Math.min(100, pct || 0)).toFixed(1)}%`;
   const rows = isTaskActive(task) && progress?.current != null
-    ? ` · rows≈${progress.current}`
-    : (summary.rows != null ? ` · rows ${summary.rows}` : "");
-  const acc = summary.accuracy != null ? ` · acc ${percent(summary.accuracy)}` : "";
+    ? ` · 结果行≈${progress.current}`
+    : (summary.rows != null ? ` · 结果行 ${summary.rows}` : "");
+  const acc = summary.accuracy != null ? ` · 准确率 ${percent(summary.accuracy)}` : "";
   const progressText = progress?.total
     ? ` · ${progress.current}/${progress.total} · ${Number(progress.pct || 0).toFixed(1)}%`
     : "";
@@ -8205,8 +8353,8 @@ function renderImportReadinessPanel(task = null) {
   const sampleDetail = dataset
     ? (
       importScope.isAll
-        ? `当前导入范围：全部对话；数据集总计 ${formatInt(dataset.samples || 0)} conv / ${formatInt(dataset.questions || 0)} QA 已校验。`
-        : `当前导入：${importScope.label}${importScope.questionCount ? `（${formatInt(importScope.questionCount)} 题）` : ""}；数据集总计 ${formatInt(dataset.samples || 0)} conv / ${formatInt(dataset.questions || 0)} QA 已校验。`
+        ? `当前导入范围：全部对话样本；数据集总计 ${formatInt(dataset.samples || 0)} 个对话样本 / ${formatInt(dataset.questions || 0)} 题，已校验。`
+        : `当前导入：${importScope.label}${importScope.questionCount ? `（${formatInt(importScope.questionCount)} 题）` : ""}；数据集总计 ${formatInt(dataset.samples || 0)} 个对话样本 / ${formatInt(dataset.questions || 0)} 题，已校验。`
     )
     : "请先校验 LoCoMo JSON。";
   const workspaceMode = autoWorkspace
@@ -8357,7 +8505,7 @@ function renderImportPaths(task = null) {
     ["日志文件", task?.log_file || ""],
     ["服务日志", backend === "openviking" ? (taskConfig.openviking_server_log || "") : ""],
     ["摘要文件", summaryPath],
-    ["Manifest", task?.manifest_file || ""],
+    ["任务清单", task?.manifest_file || ""],
   ].filter(([, value]) => value);
   $("importPathList").innerHTML = rows.map(([label, value]) => `
     <article class="path-row">
@@ -8642,7 +8790,9 @@ async function pollTask(taskId = state.taskId, kind = state.taskKind) {
     delete state.logTimers[taskId];
     if (state.currentRunningTask?.id === taskId) state.currentRunningTask = null;
     if (isMemoryImportKind(task.kind)) {
-      $("commitImport").disabled = false;
+      if ($("commitImport")) $("commitImport").disabled = false;
+      if ($("importSmokeTest")) $("importSmokeTest").disabled = false;
+      state.currentImportTask = task;
       updateBackendUi();
     }
     if (task.kind === "openviking_import" && task.output_file) {
@@ -8890,8 +9040,8 @@ async function refreshResult() {
     ["题数", summary.rows ?? "-"],
     ["判对", summary.correct ?? "-"],
     ["待判", summary.result_counts?.UNSCORED ?? "-"],
-    ["总 tokens", summary.total_injection_tokens_est ?? sj.total_injection_tokens_est ?? "-"],
-    ["平均 tokens", summary.avg_injection_tokens_est ?? sj.avg_injection_tokens_est ?? "-"],
+      ["总 Token", summary.total_injection_tokens_est ?? sj.total_injection_tokens_est ?? "-"],
+      ["平均 Token", summary.avg_injection_tokens_est ?? sj.avg_injection_tokens_est ?? "-"],
   ]);
   if ($("evalResultKpis")) {
     renderKpis("evalResultKpis", [
@@ -8900,7 +9050,7 @@ async function refreshResult() {
       ["判对", summary.correct ?? "-"],
       ["待判", summary.result_counts?.UNSCORED ?? "-"],
       ["精确匹配参考", simpleReference == null ? "-" : `${simpleCorrect}/${summary.rows ?? sj.count ?? "-"} · ${percent(simpleReference)}`],
-      ["Tokens", summary.total_injection_tokens_est ?? sj.total_injection_tokens_est ?? "-"],
+      ["Token 用量", summary.total_injection_tokens_est ?? sj.total_injection_tokens_est ?? "-"],
     ]);
   }
   renderJudgeEstimate(summary);
@@ -8950,10 +9100,13 @@ function renderQaDiagnosticsSummary(data = {}) {
     ${missingExamples ? `<p>缺失示例：${escapeHtml(missingExamples)}</p>` : ""}
     ${failedExamples ? `<p>失败示例：${escapeHtml(failedExamples)}</p>` : ""}
   `;
+  updateJudgeAndReportActionButtons();
 }
 
 async function renderQaDiagnostics(input = currentLocomoResultCsv()) {
   const data = await loadQaDiagnostics(input);
+  state.lastQaDiagnostics = data;
+  state.lastQaDiagnosticsInput = String(input || "").trim();
   renderQaDiagnosticsSummary(data);
   return data;
 }
@@ -9114,7 +9267,7 @@ function renderIntegrity(data) {
     <div class="integrity-checks">
       ${(data.checks || []).map((item) => `
         <article class="${item.ok ? "ok" : (item.level === "warn" ? "warn" : "bad")}">
-          <strong>${escapeHtml(item.ok ? "OK" : (item.level === "warn" ? "WARN" : "FAIL"))} · ${escapeHtml(item.name || "-")}</strong>
+          <strong>${escapeHtml(item.ok ? "通过" : (item.level === "warn" ? "警告" : "失败"))} · ${escapeHtml(item.name || "-")}</strong>
           <p>${escapeHtml(item.message || "")}</p>
         </article>
       `).join("")}
@@ -9127,14 +9280,14 @@ function renderIntegrity(data) {
       </details>
     ` : ""}
     <details class="integrity-sessions">
-      <summary>Session 明细</summary>
+      <summary>会话明细</summary>
       ${(data.sessions || []).map((item) => `
         <article class="path-row">
-          <span>${escapeHtml(item.ok ? "OK" : "CHECK")} · ${escapeHtml(item.session_key || "")}</span>
+          <span>${escapeHtml(item.ok ? "通过" : "待查")} · ${escapeHtml(item.session_key || "")}</span>
           <code>${escapeHtml(item.session_path || item.session_id || "")}</code>
           <button class="path-copy" type="button" data-copy="${escapeHtml(item.session_path || "")}">复制</button>
         </article>
-      `).join("") || "<p>没有 session 明细。</p>"}
+      `).join("") || "<p>没有会话明细。</p>"}
     </details>
     <div class="path-row">
       <span>摘要</span>
@@ -9416,7 +9569,7 @@ function chatDefaultPreviewQuestion() {
   return [
     "请只做当前账户长期记忆的只读预览。",
     `当前后端是 ${backend}，当前账户是 ${info.account || currentAccount()}。`,
-    "请召回这个账户下最能代表当前记忆空间的相关记忆，用于界面展示 evidence。",
+    "请召回这个账户下最能代表当前记忆空间的相关记忆，用于界面展示证据。",
     "不要写入记忆，不要进行闲聊。",
   ].join("\n");
 }
@@ -9452,7 +9605,7 @@ function renderChatContextPlaceholder(reason = "") {
       <div class="trace-section">
         <b>上下文组装</b>
         <p>${escapeHtml(detail)}</p>
-        <p>系统人设会固定注入；提问后会按问题召回相关记忆并展示 evidence。</p>
+        <p>系统人设会固定注入；提问后会按问题召回相关记忆并展示证据。</p>
       </div>
     `;
   }
@@ -9581,13 +9734,13 @@ function chatAlignmentStatus(backend, topK, workbenchSupported) {
   if (k >= 30) {
     return {
       value: "LoCoMo 可比",
-      detail: "Top-K 30 · relevant memory + context trace · 人工对话不计正式分数",
+      detail: "召回条数 30 · 相关记忆 + 上下文追踪 · 人工对话不计正式分数",
       tone: "ok",
     };
   }
   return {
     value: "待确认",
-    detail: "建议 Top-K 30；正式准确率以 LoCoMo评测报告为准",
+    detail: "建议召回条数 30；正式准确率以 LoCoMo 评测报告为准",
     tone: "warn",
   };
 }
@@ -9639,21 +9792,21 @@ function renderChatDebugStrip(record = null) {
     ? (record.committed ? "已保存" : "已提交")
     : (newMessages > 0 ? "未保存" : "只读回答");
   const saveDetail = record
-    ? `session ${lastSession || "-"}`
+    ? `会话 ${lastSession || "-"}`
     : (newMessages > 0 ? `${newMessages} 条新消息，点击“手动 commit”才写入` : "发送问题不会写入长期记忆");
-  const contextSourceValue = workbenchSupported ? "Relevant Memory" : "待接入";
+  const contextSourceValue = workbenchSupported ? "相关记忆" : "待接入";
   const contextSourceDetail = workbenchSupported
-    ? (backend === "echomemory" ? "EchoMemory find/search evidence；可展开 context trace" : "OpenViking user/agent memory；可展开 context trace")
-    : `${backendLabel} 可跑 LoCoMo 批量评测；人工 context trace 待接入`;
+    ? (backend === "echomemory" ? "EchoMemory find/search 证据；可展开上下文追踪" : "OpenViking user/agent 记忆；可展开上下文追踪")
+    : `${backendLabel} 可跑 LoCoMo 批量评测；人工上下文追踪待接入`;
   strip.innerHTML = `
     ${chatDebugMetric("当前空间", account, backendLabel, "primary")}
-    ${chatDebugMetric("Agent", "MemoryBench Agent", "OpenViking / EchoMemory 后端；正式分数以 LoCoMo评测页为准", "primary")}
+    ${chatDebugMetric("Agent", "MemoryBench Agent", "OpenViking / EchoMemory 后端；正式分数以 LoCoMo 评测页为准", "primary")}
     ${chatDebugMetric("Agent 能力", workbenchSupported ? "可用" : "待接入", agentWorkbenchSupportText(backend), workbenchSupported ? "ok" : "warn")}
     ${chatDebugMetric("LoCoMo 对齐", alignment.value, alignment.detail, alignment.tone)}
     ${chatDebugMetric("上下文来源", contextSourceValue, contextSourceDetail, workbenchSupported ? "" : "warn")}
     ${chatDebugMetric("读写边界", saveState, saveDetail, record?.committed ? "ok" : (newMessages > 0 ? "warn" : ""))}
     ${chatDebugMetric("工作空间", compactPath(workspace || "未配置"), storageRoot ? `存储根：${compactPath(storageRoot, 24, 32)}` : "导入或系统配置后生成路径")}
-    ${chatDebugMetric("召回参数", `Top-K ${topK}`, "对话页只读检索使用该数量")}
+    ${chatDebugMetric("召回参数", `${RETRIEVAL_COUNT_LABEL} ${topK}`, "对话页只读检索使用该数量")}
     ${chatDebugMetric("待保存上下文", `${stats.messages} 条 / ${stats.tokens} tokens`, `建议阈值 ${thresholds.messages} 条 / ${thresholds.tokens} tokens`)}
   `;
   updateAgentWorkbenchControls(workbenchSupported);
@@ -10256,7 +10409,7 @@ function renderContextTrace(data = {}) {
     <div class="trace-section">
       <b>提示词配置</b>
       <div class="trace-kpis context-summary">
-        <article><span>Top-K</span><strong>${escapeHtml(retrievalConfig.top_k ?? "-")}</strong></article>
+        <article><span>${RETRIEVAL_COUNT_LABEL}</span><strong>${escapeHtml(retrievalConfig.top_k ?? "-")}</strong></article>
         <article><span>分数阈值</span><strong>${escapeHtml(retrievalConfig.score_threshold ?? "-")}</strong></article>
         <article><span>检索方式</span><strong>${escapeHtml(retrievalConfig.query_expansion === "enabled" ? "扩展检索" : "原问题检索")}</strong></article>
         <article><span>结构</span><strong>${escapeHtml(promptEng.architecture ?? "-")}</strong></article>
@@ -11126,6 +11279,7 @@ function renderRunCompareSummary(rows = [], options = {}) {
     target.innerHTML = "";
     return;
   }
+  revealReportAnalysisPanel("runCompareResult");
   const normalized = rows.map((row) => ({
     id: row.id || row.name || "-",
     name: row.name || row.id || "-",
@@ -11195,7 +11349,7 @@ function renderRunCompareSummary(rows = [], options = {}) {
               <th>耗时</th>
               <th>模型</th>
               <th>召回</th>
-              <th>Tokens</th>
+              <th>Token 用量</th>
               <th>状态</th>
             </tr>
           </thead>
@@ -11224,9 +11378,9 @@ function renderRunCompareSummary(rows = [], options = {}) {
                 <td>
                   <small>${runCompareCell(row.retrieval_mode)}</small>
                   <small>检索 ${runCompareCell(row.top_k)} · 命中 ${runCompareCell(row.avg_memory_hits)}</small>
-                  <small>${runCompareCell(row.prompt_mode)} · tools ${runCompareCell(row.openviking_tool_set)}</small>
-                  <small>loop ${escapeHtml(reportBoolLabel(row.openviking_tool_loop))} · read ${escapeHtml(reportBoolLabel(row.openviking_content_read))} · iter ${runCompareCell(row.avg_iteration)}/${runCompareCell(row.max_iterations)}</small>
-                  <small>tool calls ${runCompareCell(row.tool_call_total)} · rows ${runCompareCell(row.tool_call_rows)}</small>
+                  <small>${runCompareCell(row.prompt_mode)} · 工具集合 ${runCompareCell(row.openviking_tool_set)}</small>
+                  <small>工具循环 ${escapeHtml(reportBoolLabel(row.openviking_tool_loop))} · 内容读取 ${escapeHtml(reportBoolLabel(row.openviking_content_read))} · 迭代 ${runCompareCell(row.avg_iteration)}/${runCompareCell(row.max_iterations)}</small>
+                  <small>工具调用 ${runCompareCell(row.tool_call_total)} · 结果行 ${runCompareCell(row.tool_call_rows)}</small>
                   <small>qe ${escapeHtml(reportBoolLabel(row.query_expansion))} · lex ${escapeHtml(reportBoolLabel(row.lexical_fallback))} · archive ${escapeHtml(reportBoolLabel(row.archive_fallback))} · file ${escapeHtml(reportBoolLabel(row.memory_file_read))}</small>
                 </td>
                 <td>
@@ -11460,7 +11614,7 @@ function vikingbotRunAlignment(row = {}) {
     row.raw_turn_fallback,
   ].every(auditSwitchOff);
   const comparable = promptOk && topKOk && toolSearchLimitOk && toolLoopOk && toolSetOk && groupChatOk && identityOk && channelOk && memoryUsersOk && agentMemoryOk && noExtraContext;
-  const mode = native ? "OpenViking 参考模式（历史）" : (customPrompt || auditSwitchOn(row.vikingbot_prompt_aligned) ? "MemoryBench Agent 对齐模式" : "非对齐 Prompt");
+  const mode = native ? "OpenViking 参考模式（历史）" : (customPrompt || auditSwitchOn(row.vikingbot_prompt_aligned) ? "MemoryBench Agent 对齐模式" : "非对齐提示词");
   const title = comparable ? `${mode} · 可对比` : `${mode} · 需确认`;
   const detail = comparable
     ? "关键上下文工程与 VikingBoat 参考链路可比；准确率差异可优先归因到后端检索、记忆质量或模型。"
@@ -11471,28 +11625,28 @@ function vikingbotRunAlignment(row = {}) {
     title,
     detail,
     chips: [
-      alignmentCheckChip(promptOk, "Prompt", `prompt=${promptMode || "-"}`),
-      alignmentCheckChip(topKOk, "Top-K", `top_k=${row.top_k || "-"}; initial=${row.initial_search_limit || "-"}; tool=${row.tool_search_limit || "-"}`),
-      alignmentCheckChip(toolSearchLimitOk, "Tool Search", `limit=${row.tool_search_limit || "-"}; VikingBoat=20`),
-      alignmentCheckChip(toolLoopOk, "Tool Loop", `loop=${reportBoolLabel(row.openviking_tool_loop)}`),
-      alignmentCheckChip(toolSetOk, "Tool Set", row.openviking_tool_set || "-"),
-      alignmentCheckChip(agentMemoryOk, "Agent Memory", `initial=${reportBoolLabel(row.initial_agent_memory)}; VikingBoat=on`),
+      alignmentCheckChip(promptOk, "提示词", `prompt=${promptMode || "-"}`),
+      alignmentCheckChip(topKOk, RETRIEVAL_COUNT_LABEL, `top_k=${row.top_k || "-"}; initial=${row.initial_search_limit || "-"}; tool=${row.tool_search_limit || "-"}`),
+      alignmentCheckChip(toolSearchLimitOk, "工具检索", `limit=${row.tool_search_limit || "-"}; VikingBoat=20`),
+      alignmentCheckChip(toolLoopOk, "工具循环", `loop=${reportBoolLabel(row.openviking_tool_loop)}`),
+      alignmentCheckChip(toolSetOk, "工具集合", row.openviking_tool_set || "-"),
+      alignmentCheckChip(agentMemoryOk, "Agent 记忆", `initial=${reportBoolLabel(row.initial_agent_memory)}; VikingBoat=on`),
       alignmentCheckChip(noExtraContext, "无额外兜底", "query/lexical/archive/file/raw fallback 应关闭"),
     ],
     metrics: [
       ["对齐模式", mode],
-      ["Profile", row.vikingboat_alignment_profile || "-"],
-      ["Backend route", row.alignment_backend_route || "-"],
-      ["Prompt", promptMode || "-"],
-      ["Prompt aligned", reportBoolLabel(row.vikingbot_prompt_aligned)],
-      ["Top-K", row.top_k || "-"],
-      ["Initial search", row.initial_search_limit || "-", `score ${row.initial_score_threshold || "-"}`],
-      ["Tool search", row.tool_search_limit || "-", `score ${row.tool_min_score || "-"}`],
-      ["Tool loop", reportBoolLabel(row.openviking_tool_loop), `calls ${row.tool_call_total || "-"}`],
-      ["Tool set", row.openviking_tool_set || "-"],
-      ["Initial agent memory", reportBoolLabel(row.initial_agent_memory), "VikingBoat 默认开启"],
-      ["Identity", row.vikingbot_identity_mode || "-"],
-      ["Extra context", noExtraContext ? "off" : "on", "query / lexical / archive / file / raw fallback"],
+      ["对齐档位", row.vikingboat_alignment_profile || "-"],
+      ["后端路由", row.alignment_backend_route || "-"],
+      ["提示词", promptMode || "-"],
+      ["提示词对齐", reportBoolLabel(row.vikingbot_prompt_aligned)],
+      [RETRIEVAL_COUNT_LABEL, row.top_k || "-"],
+      ["初始检索", row.initial_search_limit || "-", `score ${row.initial_score_threshold || "-"}`],
+      ["工具检索", row.tool_search_limit || "-", `score ${row.tool_min_score || "-"}`],
+      ["工具循环", reportBoolLabel(row.openviking_tool_loop), `calls ${row.tool_call_total || "-"}`],
+      ["工具集合", row.openviking_tool_set || "-"],
+      ["初始 Agent 记忆", reportBoolLabel(row.initial_agent_memory), "VikingBoat 默认开启"],
+      ["身份模式", row.vikingbot_identity_mode || "-"],
+      ["额外上下文", noExtraContext ? "关闭" : "开启", "query / lexical / archive / file / raw fallback"],
     ],
   };
 }
@@ -11562,23 +11716,23 @@ function renderEvidenceContract(data = null) {
       <div class="run-audit-head">
         <div>
           <span class="label">证据契约</span>
-          <h4>Relevant Memory 输出格式</h4>
+          <h4>相关记忆输出格式</h4>
         </div>
         <div class="run-audit-chips">
           ${runAuditChip(String(data.status || "-").toUpperCase(), tone, data.path || "")}
-          ${runAuditChip(`Backend ${data.backend || "unknown"}`, data.backend === "unknown" ? "warn" : "ok")}
+          ${runAuditChip(`后端 ${data.backend || "unknown"}`, data.backend === "unknown" ? "warn" : "ok")}
         </div>
       </div>
       <div class="run-audit-grid">
         ${runAuditMetric("结果行数", data.rows)}
         ${runAuditMetric("非空召回行", `${data.rows_with_relevant_memory ?? 0}/${data.rows ?? 0}`)}
-        ${runAuditMetric("Evidence 条目", data.total_items)}
+        ${runAuditMetric("证据条目", data.total_items)}
         ${runAuditMetric("报告可消费", `${data.basic_valid_items ?? 0}/${data.total_items ?? 0}`, "需要 content/abstract、uri/path、score")}
         ${runAuditMetric("EchoMemory 严格字段", strictLabel, "content / uri / score / memory_type / evidence_uri / trace")}
         ${runAuditMetric("类型分布", compactCountMap(data.item_type_counts || {}, 4))}
       </div>
       <div class="evidence-contract-checks">
-        ${checkHtml || "<p>没有 evidence 检查项。</p>"}
+        ${checkHtml || "<p>没有证据检查项。</p>"}
       </div>
       <small class="evidence-contract-path">${escapeHtml(data.path || "")}</small>
     </section>
@@ -11598,7 +11752,7 @@ async function loadEvidenceContract(outputFile = "", record = {}) {
       <div class="run-audit-head">
         <div>
           <span class="label">证据契约</span>
-          <h4>正在检查 relevant_memory...</h4>
+          <h4>正在检查 relevant_memory 字段...</h4>
         </div>
       </div>
     </section>
@@ -11615,9 +11769,9 @@ async function loadEvidenceContract(outputFile = "", record = {}) {
             <span class="label">证据契约</span>
             <h4>检查失败</h4>
           </div>
-          <div class="run-audit-chips">${runAuditChip("FAIL", "bad", error.message)}</div>
+          <div class="run-audit-chips">${runAuditChip("失败", "bad", error.message)}</div>
         </div>
-        <p class="evidence-contract-error">${escapeHtml(error.message || "无法检查 evidence contract")}</p>
+        <p class="evidence-contract-error">${escapeHtml(error.message || "无法检查证据契约")}</p>
       </section>
     `;
   }
@@ -11633,7 +11787,7 @@ function failureSeverityTone(value = "") {
 function failureOwnerLabel(value = "") {
   const labels = {
     agent: "Agent",
-    agent_prompt: "Agent Prompt",
+    agent_prompt: "Agent 提示词",
     context_engineering: "上下文工程",
     retrieval: "检索",
     model: "模型/API",
@@ -11780,7 +11934,7 @@ async function loadFailureAttribution(outputFile = "", targetId = "failureAttrib
             <span class="label">错误归因</span>
             <h4>分析失败</h4>
           </div>
-          <div class="run-audit-chips">${runAuditChip("FAIL", "bad", error.message)}</div>
+          <div class="run-audit-chips">${runAuditChip("失败", "bad", error.message)}</div>
         </div>
         <p class="evidence-contract-error">${escapeHtml(error.message || "无法分析错误归因")}</p>
       </section>
@@ -11809,9 +11963,9 @@ function renderRunAudit(detail = {}, candidateRecord = {}, summary = {}, runDir 
   const warnings = [
     configSourceAuditChip(row.config_source),
     alignment.comparable ? runAuditChip("Agent 可对比", "ok", alignment.detail) : runAuditChip("Agent 待确认", "warn", alignment.detail),
-	    row.accuracy === undefined || row.accuracy === null ? runAuditChip("待指标", "warn", "QA 已完成但正式准确率或 official score 还未产生") : runAuditChip(row.official_metric ? "Official 指标" : "已判分", "ok", `${row.official_metric || "judge"} ${percent(row.accuracy)}`),
+	    row.accuracy === undefined || row.accuracy === null ? runAuditChip("待指标", "warn", "QA 已完成但正式准确率或官方指标还未产生") : runAuditChip(row.official_metric ? "官方指标" : "已判分", "ok", `${row.official_metric || "judge"} ${percent(row.accuracy)}`),
     modelFailed > 0 ? runAuditChip(`模型失败 ${modelFailed}`, "bad", "存在模型/API 失败行") : runAuditChip("模型无失败", "ok"),
-    unknownAnswers > 0 ? runAuditChip(`Unknown ${unknownAnswers}`, "warn", "存在空回答或 unknown 回答") : runAuditChip("回答非空", "ok"),
+    unknownAnswers > 0 ? runAuditChip(`未知回答 ${unknownAnswers}`, "warn", "存在空回答或 unknown 回答") : runAuditChip("回答非空", "ok"),
     retrievalErrors > 0 ? runAuditChip(`检索错误 ${retrievalErrors}`, "bad", "存在检索失败行") : runAuditChip("检索无错误", "ok"),
     fallbackTotal > 0 ? runAuditChip(`兜底 ${fallbackTotal}`, "warn", "存在 archive/source fallback，上下文不完全来自正式记忆检索") : runAuditChip("无原文兜底", "ok"),
     missingArtifacts > 0 ? runAuditChip(`缺产物 ${missingArtifacts}`, "warn", "部分报告/日志/快照文件不存在") : runAuditChip("产物齐全", "ok"),
@@ -11828,12 +11982,12 @@ function renderRunAudit(detail = {}, candidateRecord = {}, summary = {}, runDir 
         <div class="run-audit-chips">${warnings.join("")}</div>
       </div>
       <div class="run-audit-grid">
-        ${runAuditMetric("Answer 模型", row.answer_model)}
+        ${runAuditMetric("回答模型", row.answer_model)}
         ${runAuditMetric("判分模型", row.judge_model)}
-        ${runAuditMetric("Embedding", row.embedding_model)}
-        ${runAuditMetric("Top-K", row.top_k)}
-	        ${runAuditMetric("Prompt", row.prompt_mode)}
-	        ${runAuditMetric("Official 指标", row.official_metric || "-")}
+        ${runAuditMetric("向量模型", row.embedding_model)}
+        ${runAuditMetric(RETRIEVAL_COUNT_LABEL, row.top_k)}
+	        ${runAuditMetric("提示词", row.prompt_mode)}
+	        ${runAuditMetric("官方指标", row.official_metric || "-")}
         ${runAuditMetric("配置来源", row.config_source)}
       </div>
     </section>
@@ -11863,7 +12017,7 @@ function renderRunAudit(detail = {}, candidateRecord = {}, summary = {}, runDir 
         ${runAuditMetric("检索模式", row.retrieval_mode)}
         ${runAuditMetric("平均记忆命中", row.avg_memory_hits)}
         ${runAuditMetric("记忆命中总数", row.memory_hits)}
-        ${runAuditMetric("Tool Loop", reportBoolLabel(row.openviking_tool_loop), `tools ${row.openviking_tool_set || "-"}`)}
+        ${runAuditMetric("工具循环", reportBoolLabel(row.openviking_tool_loop), `tools ${row.openviking_tool_set || "-"}`)}
         ${runAuditMetric("读取原文", reportBoolLabel(row.openviking_content_read))}
         ${runAuditMetric("Query Expansion", reportBoolLabel(row.query_expansion))}
         ${runAuditMetric("Lexical Fallback", reportBoolLabel(row.lexical_fallback))}
@@ -11936,7 +12090,7 @@ async function loadRunDetail(runDir, outputFile, datasetFormat = "") {
 	      ["状态", detail.status || record.status || "-"],
 	      ["题数", summary.rows ?? "-"],
 	      ["准确率", summary.accuracy == null ? "待判分" : percent(summary.accuracy)],
-	      ["Official", (summary.official_metric || summaryJson.official_metric) ? `${summary.official_metric || summaryJson.official_metric} · ${percent(summary.official_score ?? summaryJson.official_score)}` : "-"],
+	      ["官方指标", (summary.official_metric || summaryJson.official_metric) ? `${summary.official_metric || summaryJson.official_metric} · ${percent(summary.official_score ?? summaryJson.official_score)}` : "-"],
 	      ["精确匹配", summary.exact_match_reference == null ? "-" : `${summary.simple_correct ?? "-"}/${summary.rows ?? "-"} · ${percent(summary.exact_match_reference)}`],
 	      ["数据集", datasetTypeLabel(state.selectedRunDatasetFormat || summaryDatasetFormat(summary))],
       ["召回方式", summaryJson.retrieval_mode ?? "-"],
@@ -11964,8 +12118,8 @@ async function loadRunDetail(runDir, outputFile, datasetFormat = "") {
       ["任务清单", record.manifest_file || "", artifactStatus.manifest_file],
       ["配置快照", runDir ? `${runDir}/config_snapshot.json` : "", artifactStatus.config_snapshot],
       ["运行摘要", artifactStatus.summary?.path || "", artifactStatus.summary],
-      ["LongMemEval official summary", artifactStatus.longmemeval_official_summary?.path || "", artifactStatus.longmemeval_official_summary],
-      ["HotpotQA answer summary", artifactStatus.hotpotqa_answer_summary?.path || "", artifactStatus.hotpotqa_answer_summary],
+      ["LongMemEval 官方摘要", artifactStatus.longmemeval_official_summary?.path || "", artifactStatus.longmemeval_official_summary],
+      ["HotpotQA 回答摘要", artifactStatus.hotpotqa_answer_summary?.path || "", artifactStatus.hotpotqa_answer_summary],
       ["Markdown 报告", runDir ? `${runDir}/report.md` : "", artifactStatus.report],
       ["HTML 报告", runDir ? `${runDir}/report.html` : "", artifactStatus.report_html],
     ].filter(([, value, info]) => value && (info?.exists ?? true)).map(([label, value]) => `
@@ -12255,7 +12409,7 @@ async function openQuestionDetail(csvPath, questionId, rowIndex) {
         <article><span>题目 ID</span><strong>${escapeHtml(row.question_id || `row-${data.index + 1}`)}</strong></article>
         <article><span>题型</span><strong>${escapeHtml(locomoCategoryLabel(row.category))}</strong></article>
         <article><span>召回证据</span><strong>${escapeHtml(memories.length)}</strong></article>
-        <article><span>Tokens</span><strong>${escapeHtml(row.injection_tokens_est || "-")}</strong></article>
+        <article><span>Token 估算</span><strong>${escapeHtml(row.injection_tokens_est || "-")}</strong></article>
       </section>
       <section class="question-detail-section">
         <h4>相关记忆</h4>
@@ -12283,6 +12437,7 @@ async function runDiff() {
     const total = (obj) => Object.values(obj || {}).reduce((sum, value) => sum + Number(value || 0), 0);
     return total(b[1]) - total(a[1]);
   });
+  revealReportAnalysisPanel("runDiffResult");
   $("runDiffResult").innerHTML = `
     <div class="result-kpis compact">
       <div class="kpi"><span>变好</span><strong>${escapeHtml(data.improved)}</strong></div>
@@ -12311,6 +12466,15 @@ async function runDiff() {
   `;
 }
 
+function revealReportAnalysisPanel(panelId) {
+  const panel = $(panelId);
+  const details = panel?.closest("details");
+  if (details) {
+    details.hidden = false;
+    details.open = true;
+  }
+}
+
 async function loadWrongClusters() {
   const input = $("diffCandidate").value.trim() || $("judgeInput").value.trim() || state.outputFile;
   if (!input) return toast("请先选择结果文件");
@@ -12318,6 +12482,7 @@ async function loadWrongClusters() {
   const analysis = data.analysis || {};
   const clusters = analysis.failure_clusters?.clusters || [];
   const attribution = analysis.failure_attribution || {};
+  revealReportAnalysisPanel("wrongClusterResult");
   $("wrongClusterResult").innerHTML = `
     <div class="result-kpis compact">
       <div class="kpi"><span>错误</span><strong>${escapeHtml(analysis.wrong ?? 0)}</strong></div>
@@ -12590,7 +12755,7 @@ async function preflightJudge() {
   state.lastJudgeValidation = data;
   $("judgePreflightBox").innerHTML = (data.checks || []).map((item) => `
     <span class="check ${item.ok ? "ok" : "bad"}">
-      ${item.ok ? "OK" : "FAIL"} · ${escapeHtml(item.name)} · ${escapeHtml(item.message)}
+      ${item.ok ? "通过" : "失败"} · ${escapeHtml(item.name)} · ${escapeHtml(item.message)}
     </span>
   `).join("") || "<span class=\"check bad\">没有返回检查结果。</span>";
   if (input) {
@@ -12818,15 +12983,15 @@ function bind() {
   });
   $("runSystemPreflight")?.addEventListener("click", () => runSystemPreflight().catch((e) => toast(e.message)));
   $("testAgentModel")?.addEventListener("click", () => testSystemModel("agent").catch((e) => {
-    setModelPreflightStatus("agent", `FAIL · ${e.message}`, "bad");
+    setModelPreflightStatus("agent", `失败 · ${e.message}`, "bad");
     toast(e.message);
   }));
   $("testJudgeModel")?.addEventListener("click", () => testSystemModel("judge").catch((e) => {
-    setModelPreflightStatus("judge", `FAIL · ${e.message}`, "bad");
+    setModelPreflightStatus("judge", `失败 · ${e.message}`, "bad");
     toast(e.message);
   }));
   $("testMemoryModel")?.addEventListener("click", () => testSystemModel("memory").catch((e) => {
-    setModelPreflightStatus("memory", `FAIL · ${e.message}`, "bad");
+    setModelPreflightStatus("memory", `失败 · ${e.message}`, "bad");
     toast(e.message);
   }));
   $("runAdapterDoctor")?.addEventListener("click", () => runAdapterDoctor(["adapterDoctorPanel", "adapterDoctorReadmePanel"]).catch((e) => toast(e.message)));
@@ -12856,11 +13021,21 @@ function bind() {
   $("runEchoMemContract")?.addEventListener("click", () => runEchoMemContract(["echomemContractPanel", "echomemContractReadmePanel"]).catch((e) => toast(e.message)));
   $("runEchoMemContractReadme")?.addEventListener("click", () => runEchoMemContract(["echomemContractPanel", "echomemContractReadmePanel"]).catch((e) => toast(e.message)));
   $("refreshImportedMemories")?.addEventListener("click", () => refreshImportedMemories().catch((e) => toast(e.message)));
-  $("commitImport")?.addEventListener("click", () => startTask(locomoImportTaskKind()).catch((e) => toast(e.message)));
-  $("importSmokeTest")?.addEventListener("click", () => {
-    if (!importSmokeTestReady()) return toast("请先选择一个具体 conv，再做单 session 注入测试");
-    startTask(locomoImportTaskKind(), singleSessionImportTaskExtra()).catch((e) => toast(e.message));
-  });
+  $("commitImport")?.addEventListener("click", () => runWithUiActionLock(
+    "locomoImportLaunch",
+    ["commitImport", "importSmokeTest"],
+    () => startTask(locomoImportTaskKind()).catch((e) => toast(e.message)),
+    "导入任务正在启动，请勿重复点击",
+  ));
+  $("importSmokeTest")?.addEventListener("click", () => runWithUiActionLock(
+    "locomoImportLaunch",
+    ["commitImport", "importSmokeTest"],
+    () => {
+      if (!importSmokeTestReady()) return toast("请先选择一个具体 conv，再做单 session 注入测试");
+      return startTask(locomoImportTaskKind(), singleSessionImportTaskExtra()).catch((e) => toast(e.message));
+    },
+    "导入任务正在启动，请勿重复点击",
+  ));
   $("checkImportIntegrity")?.addEventListener("click", () => checkImportIntegrity().catch((e) => toast(e.message)));
   $("newCleanAccount")?.addEventListener("click", () => newCleanAccount().catch((e) => toast(e.message)));
   $("toggleContextPanel")?.addEventListener("click", toggleContextPanel);
@@ -12940,17 +13115,25 @@ function bind() {
   document.querySelectorAll(".generic-run-adapter").forEach((button) => {
     button.addEventListener("click", () => runGenericBenchmark(button.dataset.benchmark).catch((e) => toast(e.message)));
   });
-  $("runPreviousWrong")?.addEventListener("click", () => {
-    const csv = currentResultCsv();
-    if (!csv) return toast("请先选择或运行一个结果文件");
-    runGeneratedQuestionSet("wrong_csv", locomoQaTaskKind(), {csv, name: "locomo 上轮错题重跑"}).catch((e) => toast(e.message));
-  });
-  $("runTimeQuestions")?.addEventListener("click", () => {
-    runGeneratedQuestionSet("time", locomoQaTaskKind(), {
+  $("runPreviousWrong")?.addEventListener("click", () => runWithUiActionLock(
+    "locomoQaLaunch",
+    ["runOpenVikingQa", "runOpenVikingFullQa", "runPreviousWrong", "runTimeQuestions", "retryMissingQa", "retryFailedQa"],
+    () => {
+      const csv = currentResultCsv();
+      if (!csv) return toast("请先选择或运行一个结果文件");
+      return runGeneratedQuestionSet("wrong_csv", locomoQaTaskKind(), {csv, name: "locomo 上轮错题重跑"}).catch((e) => toast(e.message));
+    },
+    "问答任务正在启动，请勿重复点击",
+  ));
+  $("runTimeQuestions")?.addEventListener("click", () => runWithUiActionLock(
+    "locomoQaLaunch",
+    ["runOpenVikingQa", "runOpenVikingFullQa", "runPreviousWrong", "runTimeQuestions", "retryMissingQa", "retryFailedQa"],
+    () => runGeneratedQuestionSet("time", locomoQaTaskKind(), {
       sample: $("sample").value || "all",
       name: "locomo 时间题问答",
-    }).catch((e) => toast(e.message));
-  });
+    }).catch((e) => toast(e.message)),
+    "问答任务正在启动，请勿重复点击",
+  ));
   $("refreshMemoryBrowser")?.addEventListener("click", () => refreshMemoryBrowser().catch((e) => toast(e.message)));
   $("memoryQuery")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") refreshMemoryBrowser().catch((err) => toast(err.message));
@@ -12977,12 +13160,42 @@ function bind() {
   $("autoPinNativeBaseline")?.addEventListener("click", () => autoPinNativeOpenVikingBaseline().catch((e) => toast(e.message)));
   $("compareWithNativeBaseline")?.addEventListener("click", () => compareRunsWithNativeBaseline().catch((e) => toast(e.message)));
   $("preflightJudge")?.addEventListener("click", () => preflightJudge().catch((e) => toast(e.message)));
-  $("retryMissingQa")?.addEventListener("click", () => retryMissingOpenVikingQa().catch((e) => toast(e.message)));
-  $("retryFailedQa")?.addEventListener("click", () => retryFailedOpenVikingQa().catch((e) => toast(e.message)));
-  $("runJudgeInline")?.addEventListener("click", () => runJudgeForCurrentResult().catch((e) => toast(e.message)));
-  $("runJudgeBottom")?.addEventListener("click", () => runJudgeForCurrentResult().catch((e) => toast(e.message)));
-  $("runJudgeSmoke3")?.addEventListener("click", () => runJudgeSmoke(3).catch((e) => toast(e.message)));
-  $("runJudgeSmoke3Bottom")?.addEventListener("click", () => runJudgeSmoke(3).catch((e) => toast(e.message)));
+  $("retryMissingQa")?.addEventListener("click", () => runWithUiActionLock(
+    "locomoQaLaunch",
+    ["runOpenVikingQa", "runOpenVikingFullQa", "runPreviousWrong", "runTimeQuestions", "retryMissingQa", "retryFailedQa"],
+    () => retryMissingOpenVikingQa().catch((e) => toast(e.message)),
+    "问答任务正在启动，请勿重复点击",
+  ));
+  $("retryFailedQa")?.addEventListener("click", () => runWithUiActionLock(
+    "locomoQaLaunch",
+    ["runOpenVikingQa", "runOpenVikingFullQa", "runPreviousWrong", "runTimeQuestions", "retryMissingQa", "retryFailedQa"],
+    () => retryFailedOpenVikingQa().catch((e) => toast(e.message)),
+    "问答任务正在启动，请勿重复点击",
+  ));
+  $("runJudgeInline")?.addEventListener("click", () => runWithUiActionLock(
+    "locomoJudgeLaunch",
+    ["runJudgeInline", "runJudgeBottom", "runJudgeSmoke3", "runJudgeSmoke3Bottom"],
+    () => runJudgeForCurrentResult().catch((e) => toast(e.message)),
+    "判分任务正在启动，请勿重复点击",
+  ));
+  $("runJudgeBottom")?.addEventListener("click", () => runWithUiActionLock(
+    "locomoJudgeLaunch",
+    ["runJudgeInline", "runJudgeBottom", "runJudgeSmoke3", "runJudgeSmoke3Bottom"],
+    () => runJudgeForCurrentResult().catch((e) => toast(e.message)),
+    "判分任务正在启动，请勿重复点击",
+  ));
+  $("runJudgeSmoke3")?.addEventListener("click", () => runWithUiActionLock(
+    "locomoJudgeLaunch",
+    ["runJudgeInline", "runJudgeBottom", "runJudgeSmoke3", "runJudgeSmoke3Bottom"],
+    () => runJudgeSmoke(3).catch((e) => toast(e.message)),
+    "判分任务正在启动，请勿重复点击",
+  ));
+  $("runJudgeSmoke3Bottom")?.addEventListener("click", () => runWithUiActionLock(
+    "locomoJudgeLaunch",
+    ["runJudgeInline", "runJudgeBottom", "runJudgeSmoke3", "runJudgeSmoke3Bottom"],
+    () => runJudgeSmoke(3).catch((e) => toast(e.message)),
+    "判分任务正在启动，请勿重复点击",
+  ));
   $("refreshResult")?.addEventListener("click", () => refreshResult().catch((e) => toast(e.message)));
   $("refreshJudgeResult")?.addEventListener("click", () => refreshResult().catch((e) => toast(e.message)));
   $("refreshResultBottom")?.addEventListener("click", () => refreshResult().catch((e) => toast(e.message)));

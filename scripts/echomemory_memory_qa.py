@@ -1625,8 +1625,11 @@ VIKINGBOT_ALIGNED_PROMPT_MODES = {"vikingboat_lite", "vikingboat_compat"}
 def answer_refinement_needed(job: benchmark_adapter.Job, answer: str) -> bool:
     question = str(job.question or "")
     text = str(answer or "").strip()
-    if not text or text.lower() == "unknown":
+    if not text:
         return False
+    low = text.lower()
+    if low in {"unknown", "i don't know.", "i don't know", "not found in the retrieved memories.", "no such comparison is found in the memories.", "no information."}:
+        return True
     if len(text) <= 24 and "," not in text and " and " not in text.lower():
         return False
     if re.search(r"\b(which|what|how)\b", question, re.I) and (
@@ -1696,9 +1699,12 @@ def build_answer_refinement_messages(job: benchmark_adapter.Job, draft_answer: s
         "You refine a draft answer for a memory benchmark. "
         "Keep only the smallest exact answer supported by the evidence. "
         "Remove broader adjacent facts, extra list items, generic summaries, and unsupported embellishments. "
+        "If the draft answer says unknown, not found, or no information, but the evidence contains a direct answer, replace the draft with that direct answer. "
         "For list questions, return all and only the required items as a compact comma-separated list. "
         "For event questions, keep event names only. "
         "For offer/provide/plan/promote questions, prefer the most specific supported phrase rather than a broader category. "
+        "For symbol, feeling, advice, and description questions, prefer the exact phrase used in evidence over a looser paraphrase. "
+        "For profession, internship, role, city, book, and object questions, return the shortest noun phrase that fully answers the question. "
         "If the evidence contains contrastive wording such as 'besides X, I am offering Y', prefer Y when the question asks what is being offered. "
         "Reply with answer text only."
     )
