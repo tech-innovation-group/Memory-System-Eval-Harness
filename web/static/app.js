@@ -665,36 +665,201 @@ const RETIRED_VIEW_FALLBACKS = {
   chenmoView: "openvikingView",
   readmeView: "systemConfigView",
 };
-const DATASET_FORMAT_VIEWS = {
-  locomo: "openvikingView",
-  longmemeval: "longMemEvalView",
-  evolvingevents: "evolvingEventsView",
-  hotpotqa: "hotpotQaView",
-  proagentbench: "proAgentBenchView",
-  tau2bench: "tauBenchView",
-};
-const DATASET_FORMAT_ALIASES = {
-  longmem: "longmemeval",
-  long_mem_eval: "longmemeval",
-  longmemevaluation: "longmemeval",
-  hotpot: "hotpotqa",
-  hotpot_qa: "hotpotqa",
-  "hotpot-qa": "hotpotqa",
-  proagent: "proagentbench",
-  pro_agent_bench: "proagentbench",
-  "pro-agent-bench": "proagentbench",
-  tau2: "tau2bench",
-  tau2_bench: "tau2bench",
-  "tau2-bench": "tau2bench",
-  tau_bench: "tau2bench",
-  "tau-bench": "tau2bench",
-  taubench: "tau2bench",
-  evolvingevent: "evolvingevents",
-  evolving_events: "evolvingevents",
-  "evolving-events": "evolvingevents",
-};
-const STANDALONE_BENCHMARK_FORMATS = new Set(["longmemeval", "evolvingevents", "hotpotqa", "proagentbench", "tau2bench"]);
-const DATASET_VIEW_FORMATS = Object.fromEntries(Object.entries(DATASET_FORMAT_VIEWS).map(([format, view]) => [view, format]));
+const BenchmarkRegistry = (() => {
+  const DATASET_FORMATS = {
+    locomo: {
+      label: "LoCoMo",
+      view: "openvikingView",
+      standalone: false,
+      aliases: [],
+    },
+    chenmo: {
+      label: "ChenMo",
+      view: "chenmoView",
+      standalone: false,
+      aliases: [],
+    },
+    longmemeval: {
+      label: "LongMemEval",
+      view: "longMemEvalView",
+      standalone: true,
+      aliases: ["longmem", "long_mem_eval", "longmemevaluation"],
+    },
+    evolvingevents: {
+      label: "EvolvingEvents",
+      view: "evolvingEventsView",
+      standalone: true,
+      aliases: ["evolvingevent", "evolving_events", "evolving-events"],
+    },
+    hotpotqa: {
+      label: "HotpotQA",
+      view: "hotpotQaView",
+      standalone: true,
+      aliases: ["hotpot", "hotpot_qa", "hotpot-qa"],
+    },
+    proagentbench: {
+      label: "proAgentBench",
+      view: "proAgentBenchView",
+      standalone: true,
+      aliases: ["proagent", "pro_agent_bench", "pro-agent-bench"],
+    },
+    tau2bench: {
+      label: "Tau2-bench",
+      view: "tauBenchView",
+      standalone: true,
+      aliases: ["tau2", "tau2_bench", "tau2-bench", "tau_bench", "tau-bench", "taubench"],
+    },
+  };
+
+  const GENERIC_BENCHMARKS = {
+    evolvingevents: {
+      label: "EvolvingEvents",
+      view: "evolvingEventsView",
+      adapterFormat: "evolvingevents",
+      dataInput: "evolvingEventsData",
+      countInput: "evolvingEventsCount",
+      kpis: "evolvingEventsKpis",
+      status: "evolvingEventsStatus",
+      preview: "evolvingEventsPreview",
+      result: "evolvingEventsRunResult",
+      progressBar: "evolvingEventsProgressBar",
+      progressText: "evolvingEventsProgressText",
+      logBox: "evolvingEventsLogBox",
+      defaultDatasetId: "evolvingevents-sample",
+      emptyPathHint: "请填写 EvolvingEvents JSON / JSONL，或点击“使用示例数据”。",
+      metricNote: "输出 MemoryBench 记忆问答分数：写入事件上下文、调用当前后端检索、答案模型、判分和报告；官方 EvolvingEvents 指标单独标注，不冒充 SOTA 可比分数。",
+      officialEvalAfter: false,
+      requiresOfficialRunner: false,
+    },
+    hotpotqa: {
+      label: "HotpotQA",
+      view: "hotpotQaView",
+      adapterFormat: "hotpotqa",
+      dataInput: "hotpotQaData",
+      countInput: "hotpotQaCount",
+      kpis: "hotpotQaKpis",
+      status: "hotpotQaStatus",
+      preview: "hotpotQaPreview",
+      result: "hotpotQaRunResult",
+      progressBar: "hotpotQaProgressBar",
+      progressText: "hotpotQaProgressText",
+      logBox: "hotpotQaLogBox",
+      defaultDatasetId: "hotpotqa-sample",
+      preferredDatasetIds: ["hotpotqa-dev-distractor", "hotpotqa-sample"],
+      emptyPathHint: "请填写 HotpotQA JSON / JSONL。",
+      metricNote: "运行后自动输出 HotpotQA 答案 EM/F1；支持事实 / 联合 F1 指标需要后续生成支持句预测后才可对比官方完整榜。",
+      officialEvalAfter: true,
+      requiresOfficialRunner: false,
+    },
+    proagentbench: {
+      label: "proAgentBench",
+      view: "proAgentBenchView",
+      adapterFormat: "proagentbench",
+      dataInput: "proAgentBenchData",
+      countInput: "proAgentBenchCount",
+      kpis: "proAgentBenchKpis",
+      status: "proAgentBenchStatus",
+      preview: "proAgentBenchPreview",
+      result: "proAgentBenchRunResult",
+      progressBar: "proAgentBenchProgressBar",
+      progressText: "proAgentBenchProgressText",
+      logBox: "proAgentBenchLogBox",
+      defaultDatasetId: "proagentbench-sample",
+      emptyPathHint: "请填写 proAgentBench JSON / JSONL。",
+      metricNote: "输出 MemoryBench 任务记忆问答分数：任务上下文写入、OpenViking 检索、答案模型、判分和报告；proAgentBench 原始主动代理指标需要官方 runner 单独标注。",
+      officialEvalAfter: false,
+      requiresOfficialRunner: false,
+    },
+    tau2bench: {
+      label: "Tau2-bench",
+      view: "tauBenchView",
+      adapterFormat: "tau2bench",
+      dataInput: "tauBenchData",
+      countInput: "tauBenchCount",
+      kpis: "tauBenchKpis",
+      status: "tauBenchStatus",
+      preview: "tauBenchPreview",
+      result: "tauBenchRunResult",
+      progressBar: "tauBenchProgressBar",
+      progressText: "tauBenchProgressText",
+      logBox: "tauBenchLogBox",
+      defaultDatasetId: "tau2bench-sample",
+      emptyPathHint: "请填写 Tau2-bench JSON / JSONL。",
+      metricNote: "输出 MemoryBench 工具任务记忆问答分数：任务/知识上下文写入、OpenViking 检索、答案模型、判分和报告；Tau2-bench Pass^k/reward 仍以官方工具环境单独标注。",
+      officialEvalAfter: false,
+      requiresOfficialRunner: false,
+    },
+  };
+
+  const aliases = Object.fromEntries(
+    Object.entries(DATASET_FORMATS)
+      .flatMap(([format, meta]) => [format, ...(meta.aliases || [])].map((alias) => [String(alias), format]))
+  );
+  const formatViews = Object.fromEntries(
+    Object.entries(DATASET_FORMATS)
+      .filter(([, meta]) => meta.view)
+      .map(([format, meta]) => [format, meta.view])
+  );
+  const viewFormats = Object.fromEntries(Object.entries(formatViews).map(([format, view]) => [view, format]));
+  const standaloneFormats = new Set(
+    Object.entries(DATASET_FORMATS)
+      .filter(([, meta]) => Boolean(meta.standalone))
+      .map(([format]) => format)
+  );
+
+  function normalizeFormat(value) {
+    const raw = String(value || "").trim().toLowerCase();
+    if (!raw) return "";
+    const compact = raw.replace(/[\s_-]+/g, "");
+    return aliases[raw] || aliases[compact] || (formatViews[compact] ? compact : raw);
+  }
+
+  function viewForFormat(format, fallback = "runsView") {
+    return formatViews[normalizeFormat(format)] || fallback;
+  }
+
+  function formatForView(viewId = "") {
+    return normalizeFormat(viewFormats[viewId] || "");
+  }
+
+  function isStandaloneFormat(format = "") {
+    return standaloneFormats.has(normalizeFormat(format));
+  }
+
+  function formatLabel(format) {
+    const key = normalizeFormat(format);
+    return DATASET_FORMATS[key]?.label || (format ? String(format) : "数据集");
+  }
+
+  function genericBenchmarkKey(format = "") {
+    const normalized = normalizeFormat(format);
+    for (const [key, config] of Object.entries(GENERIC_BENCHMARKS)) {
+      if (normalizeFormat(config.adapterFormat) === normalized) return key;
+    }
+    return "";
+  }
+
+  function genericBenchmarkConfig(key) {
+    const config = GENERIC_BENCHMARKS[key];
+    if (!config) throw new Error(`未知评测入口：${key}`);
+    return config;
+  }
+
+  function genericBenchmarkEntries() {
+    return Object.entries(GENERIC_BENCHMARKS);
+  }
+
+  return {
+    normalizeFormat,
+    viewForFormat,
+    formatForView,
+    isStandaloneFormat,
+    formatLabel,
+    genericBenchmarkKey,
+    genericBenchmarkConfig,
+    genericBenchmarkEntries,
+  };
+})();
 const WORKFLOW_GUIDE_VIEWS = new Set();
 
 function appVersionFromIndexHtml(html) {
@@ -1346,16 +1511,11 @@ function saveLastLocomoDataset(patch = {}) {
 }
 
 function normalizeDatasetFormat(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  if (!raw) return "";
-  const compact = raw.replace(/[\s_-]+/g, "");
-  return DATASET_FORMAT_ALIASES[raw]
-    || DATASET_FORMAT_ALIASES[compact]
-    || (DATASET_FORMAT_VIEWS[compact] ? compact : raw);
+  return BenchmarkRegistry.normalizeFormat(value);
 }
 
 function viewForDatasetFormat(format, fallback = "runsView") {
-  return DATASET_FORMAT_VIEWS[normalizeDatasetFormat(format)] || fallback;
+  return BenchmarkRegistry.viewForFormat(format, fallback);
 }
 
 function setBenchmarkDatasetInput(format = "", path = "") {
@@ -1421,12 +1581,11 @@ function rememberBenchmarkRecord(record = {}, format = "") {
 }
 
 function datasetFormatForView(viewId = "") {
-  return normalizeDatasetFormat(DATASET_VIEW_FORMATS[viewId] || "");
+  return BenchmarkRegistry.formatForView(viewId);
 }
 
 function isStandaloneBenchmarkView(viewId = "") {
-  const format = datasetFormatForView(viewId);
-  return Boolean(format && format !== "locomo");
+  return BenchmarkRegistry.isStandaloneFormat(datasetFormatForView(viewId));
 }
 
 function rememberActiveDatasetView(viewId = "", format = "", path = "") {
@@ -5154,15 +5313,7 @@ async function deleteCurrentAccount() {
 }
 
 function datasetTypeLabel(format) {
-  const key = String(format || "").toLowerCase();
-  if (key === "locomo") return "LoCoMo";
-  if (key === "chenmo") return "ChenMo";
-  if (key === "longmemeval") return "LongMemEval";
-  if (key === "evolvingevents") return "EvolvingEvents";
-  if (key === "hotpotqa") return "HotpotQA";
-  if (key === "proagentbench") return "proAgentBench";
-  if (key === "tau2bench") return "Tau2-bench";
-  return format ? String(format) : "数据集";
+  return BenchmarkRegistry.formatLabel(format);
 }
 
 const LOCOMO_CATEGORY_LABELS = {
@@ -5179,86 +5330,6 @@ const LOCOMO_CATEGORY_HINTS = {
   "3": "需要把多条记忆或多个人物关系串起来。",
   "4": "需要归纳多个证据，答案通常更开放。",
   "5": "LoCoMo 官方统计中通常排除。",
-};
-
-const GENERIC_BENCHMARKS = {
-  evolvingevents: {
-    label: "EvolvingEvents",
-    view: "evolvingEventsView",
-    adapterFormat: "evolvingevents",
-    dataInput: "evolvingEventsData",
-    countInput: "evolvingEventsCount",
-    kpis: "evolvingEventsKpis",
-    status: "evolvingEventsStatus",
-    preview: "evolvingEventsPreview",
-    result: "evolvingEventsRunResult",
-    progressBar: "evolvingEventsProgressBar",
-    progressText: "evolvingEventsProgressText",
-    logBox: "evolvingEventsLogBox",
-    defaultDatasetId: "evolvingevents-sample",
-    emptyPathHint: "请填写 EvolvingEvents JSON / JSONL，或点击“使用示例数据”。",
-    metricNote: "输出 MemoryBench 记忆问答分数：写入事件上下文、调用当前后端检索、答案模型、判分和报告；官方 EvolvingEvents 指标单独标注，不冒充 SOTA 可比分数。",
-    officialEvalAfter: false,
-    requiresOfficialRunner: false,
-  },
-  hotpotqa: {
-    label: "HotpotQA",
-    view: "hotpotQaView",
-    adapterFormat: "hotpotqa",
-    dataInput: "hotpotQaData",
-    countInput: "hotpotQaCount",
-    kpis: "hotpotQaKpis",
-    status: "hotpotQaStatus",
-    preview: "hotpotQaPreview",
-    result: "hotpotQaRunResult",
-    progressBar: "hotpotQaProgressBar",
-    progressText: "hotpotQaProgressText",
-    logBox: "hotpotQaLogBox",
-    defaultDatasetId: "hotpotqa-sample",
-    preferredDatasetIds: ["hotpotqa-dev-distractor", "hotpotqa-sample"],
-    emptyPathHint: "请填写 HotpotQA JSON / JSONL。",
-    metricNote: "运行后自动输出 HotpotQA 答案 EM/F1；支持事实 / 联合 F1 指标需要后续生成支持句预测后才可对比官方完整榜。",
-    officialEvalAfter: true,
-    requiresOfficialRunner: false,
-  },
-  proagentbench: {
-    label: "proAgentBench",
-    view: "proAgentBenchView",
-    adapterFormat: "proagentbench",
-    dataInput: "proAgentBenchData",
-    countInput: "proAgentBenchCount",
-    kpis: "proAgentBenchKpis",
-    status: "proAgentBenchStatus",
-    preview: "proAgentBenchPreview",
-    result: "proAgentBenchRunResult",
-    progressBar: "proAgentBenchProgressBar",
-    progressText: "proAgentBenchProgressText",
-    logBox: "proAgentBenchLogBox",
-    defaultDatasetId: "proagentbench-sample",
-    emptyPathHint: "请填写 proAgentBench JSON / JSONL。",
-    metricNote: "输出 MemoryBench 任务记忆问答分数：任务上下文写入、OpenViking 检索、答案模型、判分和报告；proAgentBench 原始主动代理指标需要官方 runner 单独标注。",
-    officialEvalAfter: false,
-    requiresOfficialRunner: false,
-  },
-  tau2bench: {
-    label: "Tau2-bench",
-    view: "tauBenchView",
-    adapterFormat: "tau2bench",
-    dataInput: "tauBenchData",
-    countInput: "tauBenchCount",
-    kpis: "tauBenchKpis",
-    status: "tauBenchStatus",
-    preview: "tauBenchPreview",
-    result: "tauBenchRunResult",
-    progressBar: "tauBenchProgressBar",
-    progressText: "tauBenchProgressText",
-    logBox: "tauBenchLogBox",
-    defaultDatasetId: "tau2bench-sample",
-    emptyPathHint: "请填写 Tau2-bench JSON / JSONL。",
-    metricNote: "输出 MemoryBench 工具任务记忆问答分数：任务/知识上下文写入、OpenViking 检索、答案模型、判分和报告；Tau2-bench Pass^k/reward 仍以官方工具环境单独标注。",
-    officialEvalAfter: false,
-    requiresOfficialRunner: false,
-  },
 };
 
 function benchmarkMetricNote(config) {
@@ -5342,7 +5413,7 @@ function updateGenericRunButton(key, data = null) {
 }
 
 function updateAllGenericRunButtons() {
-  Object.keys(GENERIC_BENCHMARKS).forEach((key) => updateGenericRunButton(key));
+  BenchmarkRegistry.genericBenchmarkEntries().forEach(([key]) => updateGenericRunButton(key));
 }
 
 function benchmarkCount(inputId, fallback = 20) {
@@ -6071,7 +6142,7 @@ function renderLocomoWorkbenchTrack() {
       step: "2",
       title: "问答测试",
       status: taskRunning ? taskStatusLabel(task) : (outputCsv ? "已生成" : "待运行"),
-      detail: outputCsv || "选择具体 QA 或当前范围全量运行记忆问答。",
+      detail: outputCsv || "选择具体 QA、错题或时间题运行记忆问答。",
       metric: qaProgress,
       tone: taskRunning ? "active" : (outputCsv ? "ok" : "todo"),
       view: "evalView",
@@ -7451,11 +7522,7 @@ async function loadDatasetRegistry() {
 }
 
 function genericBenchmarkKeyForFormat(format = "") {
-  const normalized = normalizeDatasetFormat(format);
-  for (const [key, config] of Object.entries(GENERIC_BENCHMARKS)) {
-    if (normalizeDatasetFormat(config.adapterFormat) === normalized) return key;
-  }
-  return "";
+  return BenchmarkRegistry.genericBenchmarkKey(format);
 }
 
 async function openDatasetCard(path, format = "") {
@@ -7570,9 +7637,7 @@ function renderLongMemDatasetCards() {
 }
 
 function benchmarkConfig(key) {
-  const config = GENERIC_BENCHMARKS[key];
-  if (!config) throw new Error(`未知评测入口：${key}`);
-  return config;
+  return BenchmarkRegistry.genericBenchmarkConfig(key);
 }
 
 function genericBenchmarkLaunchError(format = "") {
@@ -7649,12 +7714,12 @@ function renderHotpotQaModelReadiness(data = state.hotpotQaModelReadiness) {
   const judge = data?.judge || null;
   const answerSummary = answer
     ? (answer.ok
-      ? "可用"
+      ? `可用 · ${answer.model || agentCfg.model || "-"}`
       : `${friendlyUiError(answer.error || "", "回答模型不可用")} · status ${answer.status || "-"}`)
     : "尚未检查";
   const judgeSummary = judge
     ? (judge.ok
-      ? "可用"
+      ? `可用 · ${judge.model || judgeCfg.model || "-"}`
       : `${friendlyUiError(judge.error || "", "判分模型不可用")} · status ${judge.status || "-"}`)
     : "尚未检查";
   target.innerHTML = `
@@ -7841,7 +7906,7 @@ function renderGenericRunningStatus(key, task = {}, summary = null) {
 }
 
 function initializeGenericBenchmarkDefaults() {
-  for (const [key, config] of Object.entries(GENERIC_BENCHMARKS)) {
+  for (const [key, config] of BenchmarkRegistry.genericBenchmarkEntries()) {
     if (!config.defaultDatasetId) continue;
     const input = $(config.dataInput);
     if (!input || input.value.trim()) continue;
@@ -8646,7 +8711,7 @@ async function loadDataset(silent = false) {
       $("activeDatasetPill").classList.toggle("muted", true);
     }
     refreshImportActionLabels();
-    if ($("runTimeQuestions")) $("runTimeQuestions").disabled = true;
+    $("runTimeQuestions").disabled = true;
     renderKpis("datasetKpis", [
       ["LoCoMo 状态", "未选择"],
       ["识别到的格式", datasetTypeLabel(data.format)],
@@ -8718,7 +8783,7 @@ async function loadDataset(silent = false) {
     }
   }
   refreshImportActionLabels();
-  if ($("runTimeQuestions")) $("runTimeQuestions").disabled = !isLocomo;
+  $("runTimeQuestions").disabled = !isLocomo;
   renderDatasetCategories(data);
   if ($("datasetRunnerNote")) {
     // 校验数据集完整性
@@ -9118,20 +9183,10 @@ function filteredQuestions() {
   });
 }
 
-function filteredQuestionsMeta() {
-  const keyword = ($("questionSearch")?.value || "").trim();
-  const category = $("questionCategory")?.value || "all";
-  return {
-    rows: filteredQuestions(),
-    keyword,
-    category,
-    hasActiveFilter: Boolean(keyword) || category !== "all",
-  };
-}
-
 function renderQuestions() {
-  const {rows, keyword, category, hasActiveFilter} = filteredQuestionsMeta();
+  const rows = filteredQuestions();
   state.filteredQuestions = rows;
+  const keyword = ($("questionSearch")?.value || "").trim();
   const isAllSamples = ($("sample")?.value || "all") === "all";
   const visibleLimit = isAllSamples && !keyword ? 200 : 600;
   const visibleRows = rows.slice(0, visibleLimit);
@@ -9139,18 +9194,7 @@ function renderQuestions() {
   const limitHint = rows.length > visibleRows.length
     ? `<p>当前显示 ${visibleRows.length} / ${rows.length} 题。请选择具体 conv 或输入关键词继续缩小范围。</p>`
     : "";
-  const scope = currentLocomoSampleScope();
-  const totalInScope = state.questions.length;
-  const emptyState = hasActiveFilter
-    ? `
-      <div class="empty-state-inline">
-        <p>${escapeHtml(scope.isAll ? LOCOMO_ALL_SESSIONS_LABEL : scope.label)} 里有 ${escapeHtml(String(totalInScope))} 题，但当前筛选后没有结果。</p>
-        <p>关键词：${escapeHtml(keyword || "未填写")} · 分类：${escapeHtml(category === "all" ? "全部" : `C${category}`)}</p>
-        <button class="secondary" type="button" id="clearQuestionFilters">清空筛选</button>
-      </div>
-    `
-    : `<p>${escapeHtml(scope.isAll ? "当前数据集没有可选问题。" : `${scope.label} 当前没有可选问题。`)}</p>`;
-  $("questionPicker").innerHTML = limitHint + (visibleRows.map((q) => `
+  $("questionPicker").innerHTML = limitHint + visibleRows.map((q) => `
     <label class="question-row">
       <input type="checkbox" data-question-id="${escapeHtml(q.question_id)}" ${state.selectedQuestions.has(q.question_id) ? "checked" : ""}>
       <span>
@@ -9160,18 +9204,13 @@ function renderQuestions() {
         <em>标准答案：${escapeHtml(q.answer || "-")}</em>
       </span>
     </label>
-  `).join("") || emptyState);
+  `).join("") || "<p>当前范围没有可选问题。</p>";
   document.querySelectorAll("#questionPicker input[type='checkbox']").forEach((box) => {
     box.addEventListener("change", () => {
       if (box.checked) state.selectedQuestions.add(box.dataset.questionId);
       else state.selectedQuestions.delete(box.dataset.questionId);
       updateQuestionKpis();
     });
-  });
-  $("clearQuestionFilters")?.addEventListener("click", () => {
-    if ($("questionSearch")) $("questionSearch").value = "";
-    if ($("questionCategory")) $("questionCategory").value = "all";
-    renderQuestions();
   });
   refreshLocomoQaActionLabels();
   renderMemoryMismatchWarning();
@@ -9587,7 +9626,8 @@ function benchmarkUiForFormat(format) {
       waiting: "等待测试",
     };
   }
-  const config = GENERIC_BENCHMARKS[key];
+  const benchmarkKey = genericBenchmarkKeyForFormat(key);
+  const config = benchmarkKey ? benchmarkConfig(benchmarkKey) : null;
   if (config?.progressBar && config?.progressText && config?.logBox) {
     return {
       progressBar: config.progressBar,
@@ -15749,6 +15789,25 @@ function bind() {
   document.querySelectorAll(".generic-run-adapter").forEach((button) => {
     button.addEventListener("click", () => runGenericBenchmark(button.dataset.benchmark).catch((e) => toast(e.message)));
   });
+  $("runPreviousWrong")?.addEventListener("click", () => runWithUiActionLock(
+    "locomoQaLaunch",
+    ["runOpenVikingQa", "runOpenVikingFullQa", "runPreviousWrong", "runTimeQuestions", "retryMissingQa", "retryFailedQa"],
+    () => {
+      const csv = currentResultCsv();
+      if (!csv) return toast("请先选择或运行一个结果文件");
+      return runGeneratedQuestionSet("wrong_csv", locomoQaTaskKind(), {csv, name: "locomo 上轮错题重跑"}).catch((e) => toast(e.message));
+    },
+    "问答任务正在启动，请勿重复点击",
+  ));
+  $("runTimeQuestions")?.addEventListener("click", () => runWithUiActionLock(
+    "locomoQaLaunch",
+    ["runOpenVikingQa", "runOpenVikingFullQa", "runPreviousWrong", "runTimeQuestions", "retryMissingQa", "retryFailedQa"],
+    () => runGeneratedQuestionSet("time", locomoQaTaskKind(), {
+      sample: $("sample").value || "all",
+      name: "locomo 时间题问答",
+    }).catch((e) => toast(e.message)),
+    "问答任务正在启动，请勿重复点击",
+  ));
   $("refreshMemoryBrowser")?.addEventListener("click", () => refreshMemoryBrowser().catch((e) => toast(e.message)));
   $("memoryQuery")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") refreshMemoryBrowser().catch((err) => toast(err.message));
@@ -15781,13 +15840,13 @@ function bind() {
   $("preflightJudge")?.addEventListener("click", () => preflightJudge().catch((e) => toast(e.message)));
   $("retryMissingQa")?.addEventListener("click", () => runWithUiActionLock(
     "locomoQaLaunch",
-    ["runOpenVikingQa", "runOpenVikingFullQa", "retryMissingQa", "retryFailedQa"],
+    ["runOpenVikingQa", "runOpenVikingFullQa", "runPreviousWrong", "runTimeQuestions", "retryMissingQa", "retryFailedQa"],
     () => retryMissingOpenVikingQa().catch((e) => toast(e.message)),
     "问答任务正在启动，请勿重复点击",
   ));
   $("retryFailedQa")?.addEventListener("click", () => runWithUiActionLock(
     "locomoQaLaunch",
-    ["runOpenVikingQa", "runOpenVikingFullQa", "retryMissingQa", "retryFailedQa"],
+    ["runOpenVikingQa", "runOpenVikingFullQa", "runPreviousWrong", "runTimeQuestions", "retryMissingQa", "retryFailedQa"],
     () => retryFailedOpenVikingQa().catch((e) => toast(e.message)),
     "问答任务正在启动，请勿重复点击",
   ));
