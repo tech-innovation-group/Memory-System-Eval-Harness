@@ -665,35 +665,64 @@ const RETIRED_VIEW_FALLBACKS = {
   chenmoView: "openvikingView",
   readmeView: "systemConfigView",
 };
-const DATASET_FORMAT_VIEWS = {
-  locomo: "openvikingView",
-  longmemeval: "longMemEvalView",
-  evolvingevents: "evolvingEventsView",
-  hotpotqa: "hotpotQaView",
-  proagentbench: "proAgentBenchView",
-  tau2bench: "tauBenchView",
+const DATASET_FORMAT_METADATA = {
+  locomo: {
+    label: "LoCoMo",
+    view: "openvikingView",
+    standalone: false,
+    aliases: [],
+  },
+  chenmo: {
+    label: "ChenMo",
+    view: "chenmoView",
+    standalone: false,
+    aliases: [],
+  },
+  longmemeval: {
+    label: "LongMemEval",
+    view: "longMemEvalView",
+    standalone: true,
+    aliases: ["longmem", "long_mem_eval", "longmemevaluation"],
+  },
+  evolvingevents: {
+    label: "EvolvingEvents",
+    view: "evolvingEventsView",
+    standalone: true,
+    aliases: ["evolvingevent", "evolving_events", "evolving-events"],
+  },
+  hotpotqa: {
+    label: "HotpotQA",
+    view: "hotpotQaView",
+    standalone: true,
+    aliases: ["hotpot", "hotpot_qa", "hotpot-qa"],
+  },
+  proagentbench: {
+    label: "proAgentBench",
+    view: "proAgentBenchView",
+    standalone: true,
+    aliases: ["proagent", "pro_agent_bench", "pro-agent-bench"],
+  },
+  tau2bench: {
+    label: "Tau2-bench",
+    view: "tauBenchView",
+    standalone: true,
+    aliases: ["tau2", "tau2_bench", "tau2-bench", "tau_bench", "tau-bench", "taubench"],
+  },
 };
-const DATASET_FORMAT_ALIASES = {
-  longmem: "longmemeval",
-  long_mem_eval: "longmemeval",
-  longmemevaluation: "longmemeval",
-  hotpot: "hotpotqa",
-  hotpot_qa: "hotpotqa",
-  "hotpot-qa": "hotpotqa",
-  proagent: "proagentbench",
-  pro_agent_bench: "proagentbench",
-  "pro-agent-bench": "proagentbench",
-  tau2: "tau2bench",
-  tau2_bench: "tau2bench",
-  "tau2-bench": "tau2bench",
-  tau_bench: "tau2bench",
-  "tau-bench": "tau2bench",
-  taubench: "tau2bench",
-  evolvingevent: "evolvingevents",
-  evolving_events: "evolvingevents",
-  "evolving-events": "evolvingevents",
-};
-const STANDALONE_BENCHMARK_FORMATS = new Set(["longmemeval", "evolvingevents", "hotpotqa", "proagentbench", "tau2bench"]);
+const DATASET_FORMAT_VIEWS = Object.fromEntries(
+  Object.entries(DATASET_FORMAT_METADATA)
+    .filter(([, meta]) => meta.view)
+    .map(([format, meta]) => [format, meta.view])
+);
+const DATASET_FORMAT_ALIASES = Object.fromEntries(
+  Object.entries(DATASET_FORMAT_METADATA)
+    .flatMap(([format, meta]) => [format, ...(meta.aliases || [])].map((alias) => [String(alias), format]))
+);
+const STANDALONE_BENCHMARK_FORMATS = new Set(
+  Object.entries(DATASET_FORMAT_METADATA)
+    .filter(([, meta]) => Boolean(meta.standalone))
+    .map(([format]) => format)
+);
 const DATASET_VIEW_FORMATS = Object.fromEntries(Object.entries(DATASET_FORMAT_VIEWS).map(([format, view]) => [view, format]));
 const WORKFLOW_GUIDE_VIEWS = new Set();
 
@@ -5154,15 +5183,8 @@ async function deleteCurrentAccount() {
 }
 
 function datasetTypeLabel(format) {
-  const key = String(format || "").toLowerCase();
-  if (key === "locomo") return "LoCoMo";
-  if (key === "chenmo") return "ChenMo";
-  if (key === "longmemeval") return "LongMemEval";
-  if (key === "evolvingevents") return "EvolvingEvents";
-  if (key === "hotpotqa") return "HotpotQA";
-  if (key === "proagentbench") return "proAgentBench";
-  if (key === "tau2bench") return "Tau2-bench";
-  return format ? String(format) : "数据集";
+  const key = normalizeDatasetFormat(format);
+  return DATASET_FORMAT_METADATA[key]?.label || (format ? String(format) : "数据集");
 }
 
 const LOCOMO_CATEGORY_LABELS = {
@@ -7492,26 +7514,27 @@ async function openDatasetCard(path, format = "") {
     showView("openvikingView");
     return;
   }
-  if (normalized === "longmemeval") {
-    if ($("longMemData")) $("longMemData").value = resolvedPath;
-    renderLongMemEntryStatus(resolvedPath, datasetRecordForPath(resolvedPath, normalized));
-    rememberActiveDatasetView("longMemEvalView", normalized, resolvedPath);
-    showView("longMemEvalView");
-    validateLongMemDataset().catch((e) => {
-      renderLongMemEntryStatus(resolvedPath, datasetRecordForPath(resolvedPath, normalized));
-      toast(e.message);
-    });
-    return;
-  }
   const benchmarkKey = genericBenchmarkKeyForFormat(normalized);
-  if (benchmarkKey) {
-    const config = benchmarkConfig(benchmarkKey);
+  if (normalized === "longmemeval" || benchmarkKey) {
+    const targetKey = benchmarkKey || "longmemeval";
+    const config = normalized === "longmemeval"
+      ? {
+          view: "longMemEvalView",
+          dataInput: "longMemData",
+          renderStatus: renderLongMemEntryStatus,
+          validate: validateLongMemDataset,
+        }
+      : {
+          ...benchmarkConfig(targetKey),
+          renderStatus: (path, record) => renderGenericEntryStatus(targetKey, path, record),
+          validate: () => validateGenericBenchmark(targetKey),
+        };
     if ($(config.dataInput)) $(config.dataInput).value = resolvedPath;
-    renderGenericEntryStatus(benchmarkKey, resolvedPath, datasetRecordForPath(resolvedPath, normalized));
+    config.renderStatus(resolvedPath, datasetRecordForPath(resolvedPath, normalized));
     rememberActiveDatasetView(config.view, normalized, resolvedPath);
     showView(config.view);
-    validateGenericBenchmark(benchmarkKey).catch((e) => {
-      renderGenericEntryStatus(benchmarkKey, resolvedPath, datasetRecordForPath(resolvedPath, normalized));
+    config.validate().catch((e) => {
+      config.renderStatus(resolvedPath, datasetRecordForPath(resolvedPath, normalized));
       toast(e.message);
     });
     return;

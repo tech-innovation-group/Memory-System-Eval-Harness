@@ -665,35 +665,64 @@ const RETIRED_VIEW_FALLBACKS = {
   chenmoView: "openvikingView",
   readmeView: "systemConfigView",
 };
-const DATASET_FORMAT_VIEWS = {
-  locomo: "openvikingView",
-  longmemeval: "longMemEvalView",
-  evolvingevents: "evolvingEventsView",
-  hotpotqa: "hotpotQaView",
-  proagentbench: "proAgentBenchView",
-  tau2bench: "tauBenchView",
+const DATASET_FORMAT_METADATA = {
+  locomo: {
+    label: "LoCoMo",
+    view: "openvikingView",
+    standalone: false,
+    aliases: [],
+  },
+  chenmo: {
+    label: "ChenMo",
+    view: "chenmoView",
+    standalone: false,
+    aliases: [],
+  },
+  longmemeval: {
+    label: "LongMemEval",
+    view: "longMemEvalView",
+    standalone: true,
+    aliases: ["longmem", "long_mem_eval", "longmemevaluation"],
+  },
+  evolvingevents: {
+    label: "EvolvingEvents",
+    view: "evolvingEventsView",
+    standalone: true,
+    aliases: ["evolvingevent", "evolving_events", "evolving-events"],
+  },
+  hotpotqa: {
+    label: "HotpotQA",
+    view: "hotpotQaView",
+    standalone: true,
+    aliases: ["hotpot", "hotpot_qa", "hotpot-qa"],
+  },
+  proagentbench: {
+    label: "proAgentBench",
+    view: "proAgentBenchView",
+    standalone: true,
+    aliases: ["proagent", "pro_agent_bench", "pro-agent-bench"],
+  },
+  tau2bench: {
+    label: "Tau2-bench",
+    view: "tauBenchView",
+    standalone: true,
+    aliases: ["tau2", "tau2_bench", "tau2-bench", "tau_bench", "tau-bench", "taubench"],
+  },
 };
-const DATASET_FORMAT_ALIASES = {
-  longmem: "longmemeval",
-  long_mem_eval: "longmemeval",
-  longmemevaluation: "longmemeval",
-  hotpot: "hotpotqa",
-  hotpot_qa: "hotpotqa",
-  "hotpot-qa": "hotpotqa",
-  proagent: "proagentbench",
-  pro_agent_bench: "proagentbench",
-  "pro-agent-bench": "proagentbench",
-  tau2: "tau2bench",
-  tau2_bench: "tau2bench",
-  "tau2-bench": "tau2bench",
-  tau_bench: "tau2bench",
-  "tau-bench": "tau2bench",
-  taubench: "tau2bench",
-  evolvingevent: "evolvingevents",
-  evolving_events: "evolvingevents",
-  "evolving-events": "evolvingevents",
-};
-const STANDALONE_BENCHMARK_FORMATS = new Set(["longmemeval", "evolvingevents", "hotpotqa", "proagentbench", "tau2bench"]);
+const DATASET_FORMAT_VIEWS = Object.fromEntries(
+  Object.entries(DATASET_FORMAT_METADATA)
+    .filter(([, meta]) => meta.view)
+    .map(([format, meta]) => [format, meta.view])
+);
+const DATASET_FORMAT_ALIASES = Object.fromEntries(
+  Object.entries(DATASET_FORMAT_METADATA)
+    .flatMap(([format, meta]) => [format, ...(meta.aliases || [])].map((alias) => [String(alias), format]))
+);
+const STANDALONE_BENCHMARK_FORMATS = new Set(
+  Object.entries(DATASET_FORMAT_METADATA)
+    .filter(([, meta]) => Boolean(meta.standalone))
+    .map(([format]) => format)
+);
 const DATASET_VIEW_FORMATS = Object.fromEntries(Object.entries(DATASET_FORMAT_VIEWS).map(([format, view]) => [view, format]));
 const WORKFLOW_GUIDE_VIEWS = new Set();
 
@@ -5154,15 +5183,8 @@ async function deleteCurrentAccount() {
 }
 
 function datasetTypeLabel(format) {
-  const key = String(format || "").toLowerCase();
-  if (key === "locomo") return "LoCoMo";
-  if (key === "chenmo") return "ChenMo";
-  if (key === "longmemeval") return "LongMemEval";
-  if (key === "evolvingevents") return "EvolvingEvents";
-  if (key === "hotpotqa") return "HotpotQA";
-  if (key === "proagentbench") return "proAgentBench";
-  if (key === "tau2bench") return "Tau2-bench";
-  return format ? String(format) : "数据集";
+  const key = normalizeDatasetFormat(format);
+  return DATASET_FORMAT_METADATA[key]?.label || (format ? String(format) : "数据集");
 }
 
 const LOCOMO_CATEGORY_LABELS = {
@@ -6071,7 +6093,7 @@ function renderLocomoWorkbenchTrack() {
       step: "2",
       title: "问答测试",
       status: taskRunning ? taskStatusLabel(task) : (outputCsv ? "已生成" : "待运行"),
-      detail: outputCsv || "选择具体 QA 或当前范围全量运行记忆问答。",
+      detail: outputCsv || "选择具体 QA、错题或时间题运行记忆问答。",
       metric: qaProgress,
       tone: taskRunning ? "active" : (outputCsv ? "ok" : "todo"),
       view: "evalView",
@@ -7492,26 +7514,27 @@ async function openDatasetCard(path, format = "") {
     showView("openvikingView");
     return;
   }
-  if (normalized === "longmemeval") {
-    if ($("longMemData")) $("longMemData").value = resolvedPath;
-    renderLongMemEntryStatus(resolvedPath, datasetRecordForPath(resolvedPath, normalized));
-    rememberActiveDatasetView("longMemEvalView", normalized, resolvedPath);
-    showView("longMemEvalView");
-    validateLongMemDataset().catch((e) => {
-      renderLongMemEntryStatus(resolvedPath, datasetRecordForPath(resolvedPath, normalized));
-      toast(e.message);
-    });
-    return;
-  }
   const benchmarkKey = genericBenchmarkKeyForFormat(normalized);
-  if (benchmarkKey) {
-    const config = benchmarkConfig(benchmarkKey);
+  if (normalized === "longmemeval" || benchmarkKey) {
+    const targetKey = benchmarkKey || "longmemeval";
+    const config = normalized === "longmemeval"
+      ? {
+          view: "longMemEvalView",
+          dataInput: "longMemData",
+          renderStatus: renderLongMemEntryStatus,
+          validate: validateLongMemDataset,
+        }
+      : {
+          ...benchmarkConfig(targetKey),
+          renderStatus: (path, record) => renderGenericEntryStatus(targetKey, path, record),
+          validate: () => validateGenericBenchmark(targetKey),
+        };
     if ($(config.dataInput)) $(config.dataInput).value = resolvedPath;
-    renderGenericEntryStatus(benchmarkKey, resolvedPath, datasetRecordForPath(resolvedPath, normalized));
+    config.renderStatus(resolvedPath, datasetRecordForPath(resolvedPath, normalized));
     rememberActiveDatasetView(config.view, normalized, resolvedPath);
     showView(config.view);
-    validateGenericBenchmark(benchmarkKey).catch((e) => {
-      renderGenericEntryStatus(benchmarkKey, resolvedPath, datasetRecordForPath(resolvedPath, normalized));
+    config.validate().catch((e) => {
+      config.renderStatus(resolvedPath, datasetRecordForPath(resolvedPath, normalized));
       toast(e.message);
     });
     return;
@@ -7649,12 +7672,12 @@ function renderHotpotQaModelReadiness(data = state.hotpotQaModelReadiness) {
   const judge = data?.judge || null;
   const answerSummary = answer
     ? (answer.ok
-      ? "可用"
+      ? `可用 · ${answer.model || agentCfg.model || "-"}`
       : `${friendlyUiError(answer.error || "", "回答模型不可用")} · status ${answer.status || "-"}`)
     : "尚未检查";
   const judgeSummary = judge
     ? (judge.ok
-      ? "可用"
+      ? `可用 · ${judge.model || judgeCfg.model || "-"}`
       : `${friendlyUiError(judge.error || "", "判分模型不可用")} · status ${judge.status || "-"}`)
     : "尚未检查";
   target.innerHTML = `
@@ -8646,7 +8669,7 @@ async function loadDataset(silent = false) {
       $("activeDatasetPill").classList.toggle("muted", true);
     }
     refreshImportActionLabels();
-    if ($("runTimeQuestions")) $("runTimeQuestions").disabled = true;
+    $("runTimeQuestions").disabled = true;
     renderKpis("datasetKpis", [
       ["LoCoMo 状态", "未选择"],
       ["识别到的格式", datasetTypeLabel(data.format)],
@@ -8718,7 +8741,7 @@ async function loadDataset(silent = false) {
     }
   }
   refreshImportActionLabels();
-  if ($("runTimeQuestions")) $("runTimeQuestions").disabled = !isLocomo;
+  $("runTimeQuestions").disabled = !isLocomo;
   renderDatasetCategories(data);
   if ($("datasetRunnerNote")) {
     // 校验数据集完整性
@@ -9118,20 +9141,10 @@ function filteredQuestions() {
   });
 }
 
-function filteredQuestionsMeta() {
-  const keyword = ($("questionSearch")?.value || "").trim();
-  const category = $("questionCategory")?.value || "all";
-  return {
-    rows: filteredQuestions(),
-    keyword,
-    category,
-    hasActiveFilter: Boolean(keyword) || category !== "all",
-  };
-}
-
 function renderQuestions() {
-  const {rows, keyword, category, hasActiveFilter} = filteredQuestionsMeta();
+  const rows = filteredQuestions();
   state.filteredQuestions = rows;
+  const keyword = ($("questionSearch")?.value || "").trim();
   const isAllSamples = ($("sample")?.value || "all") === "all";
   const visibleLimit = isAllSamples && !keyword ? 200 : 600;
   const visibleRows = rows.slice(0, visibleLimit);
@@ -9139,18 +9152,7 @@ function renderQuestions() {
   const limitHint = rows.length > visibleRows.length
     ? `<p>当前显示 ${visibleRows.length} / ${rows.length} 题。请选择具体 conv 或输入关键词继续缩小范围。</p>`
     : "";
-  const scope = currentLocomoSampleScope();
-  const totalInScope = state.questions.length;
-  const emptyState = hasActiveFilter
-    ? `
-      <div class="empty-state-inline">
-        <p>${escapeHtml(scope.isAll ? LOCOMO_ALL_SESSIONS_LABEL : scope.label)} 里有 ${escapeHtml(String(totalInScope))} 题，但当前筛选后没有结果。</p>
-        <p>关键词：${escapeHtml(keyword || "未填写")} · 分类：${escapeHtml(category === "all" ? "全部" : `C${category}`)}</p>
-        <button class="secondary" type="button" id="clearQuestionFilters">清空筛选</button>
-      </div>
-    `
-    : `<p>${escapeHtml(scope.isAll ? "当前数据集没有可选问题。" : `${scope.label} 当前没有可选问题。`)}</p>`;
-  $("questionPicker").innerHTML = limitHint + (visibleRows.map((q) => `
+  $("questionPicker").innerHTML = limitHint + visibleRows.map((q) => `
     <label class="question-row">
       <input type="checkbox" data-question-id="${escapeHtml(q.question_id)}" ${state.selectedQuestions.has(q.question_id) ? "checked" : ""}>
       <span>
@@ -9160,18 +9162,13 @@ function renderQuestions() {
         <em>标准答案：${escapeHtml(q.answer || "-")}</em>
       </span>
     </label>
-  `).join("") || emptyState);
+  `).join("") || "<p>当前范围没有可选问题。</p>";
   document.querySelectorAll("#questionPicker input[type='checkbox']").forEach((box) => {
     box.addEventListener("change", () => {
       if (box.checked) state.selectedQuestions.add(box.dataset.questionId);
       else state.selectedQuestions.delete(box.dataset.questionId);
       updateQuestionKpis();
     });
-  });
-  $("clearQuestionFilters")?.addEventListener("click", () => {
-    if ($("questionSearch")) $("questionSearch").value = "";
-    if ($("questionCategory")) $("questionCategory").value = "all";
-    renderQuestions();
   });
   refreshLocomoQaActionLabels();
   renderMemoryMismatchWarning();
@@ -15749,6 +15746,25 @@ function bind() {
   document.querySelectorAll(".generic-run-adapter").forEach((button) => {
     button.addEventListener("click", () => runGenericBenchmark(button.dataset.benchmark).catch((e) => toast(e.message)));
   });
+  $("runPreviousWrong")?.addEventListener("click", () => runWithUiActionLock(
+    "locomoQaLaunch",
+    ["runOpenVikingQa", "runOpenVikingFullQa", "runPreviousWrong", "runTimeQuestions", "retryMissingQa", "retryFailedQa"],
+    () => {
+      const csv = currentResultCsv();
+      if (!csv) return toast("请先选择或运行一个结果文件");
+      return runGeneratedQuestionSet("wrong_csv", locomoQaTaskKind(), {csv, name: "locomo 上轮错题重跑"}).catch((e) => toast(e.message));
+    },
+    "问答任务正在启动，请勿重复点击",
+  ));
+  $("runTimeQuestions")?.addEventListener("click", () => runWithUiActionLock(
+    "locomoQaLaunch",
+    ["runOpenVikingQa", "runOpenVikingFullQa", "runPreviousWrong", "runTimeQuestions", "retryMissingQa", "retryFailedQa"],
+    () => runGeneratedQuestionSet("time", locomoQaTaskKind(), {
+      sample: $("sample").value || "all",
+      name: "locomo 时间题问答",
+    }).catch((e) => toast(e.message)),
+    "问答任务正在启动，请勿重复点击",
+  ));
   $("refreshMemoryBrowser")?.addEventListener("click", () => refreshMemoryBrowser().catch((e) => toast(e.message)));
   $("memoryQuery")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") refreshMemoryBrowser().catch((err) => toast(err.message));
@@ -15781,13 +15797,13 @@ function bind() {
   $("preflightJudge")?.addEventListener("click", () => preflightJudge().catch((e) => toast(e.message)));
   $("retryMissingQa")?.addEventListener("click", () => runWithUiActionLock(
     "locomoQaLaunch",
-    ["runOpenVikingQa", "runOpenVikingFullQa", "retryMissingQa", "retryFailedQa"],
+    ["runOpenVikingQa", "runOpenVikingFullQa", "runPreviousWrong", "runTimeQuestions", "retryMissingQa", "retryFailedQa"],
     () => retryMissingOpenVikingQa().catch((e) => toast(e.message)),
     "问答任务正在启动，请勿重复点击",
   ));
   $("retryFailedQa")?.addEventListener("click", () => runWithUiActionLock(
     "locomoQaLaunch",
-    ["runOpenVikingQa", "runOpenVikingFullQa", "retryMissingQa", "retryFailedQa"],
+    ["runOpenVikingQa", "runOpenVikingFullQa", "runPreviousWrong", "runTimeQuestions", "retryMissingQa", "retryFailedQa"],
     () => retryFailedOpenVikingQa().catch((e) => toast(e.message)),
     "问答任务正在启动，请勿重复点击",
   ));
