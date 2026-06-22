@@ -665,65 +665,201 @@ const RETIRED_VIEW_FALLBACKS = {
   chenmoView: "openvikingView",
   readmeView: "systemConfigView",
 };
-const DATASET_FORMAT_METADATA = {
-  locomo: {
-    label: "LoCoMo",
-    view: "openvikingView",
-    standalone: false,
-    aliases: [],
-  },
-  chenmo: {
-    label: "ChenMo",
-    view: "chenmoView",
-    standalone: false,
-    aliases: [],
-  },
-  longmemeval: {
-    label: "LongMemEval",
-    view: "longMemEvalView",
-    standalone: true,
-    aliases: ["longmem", "long_mem_eval", "longmemevaluation"],
-  },
-  evolvingevents: {
-    label: "EvolvingEvents",
-    view: "evolvingEventsView",
-    standalone: true,
-    aliases: ["evolvingevent", "evolving_events", "evolving-events"],
-  },
-  hotpotqa: {
-    label: "HotpotQA",
-    view: "hotpotQaView",
-    standalone: true,
-    aliases: ["hotpot", "hotpot_qa", "hotpot-qa"],
-  },
-  proagentbench: {
-    label: "proAgentBench",
-    view: "proAgentBenchView",
-    standalone: true,
-    aliases: ["proagent", "pro_agent_bench", "pro-agent-bench"],
-  },
-  tau2bench: {
-    label: "Tau2-bench",
-    view: "tauBenchView",
-    standalone: true,
-    aliases: ["tau2", "tau2_bench", "tau2-bench", "tau_bench", "tau-bench", "taubench"],
-  },
-};
-const DATASET_FORMAT_VIEWS = Object.fromEntries(
-  Object.entries(DATASET_FORMAT_METADATA)
-    .filter(([, meta]) => meta.view)
-    .map(([format, meta]) => [format, meta.view])
-);
-const DATASET_FORMAT_ALIASES = Object.fromEntries(
-  Object.entries(DATASET_FORMAT_METADATA)
-    .flatMap(([format, meta]) => [format, ...(meta.aliases || [])].map((alias) => [String(alias), format]))
-);
-const STANDALONE_BENCHMARK_FORMATS = new Set(
-  Object.entries(DATASET_FORMAT_METADATA)
-    .filter(([, meta]) => Boolean(meta.standalone))
-    .map(([format]) => format)
-);
-const DATASET_VIEW_FORMATS = Object.fromEntries(Object.entries(DATASET_FORMAT_VIEWS).map(([format, view]) => [view, format]));
+const BenchmarkRegistry = (() => {
+  const DATASET_FORMATS = {
+    locomo: {
+      label: "LoCoMo",
+      view: "openvikingView",
+      standalone: false,
+      aliases: [],
+    },
+    chenmo: {
+      label: "ChenMo",
+      view: "chenmoView",
+      standalone: false,
+      aliases: [],
+    },
+    longmemeval: {
+      label: "LongMemEval",
+      view: "longMemEvalView",
+      standalone: true,
+      aliases: ["longmem", "long_mem_eval", "longmemevaluation"],
+    },
+    evolvingevents: {
+      label: "EvolvingEvents",
+      view: "evolvingEventsView",
+      standalone: true,
+      aliases: ["evolvingevent", "evolving_events", "evolving-events"],
+    },
+    hotpotqa: {
+      label: "HotpotQA",
+      view: "hotpotQaView",
+      standalone: true,
+      aliases: ["hotpot", "hotpot_qa", "hotpot-qa"],
+    },
+    proagentbench: {
+      label: "proAgentBench",
+      view: "proAgentBenchView",
+      standalone: true,
+      aliases: ["proagent", "pro_agent_bench", "pro-agent-bench"],
+    },
+    tau2bench: {
+      label: "Tau2-bench",
+      view: "tauBenchView",
+      standalone: true,
+      aliases: ["tau2", "tau2_bench", "tau2-bench", "tau_bench", "tau-bench", "taubench"],
+    },
+  };
+
+  const GENERIC_BENCHMARKS = {
+    evolvingevents: {
+      label: "EvolvingEvents",
+      view: "evolvingEventsView",
+      adapterFormat: "evolvingevents",
+      dataInput: "evolvingEventsData",
+      countInput: "evolvingEventsCount",
+      kpis: "evolvingEventsKpis",
+      status: "evolvingEventsStatus",
+      preview: "evolvingEventsPreview",
+      result: "evolvingEventsRunResult",
+      progressBar: "evolvingEventsProgressBar",
+      progressText: "evolvingEventsProgressText",
+      logBox: "evolvingEventsLogBox",
+      defaultDatasetId: "evolvingevents-sample",
+      emptyPathHint: "请填写 EvolvingEvents JSON / JSONL，或点击“使用示例数据”。",
+      metricNote: "输出 MemoryBench 记忆问答分数：写入事件上下文、调用当前后端检索、答案模型、判分和报告；官方 EvolvingEvents 指标单独标注，不冒充 SOTA 可比分数。",
+      officialEvalAfter: false,
+      requiresOfficialRunner: false,
+    },
+    hotpotqa: {
+      label: "HotpotQA",
+      view: "hotpotQaView",
+      adapterFormat: "hotpotqa",
+      dataInput: "hotpotQaData",
+      countInput: "hotpotQaCount",
+      kpis: "hotpotQaKpis",
+      status: "hotpotQaStatus",
+      preview: "hotpotQaPreview",
+      result: "hotpotQaRunResult",
+      progressBar: "hotpotQaProgressBar",
+      progressText: "hotpotQaProgressText",
+      logBox: "hotpotQaLogBox",
+      defaultDatasetId: "hotpotqa-sample",
+      preferredDatasetIds: ["hotpotqa-dev-distractor", "hotpotqa-sample"],
+      emptyPathHint: "请填写 HotpotQA JSON / JSONL。",
+      metricNote: "运行后自动输出 HotpotQA 答案 EM/F1；支持事实 / 联合 F1 指标需要后续生成支持句预测后才可对比官方完整榜。",
+      officialEvalAfter: true,
+      requiresOfficialRunner: false,
+    },
+    proagentbench: {
+      label: "proAgentBench",
+      view: "proAgentBenchView",
+      adapterFormat: "proagentbench",
+      dataInput: "proAgentBenchData",
+      countInput: "proAgentBenchCount",
+      kpis: "proAgentBenchKpis",
+      status: "proAgentBenchStatus",
+      preview: "proAgentBenchPreview",
+      result: "proAgentBenchRunResult",
+      progressBar: "proAgentBenchProgressBar",
+      progressText: "proAgentBenchProgressText",
+      logBox: "proAgentBenchLogBox",
+      defaultDatasetId: "proagentbench-sample",
+      emptyPathHint: "请填写 proAgentBench JSON / JSONL。",
+      metricNote: "输出 MemoryBench 任务记忆问答分数：任务上下文写入、OpenViking 检索、答案模型、判分和报告；proAgentBench 原始主动代理指标需要官方 runner 单独标注。",
+      officialEvalAfter: false,
+      requiresOfficialRunner: false,
+    },
+    tau2bench: {
+      label: "Tau2-bench",
+      view: "tauBenchView",
+      adapterFormat: "tau2bench",
+      dataInput: "tauBenchData",
+      countInput: "tauBenchCount",
+      kpis: "tauBenchKpis",
+      status: "tauBenchStatus",
+      preview: "tauBenchPreview",
+      result: "tauBenchRunResult",
+      progressBar: "tauBenchProgressBar",
+      progressText: "tauBenchProgressText",
+      logBox: "tauBenchLogBox",
+      defaultDatasetId: "tau2bench-sample",
+      emptyPathHint: "请填写 Tau2-bench JSON / JSONL。",
+      metricNote: "输出 MemoryBench 工具任务记忆问答分数：任务/知识上下文写入、OpenViking 检索、答案模型、判分和报告；Tau2-bench Pass^k/reward 仍以官方工具环境单独标注。",
+      officialEvalAfter: false,
+      requiresOfficialRunner: false,
+    },
+  };
+
+  const aliases = Object.fromEntries(
+    Object.entries(DATASET_FORMATS)
+      .flatMap(([format, meta]) => [format, ...(meta.aliases || [])].map((alias) => [String(alias), format]))
+  );
+  const formatViews = Object.fromEntries(
+    Object.entries(DATASET_FORMATS)
+      .filter(([, meta]) => meta.view)
+      .map(([format, meta]) => [format, meta.view])
+  );
+  const viewFormats = Object.fromEntries(Object.entries(formatViews).map(([format, view]) => [view, format]));
+  const standaloneFormats = new Set(
+    Object.entries(DATASET_FORMATS)
+      .filter(([, meta]) => Boolean(meta.standalone))
+      .map(([format]) => format)
+  );
+
+  function normalizeFormat(value) {
+    const raw = String(value || "").trim().toLowerCase();
+    if (!raw) return "";
+    const compact = raw.replace(/[\s_-]+/g, "");
+    return aliases[raw] || aliases[compact] || (formatViews[compact] ? compact : raw);
+  }
+
+  function viewForFormat(format, fallback = "runsView") {
+    return formatViews[normalizeFormat(format)] || fallback;
+  }
+
+  function formatForView(viewId = "") {
+    return normalizeFormat(viewFormats[viewId] || "");
+  }
+
+  function isStandaloneFormat(format = "") {
+    return standaloneFormats.has(normalizeFormat(format));
+  }
+
+  function formatLabel(format) {
+    const key = normalizeFormat(format);
+    return DATASET_FORMATS[key]?.label || (format ? String(format) : "数据集");
+  }
+
+  function genericBenchmarkKey(format = "") {
+    const normalized = normalizeFormat(format);
+    for (const [key, config] of Object.entries(GENERIC_BENCHMARKS)) {
+      if (normalizeFormat(config.adapterFormat) === normalized) return key;
+    }
+    return "";
+  }
+
+  function genericBenchmarkConfig(key) {
+    const config = GENERIC_BENCHMARKS[key];
+    if (!config) throw new Error(`未知评测入口：${key}`);
+    return config;
+  }
+
+  function genericBenchmarkEntries() {
+    return Object.entries(GENERIC_BENCHMARKS);
+  }
+
+  return {
+    normalizeFormat,
+    viewForFormat,
+    formatForView,
+    isStandaloneFormat,
+    formatLabel,
+    genericBenchmarkKey,
+    genericBenchmarkConfig,
+    genericBenchmarkEntries,
+  };
+})();
 const WORKFLOW_GUIDE_VIEWS = new Set();
 
 function appVersionFromIndexHtml(html) {
@@ -1375,16 +1511,11 @@ function saveLastLocomoDataset(patch = {}) {
 }
 
 function normalizeDatasetFormat(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  if (!raw) return "";
-  const compact = raw.replace(/[\s_-]+/g, "");
-  return DATASET_FORMAT_ALIASES[raw]
-    || DATASET_FORMAT_ALIASES[compact]
-    || (DATASET_FORMAT_VIEWS[compact] ? compact : raw);
+  return BenchmarkRegistry.normalizeFormat(value);
 }
 
 function viewForDatasetFormat(format, fallback = "runsView") {
-  return DATASET_FORMAT_VIEWS[normalizeDatasetFormat(format)] || fallback;
+  return BenchmarkRegistry.viewForFormat(format, fallback);
 }
 
 function setBenchmarkDatasetInput(format = "", path = "") {
@@ -1450,12 +1581,11 @@ function rememberBenchmarkRecord(record = {}, format = "") {
 }
 
 function datasetFormatForView(viewId = "") {
-  return normalizeDatasetFormat(DATASET_VIEW_FORMATS[viewId] || "");
+  return BenchmarkRegistry.formatForView(viewId);
 }
 
 function isStandaloneBenchmarkView(viewId = "") {
-  const format = datasetFormatForView(viewId);
-  return Boolean(format && format !== "locomo");
+  return BenchmarkRegistry.isStandaloneFormat(datasetFormatForView(viewId));
 }
 
 function rememberActiveDatasetView(viewId = "", format = "", path = "") {
@@ -5183,8 +5313,7 @@ async function deleteCurrentAccount() {
 }
 
 function datasetTypeLabel(format) {
-  const key = normalizeDatasetFormat(format);
-  return DATASET_FORMAT_METADATA[key]?.label || (format ? String(format) : "数据集");
+  return BenchmarkRegistry.formatLabel(format);
 }
 
 const LOCOMO_CATEGORY_LABELS = {
@@ -5201,86 +5330,6 @@ const LOCOMO_CATEGORY_HINTS = {
   "3": "需要把多条记忆或多个人物关系串起来。",
   "4": "需要归纳多个证据，答案通常更开放。",
   "5": "LoCoMo 官方统计中通常排除。",
-};
-
-const GENERIC_BENCHMARKS = {
-  evolvingevents: {
-    label: "EvolvingEvents",
-    view: "evolvingEventsView",
-    adapterFormat: "evolvingevents",
-    dataInput: "evolvingEventsData",
-    countInput: "evolvingEventsCount",
-    kpis: "evolvingEventsKpis",
-    status: "evolvingEventsStatus",
-    preview: "evolvingEventsPreview",
-    result: "evolvingEventsRunResult",
-    progressBar: "evolvingEventsProgressBar",
-    progressText: "evolvingEventsProgressText",
-    logBox: "evolvingEventsLogBox",
-    defaultDatasetId: "evolvingevents-sample",
-    emptyPathHint: "请填写 EvolvingEvents JSON / JSONL，或点击“使用示例数据”。",
-    metricNote: "输出 MemoryBench 记忆问答分数：写入事件上下文、调用当前后端检索、答案模型、判分和报告；官方 EvolvingEvents 指标单独标注，不冒充 SOTA 可比分数。",
-    officialEvalAfter: false,
-    requiresOfficialRunner: false,
-  },
-  hotpotqa: {
-    label: "HotpotQA",
-    view: "hotpotQaView",
-    adapterFormat: "hotpotqa",
-    dataInput: "hotpotQaData",
-    countInput: "hotpotQaCount",
-    kpis: "hotpotQaKpis",
-    status: "hotpotQaStatus",
-    preview: "hotpotQaPreview",
-    result: "hotpotQaRunResult",
-    progressBar: "hotpotQaProgressBar",
-    progressText: "hotpotQaProgressText",
-    logBox: "hotpotQaLogBox",
-    defaultDatasetId: "hotpotqa-sample",
-    preferredDatasetIds: ["hotpotqa-dev-distractor", "hotpotqa-sample"],
-    emptyPathHint: "请填写 HotpotQA JSON / JSONL。",
-    metricNote: "运行后自动输出 HotpotQA 答案 EM/F1；支持事实 / 联合 F1 指标需要后续生成支持句预测后才可对比官方完整榜。",
-    officialEvalAfter: true,
-    requiresOfficialRunner: false,
-  },
-  proagentbench: {
-    label: "proAgentBench",
-    view: "proAgentBenchView",
-    adapterFormat: "proagentbench",
-    dataInput: "proAgentBenchData",
-    countInput: "proAgentBenchCount",
-    kpis: "proAgentBenchKpis",
-    status: "proAgentBenchStatus",
-    preview: "proAgentBenchPreview",
-    result: "proAgentBenchRunResult",
-    progressBar: "proAgentBenchProgressBar",
-    progressText: "proAgentBenchProgressText",
-    logBox: "proAgentBenchLogBox",
-    defaultDatasetId: "proagentbench-sample",
-    emptyPathHint: "请填写 proAgentBench JSON / JSONL。",
-    metricNote: "输出 MemoryBench 任务记忆问答分数：任务上下文写入、OpenViking 检索、答案模型、判分和报告；proAgentBench 原始主动代理指标需要官方 runner 单独标注。",
-    officialEvalAfter: false,
-    requiresOfficialRunner: false,
-  },
-  tau2bench: {
-    label: "Tau2-bench",
-    view: "tauBenchView",
-    adapterFormat: "tau2bench",
-    dataInput: "tauBenchData",
-    countInput: "tauBenchCount",
-    kpis: "tauBenchKpis",
-    status: "tauBenchStatus",
-    preview: "tauBenchPreview",
-    result: "tauBenchRunResult",
-    progressBar: "tauBenchProgressBar",
-    progressText: "tauBenchProgressText",
-    logBox: "tauBenchLogBox",
-    defaultDatasetId: "tau2bench-sample",
-    emptyPathHint: "请填写 Tau2-bench JSON / JSONL。",
-    metricNote: "输出 MemoryBench 工具任务记忆问答分数：任务/知识上下文写入、OpenViking 检索、答案模型、判分和报告；Tau2-bench Pass^k/reward 仍以官方工具环境单独标注。",
-    officialEvalAfter: false,
-    requiresOfficialRunner: false,
-  },
 };
 
 function benchmarkMetricNote(config) {
@@ -5364,7 +5413,7 @@ function updateGenericRunButton(key, data = null) {
 }
 
 function updateAllGenericRunButtons() {
-  Object.keys(GENERIC_BENCHMARKS).forEach((key) => updateGenericRunButton(key));
+  BenchmarkRegistry.genericBenchmarkEntries().forEach(([key]) => updateGenericRunButton(key));
 }
 
 function benchmarkCount(inputId, fallback = 20) {
@@ -7473,11 +7522,7 @@ async function loadDatasetRegistry() {
 }
 
 function genericBenchmarkKeyForFormat(format = "") {
-  const normalized = normalizeDatasetFormat(format);
-  for (const [key, config] of Object.entries(GENERIC_BENCHMARKS)) {
-    if (normalizeDatasetFormat(config.adapterFormat) === normalized) return key;
-  }
-  return "";
+  return BenchmarkRegistry.genericBenchmarkKey(format);
 }
 
 async function openDatasetCard(path, format = "") {
@@ -7593,9 +7638,7 @@ function renderLongMemDatasetCards() {
 }
 
 function benchmarkConfig(key) {
-  const config = GENERIC_BENCHMARKS[key];
-  if (!config) throw new Error(`未知评测入口：${key}`);
-  return config;
+  return BenchmarkRegistry.genericBenchmarkConfig(key);
 }
 
 function genericBenchmarkLaunchError(format = "") {
@@ -7864,7 +7907,7 @@ function renderGenericRunningStatus(key, task = {}, summary = null) {
 }
 
 function initializeGenericBenchmarkDefaults() {
-  for (const [key, config] of Object.entries(GENERIC_BENCHMARKS)) {
+  for (const [key, config] of BenchmarkRegistry.genericBenchmarkEntries()) {
     if (!config.defaultDatasetId) continue;
     const input = $(config.dataInput);
     if (!input || input.value.trim()) continue;
@@ -9584,7 +9627,8 @@ function benchmarkUiForFormat(format) {
       waiting: "等待测试",
     };
   }
-  const config = GENERIC_BENCHMARKS[key];
+  const benchmarkKey = genericBenchmarkKeyForFormat(key);
+  const config = benchmarkKey ? benchmarkConfig(benchmarkKey) : null;
   if (config?.progressBar && config?.progressText && config?.logBox) {
     return {
       progressBar: config.progressBar,
