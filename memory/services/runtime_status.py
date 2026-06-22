@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from ..backend_profiles import backend_profile
+
 
 def looks_like_echomem_root(path: Path) -> bool:
     return (
@@ -138,7 +140,8 @@ def backend_runtime_status(
     *,
     context: RuntimeStatusContext,
 ) -> dict[str, Any]:
-    if backend == "openviking":
+    profile = backend_profile(backend)
+    if profile.id == "openviking":
         host = str(config.get("ovHost") or defaults.get("server_host") or "127.0.0.1").strip() or "127.0.0.1"
         default_port = str(defaults.get("server_port") or "19080")
         port = str(config.get("ovPort") or default_port).strip() or default_port
@@ -150,7 +153,7 @@ def backend_runtime_status(
         return {
             "status": "ok" if probe.get("ok") else "warn",
             "kind": "service",
-            "label": "OpenViking 服务",
+            "label": profile.runtime_label,
             "url": f"http://{host}:{port}",
             "probe": probe,
         }
@@ -222,7 +225,7 @@ def backend_runtime_status(
     return {
         "status": status,
         "kind": "local-sdk",
-        "label": "EchoMemory 本地 SDK",
+        "label": profile.runtime_label,
         "root": root,
         "source": source,
         "root_exists": root_exists,
