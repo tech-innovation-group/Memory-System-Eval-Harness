@@ -1,0 +1,999 @@
+{
+  "scenario": {
+    "observations": [
+      {
+        "obs_id": "obs-000",
+        "obs_type": "text",
+        "content": "Gina arrived in Rome on 2023-01-30 for a design interview.",
+        "created_at": "2023-02-01",
+        "event_time": "2023-01-30",
+        "speaker": "user",
+        "caption": "",
+        "ocr": "",
+        "tags": null,
+        "linked_subject": ""
+      },
+      {
+        "obs_id": "obs-001",
+        "obs_type": "image",
+        "content": "Phone screenshot from Gina's arrival day showing Roma Termini station board.\nRoma Termini 08:42 Platform 7\nrome, station, arrival, travel",
+        "created_at": "2023-02-01",
+        "event_time": "2023-01-30",
+        "speaker": "",
+        "caption": "Phone screenshot from Gina's arrival day showing Roma Termini station board.",
+        "ocr": "Roma Termini 08:42 Platform 7",
+        "tags": [
+          "rome",
+          "station",
+          "arrival",
+          "travel"
+        ],
+        "linked_subject": "Gina"
+      },
+      {
+        "obs_id": "obs-002",
+        "obs_type": "text",
+        "content": "Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.",
+        "created_at": "2023-02-03",
+        "event_time": "2023-02-03",
+        "speaker": "user",
+        "caption": "",
+        "ocr": "",
+        "tags": null,
+        "linked_subject": ""
+      },
+      {
+        "obs_id": "obs-003",
+        "obs_type": "image",
+        "content": "Moodboard screenshot for Jon's dream studio with sunlit windows and a waterfront interior.\nwaterfront loft natural light Marley floor\nstudio, moodboard, design, waterfront",
+        "created_at": "2023-02-03",
+        "event_time": "2023-02-03",
+        "speaker": "",
+        "caption": "Moodboard screenshot for Jon's dream studio with sunlit windows and a waterfront interior.",
+        "ocr": "waterfront loft natural light Marley floor",
+        "tags": [
+          "studio",
+          "moodboard",
+          "design",
+          "waterfront"
+        ],
+        "linked_subject": "Jon"
+      },
+      {
+        "obs_id": "obs-004",
+        "obs_type": "text",
+        "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+        "created_at": "2023-02-04",
+        "event_time": "2023-02-04",
+        "speaker": "user",
+        "caption": "",
+        "ocr": "",
+        "tags": null,
+        "linked_subject": ""
+      },
+      {
+        "obs_id": "obs-005",
+        "obs_type": "image",
+        "content": "Finance dashboard screenshot\nRevenue 123; Margin 18%\nfinance, dashboard, metrics",
+        "created_at": "2023-02-04",
+        "event_time": "2023-02-04",
+        "speaker": "",
+        "caption": "Finance dashboard screenshot",
+        "ocr": "Revenue 123; Margin 18%",
+        "tags": [
+          "finance",
+          "dashboard",
+          "metrics"
+        ],
+        "linked_subject": "Alice"
+      }
+    ],
+    "atoms": [
+      {
+        "atom_id": "atom-000",
+        "atom_type": "event",
+        "subject": "Gina",
+        "predicate": "arrived_in",
+        "object": "Rome",
+        "statement": "Gina arrived in Rome on 2023-01-30 for a design interview.",
+        "event_time": "2023-01-30",
+        "created_at": "2023-02-01",
+        "source_obs_id": "obs-000"
+      },
+      {
+        "atom_id": "atom-001",
+        "atom_type": "fact",
+        "subject": "Jon",
+        "predicate": "wanted_style",
+        "object": "a waterfront loft with natural light and Marley flooring.",
+        "statement": "Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.",
+        "event_time": "2023-02-03",
+        "created_at": "2023-02-03",
+        "source_obs_id": "obs-002"
+      },
+      {
+        "atom_id": "atom-002",
+        "atom_type": "fact",
+        "subject": "unknown",
+        "predicate": "mentions",
+        "object": "Alice reviewed a finance dashboard during the weekly planning ch",
+        "statement": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+        "event_time": "2023-02-04",
+        "created_at": "2023-02-04",
+        "source_obs_id": "obs-004"
+      }
+    ],
+    "nodes": [
+      {
+        "node_id": "fact:atom-000",
+        "node_type": "fact",
+        "content": "statement=Gina arrived in Rome on 2023-01-30 for a design interview.\nsubject=Gina\npredicate=arrived_in\nobject=Rome\nevent_time=2023-01-30\ncreated_at=2023-02-01",
+        "event_time": "2023-01-30",
+        "source_ref": "obs-000"
+      },
+      {
+        "node_id": "event:atom-000",
+        "node_type": "event",
+        "content": "statement=Gina arrived in Rome on 2023-01-30 for a design interview.\nparticipants=Gina, Rome\nevent_time=2023-01-30",
+        "event_time": "2023-01-30",
+        "source_ref": "obs-000"
+      },
+      {
+        "node_id": "entity:Gina",
+        "node_type": "entity",
+        "content": "name=Gina\nfirst_seen_in=Gina arrived in Rome on 2023-01-30 for a design interview.",
+        "event_time": "",
+        "source_ref": "obs-000"
+      },
+      {
+        "node_id": "entity:Rome",
+        "node_type": "entity",
+        "content": "name=Rome\nfirst_seen_in=Gina arrived in Rome on 2023-01-30 for a design interview.",
+        "event_time": "",
+        "source_ref": "obs-000"
+      },
+      {
+        "node_id": "fact:atom-001",
+        "node_type": "fact",
+        "content": "statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.\nsubject=Jon\npredicate=wanted_style\nobject=a waterfront loft with natural light and Marley flooring.\nevent_time=2023-02-03\ncreated_at=2023-02-03",
+        "event_time": "2023-02-03",
+        "source_ref": "obs-002"
+      },
+      {
+        "node_id": "event:atom-001",
+        "node_type": "event",
+        "content": "statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.\nparticipants=Jon, a waterfront loft with natural light and Marley flooring.\nevent_time=2023-02-03",
+        "event_time": "2023-02-03",
+        "source_ref": "obs-002"
+      },
+      {
+        "node_id": "entity:Jon",
+        "node_type": "entity",
+        "content": "name=Jon\nfirst_seen_in=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.",
+        "event_time": "",
+        "source_ref": "obs-002"
+      },
+      {
+        "node_id": "entity:a waterfront loft with natural light and Marley flooring.",
+        "node_type": "entity",
+        "content": "name=a waterfront loft with natural light and Marley flooring.\nfirst_seen_in=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.",
+        "event_time": "",
+        "source_ref": "obs-002"
+      },
+      {
+        "node_id": "fact:atom-002",
+        "node_type": "fact",
+        "content": "statement=Alice reviewed a finance dashboard during the weekly planning check-in.\nsubject=unknown\npredicate=mentions\nobject=Alice reviewed a finance dashboard during the weekly planning ch\nevent_time=2023-02-04\ncreated_at=2023-02-04",
+        "event_time": "2023-02-04",
+        "source_ref": "obs-004"
+      },
+      {
+        "node_id": "event:atom-002",
+        "node_type": "event",
+        "content": "statement=Alice reviewed a finance dashboard during the weekly planning check-in.\nparticipants=unknown, Alice reviewed a finance dashboard during the weekly planning ch\nevent_time=2023-02-04",
+        "event_time": "2023-02-04",
+        "source_ref": "obs-004"
+      },
+      {
+        "node_id": "entity:unknown",
+        "node_type": "entity",
+        "content": "name=unknown\nfirst_seen_in=Alice reviewed a finance dashboard during the weekly planning check-in.",
+        "event_time": "",
+        "source_ref": "obs-004"
+      },
+      {
+        "node_id": "entity:Alice reviewed a finance dashboard during the weekly planning ch",
+        "node_type": "entity",
+        "content": "name=Alice reviewed a finance dashboard during the weekly planning ch\nfirst_seen_in=Alice reviewed a finance dashboard during the weekly planning check-in.",
+        "event_time": "",
+        "source_ref": "obs-004"
+      },
+      {
+        "node_id": "image:obs-001",
+        "node_type": "image_evidence",
+        "content": "caption=Phone screenshot from Gina's arrival day showing Roma Termini station board.\nocr=Roma Termini 08:42 Platform 7\ntags=rome, station, arrival, travel\nlinked_subject=Gina\nevent_time=2023-01-30\ncreated_at=2023-02-01",
+        "event_time": "2023-01-30",
+        "source_ref": "obs-001"
+      },
+      {
+        "node_id": "image:obs-003",
+        "node_type": "image_evidence",
+        "content": "caption=Moodboard screenshot for Jon's dream studio with sunlit windows and a waterfront interior.\nocr=waterfront loft natural light Marley floor\ntags=studio, moodboard, design, waterfront\nlinked_subject=Jon\nevent_time=2023-02-03\ncreated_at=2023-02-03",
+        "event_time": "2023-02-03",
+        "source_ref": "obs-003"
+      },
+      {
+        "node_id": "image:obs-005",
+        "node_type": "image_evidence",
+        "content": "caption=Finance dashboard screenshot\nocr=Revenue 123; Margin 18%\ntags=finance, dashboard, metrics\nlinked_subject=Alice\nevent_time=2023-02-04\ncreated_at=2023-02-04",
+        "event_time": "2023-02-04",
+        "source_ref": "obs-005"
+      },
+      {
+        "node_id": "entity:Alice",
+        "node_type": "entity",
+        "content": "name=Alice\nfirst_seen_in=Finance dashboard screenshot",
+        "event_time": "",
+        "source_ref": "obs-005"
+      }
+    ],
+    "edges": [
+      {
+        "edge_id": "event:atom-000:evidence_of:fact:atom-000",
+        "source_id": "event:atom-000",
+        "target_id": "fact:atom-000",
+        "relation_type": "evidence_of"
+      },
+      {
+        "edge_id": "entity:Gina:has_fact:atom-000",
+        "source_id": "entity:Gina",
+        "target_id": "fact:atom-000",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-000:involves:Gina",
+        "source_id": "event:atom-000",
+        "target_id": "entity:Gina",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "entity:Rome:has_fact:atom-000",
+        "source_id": "entity:Rome",
+        "target_id": "fact:atom-000",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-000:involves:Rome",
+        "source_id": "event:atom-000",
+        "target_id": "entity:Rome",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "event:atom-001:evidence_of:fact:atom-001",
+        "source_id": "event:atom-001",
+        "target_id": "fact:atom-001",
+        "relation_type": "evidence_of"
+      },
+      {
+        "edge_id": "entity:Jon:has_fact:atom-001",
+        "source_id": "entity:Jon",
+        "target_id": "fact:atom-001",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-001:involves:Jon",
+        "source_id": "event:atom-001",
+        "target_id": "entity:Jon",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "entity:a waterfront loft with natural light and Marley flooring.:has_fact:atom-001",
+        "source_id": "entity:a waterfront loft with natural light and Marley flooring.",
+        "target_id": "fact:atom-001",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-001:involves:a waterfront loft with natural light and Marley flooring.",
+        "source_id": "event:atom-001",
+        "target_id": "entity:a waterfront loft with natural light and Marley flooring.",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "event:atom-002:evidence_of:fact:atom-002",
+        "source_id": "event:atom-002",
+        "target_id": "fact:atom-002",
+        "relation_type": "evidence_of"
+      },
+      {
+        "edge_id": "entity:unknown:has_fact:atom-002",
+        "source_id": "entity:unknown",
+        "target_id": "fact:atom-002",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-002:involves:unknown",
+        "source_id": "event:atom-002",
+        "target_id": "entity:unknown",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "entity:Alice reviewed a finance dashboard during the weekly planning ch:has_fact:atom-002",
+        "source_id": "entity:Alice reviewed a finance dashboard during the weekly planning ch",
+        "target_id": "fact:atom-002",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-002:involves:Alice reviewed a finance dashboard during the weekly planning ch",
+        "source_id": "event:atom-002",
+        "target_id": "entity:Alice reviewed a finance dashboard during the weekly planning ch",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "image:obs-001:shows:Gina",
+        "source_id": "image:obs-001",
+        "target_id": "entity:Gina",
+        "relation_type": "shows"
+      },
+      {
+        "edge_id": "image:obs-001:supports:event:atom-000",
+        "source_id": "image:obs-001",
+        "target_id": "event:atom-000",
+        "relation_type": "supports_event"
+      },
+      {
+        "edge_id": "image:obs-001:evidence_of:fact:atom-000",
+        "source_id": "image:obs-001",
+        "target_id": "fact:atom-000",
+        "relation_type": "visual_evidence_of"
+      },
+      {
+        "edge_id": "image:obs-003:shows:Jon",
+        "source_id": "image:obs-003",
+        "target_id": "entity:Jon",
+        "relation_type": "shows"
+      },
+      {
+        "edge_id": "image:obs-003:supports:event:atom-001",
+        "source_id": "image:obs-003",
+        "target_id": "event:atom-001",
+        "relation_type": "supports_event"
+      },
+      {
+        "edge_id": "image:obs-003:evidence_of:fact:atom-001",
+        "source_id": "image:obs-003",
+        "target_id": "fact:atom-001",
+        "relation_type": "visual_evidence_of"
+      },
+      {
+        "edge_id": "image:obs-005:shows:Alice",
+        "source_id": "image:obs-005",
+        "target_id": "entity:Alice",
+        "relation_type": "shows"
+      }
+    ]
+  },
+  "summary": {
+    "cases": 5,
+    "one_pass_contract_ok": 2,
+    "contract_aware_contract_ok": 5,
+    "one_pass_keyword_ok": 5,
+    "contract_aware_keyword_ok": 5,
+    "improved_cases": [
+      "dashboard_owner",
+      "studio_style_reference",
+      "dashboard_metrics"
+    ]
+  },
+  "results": [
+    {
+      "case_id": "arrival_timestamp",
+      "query": "What time was visible in Gina's screenshot when she arrived?",
+      "note": "A visual-temporal query should keep image evidence while also anchoring to the linked event.",
+      "expected_keywords": [
+        "08:42"
+      ],
+      "required_layers": [
+        "image_evidence",
+        "event"
+      ],
+      "one_pass": {
+        "plan": {
+          "intent": "visual",
+          "target_layers": [
+            "image_evidence",
+            "event",
+            "entity"
+          ],
+          "notes": "Visual query should prioritize image evidence nodes and OCR-bearing content."
+        },
+        "hits": [
+          {
+            "score": 8.0,
+            "node_id": "image:obs-001",
+            "node_type": "image_evidence",
+            "event_time": "2023-01-30",
+            "content": "caption=Phone screenshot from Gina's arrival day showing Roma Termini station board.\nocr=Roma Termini 08:42 Platform 7\ntags=rome, station, arrival, travel\nlinked_subject=Gina\nevent_time=2023-01-30\ncreated_at=2023-02-01"
+          },
+          {
+            "score": 7.0,
+            "node_id": "image:obs-003",
+            "node_type": "image_evidence",
+            "event_time": "2023-02-03",
+            "content": "caption=Moodboard screenshot for Jon's dream studio with sunlit windows and a waterfront interior.\nocr=waterfront loft natural light Marley floor\ntags=studio, moodboard, design, waterfront\nlinked_subject=Jon\nevent_time=2023-02-03\ncreated_at=2023-02-03"
+          },
+          {
+            "score": 6.0,
+            "node_id": "event:atom-000",
+            "node_type": "event",
+            "event_time": "2023-01-30",
+            "content": "statement=Gina arrived in Rome on 2023-01-30 for a design interview.\nparticipants=Gina, Rome\nevent_time=2023-01-30"
+          }
+        ],
+        "coverage": {
+          "required_layers": [
+            "image_evidence",
+            "event"
+          ],
+          "present_layers": [
+            "image_evidence",
+            "event"
+          ],
+          "matched_layers": [
+            "image_evidence",
+            "event"
+          ],
+          "missing_layers": [],
+          "coverage_ratio": 1.0,
+          "contract_ok": true
+        },
+        "keyword_ok": true
+      },
+      "contract_aware": {
+        "hits": [
+          {
+            "score": 8.0,
+            "node_id": "image:obs-001",
+            "node_type": "image_evidence",
+            "event_time": "2023-01-30",
+            "content": "caption=Phone screenshot from Gina's arrival day showing Roma Termini station board.\nocr=Roma Termini 08:42 Platform 7\ntags=rome, station, arrival, travel\nlinked_subject=Gina\nevent_time=2023-01-30\ncreated_at=2023-02-01"
+          },
+          {
+            "score": 7.0,
+            "node_id": "image:obs-003",
+            "node_type": "image_evidence",
+            "event_time": "2023-02-03",
+            "content": "caption=Moodboard screenshot for Jon's dream studio with sunlit windows and a waterfront interior.\nocr=waterfront loft natural light Marley floor\ntags=studio, moodboard, design, waterfront\nlinked_subject=Jon\nevent_time=2023-02-03\ncreated_at=2023-02-03"
+          },
+          {
+            "score": 6.0,
+            "node_id": "event:atom-000",
+            "node_type": "event",
+            "event_time": "2023-01-30",
+            "content": "statement=Gina arrived in Rome on 2023-01-30 for a design interview.\nparticipants=Gina, Rome\nevent_time=2023-01-30"
+          }
+        ],
+        "coverage": {
+          "required_layers": [
+            "image_evidence",
+            "event"
+          ],
+          "present_layers": [
+            "image_evidence",
+            "event"
+          ],
+          "matched_layers": [
+            "image_evidence",
+            "event"
+          ],
+          "missing_layers": [],
+          "coverage_ratio": 1.0,
+          "contract_ok": true
+        },
+        "keyword_ok": true,
+        "second_pass_sources": []
+      }
+    },
+    {
+      "case_id": "dashboard_owner",
+      "query": "Whose screenshot showed Revenue 123 and Margin 18%?",
+      "note": "A visual-identification query should not stop at OCR-bearing image hits; it should also recover the owner entity.",
+      "expected_keywords": [
+        "Alice"
+      ],
+      "required_layers": [
+        "image_evidence",
+        "entity"
+      ],
+      "one_pass": {
+        "plan": {
+          "intent": "visual",
+          "target_layers": [
+            "image_evidence",
+            "event",
+            "entity"
+          ],
+          "notes": "Visual query should prioritize image evidence nodes and OCR-bearing content."
+        },
+        "hits": [
+          {
+            "score": 9.0,
+            "node_id": "image:obs-005",
+            "node_type": "image_evidence",
+            "event_time": "2023-02-04",
+            "content": "caption=Finance dashboard screenshot\nocr=Revenue 123; Margin 18%\ntags=finance, dashboard, metrics\nlinked_subject=Alice\nevent_time=2023-02-04\ncreated_at=2023-02-04"
+          },
+          {
+            "score": 6.0,
+            "node_id": "image:obs-003",
+            "node_type": "image_evidence",
+            "event_time": "2023-02-03",
+            "content": "caption=Moodboard screenshot for Jon's dream studio with sunlit windows and a waterfront interior.\nocr=waterfront loft natural light Marley floor\ntags=studio, moodboard, design, waterfront\nlinked_subject=Jon\nevent_time=2023-02-03\ncreated_at=2023-02-03"
+          },
+          {
+            "score": 5.0,
+            "node_id": "image:obs-001",
+            "node_type": "image_evidence",
+            "event_time": "2023-01-30",
+            "content": "caption=Phone screenshot from Gina's arrival day showing Roma Termini station board.\nocr=Roma Termini 08:42 Platform 7\ntags=rome, station, arrival, travel\nlinked_subject=Gina\nevent_time=2023-01-30\ncreated_at=2023-02-01"
+          }
+        ],
+        "coverage": {
+          "required_layers": [
+            "image_evidence",
+            "entity"
+          ],
+          "present_layers": [
+            "image_evidence"
+          ],
+          "matched_layers": [
+            "image_evidence"
+          ],
+          "missing_layers": [
+            "entity"
+          ],
+          "coverage_ratio": 0.5,
+          "contract_ok": false
+        },
+        "keyword_ok": true
+      },
+      "contract_aware": {
+        "hits": [
+          {
+            "score": 9.0,
+            "node_id": "image:obs-005",
+            "node_type": "image_evidence",
+            "event_time": "2023-02-04",
+            "content": "caption=Finance dashboard screenshot\nocr=Revenue 123; Margin 18%\ntags=finance, dashboard, metrics\nlinked_subject=Alice\nevent_time=2023-02-04\ncreated_at=2023-02-04"
+          },
+          {
+            "score": 6.0,
+            "node_id": "image:obs-003",
+            "node_type": "image_evidence",
+            "event_time": "2023-02-03",
+            "content": "caption=Moodboard screenshot for Jon's dream studio with sunlit windows and a waterfront interior.\nocr=waterfront loft natural light Marley floor\ntags=studio, moodboard, design, waterfront\nlinked_subject=Jon\nevent_time=2023-02-03\ncreated_at=2023-02-03"
+          },
+          {
+            "score": 5.0,
+            "node_id": "image:obs-001",
+            "node_type": "image_evidence",
+            "event_time": "2023-01-30",
+            "content": "caption=Phone screenshot from Gina's arrival day showing Roma Termini station board.\nocr=Roma Termini 08:42 Platform 7\ntags=rome, station, arrival, travel\nlinked_subject=Gina\nevent_time=2023-01-30\ncreated_at=2023-02-01"
+          },
+          {
+            "score": 0.75,
+            "node_id": "entity:Alice",
+            "node_type": "entity",
+            "event_time": "",
+            "content": "name=Alice\nfirst_seen_in=Finance dashboard screenshot",
+            "second_pass": true
+          },
+          {
+            "score": 0.75,
+            "node_id": "entity:Jon",
+            "node_type": "entity",
+            "event_time": "",
+            "content": "name=Jon\nfirst_seen_in=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.",
+            "second_pass": true
+          },
+          {
+            "score": 0.75,
+            "node_id": "entity:Gina",
+            "node_type": "entity",
+            "event_time": "",
+            "content": "name=Gina\nfirst_seen_in=Gina arrived in Rome on 2023-01-30 for a design interview.",
+            "second_pass": true
+          }
+        ],
+        "coverage": {
+          "required_layers": [
+            "image_evidence",
+            "entity"
+          ],
+          "present_layers": [
+            "image_evidence",
+            "entity"
+          ],
+          "matched_layers": [
+            "image_evidence",
+            "entity"
+          ],
+          "missing_layers": [],
+          "coverage_ratio": 1.0,
+          "contract_ok": true
+        },
+        "keyword_ok": true,
+        "second_pass_sources": [
+          "image_to_entity"
+        ]
+      }
+    },
+    {
+      "case_id": "studio_style_reference",
+      "query": "What kind of studio look did Jon want?",
+      "note": "A style question is answerable from text, but a multimodal memory system should surface the moodboard as supporting evidence.",
+      "expected_keywords": [
+        "waterfront",
+        "natural light"
+      ],
+      "required_layers": [
+        "fact",
+        "image_evidence"
+      ],
+      "one_pass": {
+        "plan": {
+          "intent": "general",
+          "target_layers": [
+            "fact",
+            "event",
+            "entity",
+            "image_evidence"
+          ],
+          "notes": "Fallback mixed retrieval."
+        },
+        "hits": [
+          {
+            "score": 5.0,
+            "node_id": "fact:atom-001",
+            "node_type": "fact",
+            "event_time": "2023-02-03",
+            "content": "statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.\nsubject=Jon\npredicate=wanted_style\nobject=a waterfront loft with natural light and Marley flooring.\nevent_time=2023-02-03\ncreated_at=2023-02-03"
+          },
+          {
+            "score": 5.0,
+            "node_id": "event:atom-001",
+            "node_type": "event",
+            "event_time": "2023-02-03",
+            "content": "statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.\nparticipants=Jon, a waterfront loft with natural light and Marley flooring.\nevent_time=2023-02-03"
+          },
+          {
+            "score": 5.0,
+            "node_id": "entity:Jon",
+            "node_type": "entity",
+            "event_time": "",
+            "content": "name=Jon\nfirst_seen_in=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring."
+          }
+        ],
+        "coverage": {
+          "required_layers": [
+            "fact",
+            "image_evidence"
+          ],
+          "present_layers": [
+            "fact",
+            "event",
+            "entity"
+          ],
+          "matched_layers": [
+            "fact"
+          ],
+          "missing_layers": [
+            "image_evidence"
+          ],
+          "coverage_ratio": 0.5,
+          "contract_ok": false
+        },
+        "keyword_ok": true
+      },
+      "contract_aware": {
+        "hits": [
+          {
+            "score": 5.0,
+            "node_id": "fact:atom-001",
+            "node_type": "fact",
+            "event_time": "2023-02-03",
+            "content": "statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.\nsubject=Jon\npredicate=wanted_style\nobject=a waterfront loft with natural light and Marley flooring.\nevent_time=2023-02-03\ncreated_at=2023-02-03"
+          },
+          {
+            "score": 5.0,
+            "node_id": "event:atom-001",
+            "node_type": "event",
+            "event_time": "2023-02-03",
+            "content": "statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.\nparticipants=Jon, a waterfront loft with natural light and Marley flooring.\nevent_time=2023-02-03"
+          },
+          {
+            "score": 5.0,
+            "node_id": "entity:Jon",
+            "node_type": "entity",
+            "event_time": "",
+            "content": "name=Jon\nfirst_seen_in=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring."
+          },
+          {
+            "score": 0.75,
+            "node_id": "image:obs-003",
+            "node_type": "image_evidence",
+            "event_time": "2023-02-03",
+            "content": "caption=Moodboard screenshot for Jon's dream studio with sunlit windows and a waterfront interior.\nocr=waterfront loft natural light Marley floor\ntags=studio, moodboard, design, waterfront\nlinked_subject=Jon\nevent_time=2023-02-03\ncreated_at=2023-02-03",
+            "second_pass": true
+          }
+        ],
+        "coverage": {
+          "required_layers": [
+            "fact",
+            "image_evidence"
+          ],
+          "present_layers": [
+            "fact",
+            "event",
+            "entity",
+            "image_evidence"
+          ],
+          "matched_layers": [
+            "fact",
+            "image_evidence"
+          ],
+          "missing_layers": [],
+          "coverage_ratio": 1.0,
+          "contract_ok": true
+        },
+        "keyword_ok": true,
+        "second_pass_sources": [
+          "reverse_image_link"
+        ]
+      }
+    },
+    {
+      "case_id": "arrival_day_evidence",
+      "query": "What evidence do we have from Gina's arrival day?",
+      "note": "Evidence-oriented questions should recover both the screenshot node and the linked event/fact context.",
+      "expected_keywords": [
+        "Roma Termini",
+        "08:42"
+      ],
+      "required_layers": [
+        "image_evidence",
+        "fact",
+        "event"
+      ],
+      "one_pass": {
+        "plan": {
+          "intent": "general",
+          "target_layers": [
+            "fact",
+            "event",
+            "entity",
+            "image_evidence"
+          ],
+          "notes": "Fallback mixed retrieval."
+        },
+        "hits": [
+          {
+            "score": 7.0,
+            "node_id": "image:obs-001",
+            "node_type": "image_evidence",
+            "event_time": "2023-01-30",
+            "content": "caption=Phone screenshot from Gina's arrival day showing Roma Termini station board.\nocr=Roma Termini 08:42 Platform 7\ntags=rome, station, arrival, travel\nlinked_subject=Gina\nevent_time=2023-01-30\ncreated_at=2023-02-01"
+          },
+          {
+            "score": 3.0,
+            "node_id": "fact:atom-000",
+            "node_type": "fact",
+            "event_time": "2023-01-30",
+            "content": "statement=Gina arrived in Rome on 2023-01-30 for a design interview.\nsubject=Gina\npredicate=arrived_in\nobject=Rome\nevent_time=2023-01-30\ncreated_at=2023-02-01"
+          },
+          {
+            "score": 3.0,
+            "node_id": "event:atom-000",
+            "node_type": "event",
+            "event_time": "2023-01-30",
+            "content": "statement=Gina arrived in Rome on 2023-01-30 for a design interview.\nparticipants=Gina, Rome\nevent_time=2023-01-30"
+          }
+        ],
+        "coverage": {
+          "required_layers": [
+            "image_evidence",
+            "fact",
+            "event"
+          ],
+          "present_layers": [
+            "image_evidence",
+            "fact",
+            "event"
+          ],
+          "matched_layers": [
+            "image_evidence",
+            "fact",
+            "event"
+          ],
+          "missing_layers": [],
+          "coverage_ratio": 1.0,
+          "contract_ok": true
+        },
+        "keyword_ok": true
+      },
+      "contract_aware": {
+        "hits": [
+          {
+            "score": 7.0,
+            "node_id": "image:obs-001",
+            "node_type": "image_evidence",
+            "event_time": "2023-01-30",
+            "content": "caption=Phone screenshot from Gina's arrival day showing Roma Termini station board.\nocr=Roma Termini 08:42 Platform 7\ntags=rome, station, arrival, travel\nlinked_subject=Gina\nevent_time=2023-01-30\ncreated_at=2023-02-01"
+          },
+          {
+            "score": 3.0,
+            "node_id": "fact:atom-000",
+            "node_type": "fact",
+            "event_time": "2023-01-30",
+            "content": "statement=Gina arrived in Rome on 2023-01-30 for a design interview.\nsubject=Gina\npredicate=arrived_in\nobject=Rome\nevent_time=2023-01-30\ncreated_at=2023-02-01"
+          },
+          {
+            "score": 3.0,
+            "node_id": "event:atom-000",
+            "node_type": "event",
+            "event_time": "2023-01-30",
+            "content": "statement=Gina arrived in Rome on 2023-01-30 for a design interview.\nparticipants=Gina, Rome\nevent_time=2023-01-30"
+          }
+        ],
+        "coverage": {
+          "required_layers": [
+            "image_evidence",
+            "fact",
+            "event"
+          ],
+          "present_layers": [
+            "image_evidence",
+            "fact",
+            "event"
+          ],
+          "matched_layers": [
+            "image_evidence",
+            "fact",
+            "event"
+          ],
+          "missing_layers": [],
+          "coverage_ratio": 1.0,
+          "contract_ok": true
+        },
+        "keyword_ok": true,
+        "second_pass_sources": []
+      }
+    },
+    {
+      "case_id": "dashboard_metrics",
+      "query": "What metrics were visible in Alice's dashboard screenshot?",
+      "note": "An OCR-bearing dashboard query should still retain fact-like grounding instead of returning an isolated image hit only.",
+      "expected_keywords": [
+        "Revenue 123",
+        "Margin 18%"
+      ],
+      "required_layers": [
+        "image_evidence",
+        "fact"
+      ],
+      "one_pass": {
+        "plan": {
+          "intent": "visual",
+          "target_layers": [
+            "image_evidence",
+            "event",
+            "entity"
+          ],
+          "notes": "Visual query should prioritize image evidence nodes and OCR-bearing content."
+        },
+        "hits": [
+          {
+            "score": 8.0,
+            "node_id": "image:obs-005",
+            "node_type": "image_evidence",
+            "event_time": "2023-02-04",
+            "content": "caption=Finance dashboard screenshot\nocr=Revenue 123; Margin 18%\ntags=finance, dashboard, metrics\nlinked_subject=Alice\nevent_time=2023-02-04\ncreated_at=2023-02-04"
+          },
+          {
+            "score": 6.0,
+            "node_id": "image:obs-001",
+            "node_type": "image_evidence",
+            "event_time": "2023-01-30",
+            "content": "caption=Phone screenshot from Gina's arrival day showing Roma Termini station board.\nocr=Roma Termini 08:42 Platform 7\ntags=rome, station, arrival, travel\nlinked_subject=Gina\nevent_time=2023-01-30\ncreated_at=2023-02-01"
+          },
+          {
+            "score": 6.0,
+            "node_id": "image:obs-003",
+            "node_type": "image_evidence",
+            "event_time": "2023-02-03",
+            "content": "caption=Moodboard screenshot for Jon's dream studio with sunlit windows and a waterfront interior.\nocr=waterfront loft natural light Marley floor\ntags=studio, moodboard, design, waterfront\nlinked_subject=Jon\nevent_time=2023-02-03\ncreated_at=2023-02-03"
+          }
+        ],
+        "coverage": {
+          "required_layers": [
+            "image_evidence",
+            "fact"
+          ],
+          "present_layers": [
+            "image_evidence"
+          ],
+          "matched_layers": [
+            "image_evidence"
+          ],
+          "missing_layers": [
+            "fact"
+          ],
+          "coverage_ratio": 0.5,
+          "contract_ok": false
+        },
+        "keyword_ok": true
+      },
+      "contract_aware": {
+        "hits": [
+          {
+            "score": 8.0,
+            "node_id": "image:obs-005",
+            "node_type": "image_evidence",
+            "event_time": "2023-02-04",
+            "content": "caption=Finance dashboard screenshot\nocr=Revenue 123; Margin 18%\ntags=finance, dashboard, metrics\nlinked_subject=Alice\nevent_time=2023-02-04\ncreated_at=2023-02-04"
+          },
+          {
+            "score": 6.0,
+            "node_id": "image:obs-001",
+            "node_type": "image_evidence",
+            "event_time": "2023-01-30",
+            "content": "caption=Phone screenshot from Gina's arrival day showing Roma Termini station board.\nocr=Roma Termini 08:42 Platform 7\ntags=rome, station, arrival, travel\nlinked_subject=Gina\nevent_time=2023-01-30\ncreated_at=2023-02-01"
+          },
+          {
+            "score": 6.0,
+            "node_id": "image:obs-003",
+            "node_type": "image_evidence",
+            "event_time": "2023-02-03",
+            "content": "caption=Moodboard screenshot for Jon's dream studio with sunlit windows and a waterfront interior.\nocr=waterfront loft natural light Marley floor\ntags=studio, moodboard, design, waterfront\nlinked_subject=Jon\nevent_time=2023-02-03\ncreated_at=2023-02-03"
+          },
+          {
+            "score": 0.75,
+            "node_id": "fact:atom-000",
+            "node_type": "fact",
+            "event_time": "2023-01-30",
+            "content": "statement=Gina arrived in Rome on 2023-01-30 for a design interview.\nsubject=Gina\npredicate=arrived_in\nobject=Rome\nevent_time=2023-01-30\ncreated_at=2023-02-01",
+            "second_pass": true
+          },
+          {
+            "score": 0.75,
+            "node_id": "fact:atom-001",
+            "node_type": "fact",
+            "event_time": "2023-02-03",
+            "content": "statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.\nsubject=Jon\npredicate=wanted_style\nobject=a waterfront loft with natural light and Marley flooring.\nevent_time=2023-02-03\ncreated_at=2023-02-03",
+            "second_pass": true
+          }
+        ],
+        "coverage": {
+          "required_layers": [
+            "image_evidence",
+            "fact"
+          ],
+          "present_layers": [
+            "image_evidence",
+            "fact"
+          ],
+          "matched_layers": [
+            "image_evidence",
+            "fact"
+          ],
+          "missing_layers": [],
+          "coverage_ratio": 1.0,
+          "contract_ok": true
+        },
+        "keyword_ok": true,
+        "second_pass_sources": [
+          "linked_fact"
+        ]
+      }
+    }
+  ]
+}

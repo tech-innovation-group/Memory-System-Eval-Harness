@@ -110,14 +110,37 @@ def workspace_for_run(payload: dict[str, Any], run_dir: Path, safe_path) -> Path
     return None
 
 
+def runtime_config_candidates(base_config: Path) -> list[Path]:
+    candidates: list[Path] = []
+    seen: set[str] = set()
+
+    def add(path_like: Any) -> None:
+        text = str(path_like or "").strip()
+        if not text:
+            return
+        try:
+            path = Path(text).expanduser().resolve()
+        except Exception:
+            return
+        key = str(path)
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append(path)
+
+    add(os.environ.get("OPENVIKING_CONFIG_FILE"))
+    add(base_config)
+    add(Path.home() / ".openviking" / "ov.conf")
+    return candidates
+
+
 def make_runtime_config(
     payload: dict[str, Any],
     run_dir: Path,
     base_config: Path,
     memory_templates_dir: Path,
 ) -> Path:
-    ov_config = Path.home() / ".openviking" / "ov.conf"
-    config_source = ov_config if ov_config.exists() else base_config
+    config_source = next((path for path in runtime_config_candidates(base_config) if path.exists()), base_config)
     try:
         cfg = read_json(config_source)
     except Exception:

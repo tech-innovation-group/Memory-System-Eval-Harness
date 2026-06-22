@@ -1,0 +1,321 @@
+{
+  "readiness": {
+    "messages_persisted": true,
+    "atoms_ready": true,
+    "tree_ready": true,
+    "graph_ready": true,
+    "qa_ready": true
+  },
+  "turns": [
+    {
+      "role": "user",
+      "text": "Gina joined Figma on 2025-03-12.",
+      "created_at": "2025-03-12T10:00:00Z"
+    },
+    {
+      "role": "user",
+      "text": "Nora helped Gina with visa prep on 2025-04-08.",
+      "created_at": "2025-04-08T09:00:00Z"
+    },
+    {
+      "role": "user",
+      "text": "Gina left Figma on 2025-05-01.",
+      "created_at": "2025-05-01T18:00:00Z"
+    },
+    {
+      "role": "user",
+      "text": "Gina moved to Lisbon on 2025-05-03.",
+      "created_at": "2025-05-03T14:00:00Z"
+    }
+  ],
+  "atoms": [
+    {
+      "atom_id": "atom-000",
+      "atom_type": "event",
+      "subject": "Gina",
+      "predicate": "joined",
+      "obj": "Figma",
+      "statement": "Gina joined Figma on 2025-03-12.",
+      "created_at": "2025-03-12T10:00:00Z",
+      "mention_time": "2025-03-12T10:00:00Z",
+      "event_time": "2025-03-12"
+    },
+    {
+      "atom_id": "atom-001",
+      "atom_type": "relation",
+      "subject": "Nora",
+      "predicate": "helped_with",
+      "obj": "Gina::visa prep",
+      "statement": "Nora helped Gina with visa prep on 2025-04-08.",
+      "created_at": "2025-04-08T09:00:00Z",
+      "mention_time": "2025-04-08T09:00:00Z",
+      "event_time": "2025-04-08"
+    },
+    {
+      "atom_id": "atom-002",
+      "atom_type": "event",
+      "subject": "Gina",
+      "predicate": "left",
+      "obj": "Figma",
+      "statement": "Gina left Figma on 2025-05-01.",
+      "created_at": "2025-05-01T18:00:00Z",
+      "mention_time": "2025-05-01T18:00:00Z",
+      "event_time": "2025-05-01"
+    },
+    {
+      "atom_id": "atom-003",
+      "atom_type": "event",
+      "subject": "Gina",
+      "predicate": "moved_to",
+      "obj": "Lisbon",
+      "statement": "Gina moved to Lisbon on 2025-05-03.",
+      "created_at": "2025-05-03T14:00:00Z",
+      "mention_time": "2025-05-03T14:00:00Z",
+      "event_time": "2025-05-03"
+    }
+  ],
+  "temporal_tree": {
+    "2025-03": {
+      "key": "2025-03",
+      "lines": [
+        "2025-03-12: Gina joined Figma on 2025-03-12."
+      ]
+    },
+    "2025-04": {
+      "key": "2025-04",
+      "lines": [
+        "2025-04-08: Nora helped Gina with visa prep on 2025-04-08."
+      ]
+    },
+    "2025-05": {
+      "key": "2025-05",
+      "lines": [
+        "2025-05-01: Gina left Figma on 2025-05-01.",
+        "2025-05-03: Gina moved to Lisbon on 2025-05-03."
+      ]
+    }
+  },
+  "graph": [
+    {
+      "source": "Gina",
+      "relation": "joined",
+      "target": "Figma",
+      "evidence": "Gina joined Figma on 2025-03-12."
+    },
+    {
+      "source": "Gina",
+      "relation": "has_fact",
+      "target": "Gina joined Figma on 2025-03-12.",
+      "evidence": "atom-000"
+    },
+    {
+      "source": "Gina joined Figma on 2025-03-12.",
+      "relation": "happened_at",
+      "target": "2025-03-12",
+      "evidence": "atom-000"
+    },
+    {
+      "source": "Nora",
+      "relation": "helped_with",
+      "target": "Gina::visa prep",
+      "evidence": "Nora helped Gina with visa prep on 2025-04-08."
+    },
+    {
+      "source": "Nora",
+      "relation": "has_fact",
+      "target": "Nora helped Gina with visa prep on 2025-04-08.",
+      "evidence": "atom-001"
+    },
+    {
+      "source": "Nora helped Gina with visa prep on 2025-04-08.",
+      "relation": "happened_at",
+      "target": "2025-04-08",
+      "evidence": "atom-001"
+    },
+    {
+      "source": "Gina",
+      "relation": "left",
+      "target": "Figma",
+      "evidence": "Gina left Figma on 2025-05-01."
+    },
+    {
+      "source": "Gina",
+      "relation": "has_fact",
+      "target": "Gina left Figma on 2025-05-01.",
+      "evidence": "atom-002"
+    },
+    {
+      "source": "Gina left Figma on 2025-05-01.",
+      "relation": "happened_at",
+      "target": "2025-05-01",
+      "evidence": "atom-002"
+    },
+    {
+      "source": "Gina",
+      "relation": "moved_to",
+      "target": "Lisbon",
+      "evidence": "Gina moved to Lisbon on 2025-05-03."
+    },
+    {
+      "source": "Gina",
+      "relation": "has_fact",
+      "target": "Gina moved to Lisbon on 2025-05-03.",
+      "evidence": "atom-003"
+    },
+    {
+      "source": "Gina moved to Lisbon on 2025-05-03.",
+      "relation": "happened_at",
+      "target": "2025-05-03",
+      "evidence": "atom-003"
+    }
+  ],
+  "queries": [
+    {
+      "query": "When did Gina leave Figma?",
+      "plan": {
+        "family": "temporal",
+        "primary": "tree",
+        "support": "graph",
+        "reason": "time-oriented query prefers chronology backbone"
+      },
+      "allowed_to_answer": true,
+      "note": "answer-time evidence should come from the primary backbone first",
+      "hits": [
+        {
+          "layer": "temporal_tree",
+          "source": "2025-03",
+          "score": 0.48,
+          "content": "2025-03-12: Gina joined Figma on 2025-03-12."
+        },
+        {
+          "layer": "temporal_tree",
+          "source": "2025-05",
+          "score": 0.48,
+          "content": "2025-05-01: Gina left Figma on 2025-05-01.\n2025-05-03: Gina moved to Lisbon on 2025-05-03."
+        },
+        {
+          "layer": "relation_graph",
+          "source": "Gina",
+          "score": 0.42,
+          "content": "Gina --joined--> Figma | Gina joined Figma on 2025-03-12."
+        },
+        {
+          "layer": "relation_graph",
+          "source": "Gina",
+          "score": 0.42,
+          "content": "Gina --has_fact--> Gina joined Figma on 2025-03-12. | atom-000"
+        },
+        {
+          "layer": "relation_graph",
+          "source": "Gina joined Figma on 2025-03-12.",
+          "score": 0.42,
+          "content": "Gina joined Figma on 2025-03-12. --happened_at--> 2025-03-12 | atom-000"
+        },
+        {
+          "layer": "relation_graph",
+          "source": "Gina",
+          "score": 0.42,
+          "content": "Gina --left--> Figma | Gina left Figma on 2025-05-01."
+        }
+      ]
+    },
+    {
+      "query": "Who helped Gina with visa prep?",
+      "plan": {
+        "family": "relational",
+        "primary": "graph",
+        "support": "tree",
+        "reason": "relation-oriented query prefers graph backbone"
+      },
+      "allowed_to_answer": true,
+      "note": "answer-time evidence should come from the primary backbone first",
+      "hits": [
+        {
+          "layer": "relation_graph",
+          "source": "Nora",
+          "score": 0.913,
+          "content": "Nora --helped_with--> Gina::visa prep | Nora helped Gina with visa prep on 2025-04-08."
+        },
+        {
+          "layer": "relation_graph",
+          "source": "Nora",
+          "score": 0.913,
+          "content": "Nora --has_fact--> Nora helped Gina with visa prep on 2025-04-08. | atom-001"
+        },
+        {
+          "layer": "relation_graph",
+          "source": "Nora helped Gina with visa prep on 2025-04-08.",
+          "score": 0.913,
+          "content": "Nora helped Gina with visa prep on 2025-04-08. --happened_at--> 2025-04-08 | atom-001"
+        },
+        {
+          "layer": "temporal_tree",
+          "source": "2025-04",
+          "score": 0.853,
+          "content": "2025-04-08: Nora helped Gina with visa prep on 2025-04-08."
+        },
+        {
+          "layer": "relation_graph",
+          "source": "Gina",
+          "score": 0.247,
+          "content": "Gina --joined--> Figma | Gina joined Figma on 2025-03-12."
+        },
+        {
+          "layer": "relation_graph",
+          "source": "Gina",
+          "score": 0.247,
+          "content": "Gina --has_fact--> Gina joined Figma on 2025-03-12. | atom-000"
+        }
+      ]
+    },
+    {
+      "query": "What happened before Gina moved to Lisbon?",
+      "plan": {
+        "family": "temporal",
+        "primary": "tree",
+        "support": "graph",
+        "reason": "time-oriented query prefers chronology backbone"
+      },
+      "allowed_to_answer": true,
+      "note": "answer-time evidence should come from the primary backbone first",
+      "hits": [
+        {
+          "layer": "temporal_tree",
+          "source": "2025-05",
+          "score": 0.651,
+          "content": "2025-05-01: Gina left Figma on 2025-05-01.\n2025-05-03: Gina moved to Lisbon on 2025-05-03."
+        },
+        {
+          "layer": "relation_graph",
+          "source": "Gina",
+          "score": 0.591,
+          "content": "Gina --moved_to--> Lisbon | Gina moved to Lisbon on 2025-05-03."
+        },
+        {
+          "layer": "relation_graph",
+          "source": "Gina",
+          "score": 0.591,
+          "content": "Gina --has_fact--> Gina moved to Lisbon on 2025-05-03. | atom-003"
+        },
+        {
+          "layer": "relation_graph",
+          "source": "Gina moved to Lisbon on 2025-05-03.",
+          "score": 0.591,
+          "content": "Gina moved to Lisbon on 2025-05-03. --happened_at--> 2025-05-03 | atom-003"
+        },
+        {
+          "layer": "temporal_tree",
+          "source": "2025-03",
+          "score": 0.223,
+          "content": "2025-03-12: Gina joined Figma on 2025-03-12."
+        },
+        {
+          "layer": "temporal_tree",
+          "source": "2025-04",
+          "score": 0.223,
+          "content": "2025-04-08: Nora helped Gina with visa prep on 2025-04-08."
+        }
+      ]
+    }
+  ]
+}

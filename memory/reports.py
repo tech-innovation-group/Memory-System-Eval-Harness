@@ -22,6 +22,16 @@ def _add_int_field(row: dict[str, str], key: str) -> int | None:
         return None
 
 
+def _add_float_field(row: dict[str, str], key: str) -> float | None:
+    value = row.get(key)
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
 def _bump(counter: dict[str, int], value: str | None, fallback: str = "unknown") -> None:
     label = str(value or "").strip() or fallback
     counter[label] = counter.get(label, 0) + 1
@@ -87,16 +97,20 @@ def parse_csv_summary(path: Path) -> dict[str, Any]:
     api_errors = 0
     total_time = 0.0
     time_count = 0
-    total_injection_tokens = 0
-    injection_token_count = 0
     total_archive_evidence = 0
     archive_evidence_count = 0
     total_memory_evidence = 0
     memory_evidence_count = 0
-    total_retrieval_tokens = 0
-    retrieval_token_count = 0
     total_answer_tokens = 0
     answer_token_count = 0
+    total_memory_injection_time = 0.0
+    memory_injection_time_count = 0
+    total_memory_settle_wait_time = 0.0
+    memory_settle_wait_time_count = 0
+    total_qa_time = 0.0
+    qa_time_count = 0
+    total_end_to_end_time = 0.0
+    end_to_end_time_count = 0
     health_counts: dict[str, int] = {}
     retrieval_status_counts: dict[str, int] = {}
     answer_status_counts: dict[str, int] = {}
@@ -161,11 +175,6 @@ def parse_csv_summary(path: Path) -> dict[str, Any]:
             time_count += 1
         except ValueError:
             pass
-        try:
-            total_injection_tokens += int(float(row.get("injection_tokens_est") or 0))
-            injection_token_count += 1
-        except ValueError:
-            pass
         archive_evidence = _add_int_field(row, "archive_fallback_count")
         if archive_evidence is not None:
             total_archive_evidence += archive_evidence
@@ -174,14 +183,28 @@ def parse_csv_summary(path: Path) -> dict[str, Any]:
         if memory_evidence is not None:
             total_memory_evidence += memory_evidence
             memory_evidence_count += 1
-        retrieval_tokens = _add_int_field(row, "retrieval_tokens_est")
-        if retrieval_tokens is not None:
-            total_retrieval_tokens += retrieval_tokens
-            retrieval_token_count += 1
         answer_tokens = _add_int_field(row, "answer_total_tokens")
         if answer_tokens is not None:
             total_answer_tokens += answer_tokens
             answer_token_count += 1
+        memory_injection_time = _add_float_field(row, "memory_injection_time_s")
+        if memory_injection_time is not None:
+            total_memory_injection_time += memory_injection_time
+            memory_injection_time_count += 1
+        memory_settle_wait_time = _add_float_field(row, "memory_settle_wait_elapsed_s")
+        if memory_settle_wait_time is not None:
+            total_memory_settle_wait_time += memory_settle_wait_time
+            memory_settle_wait_time_count += 1
+        qa_time = _add_float_field(row, "qa_time_s")
+        if qa_time is None:
+            qa_time = _add_float_field(row, "time_cost")
+        if qa_time is not None:
+            total_qa_time += qa_time
+            qa_time_count += 1
+        end_to_end_time = _add_float_field(row, "end_to_end_time_s")
+        if end_to_end_time is not None:
+            total_end_to_end_time += end_to_end_time
+            end_to_end_time_count += 1
         _bump(health_counts, row.get("health_status"))
         _bump(retrieval_status_counts, row.get("retrieval_status"))
         _bump(answer_status_counts, row.get("answer_status"))
@@ -270,16 +293,22 @@ def parse_csv_summary(path: Path) -> dict[str, Any]:
         "exact_match_reference": simple_correct / total if total else None,
         "api_errors": api_errors,
         "avg_time": total_time / time_count if time_count else None,
-        "total_injection_tokens_est": total_injection_tokens,
-        "avg_injection_tokens_est": round(total_injection_tokens / injection_token_count, 1) if injection_token_count else None,
         "archive_fallback_total": total_archive_evidence,
         "avg_archive_fallback_count": round(total_archive_evidence / archive_evidence_count, 2) if archive_evidence_count else None,
         "memory_hit_total": total_memory_evidence,
         "avg_memory_hit_count": round(total_memory_evidence / memory_evidence_count, 2) if memory_evidence_count else None,
-        "retrieval_tokens_est_total": total_retrieval_tokens,
-        "avg_retrieval_tokens_est": round(total_retrieval_tokens / retrieval_token_count, 1) if retrieval_token_count else None,
+        "retrieval_tokens_est_total": None,
+        "avg_retrieval_tokens_est": None,
         "answer_total_tokens": total_answer_tokens,
         "avg_answer_total_tokens": round(total_answer_tokens / answer_token_count, 1) if answer_token_count else None,
+        "total_memory_injection_time_s": round(total_memory_injection_time, 4),
+        "avg_memory_injection_time_s": round(total_memory_injection_time / memory_injection_time_count, 4) if memory_injection_time_count else None,
+        "total_memory_settle_wait_time_s": round(total_memory_settle_wait_time, 4),
+        "avg_memory_settle_wait_time_s": round(total_memory_settle_wait_time / memory_settle_wait_time_count, 4) if memory_settle_wait_time_count else None,
+        "total_qa_time_s": round(total_qa_time, 4),
+        "avg_qa_time_s": round(total_qa_time / qa_time_count, 4) if qa_time_count else None,
+        "total_end_to_end_time_s": round(total_end_to_end_time, 4),
+        "avg_end_to_end_time_s": round(total_end_to_end_time / end_to_end_time_count, 4) if end_to_end_time_count else None,
         "health_counts": health_counts,
         "retrieval_status_counts": retrieval_status_counts,
         "answer_status_counts": answer_status_counts,
@@ -383,15 +412,58 @@ def parse_json_run_summary(path: Path) -> dict[str, Any]:
         records = data.get("records") or []
         extracted = 0
         session_count = 0
+        has_top_level_import_tokens = any(
+            data.get(key) not in (None, "")
+            for key in (
+                "import_llm_prompt_tokens",
+                "import_llm_completion_tokens",
+                "import_llm_total_tokens",
+                "import_embedding_total_tokens",
+                "import_total_tokens",
+            )
+        )
+        import_llm_prompt_tokens = int(data.get("import_llm_prompt_tokens") or 0)
+        import_llm_completion_tokens = int(data.get("import_llm_completion_tokens") or 0)
+        import_llm_total_tokens = int(data.get("import_llm_total_tokens") or 0)
+        import_embedding_total_tokens = int(data.get("import_embedding_total_tokens") or 0)
+        import_total_tokens = int(data.get("import_total_tokens") or 0)
         for record in records:
             if not isinstance(record, dict):
                 continue
             sessions = record.get("session_records") or []
             session_count += len(sessions)
+            if not sessions:
+                sessions = [record]
             for session in sessions:
                 after = session.get("session_after_commit") or {}
                 memories = after.get("memories_extracted") or {}
                 extracted += int(memories.get("total") or 0)
+                if has_top_level_import_tokens:
+                    continue
+                task_usage = (((session.get("task") or {}).get("result") or {}).get("token_usage") or {})
+                task_llm = task_usage.get("llm") or {}
+                task_embedding = task_usage.get("embedding") or {}
+                task_total = task_usage.get("total") or {}
+                after_llm = after.get("llm_token_usage") or {}
+                after_embedding = after.get("embedding_token_usage") or {}
+                llm_prompt = int(task_llm.get("prompt_tokens") or after_llm.get("prompt_tokens") or 0)
+                llm_completion = int(
+                    task_llm.get("completion_tokens") or after_llm.get("completion_tokens") or 0
+                )
+                llm_total = int(
+                    task_llm.get("total_tokens")
+                    or after_llm.get("total_tokens")
+                    or (llm_prompt + llm_completion)
+                )
+                embedding_total = int(
+                    task_embedding.get("total_tokens") or after_embedding.get("total_tokens") or 0
+                )
+                total_tokens = int(task_total.get("total_tokens") or (llm_total + embedding_total))
+                import_llm_prompt_tokens += llm_prompt
+                import_llm_completion_tokens += llm_completion
+                import_llm_total_tokens += llm_total
+                import_embedding_total_tokens += embedding_total
+                import_total_tokens += total_tokens
         return {
             "summary_type": "openviking_import",
             "status": data.get("status"),
@@ -402,6 +474,11 @@ def parse_json_run_summary(path: Path) -> dict[str, Any]:
             "submitted_messages": data.get("submitted_messages"),
             "session_count": session_count,
             "extracted_memories": extracted,
+            "import_llm_prompt_tokens": import_llm_prompt_tokens,
+            "import_llm_completion_tokens": import_llm_completion_tokens,
+            "import_llm_total_tokens": import_llm_total_tokens,
+            "import_embedding_total_tokens": import_embedding_total_tokens,
+            "import_total_tokens": import_total_tokens,
             "rows": records[0].get("expected_messages") if len(records) == 1 and isinstance(records[0], dict) else data.get("expected_messages"),
             "graded": None,
             "accuracy": None,

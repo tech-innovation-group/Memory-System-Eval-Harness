@@ -1,0 +1,301 @@
+{
+  "scenario": {
+    "turns": [
+      {
+        "text": "Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.",
+        "created_at": "2023-01-20"
+      },
+      {
+        "text": "Jon visited Paris on 2023-01-28 and said it was cool.",
+        "created_at": "2023-01-28"
+      },
+      {
+        "text": "Gina visited Rome on 2023-01-30 after her design interview.",
+        "created_at": "2023-02-01"
+      },
+      {
+        "text": "Jon's ideal dance studio is by the water, with natural light and Marley flooring.",
+        "created_at": "2023-02-03"
+      }
+    ]
+  },
+  "extraction_rows": [
+    {
+      "label": "Jon job-loss event_time",
+      "gold": "2023-01-19",
+      "v1": "2023-01-20",
+      "v2": "2023-01-19",
+      "v1_correct": false,
+      "v2_correct": true
+    },
+    {
+      "label": "Gina Rome visit event_time",
+      "gold": "2023-01-30",
+      "v1": "2023-02-01",
+      "v2": "2023-01-30",
+      "v1_correct": false,
+      "v2_correct": true
+    }
+  ],
+  "retrieval_rows": [
+    {
+      "case_id": "temporal_q1",
+      "query": "When did Jon lose his job?",
+      "expected": "top1 is event and contains 2023-01-19",
+      "judge_note": "Time-sensitive query should prefer event evidence and surface the true event date, not the record date.",
+      "flat": [
+        {
+          "score": 3.0,
+          "node_id": "fact:atom-000-00",
+          "node_type": "fact",
+          "event_time": "2023-01-19",
+          "content": "statement=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.\nsubject=Jon\npredicate=lost_job\nobject=job\nevent_time=2023-01-19\ncreated_at=2023-01-20"
+        },
+        {
+          "score": 3.0,
+          "node_id": "event:atom-000-00",
+          "node_type": "event",
+          "event_time": "2023-01-19",
+          "content": "statement=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.\nparticipants=Jon, job\nevent_time=2023-01-19"
+        },
+        {
+          "score": 3.0,
+          "node_id": "entity:Jon",
+          "node_type": "entity",
+          "event_time": "",
+          "content": "name=Jon\nfirst_seen_in=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio."
+        },
+        {
+          "score": 3.0,
+          "node_id": "entity:job",
+          "node_type": "entity",
+          "event_time": "",
+          "content": "name=job\nfirst_seen_in=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio."
+        },
+        {
+          "score": 1.0,
+          "node_id": "fact:atom-001-01",
+          "node_type": "fact",
+          "event_time": "2023-01-28",
+          "content": "statement=Jon visited Paris on 2023-01-28 and said it was cool.\nsubject=Jon\npredicate=visited\nobject=Paris\nevent_time=2023-01-28\ncreated_at=2023-01-28"
+        }
+      ],
+      "planned": {
+        "query": "When did Jon lose his job?",
+        "plan": {
+          "intent": "temporal",
+          "target_layers": [
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer event nodes because they carry explicit event_time."
+        },
+        "hits": [
+          {
+            "score": 5.0,
+            "node_id": "event:atom-000-00",
+            "node_type": "event",
+            "event_time": "2023-01-19",
+            "content": "statement=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.\nparticipants=Jon, job\nevent_time=2023-01-19"
+          },
+          {
+            "score": 3.3,
+            "node_id": "fact:atom-000-00",
+            "node_type": "fact",
+            "event_time": "2023-01-19",
+            "content": "statement=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.\nsubject=Jon\npredicate=lost_job\nobject=job\nevent_time=2023-01-19\ncreated_at=2023-01-20"
+          },
+          {
+            "score": 3.1,
+            "node_id": "event:atom-001-01",
+            "node_type": "event",
+            "event_time": "2023-01-28",
+            "content": "statement=Jon visited Paris on 2023-01-28 and said it was cool.\nparticipants=Jon, Paris\nevent_time=2023-01-28"
+          },
+          {
+            "score": 2.95,
+            "node_id": "event:atom-003-03",
+            "node_type": "event",
+            "event_time": "2023-02-03",
+            "content": "statement=Jon's ideal dance studio is by the water, with natural light and Marley flooring.\nparticipants=Jon, by the water, with natural light and Marley flooring.\nevent_time=2023-02-03"
+          },
+          {
+            "score": 1.3,
+            "node_id": "fact:atom-001-01",
+            "node_type": "fact",
+            "event_time": "2023-01-28",
+            "content": "statement=Jon visited Paris on 2023-01-28 and said it was cool.\nsubject=Jon\npredicate=visited\nobject=Paris\nevent_time=2023-01-28\ncreated_at=2023-01-28"
+          }
+        ]
+      },
+      "flat_ok": false,
+      "planned_ok": true
+    },
+    {
+      "case_id": "temporal_q2",
+      "query": "When did Gina visit Rome?",
+      "expected": "top1 is event and contains 2023-01-30",
+      "judge_note": "Another time-sensitive query where event nodes should outrank generic fact/entity hits.",
+      "flat": [
+        {
+          "score": 2.0,
+          "node_id": "fact:atom-002-02",
+          "node_type": "fact",
+          "event_time": "2023-01-30",
+          "content": "statement=Gina visited Rome on 2023-01-30 after her design interview.\nsubject=Gina\npredicate=visited\nobject=Rome\nevent_time=2023-01-30\ncreated_at=2023-02-01"
+        },
+        {
+          "score": 2.0,
+          "node_id": "event:atom-002-02",
+          "node_type": "event",
+          "event_time": "2023-01-30",
+          "content": "statement=Gina visited Rome on 2023-01-30 after her design interview.\nparticipants=Gina, Rome\nevent_time=2023-01-30"
+        },
+        {
+          "score": 2.0,
+          "node_id": "entity:Gina",
+          "node_type": "entity",
+          "event_time": "",
+          "content": "name=Gina\nfirst_seen_in=Gina visited Rome on 2023-01-30 after her design interview."
+        },
+        {
+          "score": 2.0,
+          "node_id": "entity:Rome",
+          "node_type": "entity",
+          "event_time": "",
+          "content": "name=Rome\nfirst_seen_in=Gina visited Rome on 2023-01-30 after her design interview."
+        }
+      ],
+      "planned": {
+        "query": "When did Gina visit Rome?",
+        "plan": {
+          "intent": "temporal",
+          "target_layers": [
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer event nodes because they carry explicit event_time."
+        },
+        "hits": [
+          {
+            "score": 4.1,
+            "node_id": "event:atom-002-02",
+            "node_type": "event",
+            "event_time": "2023-01-30",
+            "content": "statement=Gina visited Rome on 2023-01-30 after her design interview.\nparticipants=Gina, Rome\nevent_time=2023-01-30"
+          },
+          {
+            "score": 2.3,
+            "node_id": "fact:atom-002-02",
+            "node_type": "fact",
+            "event_time": "2023-01-30",
+            "content": "statement=Gina visited Rome on 2023-01-30 after her design interview.\nsubject=Gina\npredicate=visited\nobject=Rome\nevent_time=2023-01-30\ncreated_at=2023-02-01"
+          }
+        ]
+      },
+      "flat_ok": false,
+      "planned_ok": true
+    },
+    {
+      "case_id": "profile_q1",
+      "query": "What does Jon think the ideal dance studio should look like?",
+      "expected": "top1 type is fact; top3 contain water, natural light, Marley",
+      "judge_note": "Profile/detail query should prioritize fact nodes over event-like wrappers.",
+      "flat": [
+        {
+          "score": 5.0,
+          "node_id": "fact:atom-003-03",
+          "node_type": "fact",
+          "event_time": "2023-02-03",
+          "content": "statement=Jon's ideal dance studio is by the water, with natural light and Marley flooring.\nsubject=Jon\npredicate=ideal\nobject=by the water, with natural light and Marley flooring.\nevent_time=2023-02-03\ncreated_at=2023-02-03"
+        },
+        {
+          "score": 5.0,
+          "node_id": "event:atom-003-03",
+          "node_type": "event",
+          "event_time": "2023-02-03",
+          "content": "statement=Jon's ideal dance studio is by the water, with natural light and Marley flooring.\nparticipants=Jon, by the water, with natural light and Marley flooring.\nevent_time=2023-02-03"
+        },
+        {
+          "score": 5.0,
+          "node_id": "entity:by the water, with natural light and Marley flooring.",
+          "node_type": "entity",
+          "event_time": "",
+          "content": "name=by the water, with natural light and Marley flooring.\nfirst_seen_in=Jon's ideal dance studio is by the water, with natural light and Marley flooring."
+        },
+        {
+          "score": 3.0,
+          "node_id": "fact:atom-000-00",
+          "node_type": "fact",
+          "event_time": "2023-01-19",
+          "content": "statement=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.\nsubject=Jon\npredicate=lost_job\nobject=job\nevent_time=2023-01-19\ncreated_at=2023-01-20"
+        },
+        {
+          "score": 3.0,
+          "node_id": "event:atom-000-00",
+          "node_type": "event",
+          "event_time": "2023-01-19",
+          "content": "statement=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.\nparticipants=Jon, job\nevent_time=2023-01-19"
+        }
+      ],
+      "planned": {
+        "query": "What does Jon think the ideal dance studio should look like?",
+        "plan": {
+          "intent": "profile",
+          "target_layers": [
+            "fact",
+            "entity"
+          ],
+          "notes": "Preference/profile queries can usually stay on fact/entity layers."
+        },
+        "hits": [
+          {
+            "score": 5.9,
+            "node_id": "fact:atom-003-03",
+            "node_type": "fact",
+            "event_time": "2023-02-03",
+            "content": "statement=Jon's ideal dance studio is by the water, with natural light and Marley flooring.\nsubject=Jon\npredicate=ideal\nobject=by the water, with natural light and Marley flooring.\nevent_time=2023-02-03\ncreated_at=2023-02-03"
+          },
+          {
+            "score": 5.25,
+            "node_id": "entity:by the water, with natural light and Marley flooring.",
+            "node_type": "entity",
+            "event_time": "",
+            "content": "name=by the water, with natural light and Marley flooring.\nfirst_seen_in=Jon's ideal dance studio is by the water, with natural light and Marley flooring."
+          },
+          {
+            "score": 3.9,
+            "node_id": "fact:atom-000-00",
+            "node_type": "fact",
+            "event_time": "2023-01-19",
+            "content": "statement=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.\nsubject=Jon\npredicate=lost_job\nobject=job\nevent_time=2023-01-19\ncreated_at=2023-01-20"
+          },
+          {
+            "score": 3.75,
+            "node_id": "entity:Jon",
+            "node_type": "entity",
+            "event_time": "",
+            "content": "name=Jon\nfirst_seen_in=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio."
+          },
+          {
+            "score": 3.25,
+            "node_id": "entity:job",
+            "node_type": "entity",
+            "event_time": "",
+            "content": "name=job\nfirst_seen_in=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio."
+          }
+        ]
+      },
+      "flat_ok": true,
+      "planned_ok": true
+    }
+  ],
+  "summary": {
+    "extraction_v1_correct": 0,
+    "extraction_v2_correct": 2,
+    "extraction_total": 2,
+    "flat_retrieval_correct": 1,
+    "planned_retrieval_correct": 3,
+    "retrieval_total": 3
+  }
+}

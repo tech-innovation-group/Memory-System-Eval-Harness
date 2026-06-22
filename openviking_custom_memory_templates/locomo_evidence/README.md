@@ -14,7 +14,7 @@ Enable in an OpenViking runtime config:
 ```json
 {
   "memory": {
-    "custom_templates_dir": "/Users/chx/locomo-eval-web/openviking_custom_memory_templates/locomo_evidence"
+    "custom_templates_dir": "<repo-root>/openviking_custom_memory_templates/locomo_evidence"
   }
 }
 ```

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EchoMemory Nano Typed Path Constraint Ablation</title>
+  <style>
+    :root{--bg:#f5f7fb;--panel:#fff;--line:#dde5ef;--text:#182333;--muted:#607286;--blue:#245cff;--shadow:0 14px 34px rgba(18,32,51,.08)}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font:14px/1.72 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+    .page{max-width:1180px;margin:0 auto;padding:28px 20px 56px}
+    .hero,.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:18px;margin-bottom:16px}
+    .hero{padding:28px;background:linear-gradient(135deg,#fff 0%,#eef4ff 100%)}
+    h1,h2{margin:0 0 10px;line-height:1.28} h1{font-size:30px} h2{font-size:20px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+    p{margin:8px 0} .muted{color:var(--muted)}
+    table{width:100%;border-collapse:collapse;margin-top:10px}
+    th,td{border:1px solid var(--line);padding:10px;vertical-align:top;text-align:left}
+    th{background:#f4f7fd}
+    code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;background:#f3f6fb;border:1px solid #dfe7f1;border-radius:4px;padding:1px 5px;font-size:12px;word-break:break-all}
+    .kpi{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:14px}
+    .kpi>div{border:1px solid var(--line);border-radius:10px;padding:12px;background:#fbfcff}
+    .kpi strong{display:block;font-size:24px}
+    .callout{margin-top:12px;padding:12px 14px;border-left:4px solid var(--blue);background:#f4f8ff;border-radius:8px}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <h1>Nano Typed Path Constraint Ablation</h1>
+      <p class="muted">
+        这个实验关注一个很具体但很通用的问题：<b>图检索里“共享邻居”并不等于“语义合法的桥”</b>。
+        如果不约束桥接节点类型和边类型，系统很容易把共享公司、共享频道、共享社区误当成“介绍人”或“牵线人”。
+      </p>
+      <div class="kpi">
+        <div><strong>3</strong><span class="muted">cases</span></div>
+        <div><strong>0</strong><span class="muted">naive shared-neighbor</span></div>
+        <div><strong>3</strong><span class="muted">typed path constraint</span></div>
+        <div><strong>[&#x27;introducer_maya_leo&#x27;, &#x27;referrer_aria_ivy&#x27;, &#x27;connector_elena_chen&#x27;]</strong><span class="muted">cases fixed by typed constraints</span></div>
+      </div>
+      <div class="callout">
+        核心主张：关系题不仅需要 <code>path_grounding</code>，还需要 <b>typed path grounding</b>。
+        否则图里任何高显著度共享节点都可能冒充“答案”。
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Results</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Case</th>
+            <th>Naive</th>
+            <th>Typed Constraint</th>
+            <th>Naive OK</th>
+            <th>Typed OK</th>
+            <th>Why it matters</th>
+          </tr>
+        </thead>
+        <tbody>
+            <tr>
+              <td><b>introducer_maya_leo</b><br /><span class="muted">Who introduced Maya to Leo?</span></td>
+              <td>StudioX<br /><code>[&#x27;studiox-[employs]-&gt;maya&#x27;, &#x27;studiox-[employs]-&gt;leo&#x27;]</code></td>
+              <td>Nia<br /><code>[&#x27;nia-[introduced]-&gt;maya&#x27;, &#x27;nia-[introduced]-&gt;leo&#x27;]</code></td>
+              <td>no</td>
+              <td>yes</td>
+              <td>Shared company is a high-salience distractor; introducer semantics should still pick a person bridge with introduced edges.</td>
+            </tr>
+            
+            <tr>
+              <td><b>referrer_aria_ivy</b><br /><span class="muted">Who referred Aria to Lawyer Ivy?</span></td>
+              <td>Residency Slack<br /><code>[&#x27;slack-[discussed]-&gt;aria&#x27;, &#x27;slack-[discussed]-&gt;ivy&#x27;]</code></td>
+              <td>Priya<br /><code>[&#x27;priya-[referred]-&gt;aria&#x27;, &#x27;priya-[referred]-&gt;ivy&#x27;]</code></td>
+              <td>no</td>
+              <td>yes</td>
+              <td>A busy channel links both endpoints, but relation semantics ask for a referrer, not a co-mentioned venue.</td>
+            </tr>
+            
+            <tr>
+              <td><b>connector_elena_chen</b><br /><span class="muted">Who connected Elena with Investor Chen?</span></td>
+              <td>Startup Hub<br /><code>[&#x27;hub-[hosts]-&gt;elena&#x27;, &#x27;hub-[hosts]-&gt;chen&#x27;]</code></td>
+              <td>Marco<br /><code>[&#x27;marco-[connected]-&gt;elena&#x27;, &#x27;marco-[connected]-&gt;chen&#x27;]</code></td>
+              <td>no</td>
+              <td>yes</td>
+              <td>Community membership creates an easy false path; typed constraints should keep the bridge role human and relation-specific.</td>
+            </tr>
+            </tbody>
+      </table>
+    </section>
+  </div>
+</body>
+</html>

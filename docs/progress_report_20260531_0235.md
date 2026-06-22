@@ -4,7 +4,7 @@
 This iteration moved the harness toward the requested 9-hour objective by adding a 100-item improvement backlog, wiring LongMemEval into the dataset registry, adding a LongMemEval 100-question local evaluation path, fixing misleading local accuracy reporting, and validating both LoCoMo and LongMemEval test execution.
 
 ## Implemented
-- Added `/Users/chx/locomo-eval-web/docs/improvement_backlog_100.md` with 100 concrete improvement items across evaluation flow, dataset support, OpenViking memory, agent QA, judge/analysis, UX, and ops.
+- Added `<repo-root>/docs/improvement_backlog_100.md` with 100 concrete improvement items across evaluation flow, dataset support, OpenViking memory, agent QA, judge/analysis, UX, and ops.
 - Added dataset registry entries for LoCoMo, LongMemEval-S, and LongMemEval-M.
 - Added large-dataset lazy overview behavior so 264MB/2.6GB LongMemEval files do not freeze the dataset page.
 - Added generic benchmark question API support so `/api/questions` is no longer LoCoMo-only.
@@ -14,19 +14,19 @@ This iteration moved the harness toward the requested 9-hour objective by adding
 - Created hourly heartbeat automation: `locomo-eval-hourly-progress-report`.
 
 ## Verification Evidence
-- `node --check /Users/chx/locomo-eval-web/static/app.js`: passed.
-- `python3 -m py_compile /Users/chx/locomo-eval-web/server.py /Users/chx/locomo-eval-web/scripts/local_memory_agent.py`: passed.
+- `node --check <repo-root>/static/app.js`: passed.
+- `python3 -m py_compile <repo-root>/server.py <repo-root>/scripts/local_memory_agent.py`: passed.
 - `/api/datasets` now returns:
   - `locomo` -> 10 samples / 1540 questions.
   - `longmemeval-s` -> lazy large dataset, `dataset/longmemeval.sample.json`.
   - `longmemeval-m` -> lazy large dataset, `dataset/longmemeval.sample.json`.
 - LongMemEval 100 local eval completed:
-  - CSV: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_100_check_v2/local_agent/local_agent_results.csv`
+  - CSV: `<repo-root>/runs/manual_longmemeval_100_check_v2/local_agent/local_agent_results.csv`
   - Rows: 100
-  - Summary: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_100_check_v2/local_agent/summary.json`
+  - Summary: `<repo-root>/runs/manual_longmemeval_100_check_v2/local_agent/summary.json`
   - Accuracy: pending Judge, exact-match reference 7/100.
 - LoCoMo smoke test completed:
-  - CSV: `/Users/chx/locomo-eval-web/runs/manual_locomo_smoke_5/local_agent/local_agent_results.csv`
+  - CSV: `<repo-root>/runs/manual_locomo_smoke_5/local_agent/local_agent_results.csv`
   - Rows: 5
   - Accuracy: pending Judge, exact-match reference 1/5.
 

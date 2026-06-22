@@ -6,6 +6,7 @@ set -e
 
 # 配置
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RUNS_DIR="$ROOT/runs"
 PYTHON="${PYTHON_BIN:-python3}"
 DATASET="${LOCOMO_DATA:-$ROOT/dataset/locomo10.json}"
 OPENVIKING_URL="${OPENVIKING_URL:-http://localhost:1933}"
@@ -62,10 +63,10 @@ if curl -s "$OPENVIKING_URL/api/v1/namespaces" | grep -q "$NAMESPACE"; then
     echo "✅ 数据已导入到 namespace: $NAMESPACE"
 else
     echo "📥 导入数据到 OpenViking..."
-    $PYTHON scripts/benchmark_adapter.py \
+    $PYTHON "$ROOT/scripts/benchmark_adapter.py" \
         --dataset "$DATASET" \
         --format auto \
-        --out-dir "/Users/chx/locomo-eval-web/runs/echomem_ov_import_$(date +%Y%m%d_%H%M%S)" \
+        --out-dir "$RUNS_DIR/echomem_ov_import_$(date +%Y%m%d_%H%M%S)" \
         --mode execute \
         --allow-writes \
         --memory-mode isolated_instance \
@@ -82,7 +83,7 @@ echo ""
 
 # 步骤 2: 运行 VikingBot 评测
 echo "🤖 步骤 2/3: 运行 VikingBot + GPT-5.5 评测..."
-$PYTHON scripts/run_vikingbot_eval.py \
+$PYTHON "$ROOT/scripts/run_vikingbot_eval.py" \
     --dataset "$DATASET" \
     --out-dir "$OUT_DIR" \
     --sample "$SAMPLE" \
@@ -154,5 +155,5 @@ echo "🎉 测试完成！"
 echo ""
 echo "下一步:"
 echo "1. 查看详细结果: cat $OUT_DIR/vikingbot_eval.csv"
-echo "2. 对比 Local Agent: 查看 /Users/chx/locomo-eval-web/runs/echomem_test_10q/"
-echo "3. 运行 Judge: python scripts/local_judge.py --input $OUT_DIR/vikingbot_eval.csv"
+echo "2. 对比 Local Agent: 查看 $RUNS_DIR/echomem_test_10q/"
+echo "3. 运行 Judge: python $ROOT/scripts/local_judge.py --input $OUT_DIR/vikingbot_eval.csv"

@@ -2,24 +2,24 @@
 
 ## What is verified
 
-- Web app: `http://127.0.0.1:19181/`
+- Web app: `<WEB_BASE_URL>/`
 - EchoMemory source version: `version_0.0.5`
-- EchoMemory repo path: `/Users/chx/Code/echomemory/echo_memory`
+- EchoMemory repo path: `<echomem-root>`
 - EchoMemory account wired into the web UI:
   - account: `echomemory-v005-gpt55-conv30-full-20260608_214437`
-  - workspace: `/Users/chx/echomem_workspace_v005_gpt55_conv30_full_20260608_214437`
+  - workspace: `<echomem-workspace>`
 - EchoMemory connection contract:
-  - `curl -s http://127.0.0.1:19181/api/echomem-contract`
+  - `curl -s <WEB_BASE_URL>/api/echomem-contract`
   - status: `ok`
 
 ## Current run evidence
 
 ### 1. v0.0.5 smoke QA is valid
 
-- Run dir: `/Users/chx/locomo-eval-web/runs/echomemory_v005_gpt55_conv30_qa_smoke_20260609_010625`
-- QA summary: `/Users/chx/locomo-eval-web/runs/echomemory_v005_gpt55_conv30_qa_smoke_20260609_010625/echomemory_qa/summary.json`
-- Judge summary: `/Users/chx/locomo-eval-web/runs/echomemory_v005_gpt55_conv30_qa_smoke_20260609_010625/echomemory_qa/judge_summary.json`
-- HTML report: `/Users/chx/locomo-eval-web/runs/echomemory_v005_gpt55_conv30_qa_smoke_20260609_010625/report.html`
+- Run dir: `<repo-root>/runs/echomemory_v005_gpt55_conv30_qa_smoke_20260609_010625`
+- QA summary: `<repo-root>/runs/echomemory_v005_gpt55_conv30_qa_smoke_20260609_010625/echomemory_qa/summary.json`
+- Judge summary: `<repo-root>/runs/echomemory_v005_gpt55_conv30_qa_smoke_20260609_010625/echomemory_qa/judge_summary.json`
+- HTML report: `<repo-root>/runs/echomemory_v005_gpt55_conv30_qa_smoke_20260609_010625/report.html`
 
 Result:
 
@@ -31,9 +31,9 @@ Result:
 
 ### 2. v0.0.5 full conv-30 QA did not finish cleanly
 
-- Run dir: `/Users/chx/locomo-eval-web/runs/echomemory_v005_gpt55_conv30_fullqa_20260609_010957`
-- QA summary: `/Users/chx/locomo-eval-web/runs/echomemory_v005_gpt55_conv30_fullqa_20260609_010957/echomemory_qa/summary.json`
-- Log: `/Users/chx/locomo-eval-web/runs/echomemory_v005_gpt55_conv30_fullqa_20260609_010957/run.log`
+- Run dir: `<repo-root>/runs/echomemory_v005_gpt55_conv30_fullqa_20260609_010957`
+- QA summary: `<repo-root>/runs/echomemory_v005_gpt55_conv30_fullqa_20260609_010957/echomemory_qa/summary.json`
+- Log: `<repo-root>/runs/echomemory_v005_gpt55_conv30_fullqa_20260609_010957/run.log`
 
 Observed behavior:
 
@@ -46,9 +46,9 @@ This run should not be treated as a valid full conv-30 score.
 
 ### 3. v0.0.5 import is only partially healthy
 
-- Import summary: `/Users/chx/locomo-eval-web/runs/echomemory_import_20260608_214437_303732/echomemory_import/echomemory_import_summary.json`
+- Import summary: `<repo-root>/runs/echomemory_import_20260608_214437_303732/echomemory_import/echomemory_import_summary.json`
 - Live integrity endpoint:
-  - `curl -s 'http://127.0.0.1:19181/api/memory-import-integrity?backend=echomemory&workspace=%2FUsers%2Fchx%2Fechomem_workspace_v005_gpt55_conv30_full_20260608_214437&account=echomemory-v005-gpt55-conv30-full-20260608_214437&sample=conv-30&user_id=default'`
+  - `curl -s '<WEB_BASE_URL>/api/memory-import-integrity?backend=echomemory&workspace=%2FUsers%2Fchx%2Fechomem_workspace_v005_gpt55_conv30_full_20260608_214437&account=echomemory-v005-gpt55-conv30-full-20260608_214437&sample=conv-30&user_id=default'`
 
 Current integrity facts:
 
@@ -88,7 +88,7 @@ Expected error shape:
 - judge preflight:
   - `Judge预检失败：...`
 
-Verified locally against `http://127.0.0.1:19181/api/tasks`:
+Verified locally against `<WEB_BASE_URL>/api/tasks`:
 
 - `echomemory_qa` now returns preflight failure immediately
 - `openviking_qa` now returns preflight failure immediately
@@ -99,11 +99,11 @@ Verified locally against `http://127.0.0.1:19181/api/tasks`:
 
 Reference implementation already exists in the plugin boundary:
 
-- plugin contract: `/Users/chx/locomo-eval-web/memory/plugins/contract.py`
-- OpenViking plugin: `/Users/chx/locomo-eval-web/memory/plugins/openviking/plugin.py`
-- EchoMemory plugin: `/Users/chx/locomo-eval-web/memory/plugins/echomemory/plugin.py`
-- OpenViking agent workbench: `/Users/chx/locomo-eval-web/memory/plugins/openviking/agent.py`
-- EchoMemory agent workbench: `/Users/chx/locomo-eval-web/memory/plugins/echomemory/agent.py`
+- plugin contract: `<repo-root>/memory/plugins/contract.py`
+- OpenViking plugin: `<repo-root>/memory/plugins/openviking/plugin.py`
+- EchoMemory plugin: `<repo-root>/memory/plugins/echomemory/plugin.py`
+- OpenViking agent workbench: `<repo-root>/memory/plugins/openviking/agent.py`
+- EchoMemory agent workbench: `<repo-root>/memory/plugins/echomemory/agent.py`
 
 Recommended shape for a current custom agent:
 

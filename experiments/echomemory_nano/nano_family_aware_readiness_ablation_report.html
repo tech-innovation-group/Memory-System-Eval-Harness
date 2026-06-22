@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EchoMemory Nano Family-Aware Readiness Ablation</title>
+  <style>
+    :root {
+      --bg:#f6f7fb; --panel:#fff; --text:#1f2937; --muted:#667085; --line:#e5e7eb; --blue:#2563eb;
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; line-height:1.6; }
+    .wrap { width:min(1200px, calc(100vw - 32px)); margin:24px auto 48px; }
+    .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:20px 22px; margin-bottom:16px; }
+    h1,h2 { margin:0 0 12px; }
+    p { margin:8px 0; }
+    .muted,.mini,.note { color:var(--muted); }
+    .metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:12px; }
+    .metric { border:1px solid var(--line); border-radius:8px; padding:12px; background:#fafafa; }
+    .metric .label { font-size:12px; color:var(--muted); text-transform:uppercase; }
+    .metric .value { font-size:28px; font-weight:700; margin-top:4px; }
+    .callout { background:#eff6ff; border-left:4px solid var(--blue); border-radius:8px; padding:12px 14px; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th,td { border-top:1px solid var(--line); text-align:left; vertical-align:top; padding:10px 8px; }
+    th { background:#fbfcfe; color:var(--muted); font-size:12px; text-transform:uppercase; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="panel">
+      <h1>Nano Family-Aware Readiness Ablation</h1>
+      <p class="muted">
+        这个实验对应主仓里的 <code>qa_readiness_mode=strict|core</code>，但再往前推一步：
+        <b>readiness 不该只是全局开关，还应该和 query family 需要的 memory plane 对齐。</b>
+      </p>
+      <div class="callout">
+        结论预期是：<code>strict</code> 太保守，<code>core_global</code> 太粗，<code>family_aware</code> 更像一个真正的 systems policy。
+      </div>
+      <div class="metrics">
+        <div class="metric">
+          <div class="label">strict</div>
+          <div class="value">3/4</div>
+        </div>
+        
+        <div class="metric">
+          <div class="label">core_global</div>
+          <div class="value">3/4</div>
+        </div>
+        
+        <div class="metric">
+          <div class="label">family_aware</div>
+          <div class="value">4/4</div>
+        </div>
+        </div>
+    </section>
+
+    <section class="panel">
+      <h2>Results</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Stage</th>
+            <th>Case</th>
+            <th>System</th>
+            <th>Family</th>
+            <th>Query</th>
+            <th>Status</th>
+            <th>Answer</th>
+            <th>Judge</th>
+          </tr>
+        </thead>
+        <tbody>
+        <tr>
+          <td>before_heavy_stages</td>
+          <td><code>pre_relation</code></td>
+          <td>strict</td>
+          <td>relational</td>
+          <td>Who introduced Jon to Lena?</td>
+          <td>not_ready</td>
+          <td>unknown</td>
+          <td>fail</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="mini">reason=strict barrier</div>
+            <div class="mini">plan={&#x27;family&#x27;: &#x27;relational&#x27;, &#x27;required_layers&#x27;: (&#x27;graph&#x27;, &#x27;fact&#x27;), &#x27;primary_reader&#x27;: &#x27;graph&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_ready&#x27;: True, &#x27;graph_ready&#x27;: True, &#x27;organized_ready&#x27;: False, &#x27;episode_ready&#x27;: False, &#x27;qa_ready&#x27;: False}</div>
+            <div class="note">A core graph+fact query should be answerable once atoms and graph are ready.</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>before_heavy_stages</td>
+          <td><code>pre_relation</code></td>
+          <td>core_global</td>
+          <td>relational</td>
+          <td>Who introduced Jon to Lena?</td>
+          <td>ready</td>
+          <td>Maya</td>
+          <td>pass</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="mini">reason=core-global barrier</div>
+            <div class="mini">plan={&#x27;family&#x27;: &#x27;relational&#x27;, &#x27;required_layers&#x27;: (&#x27;graph&#x27;, &#x27;fact&#x27;), &#x27;primary_reader&#x27;: &#x27;graph&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_ready&#x27;: True, &#x27;graph_ready&#x27;: True, &#x27;organized_ready&#x27;: False, &#x27;episode_ready&#x27;: False, &#x27;qa_ready&#x27;: True}</div>
+            <div class="note">A core graph+fact query should be answerable once atoms and graph are ready.</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>before_heavy_stages</td>
+          <td><code>pre_relation</code></td>
+          <td>family_aware</td>
+          <td>relational</td>
+          <td>Who introduced Jon to Lena?</td>
+          <td>ready</td>
+          <td>Maya</td>
+          <td>pass</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="mini">reason=family-aware barrier</div>
+            <div class="mini">plan={&#x27;family&#x27;: &#x27;relational&#x27;, &#x27;required_layers&#x27;: (&#x27;graph&#x27;, &#x27;fact&#x27;), &#x27;primary_reader&#x27;: &#x27;graph&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_ready&#x27;: True, &#x27;graph_ready&#x27;: True, &#x27;organized_ready&#x27;: False, &#x27;episode_ready&#x27;: False, &#x27;qa_ready&#x27;: True}</div>
+            <div class="note">A core graph+fact query should be answerable once atoms and graph are ready.</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>before_heavy_stages</td>
+          <td><code>pre_longitudinal</code></td>
+          <td>strict</td>
+          <td>longitudinal</td>
+          <td>What was Gina&#x27;s latest Lisbon move plan after leaving Figma?</td>
+          <td>not_ready</td>
+          <td>unknown</td>
+          <td>pass</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="mini">reason=strict barrier</div>
+            <div class="mini">plan={&#x27;family&#x27;: &#x27;longitudinal&#x27;, &#x27;required_layers&#x27;: (&#x27;topic_dossier&#x27;, &#x27;fact&#x27;), &#x27;primary_reader&#x27;: &#x27;topic_dossier&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_ready&#x27;: True, &#x27;graph_ready&#x27;: True, &#x27;organized_ready&#x27;: False, &#x27;episode_ready&#x27;: False, &#x27;qa_ready&#x27;: False}</div>
+            <div class="note">A topic-dossier query should wait for organized memory instead of being globally unlocked.</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>before_heavy_stages</td>
+          <td><code>pre_longitudinal</code></td>
+          <td>core_global</td>
+          <td>longitudinal</td>
+          <td>What was Gina&#x27;s latest Lisbon move plan after leaving Figma?</td>
+          <td>ready</td>
+          <td>Gina planned something after leaving Figma.</td>
+          <td>fail</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="mini">reason=core-global barrier</div>
+            <div class="mini">plan={&#x27;family&#x27;: &#x27;longitudinal&#x27;, &#x27;required_layers&#x27;: (&#x27;topic_dossier&#x27;, &#x27;fact&#x27;), &#x27;primary_reader&#x27;: &#x27;topic_dossier&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_ready&#x27;: True, &#x27;graph_ready&#x27;: True, &#x27;organized_ready&#x27;: False, &#x27;episode_ready&#x27;: False, &#x27;qa_ready&#x27;: True}</div>
+            <div class="note">A topic-dossier query should wait for organized memory instead of being globally unlocked.</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>before_heavy_stages</td>
+          <td><code>pre_longitudinal</code></td>
+          <td>family_aware</td>
+          <td>longitudinal</td>
+          <td>What was Gina&#x27;s latest Lisbon move plan after leaving Figma?</td>
+          <td>not_ready</td>
+          <td>unknown</td>
+          <td>pass</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="mini">reason=organized stage required for this family</div>
+            <div class="mini">plan={&#x27;family&#x27;: &#x27;longitudinal&#x27;, &#x27;required_layers&#x27;: (&#x27;topic_dossier&#x27;, &#x27;fact&#x27;), &#x27;primary_reader&#x27;: &#x27;topic_dossier&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_ready&#x27;: True, &#x27;graph_ready&#x27;: True, &#x27;organized_ready&#x27;: False, &#x27;episode_ready&#x27;: False, &#x27;qa_ready&#x27;: True}</div>
+            <div class="note">A topic-dossier query should wait for organized memory instead of being globally unlocked.</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>after_heavy_stages</td>
+          <td><code>post_relation</code></td>
+          <td>strict</td>
+          <td>relational</td>
+          <td>Who introduced Jon to Lena?</td>
+          <td>ready</td>
+          <td>Maya</td>
+          <td>pass</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="mini">reason=strict barrier</div>
+            <div class="mini">plan={&#x27;family&#x27;: &#x27;relational&#x27;, &#x27;required_layers&#x27;: (&#x27;graph&#x27;, &#x27;fact&#x27;), &#x27;primary_reader&#x27;: &#x27;graph&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_ready&#x27;: True, &#x27;graph_ready&#x27;: True, &#x27;organized_ready&#x27;: True, &#x27;episode_ready&#x27;: True, &#x27;qa_ready&#x27;: True}</div>
+            <div class="note">After full consolidation, every mode should answer correctly.</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>after_heavy_stages</td>
+          <td><code>post_relation</code></td>
+          <td>core_global</td>
+          <td>relational</td>
+          <td>Who introduced Jon to Lena?</td>
+          <td>ready</td>
+          <td>Maya</td>
+          <td>pass</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="mini">reason=core-global barrier</div>
+            <div class="mini">plan={&#x27;family&#x27;: &#x27;relational&#x27;, &#x27;required_layers&#x27;: (&#x27;graph&#x27;, &#x27;fact&#x27;), &#x27;primary_reader&#x27;: &#x27;graph&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_ready&#x27;: True, &#x27;graph_ready&#x27;: True, &#x27;organized_ready&#x27;: True, &#x27;episode_ready&#x27;: True, &#x27;qa_ready&#x27;: True}</div>
+            <div class="note">After full consolidation, every mode should answer correctly.</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>after_heavy_stages</td>
+          <td><code>post_relation</code></td>
+          <td>family_aware</td>
+          <td>relational</td>
+          <td>Who introduced Jon to Lena?</td>
+          <td>ready</td>
+          <td>Maya</td>
+          <td>pass</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="mini">reason=family-aware barrier</div>
+            <div class="mini">plan={&#x27;family&#x27;: &#x27;relational&#x27;, &#x27;required_layers&#x27;: (&#x27;graph&#x27;, &#x27;fact&#x27;), &#x27;primary_reader&#x27;: &#x27;graph&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_ready&#x27;: True, &#x27;graph_ready&#x27;: True, &#x27;organized_ready&#x27;: True, &#x27;episode_ready&#x27;: True, &#x27;qa_ready&#x27;: True}</div>
+            <div class="note">After full consolidation, every mode should answer correctly.</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>after_heavy_stages</td>
+          <td><code>post_longitudinal</code></td>
+          <td>strict</td>
+          <td>longitudinal</td>
+          <td>What was Gina&#x27;s latest Lisbon move plan after leaving Figma?</td>
+          <td>ready</td>
+          <td>Gina planned to move to Lisbon after leaving Figma.</td>
+          <td>pass</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="mini">reason=strict barrier</div>
+            <div class="mini">plan={&#x27;family&#x27;: &#x27;longitudinal&#x27;, &#x27;required_layers&#x27;: (&#x27;topic_dossier&#x27;, &#x27;fact&#x27;), &#x27;primary_reader&#x27;: &#x27;topic_dossier&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_ready&#x27;: True, &#x27;graph_ready&#x27;: True, &#x27;organized_ready&#x27;: True, &#x27;episode_ready&#x27;: True, &#x27;qa_ready&#x27;: True}</div>
+            <div class="note">Once dossier/organized layers are ready, the longitudinal query should open.</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>after_heavy_stages</td>
+          <td><code>post_longitudinal</code></td>
+          <td>core_global</td>
+          <td>longitudinal</td>
+          <td>What was Gina&#x27;s latest Lisbon move plan after leaving Figma?</td>
+          <td>ready</td>
+          <td>Gina planned to move to Lisbon after leaving Figma.</td>
+          <td>pass</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="mini">reason=core-global barrier</div>
+            <div class="mini">plan={&#x27;family&#x27;: &#x27;longitudinal&#x27;, &#x27;required_layers&#x27;: (&#x27;topic_dossier&#x27;, &#x27;fact&#x27;), &#x27;primary_reader&#x27;: &#x27;topic_dossier&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_ready&#x27;: True, &#x27;graph_ready&#x27;: True, &#x27;organized_ready&#x27;: True, &#x27;episode_ready&#x27;: True, &#x27;qa_ready&#x27;: True}</div>
+            <div class="note">Once dossier/organized layers are ready, the longitudinal query should open.</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>after_heavy_stages</td>
+          <td><code>post_longitudinal</code></td>
+          <td>family_aware</td>
+          <td>longitudinal</td>
+          <td>What was Gina&#x27;s latest Lisbon move plan after leaving Figma?</td>
+          <td>ready</td>
+          <td>Gina planned to move to Lisbon after leaving Figma.</td>
+          <td>pass</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="mini">reason=family-aware barrier</div>
+            <div class="mini">plan={&#x27;family&#x27;: &#x27;longitudinal&#x27;, &#x27;required_layers&#x27;: (&#x27;topic_dossier&#x27;, &#x27;fact&#x27;), &#x27;primary_reader&#x27;: &#x27;topic_dossier&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_ready&#x27;: True, &#x27;graph_ready&#x27;: True, &#x27;organized_ready&#x27;: True, &#x27;episode_ready&#x27;: True, &#x27;qa_ready&#x27;: True}</div>
+            <div class="note">Once dossier/organized layers are ready, the longitudinal query should open.</div>
+          </td>
+        </tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+</body>
+</html>

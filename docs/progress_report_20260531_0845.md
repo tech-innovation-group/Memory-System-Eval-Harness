@@ -20,12 +20,12 @@
    - Acronym baseline: 80/100 exact reference。
    - Aggregate run: 88/100 exact reference。
    - 新增修复 8 题，无 exact 回退。
-   - CSV: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_aggregate_100/local_agent/local_agent_results.csv`
+   - CSV: `<repo-root>/runs/manual_longmemeval_aggregate_100/local_agent/local_agent_results.csv`
 
 4. Formal Judge 验证
    - 将新增修复的 8 题复制到独立 judge run。
    - Formal Judge: 8/8，100.0%。
-   - Report: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_aggregate_newfix_judge/report.md`
+   - Report: `<repo-root>/runs/manual_longmemeval_aggregate_newfix_judge/report.md`
 
 5. UI / 文档
    - Runs quick cards 更新为 `88/100 exact`。

@@ -5,7 +5,7 @@
 
 ## 已完成
 - 从 clean-answer 100 基线复制前 20 行到独立 formal Judge run：
-  - `/Users/chx/locomo-eval-web/runs/manual_longmemeval_cleananswer_100_judge_smoke_20/local_agent/local_agent_results.csv`
+  - `<repo-root>/runs/manual_longmemeval_cleananswer_100_judge_smoke_20/local_agent/local_agent_results.csv`
 - Formal Judge 20 条结果：
   - rows: 20
   - graded: 20
@@ -16,9 +16,9 @@
   - rate-limit warnings: 0
   - source 100-row CSV 未修改。
 - 导出 20 条 smoke report：
-  - `/Users/chx/locomo-eval-web/runs/manual_longmemeval_cleananswer_100_judge_smoke_20/report.md`
+  - `<repo-root>/runs/manual_longmemeval_cleananswer_100_judge_smoke_20/report.md`
 - 新增 LongMemEval 基线对比文档：
-  - `/Users/chx/locomo-eval-web/docs/longmemeval_baseline_comparison_20260531.md`
+  - `<repo-root>/docs/longmemeval_baseline_comparison_20260531.md`
 - 对比文档包含：
   - truncated-100: exact 7/100, formal pending
   - full-memory-100: exact 18/100, formal pending

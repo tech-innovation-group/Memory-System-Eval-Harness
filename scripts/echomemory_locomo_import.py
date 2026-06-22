@@ -16,7 +16,17 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from echomemory_common import DEFAULT_ECHOMEM_ROOT, ctx, ensure_echomem_imports, sdk_ctx_kwargs, write_echomem_config, write_json
+import yaml
+
+from echomemory_common import (
+    DEFAULT_ECHOMEM_ROOT,
+    ctx,
+    ensure_echomem_imports,
+    sdk_ctx_kwargs,
+    workspace_token_usage_summary,
+    write_echomem_config,
+    write_json,
+)
 
 
 class HardTimeoutError(TimeoutError):
@@ -50,6 +60,42 @@ def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def read_yaml(path: Path) -> Any:
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def runtime_config(args: argparse.Namespace) -> dict[str, Any]:
+    cached = getattr(args, "_runtime_config_cache", None)
+    if isinstance(cached, dict):
+        return cached
+    path = Path(str(getattr(args, "echomem_config", "") or "")).expanduser()
+    data: dict[str, Any] = {}
+    if path.exists():
+        try:
+            loaded = read_yaml(path)
+            if isinstance(loaded, dict):
+                data = loaded
+        except Exception:
+            data = {}
+    setattr(args, "_runtime_config_cache", data)
+    return data
+
+
+def config_get(data: dict[str, Any], key: str, default: Any = None) -> Any:
+    current: Any = data
+    for part in key.split("."):
+        if isinstance(current, dict) and part in current:
+            current = current[part]
+        else:
+            return default
+    return current
+
+
+def abstract_required(args: argparse.Namespace) -> bool:
+    cfg = runtime_config(args)
+    return bool(config_get(cfg, "session.generate_abstract", True))
+
+
 def summarize_sample_progress(
     args: argparse.Namespace,
     sample_index: int,
@@ -61,14 +107,19 @@ def summarize_sample_progress(
 ) -> dict[str, Any]:
     expected = sum(int(item.get("expected_messages") or 0) for item in records)
     submitted = sum(int(item.get("submitted_messages") or 0) for item in records)
+    live_complete = bool(records) and all(item.get("live_complete_before_commit") for item in records)
     archive_complete = bool(records) and all(item.get("archive_complete_after_commit") for item in records)
     atom_memory_complete = bool(records) and all(item.get("atom_memory_complete_after_commit") for item in records)
     retrieval_ready = bool(records) and all(item.get("retrieval_ready_after_commit") for item in records)
+    cursor_complete = bool(records) and all(item.get("cursor_complete_after_commit") for item in records)
+    qa_ready = bool(records) and all(item.get("qa_ready_after_commit") for item in records)
     pending_async_memory = bool(records) and any(str(item.get("integrity") or "") == "pending_async_memory" for item in records)
     integrity = (
-        "complete"
-        if retrieval_ready
-        else ("pending_async_memory" if archive_complete and pending_async_memory else ("partial" if archive_complete or atom_memory_complete else "incomplete"))
+        "complete" if qa_ready else (
+            "pending_async_memory"
+            if archive_complete and (pending_async_memory or retrieval_ready or atom_memory_complete or cursor_complete)
+            else ("partial" if archive_complete or atom_memory_complete or retrieval_ready else "incomplete")
+        )
     )
     commit_warnings = [str(item.get("commit_warning") or "") for item in records if item.get("commit_warning")]
     return {
@@ -86,20 +137,30 @@ def summarize_sample_progress(
         "submitted_messages": submitted,
         "live_message_count_before_commit": expected,
         "pending_message_count_after_commit": 0,
-        "live_complete_before_commit": submitted == expected,
+        "live_complete_before_commit": live_complete and submitted == expected,
         "archive_complete_after_commit": archive_complete,
         "atom_memory_complete_after_commit": atom_memory_complete,
         "retrieval_ready_after_commit": retrieval_ready,
+        "cursor_complete_after_commit": cursor_complete,
+        "qa_ready_after_commit": qa_ready,
         "pending_async_memory_after_commit": pending_async_memory,
         "commit_warnings": commit_warnings,
         "integrity": integrity,
         "integrity_stage": (
-            "atom_memory_complete"
-            if atom_memory_complete
+            "qa_ready"
+            if qa_ready
             else (
-                "retrieval_ready"
-                if retrieval_ready
-                else ("async_memory_pending" if integrity == "pending_async_memory" else ("archive_complete" if archive_complete else "incomplete"))
+                "cursor_complete"
+                if cursor_complete
+                else (
+                    "atom_memory_complete"
+                    if atom_memory_complete
+                    else (
+                        "retrieval_ready"
+                        if retrieval_ready
+                        else ("async_memory_pending" if integrity == "pending_async_memory" else ("archive_complete" if archive_complete else "incomplete"))
+                    )
+                )
             )
         ),
         "estimated_import_tokens": estimated_tokens,
@@ -124,13 +185,15 @@ def build_import_summary(
     archive_complete = sum(1 for item in records if item.get("archive_complete_after_commit"))
     atom_memory_complete = sum(1 for item in records if item.get("atom_memory_complete_after_commit"))
     retrieval_ready = sum(1 for item in records if item.get("retrieval_ready_after_commit"))
+    cursor_complete = sum(1 for item in records if item.get("cursor_complete_after_commit"))
+    qa_ready = sum(1 for item in records if item.get("qa_ready_after_commit"))
     commit_warnings = [
         warning
         for item in records
         for warning in (item.get("commit_warnings") or [])
         if warning
     ]
-    return {
+    summary = {
         "status": status,
         "backend": "echomemory",
         "running": running,
@@ -142,6 +205,8 @@ def build_import_summary(
         "archive_complete_samples": archive_complete,
         "atom_memory_complete_samples": atom_memory_complete,
         "retrieval_ready_samples": retrieval_ready,
+        "cursor_complete_samples": cursor_complete,
+        "qa_ready_samples": qa_ready,
         "status_explanation": status_explanation,
         "warnings": commit_warnings,
         "expected_messages": sum(item["expected_messages"] for item in records),
@@ -157,6 +222,8 @@ def build_import_summary(
         "session_end": int(args.session_end or 0),
         "records": records,
     }
+    summary.update(workspace_token_usage_summary(args.workspace, args.account))
+    return summary
 
 
 def write_running_summary(
@@ -175,6 +242,31 @@ def write_running_summary(
         status_explanation="Import is still running; this summary is a live progress snapshot and may not include all sessions yet.",
         running=True,
     )
+    write_json(out_dir / "echomemory_import_summary.json", summary)
+
+
+def write_bootstrap_summary(
+    out_dir: Path,
+    args: argparse.Namespace,
+    root: Path,
+    config_path: Path,
+    *,
+    status: str,
+    status_explanation: str,
+    running: bool,
+    error: str = "",
+) -> None:
+    summary = build_import_summary(
+        args,
+        root,
+        config_path,
+        [],
+        status=status,
+        status_explanation=status_explanation,
+        running=running,
+    )
+    if error:
+        summary["error"] = error
     write_json(out_dir / "echomemory_import_summary.json", summary)
 
 
@@ -327,6 +419,20 @@ def openai_compatible_embedding_preflight(base_url: str, model: str, token: str,
         }
 
 
+def retry_preflight(callable_obj: Any, *args: Any, attempts: int = 3, **kwargs: Any) -> dict[str, Any]:
+    last: dict[str, Any] = {}
+    for attempt in range(1, max(1, int(attempts)) + 1):
+        last = callable_obj(*args, **kwargs)
+        last["attempt"] = attempt
+        if last.get("ok"):
+            return last
+        status = str(last.get("status") or "")
+        if status not in {"TimeoutError", "URLError", "RemoteDisconnected"}:
+            return last
+        time.sleep(min(2 * attempt, 8))
+    return last
+
+
 def import_model_preflight(out_dir: Path) -> dict[str, Any]:
     dashscope_base = str(os.environ.get("DASHSCOPE_BASE_URL") or "https://dashscope.aliyuncs.com/compatible-mode/v1").strip()
     embedding_token = str(os.environ.get("DASHSCOPE_API_KEY") or os.environ.get("ECHOMEM_API_KEY") or "").strip()
@@ -334,8 +440,22 @@ def import_model_preflight(out_dir: Path) -> dict[str, Any]:
     chat_base = str(os.environ.get("ECHOMEM_CHAT_BASE_URL") or dashscope_base).strip()
     chat_token = str(os.environ.get("ECHOMEM_CHAT_API_KEY") or embedding_token).strip()
     chat_model = str(os.environ.get("ECHOMEM_CHAT_MODEL") or "deepseek-v4-flash").strip()
-    embedding = openai_compatible_embedding_preflight(dashscope_base, embedding_model, embedding_token, timeout_s=30)
-    chat = openai_compatible_chat_preflight(chat_base, chat_model, chat_token, timeout_s=45)
+    embedding = retry_preflight(
+        openai_compatible_embedding_preflight,
+        dashscope_base,
+        embedding_model,
+        embedding_token,
+        timeout_s=30,
+        attempts=3,
+    )
+    chat = retry_preflight(
+        openai_compatible_chat_preflight,
+        chat_base,
+        chat_model,
+        chat_token,
+        timeout_s=45,
+        attempts=3,
+    )
     status = "ok" if embedding.get("ok") and chat.get("ok") else "fail"
     report = {
         "status": status,
@@ -489,6 +609,7 @@ def reset_extraction_cursor(session_dir: Path) -> bool:
 def count_memory_artifacts(workspace: str, account: str) -> dict[str, Any]:
     memory_root = account_memory_root(workspace, account)
     atoms_dir = memory_root / "memory" / ".structured" / "atoms"
+    atoms_bundle = memory_root / "memory" / ".structured" / "atoms.json"
     relations_dir = memory_root / "memory" / ".structured" / "relations"
     graph_root = memory_root / "memory" / ".graph"
     graph_nodes_dir = graph_root / "nodes"
@@ -507,9 +628,21 @@ def count_memory_artifacts(workspace: str, account: str) -> dict[str, Any]:
     def json_count(root_dir: Path) -> int:
         return len(list(root_dir.rglob("*.json"))) if root_dir.exists() else 0
 
+    atoms_count = len(list(atoms_dir.glob("*.json"))) if atoms_dir.exists() else 0
+    if atoms_count == 0 and atoms_bundle.exists():
+        payload = read_json_file(atoms_bundle)
+        if isinstance(payload, dict):
+            bundled_atoms = payload.get("atoms")
+            if isinstance(bundled_atoms, dict):
+                atoms_count = len(bundled_atoms)
+            elif isinstance(bundled_atoms, list):
+                atoms_count = len(bundled_atoms)
+        elif isinstance(payload, list):
+            atoms_count = len(payload)
+
     return {
         "memory_root": str(memory_root),
-        "atoms_count": len(list(atoms_dir.glob("*.json"))) if atoms_dir.exists() else 0,
+        "atoms_count": atoms_count,
         "relations_count": len(list(relations_dir.glob("*.json"))) if relations_dir.exists() else 0,
         "graph_root": str(graph_root),
         "graph_exists": graph_root.exists(),
@@ -699,6 +832,8 @@ def collect_commit_artifact_state(
     overview_path = session_dir / "overview.md" if session_dir else Path("__missing__")
     abstract_ok = abstract_path.exists() and bool(abstract_path.read_text(encoding="utf-8", errors="replace").strip())
     overview_ok = overview_path.exists() and bool(overview_path.read_text(encoding="utf-8", errors="replace").strip())
+    require_abstract = abstract_required(args)
+    abstract_ready = abstract_ok if require_abstract else True
     cursor = extraction_cursor(meta) if meta else ""
     commit_ok = expected_index < 0 or commit_index >= expected_index
     atom_index_ok = expected_index < 0 or atom_index >= expected_index
@@ -717,7 +852,7 @@ def collect_commit_artifact_state(
         )
     else:
         memory_artifacts_ok = bool(
-            abstract_ok
+            abstract_ready
             and overview_ok
             and (
                 memory_artifacts.get("atoms_count", 0) > 0
@@ -726,6 +861,13 @@ def collect_commit_artifact_state(
         )
     extraction_complete_by = (
         "atom_pipeline_index" if atom_index_ok else ("atom_last_extracted_turn_id" if cursor_ok else ("memory_artifacts" if memory_artifacts_ok else ""))
+    )
+    strict_complete = bool(
+        commit_ok
+        and extraction_ok
+        and abstract_ready
+        and overview_ok
+        and memory_artifacts_ok
     )
     return {
         "session_dir": str(session_dir or ""),
@@ -747,6 +889,7 @@ def collect_commit_artifact_state(
         "session_last_extracted_at": str(meta.get("last_extracted_at") or "") if meta else "",
         "extraction_complete_by": extraction_complete_by,
         "pending_tokens": safe_int(meta.get("pending_tokens"), 0) if meta else None,
+        "abstract_required": require_abstract,
         "abstract_exists": abstract_path.exists(),
         "abstract_nonempty": abstract_ok,
         "overview_exists": overview_path.exists(),
@@ -754,9 +897,11 @@ def collect_commit_artifact_state(
         "memory_artifacts": memory_artifacts,
         "session_commit_skipped": bool(getattr(args, "skip_session_commit", False)),
         "vector_ready": vector_ready,
-        "legacy_commit_complete": commit_ok and extraction_ok and abstract_ok and overview_ok,
+        "legacy_commit_complete": commit_ok and extraction_ok and abstract_ready and overview_ok,
         "retrieval_ready": memory_artifacts_ok,
-        "complete": (commit_ok and extraction_ok and abstract_ok and overview_ok) or memory_artifacts_ok,
+        "cursor_complete": extraction_ok,
+        "qa_ready": strict_complete,
+        "complete": strict_complete,
     }
 
 
@@ -875,6 +1020,7 @@ async def import_one_session(args: argparse.Namespace, sdk: Any, session_id: str
                 timeout=commit_timeout,
             )
     elapsed = time.time() - started
+    auto_flush_on_message = str(os.environ.get("ECHOMEM_AUTO_FLUSH_ON_MESSAGE_PERSISTED", "true")).strip().lower() in {"1", "true", "yes", "on"}
     fast_import = bool(getattr(args, "defer_artifact_wait", False) or str(getattr(args, "import_wait_mode", "full")).lower() == "fast")
     if fast_import:
         atom_flush = {
@@ -903,7 +1049,7 @@ async def import_one_session(args: argparse.Namespace, sdk: Any, session_id: str
             f"atom_pipeline_index={commit_artifacts.get('atom_pipeline_index')}/{added - 1}",
             flush=True,
         )
-    else:
+    elif auto_flush_on_message:
         atom_flush = await flush_atom_pipeline(
             args,
             sdk,
@@ -920,6 +1066,21 @@ async def import_one_session(args: argparse.Namespace, sdk: Any, session_id: str
                 f"error={compact(last_attempt.get('error') or '', 300)}",
                 flush=True,
             )
+        commit_artifacts = await wait_for_commit_artifacts(
+            args,
+            actual_session_id,
+            expected_message_count=added,
+            expected_last_message_id=last_added_message_id,
+        )
+    else:
+        atom_flush = {
+            "available": True,
+            "complete": True,
+            "deferred": True,
+            "skipped": True,
+            "elapsed_s": 0.0,
+            "attempts": [],
+        }
         commit_artifacts = await wait_for_commit_artifacts(
             args,
             actual_session_id,
@@ -947,11 +1108,22 @@ async def import_one_session(args: argparse.Namespace, sdk: Any, session_id: str
     )
     atom_memory_complete = bool(atom_flush.get("complete"))
     retrieval_ready = bool(commit_artifacts.get("retrieval_ready"))
-    session_complete = bool(len(before) == len(messages) and archive_complete and retrieval_ready)
+    cursor_complete = bool(commit_artifacts.get("cursor_complete"))
+    session_complete = bool(
+        len(before) == len(messages)
+        and archive_complete
+        and atom_memory_complete
+        and retrieval_ready
+        and cursor_complete
+    )
     integrity = (
         "complete"
         if session_complete
-        else ("pending_async_memory" if fast_import and archive_complete else ("partial" if archive_complete or retrieval_ready else "incomplete"))
+        else (
+            "pending_async_memory"
+            if archive_complete and (fast_import or retrieval_ready or atom_memory_complete or cursor_complete)
+            else ("partial" if archive_complete or retrieval_ready or atom_memory_complete else "incomplete")
+        )
     )
     v005_commit_pending = (
         commit_status == "pending"
@@ -969,6 +1141,8 @@ async def import_one_session(args: argparse.Namespace, sdk: Any, session_id: str
         "archive_complete_after_commit": archive_complete,
         "atom_memory_complete_after_commit": atom_memory_complete,
         "retrieval_ready_after_commit": retrieval_ready,
+        "cursor_complete_after_commit": cursor_complete,
+        "qa_ready_after_commit": session_complete,
         "pending_async_memory_after_commit": bool(integrity == "pending_async_memory"),
         "last_added_message_id": last_added_message_id,
         "commit_keep_recent_count": 0,
@@ -976,21 +1150,29 @@ async def import_one_session(args: argparse.Namespace, sdk: Any, session_id: str
         "atom_flush": atom_flush,
         "commit_artifacts": commit_artifacts,
         "commit_warning": (
-            "EchoMemory returned commit task status=pending, but atom pipeline and vector index artifacts are complete."
+            "EchoMemory returned commit task status=pending, but strict QA-ready artifacts are already complete."
             if v005_commit_pending
-            else "Atom flush did not reach the final cursor, but retrieval artifacts are available; integrity is based on retrieval readiness."
-            if retrieval_ready and not atom_memory_complete
+            else "Retrieval artifacts are available, but atom flush or extraction cursor has not fully caught up yet; keep waiting before QA."
+            if retrieval_ready and (not atom_memory_complete or not cursor_complete)
             else "Fast import only waits for message persistence and commit acceptance; atom/graph generation continues asynchronously in EchoMemory."
-            if fast_import and archive_complete and not retrieval_ready
+            if fast_import and archive_complete and not session_complete
             else "Session commit was skipped; integrity is based on persisted messages and atom pipeline artifacts."
             if args.skip_session_commit
             else ""
         ),
         "integrity": integrity,
         "integrity_stage": (
-            "atom_memory_complete"
-            if atom_memory_complete
-            else ("retrieval_ready" if retrieval_ready else ("async_memory_pending" if integrity == "pending_async_memory" else ("archive_complete" if archive_complete else "incomplete")))
+            "qa_ready"
+            if session_complete
+            else (
+                "cursor_complete"
+                if cursor_complete
+                else (
+                    "atom_memory_complete"
+                    if atom_memory_complete
+                    else ("retrieval_ready" if retrieval_ready else ("async_memory_pending" if integrity == "pending_async_memory" else ("archive_complete" if archive_complete else "incomplete")))
+                )
+            )
         ),
         "create_response": created,
         "commit_response": {"task_id": getattr(task, "task_id", ""), "status": getattr(task, "status", "accepted"), "elapsed_s": round(elapsed, 4)},
@@ -1158,6 +1340,13 @@ async def run(args: argparse.Namespace) -> None:
         root,
         args.fallback_to_mock,
     )
+    # Keep downstream readiness checks aligned with the runtime file that was
+    # actually used for this import run. Without this, helper functions like
+    # abstract_required(args) fall back to default values even when the freshly
+    # generated runtime config disables abstract generation.
+    args.echomem_config = str(config_path)
+    if hasattr(args, "_runtime_config_cache"):
+        delattr(args, "_runtime_config_cache")
     if not args.skip_model_preflight and not args.fallback_to_mock:
         preflight = import_model_preflight(out_dir)
         print(
@@ -1182,7 +1371,45 @@ async def run(args: argparse.Namespace) -> None:
                 + " | ".join(failures)
                 + f" | details={out_dir / 'echomemory_model_preflight.json'}"
             )
-    runtime = await open_runtime(str(config_path))
+    write_bootstrap_summary(
+        out_dir,
+        args,
+        root,
+        config_path,
+        status="ECHOMEMORY_IMPORT_BOOTSTRAPPING",
+        status_explanation="Model preflight passed. EchoMemory runtime is opening; no session has been written yet.",
+        running=True,
+    )
+    runtime_open_timeout = max(1.0, float(args.runtime_open_timeout_s))
+    print(
+        f"[bootstrap] opening_runtime timeout_s={runtime_open_timeout:g} config={config_path}",
+        flush=True,
+    )
+    runtime_started = time.time()
+    try:
+        with hard_timeout(runtime_open_timeout, f"open_runtime({config_path})"):
+            runtime = await asyncio.wait_for(
+                open_runtime(str(config_path)),
+                timeout=runtime_open_timeout,
+            )
+    except Exception as exc:
+        message = compact(exc, 500)
+        write_bootstrap_summary(
+            out_dir,
+            args,
+            root,
+            config_path,
+            status="ECHOMEMORY_IMPORT_BOOTSTRAP_FAILED",
+            status_explanation="EchoMemory runtime failed before session import started.",
+            running=False,
+            error=message,
+        )
+        print(f"[error] runtime_open_failed={type(exc).__name__}: {message}", flush=True)
+        raise
+    print(
+        f"[bootstrap] runtime_ready elapsed_s={time.time() - runtime_started:.3f}",
+        flush=True,
+    )
     sdk = EchoMemSDK(runtime)
     data = read_json(Path(args.dataset).expanduser().resolve())
     if not isinstance(data, list):
@@ -1208,6 +1435,7 @@ async def run(args: argparse.Namespace) -> None:
     partial = sum(1 for item in records if item["integrity"] == "partial")
     archive_complete = sum(1 for item in records if item.get("archive_complete_after_commit"))
     retrieval_ready = sum(1 for item in records if item.get("retrieval_ready_after_commit"))
+    qa_ready = sum(1 for item in records if item.get("qa_ready_after_commit"))
     summary = build_import_summary(
         args,
         root,
@@ -1215,21 +1443,21 @@ async def run(args: argparse.Namespace) -> None:
         records,
         status=(
             "ECHOMEMORY_IMPORT_DONE"
-            if complete == len(records)
+            if qa_ready == len(records)
             else (
                 "ECHOMEMORY_IMPORT_ASYNC_SETTLING"
-                if complete + pending_async == len(records) and pending_async
+                if qa_ready + pending_async == len(records) and pending_async
                 else ("ECHOMEMORY_IMPORT_PARTIAL" if pending_async or partial or archive_complete or retrieval_ready else "ECHOMEMORY_IMPORT_INCOMPLETE")
             )
         ),
         status_explanation=(
-            "All selected sessions are retrieval-ready; messages, abstracts, overview, and vector artifacts are available."
-            if complete == len(records)
+            "All selected sessions are QA-ready; commit cursor, atom cursor, overview, abstract, and retrieval artifacts are all complete."
+            if qa_ready == len(records)
             else (
-                "All selected sessions have been written and commit has been triggered; EchoMemory is still generating atom/graph artifacts asynchronously."
-                if complete + pending_async == len(records) and pending_async
+                "All selected sessions have been written and commit has been triggered, but at least one session is still waiting for atom/cursor/graph consolidation."
+                if qa_ready + pending_async == len(records) and pending_async
                 else (
-                    "Selected sessions are partially ready; retrieval or archive artifacts exist, but not every session reached retrieval-ready state."
+                    "Selected sessions are partially ready; some retrieval or archive artifacts exist, but not every session reached strict QA-ready state."
                     if pending_async or partial or archive_complete or retrieval_ready
                     else "Selected sessions did not fully commit."
                 )
@@ -1263,6 +1491,7 @@ def main() -> None:
     parser.add_argument("--commit-call-timeout-s", type=float, default=300.0)
     parser.add_argument("--flush-call-timeout-s", type=float, default=600.0)
     parser.add_argument("--flush-attempts", type=int, default=3)
+    parser.add_argument("--runtime-open-timeout-s", type=float, default=180.0)
     parser.add_argument("--defer-artifact-wait", action="store_true", default=False)
     parser.add_argument("--skip-session-commit", action="store_true", default=False)
     parser.add_argument("--skip-model-preflight", action="store_true", default=False)

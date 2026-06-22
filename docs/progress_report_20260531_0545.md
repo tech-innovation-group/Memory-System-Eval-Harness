@@ -20,7 +20,7 @@
 - `node --check static/app.js` 通过。
 - `python3 -m py_compile server.py` 通过。
 - 服务已重启并通过 `/health`：`ok locomo-eval-web`。
-- 对 `/Users/chx/locomo-eval-web/runs/manual_locomo_smoke_5` 重新导出 report，确认包含 `Log Diagnostics` 和 `Rate-limit warnings`。
+- 对 `<repo-root>/runs/manual_locomo_smoke_5` 重新导出 report，确认包含 `Log Diagnostics` 和 `Rate-limit warnings`。
 - 临时构造 2 行 base/candidate CSV 验证 `/api/run-diff`：
   - improved: 1
   - regressed: 1

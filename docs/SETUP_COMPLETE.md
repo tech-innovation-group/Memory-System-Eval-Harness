@@ -13,8 +13,8 @@
 - ✅ `openviking_memory_qa.py`: 支持自定义模型参数
 
 ### 2. 文档
-- ✅ 完整配置指南: `/Users/chx/locomo-eval-web/docs/openviking_gpt55_setup_guide.md`
-- ✅ 快速启动脚本: `/Users/chx/locomo-eval-web/test_openviking_gpt55.sh`
+- ✅ 完整配置指南: `<repo-root>/docs/openviking_gpt55_setup_guide.md`
+- ✅ 快速启动脚本: `<repo-root>/test_openviking_gpt55.sh`
 
 ### 3. 默认模型
 - ✅ 所有脚本默认使用 `gpt-5.5`
@@ -27,7 +27,7 @@
 ### 方法 1：使用快速启动脚本（推荐）
 
 ```bash
-cd /Users/chx/locomo-eval-web
+cd <repo-root>
 
 # 设置 API Key
 export OPENAI_API_KEY=sk-your-api-key-here
@@ -43,25 +43,25 @@ export OPENAI_API_KEY=sk-your-api-key-here
 
 ```bash
 # 1. 导入数据
-/Users/chx/jiuwenclaw/bin/python3.12 scripts/benchmark_adapter.py \
+<python-bin> scripts/benchmark_adapter.py \
   --dataset dataset/locomo10.json \
   --format auto \
-  --out-dir /Users/chx/locomo-eval-web/runs/echomem_ov_import \
+  --out-dir <repo-root>/runs/echomem_ov_import \
   --mode execute \
   --allow-writes \
   --memory-mode isolated_instance \
-  --ov-base-url http://localhost:1933 \
+  --ov-base-url <OPENVIKING_BASE_URL> \
   --namespace echomem_gpt55_test \
   --sample conv-30
 
 # 2. 运行评测（使用 GPT-5.5）
-/Users/chx/jiuwenclaw/bin/python3.12 scripts/run_vikingbot_eval.py \
+<python-bin> scripts/run_vikingbot_eval.py \
   --dataset dataset/locomo10.json \
-  --out-dir /Users/chx/locomo-eval-web/runs/echomem_vikingbot_gpt55_10q \
+  --out-dir <repo-root>/runs/echomem_vikingbot_gpt55_10q \
   --sample conv-30 \
   --random-count 10 \
-  --openviking-url http://localhost:1933 \
-  --workspace /Users/chx/openviking_workspace \
+  --openviking-url <OPENVIKING_BASE_URL> \
+  --workspace <openviking-workspace> \
   --answer-model gpt-5.5 \
   --answer-token $OPENAI_API_KEY
 ```
@@ -135,7 +135,7 @@ Output 成本: $0.0018
 测试完成后会生成：
 
 ```
-/Users/chx/locomo-eval-web/runs/echomem_vikingbot_gpt55_10q/
+<repo-root>/runs/echomem_vikingbot_gpt55_10q/
 ├── vikingbot_eval.csv          # 详细结果
 ├── summary.json                # 统计摘要
 └── relevant_memory.json        # 检索到的记忆（如果有）
@@ -166,9 +166,9 @@ with open('runs/echomem_vikingbot_gpt55_10q/vikingbot_eval.csv', 'r') as f:
 
 ## 📚 相关文档
 
-1. **完整配置指南**: `/Users/chx/locomo-eval-web/docs/openviking_gpt55_setup_guide.md`
-2. **EchoMem 测试指南**: `/Users/chx/locomo-eval-web/docs/echomem_test_guide.md`
-3. **Local Agent 原理**: `/Users/chx/locomo-eval-web/docs/local_agent_no_llm_explained.md`
+1. **完整配置指南**: `<repo-root>/docs/openviking_gpt55_setup_guide.md`
+2. **EchoMem 测试指南**: `<repo-root>/docs/echomem_test_guide.md`
+3. **Local Agent 原理**: `<repo-root>/docs/local_agent_no_llm_explained.md`
 
 ---
 
@@ -198,7 +198,7 @@ with open('runs/echomem_vikingbot_gpt55_10q/vikingbot_eval.csv', 'r') as f:
 4. **查看 Web UI**
    ```bash
    ./start.sh
-   # 访问 http://127.0.0.1:19181/
+   # 访问 <WEB_BASE_URL>/
    ```
 
 ---

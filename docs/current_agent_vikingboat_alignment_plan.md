@@ -27,7 +27,7 @@
 
 ## 模型健康检查
 
-30 题测试脚本：`/Users/chx/locomo-eval-web/scripts/openviking_memory_qa.py`
+30 题测试脚本：`<repo-root>/scripts/openviking_memory_qa.py`
 
 每行 CSV 新增/保留以下字段：
 
@@ -82,8 +82,8 @@ python3 scripts/openviking_memory_qa.py \
   --sample conv-30 \
   --random-count 30 \
   --random-seed 30 \
-  --openviking-url http://127.0.0.1:1933 \
-  --workspace /Users/chx/openviking_workspace_locomo_20260601_014238_5b2c49 \
+  --openviking-url <OPENVIKING_BASE_URL> \
+  --workspace <openviking-workspace> \
   --account default \
   --user-id default \
   --agent-id default \
@@ -99,7 +99,7 @@ python3 scripts/openviking_memory_qa.py \
 - `submitted_messages=369`
 - `pending_message_count_after_commit=0`
 - `archive_complete_after_commit=true`
-- OpenViking 服务：`http://127.0.0.1:1933/health`
+- OpenViking 服务：`<OPENVIKING_BASE_URL>/health`
 
 ## 产出物
 

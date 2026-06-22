@@ -1,0 +1,283 @@
+{
+  "summary": {
+    "variants": {
+      "full_v17": "4/4",
+      "write_time_only": "2/4",
+      "atom_only_no_dossier": "2/4"
+    }
+  },
+  "cases": [
+    {
+      "case_id": "temporal_retrospective",
+      "family": "temporal",
+      "query": "When did the consulate request one more financial statement?",
+      "query_time": "2026-04-10",
+      "expected_keywords": [
+        "2026-04-08"
+      ],
+      "note": "Retrospective mention should use story time, not write time."
+    },
+    {
+      "case_id": "longitudinal_visa",
+      "family": "longitudinal",
+      "query": "How did the visa process change over time?",
+      "query_time": "2026-04-10",
+      "expected_keywords": [
+        "2026-03-02",
+        "2026-04-08"
+      ],
+      "note": "Needs a longitudinal middle layer to surface multiple updates coherently."
+    },
+    {
+      "case_id": "longitudinal_latest_pref",
+      "family": "longitudinal",
+      "query": "What is Maya's latest preference now?",
+      "query_time": "2026-04-10",
+      "expected_keywords": [
+        "2026-04-10",
+        "coffee"
+      ],
+      "note": "Latest-state question should still use longitudinal evidence correctly."
+    },
+    {
+      "case_id": "visual_address",
+      "family": "visual",
+      "query": "What address was shown in the lease screenshot?",
+      "query_time": "2026-03-20",
+      "expected_keywords": [
+        "Rua Augusta 14"
+      ],
+      "note": "Visual grounding should work in every variant that retains image evidence."
+    }
+  ],
+  "variants": [
+    {
+      "variant": "full_v17",
+      "correct": 4,
+      "total": 4,
+      "rows": [
+        {
+          "case_id": "temporal_retrospective",
+          "family": "temporal",
+          "answer": "2026-04-08",
+          "passed": true,
+          "contract_ok": true,
+          "second_pass_sources": [
+            "graph",
+            "atom"
+          ],
+          "present_layers": [
+            "event",
+            "event_time",
+            "fact",
+            "graph",
+            "temporal_tree"
+          ],
+          "missing_layers": []
+        },
+        {
+          "case_id": "longitudinal_visa",
+          "family": "longitudinal",
+          "answer": "2026-03-02: Maya started the visa paperwork on 2026-03-02 [active]\n2026-03-03: Nora helped Maya with the visa checklist on 2026-03-03. [active]\n2026-04-08: Yesterday the consulate requested one more financial statement. [active]",
+          "passed": true,
+          "contract_ok": true,
+          "second_pass_sources": [
+            "atom"
+          ],
+          "present_layers": [
+            "event_time",
+            "fact",
+            "topic_dossier"
+          ],
+          "missing_layers": []
+        },
+        {
+          "case_id": "longitudinal_latest_pref",
+          "family": "longitudinal",
+          "answer": "2026-04-10: Maya prefers coffee. [active]",
+          "passed": true,
+          "contract_ok": true,
+          "second_pass_sources": [
+            "atom"
+          ],
+          "present_layers": [
+            "event_time",
+            "fact",
+            "topic_dossier"
+          ],
+          "missing_layers": []
+        },
+        {
+          "case_id": "visual_address",
+          "family": "visual",
+          "answer": "Rua Augusta 14, Lisbon",
+          "passed": true,
+          "contract_ok": true,
+          "second_pass_sources": [
+            "atom"
+          ],
+          "present_layers": [
+            "event",
+            "event_time",
+            "fact",
+            "graph",
+            "image_evidence"
+          ],
+          "missing_layers": []
+        }
+      ],
+      "qa_ready": true,
+      "dossier_count": 4
+    },
+    {
+      "variant": "write_time_only",
+      "correct": 2,
+      "total": 4,
+      "rows": [
+        {
+          "case_id": "temporal_retrospective",
+          "family": "temporal",
+          "answer": "2026-04-09",
+          "passed": false,
+          "contract_ok": true,
+          "second_pass_sources": [
+            "graph",
+            "atom"
+          ],
+          "present_layers": [
+            "event",
+            "event_time",
+            "fact",
+            "graph",
+            "temporal_tree"
+          ],
+          "missing_layers": []
+        },
+        {
+          "case_id": "longitudinal_visa",
+          "family": "longitudinal",
+          "answer": "2026-03-03: Maya started the visa paperwork on 2026-03-02 [active]\n2026-03-03: Nora helped Maya with the visa checklist on 2026-03-03. [active]\n2026-04-09: Yesterday the consulate requested one more financial statement. [active]",
+          "passed": false,
+          "contract_ok": true,
+          "second_pass_sources": [
+            "atom"
+          ],
+          "present_layers": [
+            "event_time",
+            "fact",
+            "topic_dossier"
+          ],
+          "missing_layers": []
+        },
+        {
+          "case_id": "longitudinal_latest_pref",
+          "family": "longitudinal",
+          "answer": "2026-04-10: Maya prefers coffee. [active]",
+          "passed": true,
+          "contract_ok": true,
+          "second_pass_sources": [
+            "atom"
+          ],
+          "present_layers": [
+            "event_time",
+            "fact",
+            "topic_dossier"
+          ],
+          "missing_layers": []
+        },
+        {
+          "case_id": "visual_address",
+          "family": "visual",
+          "answer": "Rua Augusta 14, Lisbon",
+          "passed": true,
+          "contract_ok": true,
+          "second_pass_sources": [
+            "atom"
+          ],
+          "present_layers": [
+            "event",
+            "event_time",
+            "fact",
+            "graph",
+            "image_evidence"
+          ],
+          "missing_layers": []
+        }
+      ],
+      "qa_ready": true,
+      "dossier_count": 4
+    },
+    {
+      "variant": "atom_only_no_dossier",
+      "correct": 2,
+      "total": 4,
+      "rows": [
+        {
+          "case_id": "temporal_retrospective",
+          "family": "temporal",
+          "answer": "2026-04-08",
+          "passed": true,
+          "contract_ok": true,
+          "second_pass_sources": [
+            "graph",
+            "atom"
+          ],
+          "present_layers": [
+            "event",
+            "event_time",
+            "fact",
+            "graph",
+            "temporal_tree"
+          ],
+          "missing_layers": []
+        },
+        {
+          "case_id": "longitudinal_visa",
+          "family": "longitudinal",
+          "answer": "Maya started the visa paperwork on 2026-03-02",
+          "passed": false,
+          "contract_ok": true,
+          "second_pass_sources": [],
+          "present_layers": [
+            "event_time",
+            "fact"
+          ],
+          "missing_layers": []
+        },
+        {
+          "case_id": "longitudinal_latest_pref",
+          "family": "longitudinal",
+          "answer": "Maya started the visa paperwork on 2026-03-02",
+          "passed": false,
+          "contract_ok": true,
+          "second_pass_sources": [],
+          "present_layers": [
+            "event_time",
+            "fact"
+          ],
+          "missing_layers": []
+        },
+        {
+          "case_id": "visual_address",
+          "family": "visual",
+          "answer": "Rua Augusta 14, Lisbon",
+          "passed": true,
+          "contract_ok": true,
+          "second_pass_sources": [
+            "atom"
+          ],
+          "present_layers": [
+            "event",
+            "event_time",
+            "fact",
+            "graph",
+            "image_evidence"
+          ],
+          "missing_layers": []
+        }
+      ],
+      "qa_ready": true,
+      "dossier_count": 0
+    }
+  ]
+}

@@ -900,6 +900,74 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer.writerows(rows)
 
 
+def safe_float(value: Any) -> float | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except Exception:
+        return None
+
+
+def running_summary_payload(rows: list[dict[str, Any]], *, status: str, csv_path: Path) -> dict[str, Any]:
+    sums = {
+        "memory_injection_time_s": 0.0,
+        "memory_settle_wait_elapsed_s": 0.0,
+        "qa_time_s": 0.0,
+        "end_to_end_time_s": 0.0,
+    }
+    counts = {key: 0 for key in sums}
+    last_question_id = ""
+    for row in rows:
+        last_question_id = str(row.get("question_id") or row.get("native_question_id") or row.get("sample_id") or last_question_id)
+        for key in ("memory_injection_time_s", "memory_settle_wait_elapsed_s", "end_to_end_time_s"):
+            value = safe_float(row.get(key))
+            if value is None:
+                continue
+            sums[key] += value
+            counts[key] += 1
+        qa_value = safe_float(row.get("qa_time_s"))
+        if qa_value is None:
+            qa_value = safe_float(row.get("time_cost"))
+        if qa_value is not None:
+            sums["qa_time_s"] += qa_value
+            counts["qa_time_s"] += 1
+
+    def avg(key: str) -> float | None:
+        count = counts[key]
+        return round(sums[key] / count, 4) if count else None
+
+    def total(key: str) -> float | None:
+        return round(sums[key], 4) if count_values(key) else None
+
+    def count_values(key: str) -> int:
+        return counts[key]
+
+    return {
+        "rows": len(rows),
+        "last_question_id": last_question_id,
+        "total_memory_injection_time_s": total("memory_injection_time_s"),
+        "avg_memory_injection_time_s": avg("memory_injection_time_s"),
+        "total_memory_settle_wait_time_s": total("memory_settle_wait_elapsed_s"),
+        "avg_memory_settle_wait_time_s": avg("memory_settle_wait_elapsed_s"),
+        "total_qa_time_s": total("qa_time_s"),
+        "avg_qa_time_s": avg("qa_time_s"),
+        "total_end_to_end_time_s": total("end_to_end_time_s"),
+        "avg_end_to_end_time_s": avg("end_to_end_time_s"),
+        "status": status,
+        "csv_path": str(csv_path),
+        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+
+
+def write_running_summary(path: Path, rows: list[dict[str, Any]], *, status: str, csv_path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(running_summary_payload(rows, status=status, csv_path=csv_path), ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
 def load_existing_csv(path: Path) -> list[dict[str, str]]:
     if not path.exists():
         return []
@@ -1179,6 +1247,7 @@ def main() -> None:
     total_jobs = planned_job_count(args)
     total_label = str(total_jobs) if total_jobs is not None else "?"
     csv_path = out_dir / "openviking_generic_qa_results.csv"
+    running_summary_path = out_dir / "running_summary.json"
     existing_rows = load_existing_csv(csv_path) if args.resume else []
     existing_by_key = {row_key(row): row for row in existing_rows if row_key(row)}
     resumed_existing_rows = len(existing_by_key)
@@ -1194,6 +1263,7 @@ def main() -> None:
         print(f"[resume] existing_rows={len(existing_by_key)} retry_failed={bool(args.retry_failed)} csv={csv_path}", flush=True)
     import_records: dict[str, dict[str, Any]] = load_existing_import_records(import_dir, existing_rows, args) if args.resume else {}
     rows: list[dict[str, Any]] = []
+    write_running_summary(running_summary_path, rows, status="running", csv_path=csv_path)
     processed_jobs = 0
     for index, job, plan in iter_job_plans(args):
         processed_jobs = index
@@ -1262,10 +1332,12 @@ def main() -> None:
             }
         rows.append(row)
         write_csv(csv_path, rows)
+        write_running_summary(running_summary_path, rows, status="running", csv_path=csv_path)
 
     if processed_jobs == 0:
         raise SystemExit(f"no jobs found in {args.dataset_path}")
     write_csv(csv_path, rows)
+    write_running_summary(running_summary_path, rows, status="running", csv_path=csv_path)
     judge_result = {"enabled": False, "reason": "import_only"} if args.import_only else run_judge(args, csv_path)
     official_eval_result = {"enabled": False, "reason": "import_only"} if args.import_only else run_official_eval(args, csv_path)
 
@@ -1335,6 +1407,8 @@ def main() -> None:
     }
     summary.update(official_metric_summary(args.dataset_format, official_eval_result))
     (out_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    final_status = "failed" if judge_result.get("enabled") and int(judge_result.get("returncode") or 0) != 0 else "succeeded"
+    write_running_summary(running_summary_path, rows, status=final_status, csv_path=csv_path)
     print(json.dumps(summary, ensure_ascii=False, indent=2), flush=True)
     if judge_result.get("enabled") and int(judge_result.get("returncode") or 0) != 0:
         raise SystemExit(2)

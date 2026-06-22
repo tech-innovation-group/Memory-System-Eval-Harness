@@ -127,7 +127,7 @@ vectordb/
 ### 方法 1: 通过 OpenViking API
 
 ```bash
-curl http://127.0.0.1:1933/api/v1/search/find \
+curl <OPENVIKING_BASE_URL>/api/v1/search/find \
   -H "Content-Type: application/json" \
   -H "X-OV-Account: default" \
   -H "X-OV-User-ID: default" \
@@ -150,7 +150,7 @@ ps aux | grep "port 1933" | grep -v grep | awk '{print $2}' | xargs kill
 
 # 启动 OpenViking 指向有数据的 workspace
 python3 -m openviking.server.bootstrap \
-  --config /Users/chx/locomo-eval-web/runs/openviking_import_20260601_014238_227a10/openviking.runtime.conf \
+  --config <repo-root>/runs/openviking_import_20260601_014238_227a10/openviking.runtime.conf \
   --host 127.0.0.1 \
   --port 1933
 ```
@@ -234,7 +234,7 @@ python3 -m openviking.server.bootstrap \
   --port 1933
 
 # 3. 查询记忆
-curl http://127.0.0.1:1933/api/v1/search/find ...
+curl <OPENVIKING_BASE_URL>/api/v1/search/find ...
 ```
 
 **选项 B**: 重新导入并 commit 记忆到当前 workspace

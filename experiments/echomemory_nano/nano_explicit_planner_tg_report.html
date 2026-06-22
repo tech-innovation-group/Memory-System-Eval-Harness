@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EchoMemory Nano Explicit Planner</title>
+  <style>
+    :root {
+      --bg:#f6f7fb;--panel:#fff;--text:#172033;--muted:#667085;--line:#dde4ee;--blue:#175cd3;--blue-soft:#eff4ff;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font:14px/1.68 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+    .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 60px}
+    .hero,.section,.case{background:var(--panel);border:1px solid var(--line);border-radius:12px}
+    .hero{padding:28px 30px 22px}
+    .section{padding:20px 22px;margin-top:18px}
+    .case{padding:18px 20px;margin-top:16px}
+    h1,h2,h3{margin:0 0 10px}
+    p{margin:0 0 10px}
+    ul{margin:8px 0 0;padding-left:18px}
+    code{background:#f3f6fb;border-radius:6px;padding:2px 6px;font-size:12px}
+    .note{margin-top:12px;padding:10px 12px;border-left:3px solid var(--blue);background:var(--blue-soft)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1>EchoMemory Nano: Explicit Planner / Retriever / Composer</h1>
+      <p>
+        这个 nano 的目的不是提高分数，而是把主仓里现在混在 <code>SearchService</code> 里的几件事拆开：
+        <b>Planner</b> 决定 query family，<b>Retriever</b> 决定 graph-first 还是 hybrid，<b>EvidenceComposer</b> 决定怎样把命中的证据组合成回答。
+      </p>
+    </div>
+    <div class="section">
+      <h2>为什么要拆</h2>
+      <ul>
+        <li>便于做 clean ablation：到底是 planner 错，还是 retrieval 错，还是 answer composition 错。</li>
+        <li>便于把 temporal / relational / visual query 分别设计成不同的证据路径。</li>
+        <li>便于把它画成论文方法图，而不是一大团 SearchService 逻辑。</li>
+      </ul>
+    </div>
+    <div class='case'><h3>When did Gina lose her job?</h3><p><b>Intent:</b> temporal · <b>family:</b> temporal · <b>graph_first:</b> True</p><p><b>Steps:</b> seed_event_nodes -&gt; attach_fact_support</p><p><b>Answer rule:</b> Use event-time first, fact text second.</p><ul><li><code>event:atom-001</code> · event · score=3.0<br>Gina lost_job job</li><li><code>event:atom-000</code> · event · score=2.0<br>Gina visited Rome</li><li><code>event:atom-003</code> · event · score=2.0<br>Gina plans move to Lisbon after the spring hiring season.</li><li><code>fact:atom-001</code> · fact · score=2.0<br>Gina lost his job on 2023-02-02 and started searching for design roles.</li></ul><p class='note'>Top event evidence: Gina lost_job job</p></div><div class='case'><h3>Who married Alice and when?</h3><p><b>Intent:</b> temporal_relational · <b>family:</b> temporal+relation · <b>graph_first:</b> True</p><p><b>Steps:</b> seed_event_nodes -&gt; expand_relation_edges -&gt; attach_fact_support</p><p><b>Answer rule:</b> Prefer event answer, enrich with relation participants.</p><ul><li><code>event:atom-002</code> · event · score=3.0<br>Jon married Alice</li><li><code>fact:atom-002</code> · fact · score=2.0<br>Jon married Alice on 2023-03-12 in Seattle.</li><li><code>entity:Alice</code> · entity · score=1.8<br>name=Alice</li><li><code>fact:atom-001</code> · fact · score=1.0<br>Gina lost his job on 2023-02-02 and started searching for design roles.</li></ul><p class='note'>Event+relation chain: Jon married Alice</p></div><div class='case'><h3>Which two people were involved in the Seattle wedding?</h3><p><b>Intent:</b> relational · <b>family:</b> relation · <b>graph_first:</b> True</p><p><b>Steps:</b> seed_entities -&gt; expand_involves_edges -&gt; attach_fact_support</p><p><b>Answer rule:</b> Use relation path rather than flat lexical evidence.</p><ul><li><code>fact:atom-002</code> · fact · score=2.0<br>Jon married Alice on 2023-03-12 in Seattle.</li><li><code>entity:Gina</code> · entity · score=1.9<br>name=Gina</li><li><code>entity:Milan</code> · entity · score=1.9<br>name=Milan</li><li><code>entity:Rome</code> · entity · score=1.9<br>name=Rome</li></ul><p class='note'>Relation evidence path starts from: Jon married Alice on 2023-03-12 in Seattle.</p></div><div class='case'><h3>What does Gina plan to do after spring hiring season?</h3><p><b>Intent:</b> plan · <b>family:</b> plan · <b>graph_first:</b> False</p><p><b>Steps:</b> read_plan_block -&gt; fallback_event</p><p><b>Answer rule:</b> Blocks are acceptable primary evidence for plans.</p><ul><li><code>block:plans</code> · block · score=7.3<br>- Gina plans to move to Lisbon after the spring hiring season.</li><li><code>event:atom-003</code> · event · score=7.0<br>Gina plans move to Lisbon after the spring hiring season.</li><li><code>fact:atom-003</code> · fact · score=7.0<br>Gina plans to move to Lisbon after the spring hiring season.</li><li><code>block:timeline</code> · block · score=2.3<br>- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.
+- 2023-02-02: Gina lost his job on 2023-02-02 and started searching for design roles.
+- 2023-03-12: Jon married Alice on 2023-03-12 i</li></ul><p class='note'>Plan block says: - Gina plans to move to Lisbon after the spring hiring season.</p></div>
+  </div>
+</body>
+</html>

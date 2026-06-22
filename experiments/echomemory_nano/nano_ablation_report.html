@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EchoMemory Nano Ablation</title>
+  <style>
+    :root {
+      --bg:#f6f7fb;--panel:#fff;--text:#172033;--muted:#667085;--line:#dde4ee;
+      --blue:#2457c5;--blue-soft:#eef4ff;--green:#067647;--green-soft:#ecfdf3;--red:#b42318;--red-soft:#fff1f3;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font:14px/1.68 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+    .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 70px}
+    .hero,.panel,.card{background:var(--panel);border:1px solid var(--line);border-radius:12px}
+    .hero{padding:28px 30px 24px}
+    .panel{padding:20px 22px;margin-top:18px}
+    .grid{display:grid;gap:16px}
+    .grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .card{padding:14px 16px}
+    h1,h2,h3{margin:0 0 10px}
+    h1{font-size:28px}
+    p{margin:8px 0}
+    ul{margin:8px 0 0 18px;padding:0}
+    li{margin:6px 0}
+    code{background:#f8fafc;border:1px solid var(--line);border-radius:6px;padding:1px 5px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    table{width:100%;border-collapse:collapse;margin-top:10px}
+    th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+    th{background:#f8fafc}
+    .muted{color:var(--muted)}
+    .badge{display:inline-block;border-radius:999px;padding:3px 9px;font-size:12px;font-weight:700}
+    .ok{background:var(--green-soft);color:var(--green)}
+    .bad{background:var(--red-soft);color:var(--red)}
+    .kpi{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr));margin-top:14px}
+    .kpi .item{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+    .kpi .num{font-size:24px;font-weight:800}
+    .case{padding-top:14px;border-top:1px solid var(--line);margin-top:14px}
+    @media (max-width:960px){.grid.two,.kpi{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>EchoMemory Nano Ablation</h1>
+      <p class="muted">
+        This is a toy experiment for understanding the architectural direction, not a paper-grade benchmark result.
+        It answers two narrower questions:
+        1) does nano v2 preserve event time better than nano v1;
+        2) on the same v2 memory graph, is planned retrieval better than flat lexical retrieval for evidence selection.
+      </p>
+      <div class="kpi">
+        <div class="item"><div class="num">0/2</div><div class="muted">v1 extraction</div></div>
+        <div class="item"><div class="num">2/2</div><div class="muted">v2 extraction</div></div>
+        <div class="item"><div class="num">1/3</div><div class="muted">flat retrieval</div></div>
+        <div class="item"><div class="num">3/3</div><div class="muted">planned retrieval</div></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Scenario</h2>
+      <ul><li><code>2023-01-20</code> · Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.</li><li><code>2023-01-28</code> · Jon visited Paris on 2023-01-28 and said it was cool.</li><li><code>2023-02-01</code> · Gina visited Rome on 2023-01-30 after her design interview.</li><li><code>2023-02-03</code> · Jon&#x27;s ideal dance studio is by the water, with natural light and Marley flooring.</li></ul>
+    </section>
+
+    <section class="panel">
+      <h2>Part A. Extraction sanity</h2>
+      <p class="muted">
+        Here the gold signal is the real event date in the sentence, not the logging date.
+        This mirrors a real long-memory failure mode: confusing <code>event_time</code> with <code>created_at</code>.
+      </p>
+      <table>
+        <thead><tr><th>Target</th><th>Gold</th><th>nano v1</th><th>nano v2</th></tr></thead>
+        <tbody><tr><td>Jon job-loss event_time</td><td><code>2023-01-19</code></td><td><code>2023-01-20</code> ❌</td><td><code>2023-01-19</code> ✅</td></tr><tr><td>Gina Rome visit event_time</td><td><code>2023-01-30</code></td><td><code>2023-02-01</code> ❌</td><td><code>2023-01-30</code> ✅</td></tr></tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h2>Part B. Retrieval routing ablation</h2>
+      <p class="muted">
+        Both settings use the same v2 graph nodes. The only difference is whether retrieval first plans which layers to prioritize.
+      </p>
+      <div class='case'><h3>temporal_q1</h3><p><b>Query:</b> When did Jon lose his job?</p><p><b>Expected:</b> top1 is event and contains 2023-01-19</p><p class='muted'>Time-sensitive query should prefer event evidence and surface the true event date, not the record date.</p><div class='grid two'><div class='card'><div class='badge bad'>flat retrieval fail</div><ul><li><code>fact:atom-000-00</code> · fact · score=3.0<br>statement=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.
+subject=Jon
+predicate=lost_job
+object=job
+event_time=2023-01-19
+created_at=2023-01-20</li><li><code>event:atom-000-00</code> · event · score=3.0<br>statement=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.
+participants=Jon, job
+event_time=2023-01-19</li><li><code>entity:Jon</code> · entity · score=3.0<br>name=Jon
+first_seen_in=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.</li></ul></div><div class='card'><div class='badge ok'>planned retrieval pass</div><p class='muted'>intent=temporal · layers=event,fact</p><ul><li><code>event:atom-000-00</code> · event · score=5.0<br>statement=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.
+participants=Jon, job
+event_time=2023-01-19</li><li><code>fact:atom-000-00</code> · fact · score=3.3<br>statement=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.
+subject=Jon
+predicate=lost_job
+object=job
+event_time=2023-01-19
+created_at=2023-01-20</li><li><code>event:atom-001-01</code> · event · score=3.1<br>statement=Jon visited Paris on 2023-01-28 and said it was cool.
+participants=Jon, Paris
+event_time=2023-01-28</li></ul></div></div></div><div class='case'><h3>temporal_q2</h3><p><b>Query:</b> When did Gina visit Rome?</p><p><b>Expected:</b> top1 is event and contains 2023-01-30</p><p class='muted'>Another time-sensitive query where event nodes should outrank generic fact/entity hits.</p><div class='grid two'><div class='card'><div class='badge bad'>flat retrieval fail</div><ul><li><code>fact:atom-002-02</code> · fact · score=2.0<br>statement=Gina visited Rome on 2023-01-30 after her design interview.
+subject=Gina
+predicate=visited
+object=Rome
+event_time=2023-01-30
+created_at=2023-02-01</li><li><code>event:atom-002-02</code> · event · score=2.0<br>statement=Gina visited Rome on 2023-01-30 after her design interview.
+participants=Gina, Rome
+event_time=2023-01-30</li><li><code>entity:Gina</code> · entity · score=2.0<br>name=Gina
+first_seen_in=Gina visited Rome on 2023-01-30 after her design interview.</li></ul></div><div class='card'><div class='badge ok'>planned retrieval pass</div><p class='muted'>intent=temporal · layers=event,fact</p><ul><li><code>event:atom-002-02</code> · event · score=4.1<br>statement=Gina visited Rome on 2023-01-30 after her design interview.
+participants=Gina, Rome
+event_time=2023-01-30</li><li><code>fact:atom-002-02</code> · fact · score=2.3<br>statement=Gina visited Rome on 2023-01-30 after her design interview.
+subject=Gina
+predicate=visited
+object=Rome
+event_time=2023-01-30
+created_at=2023-02-01</li></ul></div></div></div><div class='case'><h3>profile_q1</h3><p><b>Query:</b> What does Jon think the ideal dance studio should look like?</p><p><b>Expected:</b> top1 type is fact; top3 contain water, natural light, Marley</p><p class='muted'>Profile/detail query should prioritize fact nodes over event-like wrappers.</p><div class='grid two'><div class='card'><div class='badge ok'>flat retrieval pass</div><ul><li><code>fact:atom-003-03</code> · fact · score=5.0<br>statement=Jon&#x27;s ideal dance studio is by the water, with natural light and Marley flooring.
+subject=Jon
+predicate=ideal
+object=by the water, with natural light and Marley flooring.</li><li><code>event:atom-003-03</code> · event · score=5.0<br>statement=Jon&#x27;s ideal dance studio is by the water, with natural light and Marley flooring.
+participants=Jon, by the water, with natural light and Marley flooring.
+event_time=2023-</li><li><code>entity:by the water, with natural light and Marley flooring.</code> · entity · score=5.0<br>name=by the water, with natural light and Marley flooring.
+first_seen_in=Jon&#x27;s ideal dance studio is by the water, with natural light and Marley flooring.</li></ul></div><div class='card'><div class='badge ok'>planned retrieval pass</div><p class='muted'>intent=profile · layers=fact,entity</p><ul><li><code>fact:atom-003-03</code> · fact · score=5.9<br>statement=Jon&#x27;s ideal dance studio is by the water, with natural light and Marley flooring.
+subject=Jon
+predicate=ideal
+object=by the water, with natural light and Marley flooring.</li><li><code>entity:by the water, with natural light and Marley flooring.</code> · entity · score=5.25<br>name=by the water, with natural light and Marley flooring.
+first_seen_in=Jon&#x27;s ideal dance studio is by the water, with natural light and Marley flooring.</li><li><code>fact:atom-000-00</code> · fact · score=3.9<br>statement=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.
+subject=Jon
+predicate=lost_job
+object=job
+event_time=2023-01-19
+created_at=2023-01-20</li></ul></div></div></div>
+    </section>
+  </div>
+</body>
+</html>

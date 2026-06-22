@@ -19,13 +19,13 @@
 3. LongMemEval 100 题新结果
    - `date-alias-100`: exact reference 77/100。
    - `numeric-alias-100`: exact reference 79/100。
-   - 新 CSV: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_numericalias_100/local_agent/local_agent_results.csv`
+   - 新 CSV: `<repo-root>/runs/manual_longmemeval_numericalias_100/local_agent/local_agent_results.csv`
 
 4. Formal Judge 验证
    - 从 numeric-alias 100 题结果复制前 20 行到独立 smoke run。
    - 使用 formal Judge 跑 20 行，结果为 20/20，100%。
    - 未修改 100 行源 CSV。
-   - Report: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_numericalias_judge_smoke_20/report.md`
+   - Report: `<repo-root>/runs/manual_longmemeval_numericalias_judge_smoke_20/report.md`
 
 5. 文档更新
    - 更新 LongMemEval baseline comparison。

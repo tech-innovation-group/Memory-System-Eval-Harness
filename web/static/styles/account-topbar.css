@@ -1,0 +1,476 @@
+/* ==========================================================================
+   Account Topbar
+   The sticky account-switcher bar and its child controls.
+   ========================================================================== */
+
+/* --- Main container --- */
+
+.account-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(300px, 1fr) minmax(360px, 1.1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px 18px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(10px);
+  transition: none;
+}
+
+/* --- Shared box-sizing for children --- */
+
+.account-control,
+.account-picker-row,
+.account-scope,
+.account-readiness,
+.account-run-note,
+.account-create-row {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* --- Account control (select wrapper) --- */
+
+.account-control {
+  display: block;
+}
+
+/* --- Picker row --- */
+
+.account-picker-row {
+  display: grid;
+  align-items: center;
+  gap: 8px;
+  grid-template-columns: max-content minmax(0, 1fr);
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+.account-picker-row .label,
+.account-run-note span,
+.readiness-chip {
+  white-space: nowrap;
+}
+
+.account-picker-row select {
+  min-height: 36px;
+  border-radius: var(--radius);
+}
+
+/* --- Create row --- */
+
+.account-create-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  gap: 8px;
+  align-items: center;
+  justify-content: end;
+}
+
+.account-create-row input {
+  min-height: 36px;
+  border-radius: var(--radius);
+}
+
+.account-create-row button {
+  min-height: 36px;
+  white-space: nowrap;
+}
+
+.account-create-row #accountNameInput[hidden] {
+  display: none;
+}
+
+.account-create-row:not(.expanded) {
+  grid-template-columns: max-content max-content;
+}
+
+.account-create-row.expanded {
+  grid-template-columns: minmax(150px, 1fr) max-content max-content;
+}
+
+.account-create-row.expanded #accountNameInput {
+  display: block;
+}
+
+/* --- Account scope --- */
+
+.account-scope {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.account-scope:has(.global-task-chip:not([hidden])) {
+  overflow: visible;
+}
+
+.account-scope:has(.global-task-chip:not([hidden])) .account-run-note {
+  display: none;
+}
+
+/* --- Readiness --- */
+
+.account-readiness {
+  flex: 0 0 auto;
+}
+
+#accountReadiness {
+  display: none;
+}
+
+/* --- Run note --- */
+
+.account-run-note {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.account-run-note span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 7px 10px;
+}
+
+#accountRunNote span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.account-run-note span,
+.scope-toggle {
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(248, 250, 252, 0.86);
+  color: #475569;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* --- Scope toggle --- */
+
+.scope-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 7px 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.scope-toggle input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent-hover);
+}
+
+.scope-toggle span {
+  font-weight: 650;
+}
+
+/* --- Delete account button visibility --- */
+
+#deleteAccount:not(:disabled),
+.account-topbar:hover #deleteAccount:not(:disabled),
+#deleteAccount:not(:disabled):focus-visible {
+  display: inline-flex;
+  opacity: 1;
+}
+
+/* --- .app-content > .account-topbar override --- */
+
+.app-content > .account-topbar {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) max-content minmax(140px, 0.8fr) max-content;
+  align-items: center;
+  gap: 12px;
+  min-height: 58px;
+  height: auto;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  overflow: visible;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
+}
+
+/* --- .app-content > .account-topbar children --- */
+
+.app-content > .account-topbar .account-control,
+.app-content > .account-topbar .account-backend-pill,
+.app-content > .account-topbar .account-scope,
+.app-content > .account-topbar .account-create-row {
+  min-width: 0;
+  height: auto;
+  overflow: visible;
+}
+
+.app-content > .account-topbar .account-control {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.app-content > .account-topbar .account-backend-pill {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.app-content > .account-topbar .account-scope {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.app-content > .account-topbar .account-create-row {
+  grid-column: 4;
+  grid-row: 1;
+}
+
+.app-content > .account-topbar .account-picker-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+
+.app-content > .account-topbar .account-picker-row .label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.app-content > .account-topbar .account-control select {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 34px 0 10px;
+  border-color: #cbd5e1;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 34px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- Backend pill --- */
+
+.app-content > .account-topbar .account-backend-pill {
+  display: grid;
+  grid-template-columns: max-content;
+  align-content: center;
+  justify-items: start;
+  gap: 2px;
+  min-width: 118px;
+  height: 36px;
+  min-height: 36px;
+  margin: 0;
+  padding: 4px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: var(--radius);
+  background: #f8fafc;
+  color: var(--ink);
+  line-height: 1.05;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.app-content > .account-topbar .account-backend-pill:hover,
+.app-content > .account-topbar .account-backend-pill:focus-visible {
+  border-color: var(--accent-hover);
+  background: #eff6ff;
+  color: var(--ink);
+}
+
+.app-content > .account-topbar .account-backend-pill span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.app-content > .account-topbar .account-backend-pill strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.05;
+}
+
+.app-content > .account-topbar .account-backend-pill.echomemory {
+  border-color: #99f6e4;
+  background: #f0fdfa;
+}
+
+.app-content > .account-topbar .account-backend-pill.echomemory:hover,
+.app-content > .account-topbar .account-backend-pill.echomemory:focus-visible {
+  border-color: #0f766e;
+  background: #ccfbf1;
+}
+
+/* --- Scope inside .app-content override --- */
+
+.app-content > .account-topbar .account-scope {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 36px;
+}
+
+.app-content > .account-topbar .account-run-note {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 32px;
+  height: auto;
+  padding: 6px 10px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius);
+  background: #f8fafc;
+}
+
+.app-content > .account-topbar .account-run-note span {
+  display: block;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-content > .account-topbar .global-task-chip {
+  min-height: 32px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+/* --- Create row inside .app-content override --- */
+
+.app-content > .account-topbar .account-create-row {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  align-items: center;
+  justify-content: end;
+  gap: 8px;
+}
+
+.app-content > .account-topbar .account-create-row.expanded {
+  grid-template-columns: minmax(150px, 1fr) max-content max-content;
+}
+
+.app-content > .account-topbar .account-create-row input,
+.app-content > .account-topbar .account-create-row button {
+  height: 36px;
+  min-height: 36px;
+  margin: 0;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.app-content > .account-topbar .account-create-row button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+}
+
+/* --- Account manage dropdown overlay --- */
+
+.account-manage .account-create-row {
+  border-color: #d8e0eb;
+  box-shadow: var(--shadow-lg);
+}
+
+/* --- Global task chip --- */
+
+.global-task-chip {
+  display: inline-flex;
+  flex: 1 1 320px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 3px;
+  min-height: 42px;
+  max-width: none;
+  padding: 8px 12px;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: var(--radius-lg);
+  background: #eff6ff;
+  color: var(--accent-hover);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.2;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  box-shadow: none;
+}
+
+.global-task-main,
+.global-task-detail {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-task-main {
+  color: var(--accent-hover);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.global-task-detail {
+  color: #475569;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.global-task-chip:hover {
+  border-color: rgba(37, 99, 235, 0.32);
+  background: var(--accent-light);
+  transform: none;
+  box-shadow: none;
+}
+
+.global-task-chip[hidden] {
+  display: none;
+}

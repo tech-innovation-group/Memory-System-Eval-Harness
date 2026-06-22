@@ -1,0 +1,76 @@
+{
+  "session_id": "sess-c95dbd29176c",
+  "image_node_found": true,
+  "image_node": {
+    "node_id": "image_evidence:msg-7c86f362c9e1",
+    "node_type": "image_evidence",
+    "backing_ref": "msg-7c86f362c9e1",
+    "backing_plane": "session",
+    "salience": 0.45,
+    "temporal_scope": "historical",
+    "summary_hint": "Finance dashboard screenshot | Revenue 123; Margin 18%",
+    "last_touched_at": "2026-06-13T11:42:27.783011+00:00",
+    "properties": {
+      "message_id": "msg-7c86f362c9e1",
+      "created_at": "2026-06-13T11:42:27.730193+00:00",
+      "resource_uri": "echo://mm-smoke/resources/screenshot-001",
+      "mime": "image/png",
+      "caption": "Finance dashboard screenshot",
+      "ocr": "Revenue 123; Margin 18%",
+      "linked_subject": "Alice",
+      "tags": [
+        "dashboard",
+        "finance",
+        "ocr"
+      ]
+    }
+  },
+  "search_query": "截图里写着什么？",
+  "graph_only_result_count": 1,
+  "visual_evidence_edge_count": 0,
+  "visual_evidence_edges": [],
+  "graph_only_top_items": [
+    {
+      "content": "Finance dashboard screenshot | Revenue 123; Margin 18% — Finance dashboard screenshot — Revenue 123; Margin 18%",
+      "source_uri": "graph://image_evidence:msg-7c86f362c9e1",
+      "memory_type": "image_evidence",
+      "confidence": 0.92,
+      "trace": {
+        "layer": "G",
+        "search_mode": "graph_visual_seed",
+        "hop": 0,
+        "seed_id": "image_evidence:msg-7c86f362c9e1",
+        "path_edge_ids": [],
+        "explanation": "direct visual seed hit",
+        "node_type": "image_evidence"
+      }
+    }
+  ],
+  "search_result_count": 1,
+  "top_items": [
+    {
+      "content": "Finance dashboard screenshot | Revenue 123; Margin 18% — Finance dashboard screenshot — Revenue 123; Margin 18%",
+      "source_uri": "graph://image_evidence:msg-7c86f362c9e1",
+      "memory_type": "image_evidence",
+      "confidence": 1.0,
+      "trace": {
+        "layer": "G",
+        "search_mode": "graph_visual_seed",
+        "hop": 0,
+        "seed_id": "image_evidence:msg-7c86f362c9e1",
+        "path_edge_ids": [],
+        "explanation": "direct visual seed hit",
+        "node_type": "image_evidence",
+        "recency_boost": 0.02,
+        "strategy_boost": 0.18,
+        "overlap_boost": 0.0,
+        "strategy": "visual_lookup"
+      }
+    }
+  ],
+  "top1_source_uri": "graph://image_evidence:msg-7c86f362c9e1",
+  "top1_memory_type": "image_evidence",
+  "top1_node_type": "image_evidence",
+  "top1_strategy": "visual_lookup",
+  "ocr_visible_in_top1": true
+}

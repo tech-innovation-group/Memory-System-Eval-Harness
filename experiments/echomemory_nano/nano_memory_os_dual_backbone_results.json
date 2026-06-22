@@ -1,0 +1,2617 @@
+{
+  "memory": {
+    "receipt": {
+      "schema_version": "nano-v1",
+      "updated_at": "2026-05-18T09:10:00Z",
+      "last_message_id": "obs-008",
+      "last_extracted_atom_id": "atom-007",
+      "stages": {
+        "messages": {
+          "ready": true,
+          "status": "complete",
+          "updated_at": "2026-05-18T09:10:00Z",
+          "detail": "append-only persisted"
+        },
+        "atoms": {
+          "ready": true,
+          "status": "complete",
+          "updated_at": "2026-05-18T09:10:00Z",
+          "detail": "8 atoms"
+        },
+        "tree": {
+          "ready": true,
+          "status": "complete",
+          "updated_at": "2026-05-18T09:10:00Z",
+          "detail": "14 tree blocks"
+        },
+        "graph": {
+          "ready": true,
+          "status": "complete",
+          "updated_at": "2026-05-18T09:10:00Z",
+          "detail": "26 nodes / 45 edges"
+        },
+        "qa": {
+          "ready": true,
+          "status": "complete",
+          "updated_at": "2026-05-18T09:10:00Z",
+          "detail": "ready for retrieval"
+        }
+      }
+    },
+    "observations": [
+      {
+        "obs_id": "obs-000",
+        "role": "user",
+        "modality": "text",
+        "content": "Aria left Northlight Studio on 2026-01-20.",
+        "mention_time": "2026-01-21T10:00:00Z",
+        "write_time": "2026-01-21T10:00:00Z",
+        "story_time": "2026-01-20",
+        "tags": [
+          "event"
+        ]
+      },
+      {
+        "obs_id": "obs-001",
+        "role": "user",
+        "modality": "text",
+        "content": "Aria joined Orchard Labs on 2026-02-14.",
+        "mention_time": "2026-02-15T09:00:00Z",
+        "write_time": "2026-02-15T09:00:00Z",
+        "story_time": "2026-02-14",
+        "tags": [
+          "event"
+        ]
+      },
+      {
+        "obs_id": "obs-002",
+        "role": "user",
+        "modality": "text",
+        "content": "Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+        "mention_time": "2026-03-10T09:00:00Z",
+        "write_time": "2026-03-10T09:00:00Z",
+        "story_time": "2026-03-03",
+        "tags": [
+          "event"
+        ]
+      },
+      {
+        "obs_id": "obs-003",
+        "role": "user",
+        "modality": "text",
+        "content": "Nora helped Aria prepare the visa checklist on 2026-04-02.",
+        "mention_time": "2026-04-03T08:30:00Z",
+        "write_time": "2026-04-03T08:30:00Z",
+        "story_time": "2026-04-02",
+        "tags": [
+          "event"
+        ]
+      },
+      {
+        "obs_id": "obs-004",
+        "role": "user",
+        "modality": "text",
+        "content": "Aria plans to relocate to Lisbon after joining Orchard Labs.",
+        "mention_time": "2026-04-04T09:00:00Z",
+        "write_time": "2026-04-04T09:00:00Z",
+        "story_time": "2026-04-04",
+        "tags": [
+          "event",
+          "plan"
+        ]
+      },
+      {
+        "obs_id": "obs-005",
+        "role": "user",
+        "modality": "text",
+        "content": "Aria presented the keynote deck yesterday.",
+        "mention_time": "2026-05-10T08:00:00Z",
+        "write_time": "2026-05-10T08:00:00Z",
+        "story_time": "2026-05-09",
+        "tags": []
+      },
+      {
+        "obs_id": "obs-006",
+        "role": "user",
+        "modality": "text",
+        "content": "Aria had the investor board review last week.",
+        "mention_time": "2026-05-18T09:00:00Z",
+        "write_time": "2026-05-18T09:00:00Z",
+        "story_time": "2026-05-11",
+        "tags": []
+      },
+      {
+        "obs_id": "obs-007",
+        "role": "user",
+        "modality": "image",
+        "content": "Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+        "mention_time": "2026-03-10T09:05:00Z",
+        "write_time": "2026-03-10T09:05:00Z",
+        "story_time": "2026-03-10",
+        "tags": [
+          "image"
+        ]
+      },
+      {
+        "obs_id": "obs-008",
+        "role": "user",
+        "modality": "text",
+        "content": "What should I do next?",
+        "mention_time": "2026-05-18T09:10:00Z",
+        "write_time": "2026-05-18T09:10:00Z",
+        "story_time": "2026-05-18",
+        "tags": []
+      }
+    ],
+    "atoms": [
+      {
+        "atom_id": "atom-000",
+        "atom_type": "event",
+        "state_kind": "event",
+        "subject": "Aria",
+        "predicate": "left",
+        "obj": "Northlight Studio",
+        "statement": "Aria left Northlight Studio on 2026-01-20.",
+        "story_time": "2026-01-20",
+        "mention_time": "2026-01-21T10:00:00Z",
+        "write_time": "2026-01-21T10:00:00Z",
+        "status": "active",
+        "source_obs_id": "obs-000"
+      },
+      {
+        "atom_id": "atom-001",
+        "atom_type": "event",
+        "state_kind": "event",
+        "subject": "Aria",
+        "predicate": "joined",
+        "obj": "Orchard Labs",
+        "statement": "Aria joined Orchard Labs on 2026-02-14.",
+        "story_time": "2026-02-14",
+        "mention_time": "2026-02-15T09:00:00Z",
+        "write_time": "2026-02-15T09:00:00Z",
+        "status": "active",
+        "source_obs_id": "obs-001"
+      },
+      {
+        "atom_id": "atom-002",
+        "atom_type": "event",
+        "state_kind": "event",
+        "subject": "Aria",
+        "predicate": "signed",
+        "obj": "Riverside lease",
+        "statement": "Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+        "story_time": "2026-03-03",
+        "mention_time": "2026-03-10T09:00:00Z",
+        "write_time": "2026-03-10T09:00:00Z",
+        "status": "active",
+        "source_obs_id": "obs-002"
+      },
+      {
+        "atom_id": "atom-003",
+        "atom_type": "relation",
+        "state_kind": "event",
+        "subject": "Nora",
+        "predicate": "helped_with",
+        "obj": "Aria::visa checklist",
+        "statement": "Nora helped Aria prepare the visa checklist on 2026-04-02.",
+        "story_time": "2026-04-02",
+        "mention_time": "2026-04-03T08:30:00Z",
+        "write_time": "2026-04-03T08:30:00Z",
+        "status": "active",
+        "source_obs_id": "obs-003"
+      },
+      {
+        "atom_id": "atom-004",
+        "atom_type": "plan",
+        "state_kind": "state",
+        "subject": "Aria",
+        "predicate": "plans",
+        "obj": "relocate to Lisbon after joining Orchard Labs.",
+        "statement": "Aria plans to relocate to Lisbon after joining Orchard Labs.",
+        "story_time": "2026-04-04",
+        "mention_time": "2026-04-04T09:00:00Z",
+        "write_time": "2026-04-04T09:00:00Z",
+        "status": "active",
+        "source_obs_id": "obs-004"
+      },
+      {
+        "atom_id": "atom-005",
+        "atom_type": "event",
+        "state_kind": "event",
+        "subject": "Aria",
+        "predicate": "presented",
+        "obj": "keynote deck",
+        "statement": "Aria presented the keynote deck yesterday.",
+        "story_time": "2026-05-09",
+        "mention_time": "2026-05-10T08:00:00Z",
+        "write_time": "2026-05-10T08:00:00Z",
+        "status": "active",
+        "source_obs_id": "obs-005"
+      },
+      {
+        "atom_id": "atom-006",
+        "atom_type": "event",
+        "state_kind": "event",
+        "subject": "Aria",
+        "predicate": "had",
+        "obj": "investor board review",
+        "statement": "Aria had the investor board review last week.",
+        "story_time": "2026-05-11",
+        "mention_time": "2026-05-18T09:00:00Z",
+        "write_time": "2026-05-18T09:00:00Z",
+        "status": "active",
+        "source_obs_id": "obs-006"
+      },
+      {
+        "atom_id": "atom-007",
+        "atom_type": "image_evidence",
+        "state_kind": "event",
+        "subject": "image_evidence",
+        "predicate": "shows",
+        "obj": "Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+        "statement": "Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+        "story_time": "2026-03-10",
+        "mention_time": "2026-03-10T09:05:00Z",
+        "write_time": "2026-03-10T09:05:00Z",
+        "status": "active",
+        "source_obs_id": "obs-007"
+      }
+    ],
+    "blocks": [
+      {
+        "block_id": "day:2026-01-20",
+        "level": "day",
+        "key": "2026-01-20",
+        "content": "- 2026-01-20: Aria left Northlight Studio on 2026-01-20.",
+        "source_refs": [
+          "atom-000"
+        ]
+      },
+      {
+        "block_id": "day:2026-02-14",
+        "level": "day",
+        "key": "2026-02-14",
+        "content": "- 2026-02-14: Aria joined Orchard Labs on 2026-02-14.",
+        "source_refs": [
+          "atom-001"
+        ]
+      },
+      {
+        "block_id": "day:2026-03-03",
+        "level": "day",
+        "key": "2026-03-03",
+        "content": "- 2026-03-03: Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+        "source_refs": [
+          "atom-002"
+        ]
+      },
+      {
+        "block_id": "day:2026-03-10",
+        "level": "day",
+        "key": "2026-03-10",
+        "content": "- 2026-03-10: Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+        "source_refs": [
+          "atom-007"
+        ]
+      },
+      {
+        "block_id": "day:2026-04-02",
+        "level": "day",
+        "key": "2026-04-02",
+        "content": "- 2026-04-02: Nora helped Aria prepare the visa checklist on 2026-04-02.",
+        "source_refs": [
+          "atom-003"
+        ]
+      },
+      {
+        "block_id": "day:2026-04-04",
+        "level": "day",
+        "key": "2026-04-04",
+        "content": "- 2026-04-04: Aria plans to relocate to Lisbon after joining Orchard Labs.",
+        "source_refs": [
+          "atom-004"
+        ]
+      },
+      {
+        "block_id": "day:2026-05-09",
+        "level": "day",
+        "key": "2026-05-09",
+        "content": "- 2026-05-09: Aria presented the keynote deck yesterday.",
+        "source_refs": [
+          "atom-005"
+        ]
+      },
+      {
+        "block_id": "day:2026-05-11",
+        "level": "day",
+        "key": "2026-05-11",
+        "content": "- 2026-05-11: Aria had the investor board review last week.",
+        "source_refs": [
+          "atom-006"
+        ]
+      },
+      {
+        "block_id": "month:2026-01",
+        "level": "month",
+        "key": "2026-01",
+        "content": "- 2026-01-20: Aria left Northlight Studio on 2026-01-20.",
+        "source_refs": [
+          "atom-000"
+        ]
+      },
+      {
+        "block_id": "month:2026-02",
+        "level": "month",
+        "key": "2026-02",
+        "content": "- 2026-02-14: Aria joined Orchard Labs on 2026-02-14.",
+        "source_refs": [
+          "atom-001"
+        ]
+      },
+      {
+        "block_id": "month:2026-03",
+        "level": "month",
+        "key": "2026-03",
+        "content": "- 2026-03-03: Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.\n- 2026-03-10: Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+        "source_refs": [
+          "atom-002",
+          "atom-007"
+        ]
+      },
+      {
+        "block_id": "month:2026-04",
+        "level": "month",
+        "key": "2026-04",
+        "content": "- 2026-04-02: Nora helped Aria prepare the visa checklist on 2026-04-02.\n- 2026-04-04: Aria plans to relocate to Lisbon after joining Orchard Labs.",
+        "source_refs": [
+          "atom-003",
+          "atom-004"
+        ]
+      },
+      {
+        "block_id": "month:2026-05",
+        "level": "month",
+        "key": "2026-05",
+        "content": "- 2026-05-09: Aria presented the keynote deck yesterday.\n- 2026-05-11: Aria had the investor board review last week.",
+        "source_refs": [
+          "atom-005",
+          "atom-006"
+        ]
+      },
+      {
+        "block_id": "year:2026",
+        "level": "year",
+        "key": "2026",
+        "content": "- 2026-01-20: Aria left Northlight Studio on 2026-01-20.\n- 2026-02-14: Aria joined Orchard Labs on 2026-02-14.\n- 2026-03-03: Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.\n- 2026-03-10: Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement\n- 2026-04-02: Nora helped Aria prepare the visa checklist on 2026-04-02.\n- 2026-04-04: Aria plans to relocate to Lisbon after joining Orchard Labs.\n- 2026-05-09: Aria presented the keynote deck yesterday.\n- 2026-05-11: Aria had the investor board review last week.",
+        "source_refs": [
+          "atom-000",
+          "atom-001",
+          "atom-002",
+          "atom-007",
+          "atom-003",
+          "atom-004",
+          "atom-005",
+          "atom-006"
+        ]
+      }
+    ],
+    "nodes": [
+      {
+        "node_id": "fact:atom-000",
+        "node_type": "fact",
+        "content": "Aria left Northlight Studio on 2026-01-20.",
+        "story_time": "2026-01-20",
+        "source_ref": "obs-000"
+      },
+      {
+        "node_id": "event:atom-000",
+        "node_type": "event",
+        "content": "Aria left Northlight Studio",
+        "story_time": "2026-01-20",
+        "source_ref": "obs-000"
+      },
+      {
+        "node_id": "entity:Aria",
+        "node_type": "entity",
+        "content": "name=Aria",
+        "story_time": "",
+        "source_ref": "obs-000"
+      },
+      {
+        "node_id": "entity:Northlight Studio",
+        "node_type": "entity",
+        "content": "name=Northlight Studio",
+        "story_time": "",
+        "source_ref": "obs-000"
+      },
+      {
+        "node_id": "fact:atom-001",
+        "node_type": "fact",
+        "content": "Aria joined Orchard Labs on 2026-02-14.",
+        "story_time": "2026-02-14",
+        "source_ref": "obs-001"
+      },
+      {
+        "node_id": "event:atom-001",
+        "node_type": "event",
+        "content": "Aria joined Orchard Labs",
+        "story_time": "2026-02-14",
+        "source_ref": "obs-001"
+      },
+      {
+        "node_id": "entity:Orchard Labs",
+        "node_type": "entity",
+        "content": "name=Orchard Labs",
+        "story_time": "",
+        "source_ref": "obs-001"
+      },
+      {
+        "node_id": "fact:atom-002",
+        "node_type": "fact",
+        "content": "Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+        "story_time": "2026-03-03",
+        "source_ref": "obs-002"
+      },
+      {
+        "node_id": "event:atom-002",
+        "node_type": "event",
+        "content": "Aria signed Riverside lease",
+        "story_time": "2026-03-03",
+        "source_ref": "obs-002"
+      },
+      {
+        "node_id": "entity:Riverside lease",
+        "node_type": "entity",
+        "content": "name=Riverside lease",
+        "story_time": "",
+        "source_ref": "obs-002"
+      },
+      {
+        "node_id": "fact:atom-003",
+        "node_type": "fact",
+        "content": "Nora helped Aria prepare the visa checklist on 2026-04-02.",
+        "story_time": "2026-04-02",
+        "source_ref": "obs-003"
+      },
+      {
+        "node_id": "event:atom-003",
+        "node_type": "event",
+        "content": "Nora helped_with Aria::visa checklist",
+        "story_time": "2026-04-02",
+        "source_ref": "obs-003"
+      },
+      {
+        "node_id": "entity:Nora",
+        "node_type": "entity",
+        "content": "name=Nora",
+        "story_time": "",
+        "source_ref": "obs-003"
+      },
+      {
+        "node_id": "entity:Aria::visa checklist",
+        "node_type": "entity",
+        "content": "name=Aria::visa checklist",
+        "story_time": "",
+        "source_ref": "obs-003"
+      },
+      {
+        "node_id": "fact:atom-004",
+        "node_type": "fact",
+        "content": "Aria plans to relocate to Lisbon after joining Orchard Labs.",
+        "story_time": "2026-04-04",
+        "source_ref": "obs-004"
+      },
+      {
+        "node_id": "event:atom-004",
+        "node_type": "event",
+        "content": "Aria plans relocate to Lisbon after joining Orchard Labs.",
+        "story_time": "2026-04-04",
+        "source_ref": "obs-004"
+      },
+      {
+        "node_id": "entity:relocate to Lisbon after joining Orchard Labs.",
+        "node_type": "entity",
+        "content": "name=relocate to Lisbon after joining Orchard Labs.",
+        "story_time": "",
+        "source_ref": "obs-004"
+      },
+      {
+        "node_id": "fact:atom-005",
+        "node_type": "fact",
+        "content": "Aria presented the keynote deck yesterday.",
+        "story_time": "2026-05-09",
+        "source_ref": "obs-005"
+      },
+      {
+        "node_id": "event:atom-005",
+        "node_type": "event",
+        "content": "Aria presented keynote deck",
+        "story_time": "2026-05-09",
+        "source_ref": "obs-005"
+      },
+      {
+        "node_id": "entity:keynote deck",
+        "node_type": "entity",
+        "content": "name=keynote deck",
+        "story_time": "",
+        "source_ref": "obs-005"
+      },
+      {
+        "node_id": "fact:atom-006",
+        "node_type": "fact",
+        "content": "Aria had the investor board review last week.",
+        "story_time": "2026-05-11",
+        "source_ref": "obs-006"
+      },
+      {
+        "node_id": "event:atom-006",
+        "node_type": "event",
+        "content": "Aria had investor board review",
+        "story_time": "2026-05-11",
+        "source_ref": "obs-006"
+      },
+      {
+        "node_id": "entity:investor board review",
+        "node_type": "entity",
+        "content": "name=investor board review",
+        "story_time": "",
+        "source_ref": "obs-006"
+      },
+      {
+        "node_id": "fact:atom-007",
+        "node_type": "fact",
+        "content": "Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+        "story_time": "2026-03-10",
+        "source_ref": "obs-007"
+      },
+      {
+        "node_id": "image_evidence:atom-007",
+        "node_type": "image_evidence",
+        "content": "image_evidence shows Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+        "story_time": "2026-03-10",
+        "source_ref": "obs-007"
+      },
+      {
+        "node_id": "entity:Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+        "node_type": "entity",
+        "content": "name=Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+        "story_time": "",
+        "source_ref": "obs-007"
+      }
+    ],
+    "edges": [
+      {
+        "edge_id": "event:atom-000:evidence_of:fact:atom-000",
+        "source_id": "event:atom-000",
+        "target_id": "fact:atom-000",
+        "relation_type": "evidence_of"
+      },
+      {
+        "edge_id": "entity:Aria:has_fact:atom-000",
+        "source_id": "entity:Aria",
+        "target_id": "fact:atom-000",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-000:involves:Aria",
+        "source_id": "event:atom-000",
+        "target_id": "entity:Aria",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "entity:Northlight Studio:has_fact:atom-000",
+        "source_id": "entity:Northlight Studio",
+        "target_id": "fact:atom-000",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-000:involves:Northlight Studio",
+        "source_id": "event:atom-000",
+        "target_id": "entity:Northlight Studio",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "event:atom-001:evidence_of:fact:atom-001",
+        "source_id": "event:atom-001",
+        "target_id": "fact:atom-001",
+        "relation_type": "evidence_of"
+      },
+      {
+        "edge_id": "entity:Aria:has_fact:atom-001",
+        "source_id": "entity:Aria",
+        "target_id": "fact:atom-001",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-001:involves:Aria",
+        "source_id": "event:atom-001",
+        "target_id": "entity:Aria",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "entity:Orchard Labs:has_fact:atom-001",
+        "source_id": "entity:Orchard Labs",
+        "target_id": "fact:atom-001",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-001:involves:Orchard Labs",
+        "source_id": "event:atom-001",
+        "target_id": "entity:Orchard Labs",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "event:atom-002:evidence_of:fact:atom-002",
+        "source_id": "event:atom-002",
+        "target_id": "fact:atom-002",
+        "relation_type": "evidence_of"
+      },
+      {
+        "edge_id": "entity:Aria:has_fact:atom-002",
+        "source_id": "entity:Aria",
+        "target_id": "fact:atom-002",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-002:involves:Aria",
+        "source_id": "event:atom-002",
+        "target_id": "entity:Aria",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "entity:Riverside lease:has_fact:atom-002",
+        "source_id": "entity:Riverside lease",
+        "target_id": "fact:atom-002",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-002:involves:Riverside lease",
+        "source_id": "event:atom-002",
+        "target_id": "entity:Riverside lease",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "event:atom-003:evidence_of:fact:atom-003",
+        "source_id": "event:atom-003",
+        "target_id": "fact:atom-003",
+        "relation_type": "evidence_of"
+      },
+      {
+        "edge_id": "entity:Nora:has_fact:atom-003",
+        "source_id": "entity:Nora",
+        "target_id": "fact:atom-003",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-003:involves:Nora",
+        "source_id": "event:atom-003",
+        "target_id": "entity:Nora",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "entity:Aria::visa checklist:has_fact:atom-003",
+        "source_id": "entity:Aria::visa checklist",
+        "target_id": "fact:atom-003",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-003:involves:Aria::visa checklist",
+        "source_id": "event:atom-003",
+        "target_id": "entity:Aria::visa checklist",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "event:atom-004:evidence_of:fact:atom-004",
+        "source_id": "event:atom-004",
+        "target_id": "fact:atom-004",
+        "relation_type": "evidence_of"
+      },
+      {
+        "edge_id": "entity:Aria:has_fact:atom-004",
+        "source_id": "entity:Aria",
+        "target_id": "fact:atom-004",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-004:involves:Aria",
+        "source_id": "event:atom-004",
+        "target_id": "entity:Aria",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "entity:relocate to Lisbon after joining Orchard Labs.:has_fact:atom-004",
+        "source_id": "entity:relocate to Lisbon after joining Orchard Labs.",
+        "target_id": "fact:atom-004",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-004:involves:relocate to Lisbon after joining Orchard Labs.",
+        "source_id": "event:atom-004",
+        "target_id": "entity:relocate to Lisbon after joining Orchard Labs.",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "event:atom-005:evidence_of:fact:atom-005",
+        "source_id": "event:atom-005",
+        "target_id": "fact:atom-005",
+        "relation_type": "evidence_of"
+      },
+      {
+        "edge_id": "entity:Aria:has_fact:atom-005",
+        "source_id": "entity:Aria",
+        "target_id": "fact:atom-005",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-005:involves:Aria",
+        "source_id": "event:atom-005",
+        "target_id": "entity:Aria",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "entity:keynote deck:has_fact:atom-005",
+        "source_id": "entity:keynote deck",
+        "target_id": "fact:atom-005",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-005:involves:keynote deck",
+        "source_id": "event:atom-005",
+        "target_id": "entity:keynote deck",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "event:atom-006:evidence_of:fact:atom-006",
+        "source_id": "event:atom-006",
+        "target_id": "fact:atom-006",
+        "relation_type": "evidence_of"
+      },
+      {
+        "edge_id": "entity:Aria:has_fact:atom-006",
+        "source_id": "entity:Aria",
+        "target_id": "fact:atom-006",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-006:involves:Aria",
+        "source_id": "event:atom-006",
+        "target_id": "entity:Aria",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "entity:investor board review:has_fact:atom-006",
+        "source_id": "entity:investor board review",
+        "target_id": "fact:atom-006",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-006:involves:investor board review",
+        "source_id": "event:atom-006",
+        "target_id": "entity:investor board review",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "image_evidence:atom-007:evidence_of:fact:atom-007",
+        "source_id": "image_evidence:atom-007",
+        "target_id": "fact:atom-007",
+        "relation_type": "evidence_of"
+      },
+      {
+        "edge_id": "entity:Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement:has_fact:atom-007",
+        "source_id": "entity:Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+        "target_id": "fact:atom-007",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "image_evidence:atom-007:visual_evidence_of:Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+        "source_id": "image_evidence:atom-007",
+        "target_id": "entity:Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+        "relation_type": "visual_evidence_of"
+      },
+      {
+        "edge_id": "event:atom-000:temporal_next:event:atom-001",
+        "source_id": "event:atom-000",
+        "target_id": "event:atom-001",
+        "relation_type": "temporal_next"
+      },
+      {
+        "edge_id": "event:atom-001:temporal_next:event:atom-002",
+        "source_id": "event:atom-001",
+        "target_id": "event:atom-002",
+        "relation_type": "temporal_next"
+      },
+      {
+        "edge_id": "event:atom-002:temporal_next:image_evidence:atom-007",
+        "source_id": "event:atom-002",
+        "target_id": "image_evidence:atom-007",
+        "relation_type": "temporal_next"
+      },
+      {
+        "edge_id": "image_evidence:atom-007:temporal_next:event:atom-003",
+        "source_id": "image_evidence:atom-007",
+        "target_id": "event:atom-003",
+        "relation_type": "temporal_next"
+      },
+      {
+        "edge_id": "event:atom-003:temporal_next:event:atom-004",
+        "source_id": "event:atom-003",
+        "target_id": "event:atom-004",
+        "relation_type": "temporal_next"
+      },
+      {
+        "edge_id": "event:atom-004:temporal_next:event:atom-005",
+        "source_id": "event:atom-004",
+        "target_id": "event:atom-005",
+        "relation_type": "temporal_next"
+      },
+      {
+        "edge_id": "event:atom-005:temporal_next:event:atom-006",
+        "source_id": "event:atom-005",
+        "target_id": "event:atom-006",
+        "relation_type": "temporal_next"
+      }
+    ]
+  },
+  "results": {
+    "cases": [
+      {
+        "case_id": "c1_temporal_absolute",
+        "query": "When did Aria sign the Riverside lease?",
+        "note": "Story time should beat mention time.",
+        "expected_keywords": [
+          "2026-03-03",
+          "signed"
+        ],
+        "variants": {
+          "flat_text": {
+            "variant": "flat_text",
+            "plan": {
+              "family": "temporal",
+              "primary_reader": "tree",
+              "supporting_readers": [
+                "graph",
+                "atom"
+              ],
+              "must_have_layers": [
+                "temporal_tree",
+                "event"
+              ],
+              "reason": "Temporal questions need chronology plus event grounding."
+            },
+            "coverage": {
+              "required_layers": [
+                "temporal_tree",
+                "event"
+              ],
+              "present_layers": [
+                "flat_text"
+              ],
+              "matched_layers": [],
+              "missing_layers": [
+                "temporal_tree",
+                "event"
+              ],
+              "coverage_ratio": 0.0,
+              "contract_ok": false
+            },
+            "hits": [
+              {
+                "source": "obs-002",
+                "layer": "flat_text",
+                "score": 4.0,
+                "content": "Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+                "story_time": "2026-03-03",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-003",
+                "layer": "flat_text",
+                "score": 2.0,
+                "content": "Nora helped Aria prepare the visa checklist on 2026-04-02.",
+                "story_time": "2026-04-02",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-005",
+                "layer": "flat_text",
+                "score": 2.0,
+                "content": "Aria presented the keynote deck yesterday.",
+                "story_time": "2026-05-09",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-006",
+                "layer": "flat_text",
+                "score": 2.0,
+                "content": "Aria had the investor board review last week.",
+                "story_time": "2026-05-11",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-000",
+                "layer": "flat_text",
+                "score": 1.0,
+                "content": "Aria left Northlight Studio on 2026-01-20.",
+                "story_time": "2026-01-20",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-001",
+                "layer": "flat_text",
+                "score": 1.0,
+                "content": "Aria joined Orchard Labs on 2026-02-14.",
+                "story_time": "2026-02-14",
+                "trace": {
+                  "reader": "flat"
+                }
+              }
+            ],
+            "ok": true
+          },
+          "dual_backbone": {
+            "variant": "dual_backbone",
+            "plan": {
+              "family": "temporal",
+              "primary_reader": "tree",
+              "supporting_readers": [
+                "graph",
+                "atom"
+              ],
+              "must_have_layers": [
+                "temporal_tree",
+                "event"
+              ],
+              "reason": "Temporal questions need chronology plus event grounding."
+            },
+            "coverage": {
+              "required_layers": [
+                "temporal_tree",
+                "event"
+              ],
+              "present_layers": [
+                "temporal_tree"
+              ],
+              "matched_layers": [
+                "temporal_tree"
+              ],
+              "missing_layers": [
+                "event"
+              ],
+              "coverage_ratio": 0.5,
+              "contract_ok": false
+            },
+            "hits": [
+              {
+                "source": "day:2026-03-03",
+                "layer": "temporal_tree",
+                "score": 4.5,
+                "content": "- 2026-03-03: Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+                "story_time": "2026-03-03",
+                "trace": {
+                  "reader": "tree"
+                }
+              },
+              {
+                "source": "month:2026-03",
+                "layer": "temporal_tree",
+                "score": 4.5,
+                "content": "- 2026-03-03: Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.\n- 2026-03-10: Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+                "story_time": "",
+                "trace": {
+                  "reader": "tree"
+                }
+              },
+              {
+                "source": "year:2026",
+                "layer": "temporal_tree",
+                "score": 4.5,
+                "content": "- 2026-01-20: Aria left Northlight Studio on 2026-01-20.\n- 2026-02-14: Aria joined Orchard Labs on 2026-02-14.\n- 2026-03-03: Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.\n- 2026-03-10: Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement\n- 2026-04-02: Nora helped Aria prepare the visa checklist on 2026-04-02.\n- 2026-04-04: Aria plans to relocate to Lisbon after joining Orchard Labs.\n- 2026-05-09: Aria presented the keynote deck yesterday.\n- 2026-05-11: Aria had the investor board review last week.",
+                "story_time": "",
+                "trace": {
+                  "reader": "tree"
+                }
+              },
+              {
+                "source": "day:2026-04-02",
+                "layer": "temporal_tree",
+                "score": 2.5,
+                "content": "- 2026-04-02: Nora helped Aria prepare the visa checklist on 2026-04-02.",
+                "story_time": "2026-04-02",
+                "trace": {
+                  "reader": "tree"
+                }
+              },
+              {
+                "source": "day:2026-05-09",
+                "layer": "temporal_tree",
+                "score": 2.5,
+                "content": "- 2026-05-09: Aria presented the keynote deck yesterday.",
+                "story_time": "2026-05-09",
+                "trace": {
+                  "reader": "tree"
+                }
+              },
+              {
+                "source": "day:2026-05-11",
+                "layer": "temporal_tree",
+                "score": 2.5,
+                "content": "- 2026-05-11: Aria had the investor board review last week.",
+                "story_time": "2026-05-11",
+                "trace": {
+                  "reader": "tree"
+                }
+              }
+            ],
+            "ok": true
+          },
+          "contract_aware": {
+            "variant": "contract_aware",
+            "plan": {
+              "family": "temporal",
+              "primary_reader": "tree",
+              "supporting_readers": [
+                "graph",
+                "atom"
+              ],
+              "must_have_layers": [
+                "temporal_tree",
+                "event"
+              ],
+              "reason": "Temporal questions need chronology plus event grounding."
+            },
+            "coverage": {
+              "required_layers": [
+                "temporal_tree",
+                "event"
+              ],
+              "present_layers": [
+                "entity",
+                "event",
+                "fact",
+                "temporal_tree"
+              ],
+              "matched_layers": [
+                "temporal_tree",
+                "event"
+              ],
+              "missing_layers": [],
+              "coverage_ratio": 1.0,
+              "contract_ok": true
+            },
+            "second_pass_readers": [
+              "graph"
+            ],
+            "hits": [
+              {
+                "source": "fact:atom-002",
+                "layer": "fact",
+                "score": 5.0,
+                "content": "Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+                "story_time": "2026-03-03",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "day:2026-03-03",
+                "layer": "temporal_tree",
+                "score": 4.5,
+                "content": "- 2026-03-03: Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+                "story_time": "2026-03-03",
+                "trace": {
+                  "reader": "tree"
+                }
+              },
+              {
+                "source": "month:2026-03",
+                "layer": "temporal_tree",
+                "score": 4.5,
+                "content": "- 2026-03-03: Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.\n- 2026-03-10: Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+                "story_time": "",
+                "trace": {
+                  "reader": "tree"
+                }
+              },
+              {
+                "source": "year:2026",
+                "layer": "temporal_tree",
+                "score": 4.5,
+                "content": "- 2026-01-20: Aria left Northlight Studio on 2026-01-20.\n- 2026-02-14: Aria joined Orchard Labs on 2026-02-14.\n- 2026-03-03: Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.\n- 2026-03-10: Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement\n- 2026-04-02: Nora helped Aria prepare the visa checklist on 2026-04-02.\n- 2026-04-04: Aria plans to relocate to Lisbon after joining Orchard Labs.\n- 2026-05-09: Aria presented the keynote deck yesterday.\n- 2026-05-11: Aria had the investor board review last week.",
+                "story_time": "",
+                "trace": {
+                  "reader": "tree"
+                }
+              },
+              {
+                "source": "event:atom-002",
+                "layer": "event",
+                "score": 4.0,
+                "content": "Aria signed Riverside lease",
+                "story_time": "2026-03-03",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "entity:Riverside lease",
+                "layer": "entity",
+                "score": 3.0,
+                "content": "name=Riverside lease",
+                "story_time": "",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "fact:atom-003",
+                "layer": "fact",
+                "score": 3.0,
+                "content": "Nora helped Aria prepare the visa checklist on 2026-04-02.",
+                "story_time": "2026-04-02",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "fact:atom-005",
+                "layer": "fact",
+                "score": 3.0,
+                "content": "Aria presented the keynote deck yesterday.",
+                "story_time": "2026-05-09",
+                "trace": {
+                  "reader": "graph"
+                }
+              }
+            ],
+            "ok": true
+          }
+        }
+      },
+      {
+        "case_id": "c2_temporal_relative",
+        "query": "What happened yesterday?",
+        "note": "Relative time should use query anchor.",
+        "expected_keywords": [
+          "presented",
+          "2026-05-09"
+        ],
+        "variants": {
+          "flat_text": {
+            "variant": "flat_text",
+            "plan": {
+              "family": "temporal",
+              "primary_reader": "tree",
+              "supporting_readers": [
+                "graph",
+                "atom"
+              ],
+              "must_have_layers": [
+                "temporal_tree",
+                "event"
+              ],
+              "reason": "Temporal questions need chronology plus event grounding."
+            },
+            "coverage": {
+              "required_layers": [
+                "temporal_tree",
+                "event"
+              ],
+              "present_layers": [
+                "flat_text"
+              ],
+              "matched_layers": [],
+              "missing_layers": [
+                "temporal_tree",
+                "event"
+              ],
+              "coverage_ratio": 0.0,
+              "contract_ok": false
+            },
+            "hits": [
+              {
+                "source": "obs-005",
+                "layer": "flat_text",
+                "score": 1.0,
+                "content": "Aria presented the keynote deck yesterday.",
+                "story_time": "2026-05-09",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-008",
+                "layer": "flat_text",
+                "score": 1.0,
+                "content": "What should I do next?",
+                "story_time": "2026-05-18",
+                "trace": {
+                  "reader": "flat"
+                }
+              }
+            ],
+            "ok": false
+          },
+          "dual_backbone": {
+            "variant": "dual_backbone",
+            "plan": {
+              "family": "temporal",
+              "primary_reader": "tree",
+              "supporting_readers": [
+                "graph",
+                "atom"
+              ],
+              "must_have_layers": [
+                "temporal_tree",
+                "event"
+              ],
+              "reason": "Temporal questions need chronology plus event grounding."
+            },
+            "coverage": {
+              "required_layers": [
+                "temporal_tree",
+                "event"
+              ],
+              "present_layers": [
+                "temporal_tree"
+              ],
+              "matched_layers": [
+                "temporal_tree"
+              ],
+              "missing_layers": [
+                "event"
+              ],
+              "coverage_ratio": 0.5,
+              "contract_ok": false
+            },
+            "hits": [
+              {
+                "source": "day:2026-05-09",
+                "layer": "temporal_tree",
+                "score": 1.5,
+                "content": "- 2026-05-09: Aria presented the keynote deck yesterday.",
+                "story_time": "2026-05-09",
+                "trace": {
+                  "reader": "tree"
+                }
+              },
+              {
+                "source": "month:2026-05",
+                "layer": "temporal_tree",
+                "score": 1.5,
+                "content": "- 2026-05-09: Aria presented the keynote deck yesterday.\n- 2026-05-11: Aria had the investor board review last week.",
+                "story_time": "",
+                "trace": {
+                  "reader": "tree"
+                }
+              },
+              {
+                "source": "year:2026",
+                "layer": "temporal_tree",
+                "score": 1.5,
+                "content": "- 2026-01-20: Aria left Northlight Studio on 2026-01-20.\n- 2026-02-14: Aria joined Orchard Labs on 2026-02-14.\n- 2026-03-03: Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.\n- 2026-03-10: Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement\n- 2026-04-02: Nora helped Aria prepare the visa checklist on 2026-04-02.\n- 2026-04-04: Aria plans to relocate to Lisbon after joining Orchard Labs.\n- 2026-05-09: Aria presented the keynote deck yesterday.\n- 2026-05-11: Aria had the investor board review last week.",
+                "story_time": "",
+                "trace": {
+                  "reader": "tree"
+                }
+              }
+            ],
+            "ok": true
+          },
+          "contract_aware": {
+            "variant": "contract_aware",
+            "plan": {
+              "family": "temporal",
+              "primary_reader": "tree",
+              "supporting_readers": [
+                "graph",
+                "atom"
+              ],
+              "must_have_layers": [
+                "temporal_tree",
+                "event"
+              ],
+              "reason": "Temporal questions need chronology plus event grounding."
+            },
+            "coverage": {
+              "required_layers": [
+                "temporal_tree",
+                "event"
+              ],
+              "present_layers": [
+                "fact",
+                "temporal_tree"
+              ],
+              "matched_layers": [
+                "temporal_tree"
+              ],
+              "missing_layers": [
+                "event"
+              ],
+              "coverage_ratio": 0.5,
+              "contract_ok": false
+            },
+            "second_pass_readers": [
+              "graph"
+            ],
+            "hits": [
+              {
+                "source": "fact:atom-005",
+                "layer": "fact",
+                "score": 2.0,
+                "content": "Aria presented the keynote deck yesterday.",
+                "story_time": "2026-05-09",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "day:2026-05-09",
+                "layer": "temporal_tree",
+                "score": 1.5,
+                "content": "- 2026-05-09: Aria presented the keynote deck yesterday.",
+                "story_time": "2026-05-09",
+                "trace": {
+                  "reader": "tree"
+                }
+              },
+              {
+                "source": "month:2026-05",
+                "layer": "temporal_tree",
+                "score": 1.5,
+                "content": "- 2026-05-09: Aria presented the keynote deck yesterday.\n- 2026-05-11: Aria had the investor board review last week.",
+                "story_time": "",
+                "trace": {
+                  "reader": "tree"
+                }
+              },
+              {
+                "source": "year:2026",
+                "layer": "temporal_tree",
+                "score": 1.5,
+                "content": "- 2026-01-20: Aria left Northlight Studio on 2026-01-20.\n- 2026-02-14: Aria joined Orchard Labs on 2026-02-14.\n- 2026-03-03: Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.\n- 2026-03-10: Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement\n- 2026-04-02: Nora helped Aria prepare the visa checklist on 2026-04-02.\n- 2026-04-04: Aria plans to relocate to Lisbon after joining Orchard Labs.\n- 2026-05-09: Aria presented the keynote deck yesterday.\n- 2026-05-11: Aria had the investor board review last week.",
+                "story_time": "",
+                "trace": {
+                  "reader": "tree"
+                }
+              }
+            ],
+            "ok": true
+          }
+        }
+      },
+      {
+        "case_id": "c3_relational",
+        "query": "Who helped Aria with the visa checklist?",
+        "note": "Relation query should be graph-first.",
+        "expected_keywords": [
+          "Nora",
+          "helped"
+        ],
+        "variants": {
+          "flat_text": {
+            "variant": "flat_text",
+            "plan": {
+              "family": "relational",
+              "primary_reader": "graph",
+              "supporting_readers": [
+                "atom",
+                "tree"
+              ],
+              "must_have_layers": [
+                "graph",
+                "fact"
+              ],
+              "reason": "Relational questions need graph connectivity backed by facts."
+            },
+            "coverage": {
+              "required_layers": [
+                "graph",
+                "fact"
+              ],
+              "present_layers": [
+                "flat_text"
+              ],
+              "matched_layers": [],
+              "missing_layers": [
+                "graph",
+                "fact"
+              ],
+              "coverage_ratio": 0.0,
+              "contract_ok": false
+            },
+            "hits": [
+              {
+                "source": "obs-003",
+                "layer": "flat_text",
+                "score": 5.0,
+                "content": "Nora helped Aria prepare the visa checklist on 2026-04-02.",
+                "story_time": "2026-04-02",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-002",
+                "layer": "flat_text",
+                "score": 2.0,
+                "content": "Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+                "story_time": "2026-03-03",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-005",
+                "layer": "flat_text",
+                "score": 2.0,
+                "content": "Aria presented the keynote deck yesterday.",
+                "story_time": "2026-05-09",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-006",
+                "layer": "flat_text",
+                "score": 2.0,
+                "content": "Aria had the investor board review last week.",
+                "story_time": "2026-05-11",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-000",
+                "layer": "flat_text",
+                "score": 1.0,
+                "content": "Aria left Northlight Studio on 2026-01-20.",
+                "story_time": "2026-01-20",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-001",
+                "layer": "flat_text",
+                "score": 1.0,
+                "content": "Aria joined Orchard Labs on 2026-02-14.",
+                "story_time": "2026-02-14",
+                "trace": {
+                  "reader": "flat"
+                }
+              }
+            ],
+            "ok": true
+          },
+          "dual_backbone": {
+            "variant": "dual_backbone",
+            "plan": {
+              "family": "relational",
+              "primary_reader": "graph",
+              "supporting_readers": [
+                "atom",
+                "tree"
+              ],
+              "must_have_layers": [
+                "graph",
+                "fact"
+              ],
+              "reason": "Relational questions need graph connectivity backed by facts."
+            },
+            "coverage": {
+              "required_layers": [
+                "graph",
+                "fact"
+              ],
+              "present_layers": [
+                "entity",
+                "event",
+                "fact"
+              ],
+              "matched_layers": [
+                "fact"
+              ],
+              "missing_layers": [
+                "graph"
+              ],
+              "coverage_ratio": 0.5,
+              "contract_ok": false
+            },
+            "hits": [
+              {
+                "source": "fact:atom-003",
+                "layer": "fact",
+                "score": 6.0,
+                "content": "Nora helped Aria prepare the visa checklist on 2026-04-02.",
+                "story_time": "2026-04-02",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "event:atom-003",
+                "layer": "event",
+                "score": 4.0,
+                "content": "Nora helped_with Aria::visa checklist",
+                "story_time": "2026-04-02",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "entity:Aria::visa checklist",
+                "layer": "entity",
+                "score": 4.0,
+                "content": "name=Aria::visa checklist",
+                "story_time": "",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "fact:atom-002",
+                "layer": "fact",
+                "score": 3.0,
+                "content": "Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+                "story_time": "2026-03-03",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "fact:atom-005",
+                "layer": "fact",
+                "score": 3.0,
+                "content": "Aria presented the keynote deck yesterday.",
+                "story_time": "2026-05-09",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "fact:atom-006",
+                "layer": "fact",
+                "score": 3.0,
+                "content": "Aria had the investor board review last week.",
+                "story_time": "2026-05-11",
+                "trace": {
+                  "reader": "graph"
+                }
+              }
+            ],
+            "ok": true
+          },
+          "contract_aware": {
+            "variant": "contract_aware",
+            "plan": {
+              "family": "relational",
+              "primary_reader": "graph",
+              "supporting_readers": [
+                "atom",
+                "tree"
+              ],
+              "must_have_layers": [
+                "graph",
+                "fact"
+              ],
+              "reason": "Relational questions need graph connectivity backed by facts."
+            },
+            "coverage": {
+              "required_layers": [
+                "graph",
+                "fact"
+              ],
+              "present_layers": [
+                "entity",
+                "event",
+                "fact"
+              ],
+              "matched_layers": [
+                "fact"
+              ],
+              "missing_layers": [
+                "graph"
+              ],
+              "coverage_ratio": 0.5,
+              "contract_ok": false
+            },
+            "second_pass_readers": [
+              "graph"
+            ],
+            "hits": [
+              {
+                "source": "fact:atom-003",
+                "layer": "fact",
+                "score": 6.0,
+                "content": "Nora helped Aria prepare the visa checklist on 2026-04-02.",
+                "story_time": "2026-04-02",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "event:atom-003",
+                "layer": "event",
+                "score": 4.0,
+                "content": "Nora helped_with Aria::visa checklist",
+                "story_time": "2026-04-02",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "entity:Aria::visa checklist",
+                "layer": "entity",
+                "score": 4.0,
+                "content": "name=Aria::visa checklist",
+                "story_time": "",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "fact:atom-002",
+                "layer": "fact",
+                "score": 3.0,
+                "content": "Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+                "story_time": "2026-03-03",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "fact:atom-005",
+                "layer": "fact",
+                "score": 3.0,
+                "content": "Aria presented the keynote deck yesterday.",
+                "story_time": "2026-05-09",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "fact:atom-006",
+                "layer": "fact",
+                "score": 3.0,
+                "content": "Aria had the investor board review last week.",
+                "story_time": "2026-05-11",
+                "trace": {
+                  "reader": "graph"
+                }
+              }
+            ],
+            "ok": true
+          }
+        }
+      },
+      {
+        "case_id": "c4_plan",
+        "query": "What does Aria plan to do after joining Orchard Labs?",
+        "note": "Plan query should keep event/fact support.",
+        "expected_keywords": [
+          "relocate",
+          "Lisbon"
+        ],
+        "variants": {
+          "flat_text": {
+            "variant": "flat_text",
+            "plan": {
+              "family": "plan",
+              "primary_reader": "graph",
+              "supporting_readers": [
+                "tree",
+                "atom"
+              ],
+              "must_have_layers": [
+                "event",
+                "fact"
+              ],
+              "reason": "Plans and follow-ups need event/fact support and ordering context."
+            },
+            "coverage": {
+              "required_layers": [
+                "event",
+                "fact"
+              ],
+              "present_layers": [
+                "flat_text"
+              ],
+              "matched_layers": [],
+              "missing_layers": [
+                "event",
+                "fact"
+              ],
+              "coverage_ratio": 0.0,
+              "contract_ok": false
+            },
+            "hits": [
+              {
+                "source": "obs-004",
+                "layer": "flat_text",
+                "score": 6.0,
+                "content": "Aria plans to relocate to Lisbon after joining Orchard Labs.",
+                "story_time": "2026-04-04",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-001",
+                "layer": "flat_text",
+                "score": 3.0,
+                "content": "Aria joined Orchard Labs on 2026-02-14.",
+                "story_time": "2026-02-14",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-002",
+                "layer": "flat_text",
+                "score": 2.0,
+                "content": "Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+                "story_time": "2026-03-03",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-008",
+                "layer": "flat_text",
+                "score": 2.0,
+                "content": "What should I do next?",
+                "story_time": "2026-05-18",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-000",
+                "layer": "flat_text",
+                "score": 1.0,
+                "content": "Aria left Northlight Studio on 2026-01-20.",
+                "story_time": "2026-01-20",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-003",
+                "layer": "flat_text",
+                "score": 1.0,
+                "content": "Nora helped Aria prepare the visa checklist on 2026-04-02.",
+                "story_time": "2026-04-02",
+                "trace": {
+                  "reader": "flat"
+                }
+              }
+            ],
+            "ok": true
+          },
+          "dual_backbone": {
+            "variant": "dual_backbone",
+            "plan": {
+              "family": "plan",
+              "primary_reader": "graph",
+              "supporting_readers": [
+                "tree",
+                "atom"
+              ],
+              "must_have_layers": [
+                "event",
+                "fact"
+              ],
+              "reason": "Plans and follow-ups need event/fact support and ordering context."
+            },
+            "coverage": {
+              "required_layers": [
+                "event",
+                "fact"
+              ],
+              "present_layers": [
+                "entity",
+                "event",
+                "fact"
+              ],
+              "matched_layers": [
+                "event",
+                "fact"
+              ],
+              "missing_layers": [],
+              "coverage_ratio": 1.0,
+              "contract_ok": true
+            },
+            "hits": [
+              {
+                "source": "fact:atom-004",
+                "layer": "fact",
+                "score": 7.0,
+                "content": "Aria plans to relocate to Lisbon after joining Orchard Labs.",
+                "story_time": "2026-04-04",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "event:atom-004",
+                "layer": "event",
+                "score": 7.0,
+                "content": "Aria plans relocate to Lisbon after joining Orchard Labs.",
+                "story_time": "2026-04-04",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "entity:relocate to Lisbon after joining Orchard Labs.",
+                "layer": "entity",
+                "score": 6.0,
+                "content": "name=relocate to Lisbon after joining Orchard Labs.",
+                "story_time": "",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "fact:atom-001",
+                "layer": "fact",
+                "score": 4.0,
+                "content": "Aria joined Orchard Labs on 2026-02-14.",
+                "story_time": "2026-02-14",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "event:atom-001",
+                "layer": "event",
+                "score": 4.0,
+                "content": "Aria joined Orchard Labs",
+                "story_time": "2026-02-14",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "entity:Orchard Labs",
+                "layer": "entity",
+                "score": 3.0,
+                "content": "name=Orchard Labs",
+                "story_time": "",
+                "trace": {
+                  "reader": "graph"
+                }
+              }
+            ],
+            "ok": true
+          },
+          "contract_aware": {
+            "variant": "contract_aware",
+            "plan": {
+              "family": "plan",
+              "primary_reader": "graph",
+              "supporting_readers": [
+                "tree",
+                "atom"
+              ],
+              "must_have_layers": [
+                "event",
+                "fact"
+              ],
+              "reason": "Plans and follow-ups need event/fact support and ordering context."
+            },
+            "coverage": {
+              "required_layers": [
+                "event",
+                "fact"
+              ],
+              "present_layers": [
+                "entity",
+                "event",
+                "fact"
+              ],
+              "matched_layers": [
+                "event",
+                "fact"
+              ],
+              "missing_layers": [],
+              "coverage_ratio": 1.0,
+              "contract_ok": true
+            },
+            "hits": [
+              {
+                "source": "fact:atom-004",
+                "layer": "fact",
+                "score": 7.0,
+                "content": "Aria plans to relocate to Lisbon after joining Orchard Labs.",
+                "story_time": "2026-04-04",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "event:atom-004",
+                "layer": "event",
+                "score": 7.0,
+                "content": "Aria plans relocate to Lisbon after joining Orchard Labs.",
+                "story_time": "2026-04-04",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "entity:relocate to Lisbon after joining Orchard Labs.",
+                "layer": "entity",
+                "score": 6.0,
+                "content": "name=relocate to Lisbon after joining Orchard Labs.",
+                "story_time": "",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "fact:atom-001",
+                "layer": "fact",
+                "score": 4.0,
+                "content": "Aria joined Orchard Labs on 2026-02-14.",
+                "story_time": "2026-02-14",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "event:atom-001",
+                "layer": "event",
+                "score": 4.0,
+                "content": "Aria joined Orchard Labs",
+                "story_time": "2026-02-14",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "entity:Orchard Labs",
+                "layer": "entity",
+                "score": 3.0,
+                "content": "name=Orchard Labs",
+                "story_time": "",
+                "trace": {
+                  "reader": "graph"
+                }
+              }
+            ],
+            "ok": true
+          }
+        }
+      },
+      {
+        "case_id": "c5_visual",
+        "query": "What address was shown in the lease screenshot?",
+        "note": "Visual evidence should be first-class.",
+        "expected_keywords": [
+          "Rua Augusta 14",
+          "Lease Agreement"
+        ],
+        "variants": {
+          "flat_text": {
+            "variant": "flat_text",
+            "plan": {
+              "family": "visual",
+              "primary_reader": "graph",
+              "supporting_readers": [
+                "atom",
+                "tree"
+              ],
+              "must_have_layers": [
+                "image_evidence",
+                "fact"
+              ],
+              "reason": "Visual questions need first-class image evidence linked to facts."
+            },
+            "coverage": {
+              "required_layers": [
+                "image_evidence",
+                "fact"
+              ],
+              "present_layers": [
+                "flat_text"
+              ],
+              "matched_layers": [],
+              "missing_layers": [
+                "image_evidence",
+                "fact"
+              ],
+              "coverage_ratio": 0.0,
+              "contract_ok": false
+            },
+            "hits": [
+              {
+                "source": "obs-002",
+                "layer": "flat_text",
+                "score": 2.0,
+                "content": "Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+                "story_time": "2026-03-03",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-007",
+                "layer": "flat_text",
+                "score": 2.0,
+                "content": "Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+                "story_time": "2026-03-10",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-003",
+                "layer": "flat_text",
+                "score": 1.0,
+                "content": "Nora helped Aria prepare the visa checklist on 2026-04-02.",
+                "story_time": "2026-04-02",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-005",
+                "layer": "flat_text",
+                "score": 1.0,
+                "content": "Aria presented the keynote deck yesterday.",
+                "story_time": "2026-05-09",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-006",
+                "layer": "flat_text",
+                "score": 1.0,
+                "content": "Aria had the investor board review last week.",
+                "story_time": "2026-05-11",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-008",
+                "layer": "flat_text",
+                "score": 1.0,
+                "content": "What should I do next?",
+                "story_time": "2026-05-18",
+                "trace": {
+                  "reader": "flat"
+                }
+              }
+            ],
+            "ok": true
+          },
+          "dual_backbone": {
+            "variant": "dual_backbone",
+            "plan": {
+              "family": "visual",
+              "primary_reader": "graph",
+              "supporting_readers": [
+                "atom",
+                "tree"
+              ],
+              "must_have_layers": [
+                "image_evidence",
+                "fact"
+              ],
+              "reason": "Visual questions need first-class image evidence linked to facts."
+            },
+            "coverage": {
+              "required_layers": [
+                "image_evidence",
+                "fact"
+              ],
+              "present_layers": [
+                "entity",
+                "event",
+                "fact",
+                "image_evidence"
+              ],
+              "matched_layers": [
+                "image_evidence",
+                "fact"
+              ],
+              "missing_layers": [],
+              "coverage_ratio": 1.0,
+              "contract_ok": true
+            },
+            "hits": [
+              {
+                "source": "fact:atom-002",
+                "layer": "fact",
+                "score": 3.0,
+                "content": "Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+                "story_time": "2026-03-03",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "fact:atom-007",
+                "layer": "fact",
+                "score": 3.0,
+                "content": "Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+                "story_time": "2026-03-10",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "image_evidence:atom-007",
+                "layer": "image_evidence",
+                "score": 3.0,
+                "content": "image_evidence shows Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+                "story_time": "2026-03-10",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "entity:Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+                "layer": "entity",
+                "score": 3.0,
+                "content": "name=Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+                "story_time": "",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "event:atom-002",
+                "layer": "event",
+                "score": 2.0,
+                "content": "Aria signed Riverside lease",
+                "story_time": "2026-03-03",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "entity:Riverside lease",
+                "layer": "entity",
+                "score": 2.0,
+                "content": "name=Riverside lease",
+                "story_time": "",
+                "trace": {
+                  "reader": "graph"
+                }
+              }
+            ],
+            "ok": true
+          },
+          "contract_aware": {
+            "variant": "contract_aware",
+            "plan": {
+              "family": "visual",
+              "primary_reader": "graph",
+              "supporting_readers": [
+                "atom",
+                "tree"
+              ],
+              "must_have_layers": [
+                "image_evidence",
+                "fact"
+              ],
+              "reason": "Visual questions need first-class image evidence linked to facts."
+            },
+            "coverage": {
+              "required_layers": [
+                "image_evidence",
+                "fact"
+              ],
+              "present_layers": [
+                "entity",
+                "event",
+                "fact",
+                "image_evidence"
+              ],
+              "matched_layers": [
+                "image_evidence",
+                "fact"
+              ],
+              "missing_layers": [],
+              "coverage_ratio": 1.0,
+              "contract_ok": true
+            },
+            "hits": [
+              {
+                "source": "fact:atom-002",
+                "layer": "fact",
+                "score": 3.0,
+                "content": "Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+                "story_time": "2026-03-03",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "fact:atom-007",
+                "layer": "fact",
+                "score": 3.0,
+                "content": "Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+                "story_time": "2026-03-10",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "image_evidence:atom-007",
+                "layer": "image_evidence",
+                "score": 3.0,
+                "content": "image_evidence shows Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+                "story_time": "2026-03-10",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "entity:Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+                "layer": "entity",
+                "score": 3.0,
+                "content": "name=Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+                "story_time": "",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "event:atom-002",
+                "layer": "event",
+                "score": 2.0,
+                "content": "Aria signed Riverside lease",
+                "story_time": "2026-03-03",
+                "trace": {
+                  "reader": "graph"
+                }
+              },
+              {
+                "source": "entity:Riverside lease",
+                "layer": "entity",
+                "score": 2.0,
+                "content": "name=Riverside lease",
+                "story_time": "",
+                "trace": {
+                  "reader": "graph"
+                }
+              }
+            ],
+            "ok": true
+          }
+        }
+      },
+      {
+        "case_id": "c6_general",
+        "query": "Where did Aria join in February?",
+        "note": "General factual query should still work.",
+        "expected_keywords": [
+          "Orchard Labs",
+          "2026-02-14"
+        ],
+        "variants": {
+          "flat_text": {
+            "variant": "flat_text",
+            "plan": {
+              "family": "general",
+              "primary_reader": "atom",
+              "supporting_readers": [
+                "tree",
+                "graph"
+              ],
+              "must_have_layers": [
+                "fact"
+              ],
+              "reason": "General factual questions can start from atom evidence."
+            },
+            "coverage": {
+              "required_layers": [
+                "fact"
+              ],
+              "present_layers": [
+                "flat_text"
+              ],
+              "matched_layers": [],
+              "missing_layers": [
+                "fact"
+              ],
+              "coverage_ratio": 0.0,
+              "contract_ok": false
+            },
+            "hits": [
+              {
+                "source": "obs-000",
+                "layer": "flat_text",
+                "score": 1.0,
+                "content": "Aria left Northlight Studio on 2026-01-20.",
+                "story_time": "2026-01-20",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-001",
+                "layer": "flat_text",
+                "score": 1.0,
+                "content": "Aria joined Orchard Labs on 2026-02-14.",
+                "story_time": "2026-02-14",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-002",
+                "layer": "flat_text",
+                "score": 1.0,
+                "content": "Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+                "story_time": "2026-03-03",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-003",
+                "layer": "flat_text",
+                "score": 1.0,
+                "content": "Nora helped Aria prepare the visa checklist on 2026-04-02.",
+                "story_time": "2026-04-02",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-004",
+                "layer": "flat_text",
+                "score": 1.0,
+                "content": "Aria plans to relocate to Lisbon after joining Orchard Labs.",
+                "story_time": "2026-04-04",
+                "trace": {
+                  "reader": "flat"
+                }
+              },
+              {
+                "source": "obs-005",
+                "layer": "flat_text",
+                "score": 1.0,
+                "content": "Aria presented the keynote deck yesterday.",
+                "story_time": "2026-05-09",
+                "trace": {
+                  "reader": "flat"
+                }
+              }
+            ],
+            "ok": true
+          },
+          "dual_backbone": {
+            "variant": "dual_backbone",
+            "plan": {
+              "family": "general",
+              "primary_reader": "atom",
+              "supporting_readers": [
+                "tree",
+                "graph"
+              ],
+              "must_have_layers": [
+                "fact"
+              ],
+              "reason": "General factual questions can start from atom evidence."
+            },
+            "coverage": {
+              "required_layers": [
+                "fact"
+              ],
+              "present_layers": [
+                "fact"
+              ],
+              "matched_layers": [
+                "fact"
+              ],
+              "missing_layers": [],
+              "coverage_ratio": 1.0,
+              "contract_ok": true
+            },
+            "hits": [
+              {
+                "source": "fact:atom-000",
+                "layer": "fact",
+                "score": 1.0,
+                "content": "Aria left Northlight Studio on 2026-01-20.",
+                "story_time": "2026-01-20",
+                "trace": {
+                  "reader": "atom",
+                  "status": "active"
+                }
+              },
+              {
+                "source": "fact:atom-001",
+                "layer": "fact",
+                "score": 1.0,
+                "content": "Aria joined Orchard Labs on 2026-02-14.",
+                "story_time": "2026-02-14",
+                "trace": {
+                  "reader": "atom",
+                  "status": "active"
+                }
+              },
+              {
+                "source": "fact:atom-002",
+                "layer": "fact",
+                "score": 1.0,
+                "content": "Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+                "story_time": "2026-03-03",
+                "trace": {
+                  "reader": "atom",
+                  "status": "active"
+                }
+              },
+              {
+                "source": "fact:atom-003",
+                "layer": "fact",
+                "score": 1.0,
+                "content": "Nora helped Aria prepare the visa checklist on 2026-04-02.",
+                "story_time": "2026-04-02",
+                "trace": {
+                  "reader": "atom",
+                  "status": "active"
+                }
+              },
+              {
+                "source": "fact:atom-004",
+                "layer": "fact",
+                "score": 1.0,
+                "content": "Aria plans to relocate to Lisbon after joining Orchard Labs.",
+                "story_time": "2026-04-04",
+                "trace": {
+                  "reader": "atom",
+                  "status": "active"
+                }
+              },
+              {
+                "source": "fact:atom-005",
+                "layer": "fact",
+                "score": 1.0,
+                "content": "Aria presented the keynote deck yesterday.",
+                "story_time": "2026-05-09",
+                "trace": {
+                  "reader": "atom",
+                  "status": "active"
+                }
+              }
+            ],
+            "ok": true
+          },
+          "contract_aware": {
+            "variant": "contract_aware",
+            "plan": {
+              "family": "general",
+              "primary_reader": "atom",
+              "supporting_readers": [
+                "tree",
+                "graph"
+              ],
+              "must_have_layers": [
+                "fact"
+              ],
+              "reason": "General factual questions can start from atom evidence."
+            },
+            "coverage": {
+              "required_layers": [
+                "fact"
+              ],
+              "present_layers": [
+                "fact"
+              ],
+              "matched_layers": [
+                "fact"
+              ],
+              "missing_layers": [],
+              "coverage_ratio": 1.0,
+              "contract_ok": true
+            },
+            "hits": [
+              {
+                "source": "fact:atom-000",
+                "layer": "fact",
+                "score": 1.0,
+                "content": "Aria left Northlight Studio on 2026-01-20.",
+                "story_time": "2026-01-20",
+                "trace": {
+                  "reader": "atom",
+                  "status": "active"
+                }
+              },
+              {
+                "source": "fact:atom-001",
+                "layer": "fact",
+                "score": 1.0,
+                "content": "Aria joined Orchard Labs on 2026-02-14.",
+                "story_time": "2026-02-14",
+                "trace": {
+                  "reader": "atom",
+                  "status": "active"
+                }
+              },
+              {
+                "source": "fact:atom-002",
+                "layer": "fact",
+                "score": 1.0,
+                "content": "Aria signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+                "story_time": "2026-03-03",
+                "trace": {
+                  "reader": "atom",
+                  "status": "active"
+                }
+              },
+              {
+                "source": "fact:atom-003",
+                "layer": "fact",
+                "score": 1.0,
+                "content": "Nora helped Aria prepare the visa checklist on 2026-04-02.",
+                "story_time": "2026-04-02",
+                "trace": {
+                  "reader": "atom",
+                  "status": "active"
+                }
+              },
+              {
+                "source": "fact:atom-004",
+                "layer": "fact",
+                "score": 1.0,
+                "content": "Aria plans to relocate to Lisbon after joining Orchard Labs.",
+                "story_time": "2026-04-04",
+                "trace": {
+                  "reader": "atom",
+                  "status": "active"
+                }
+              },
+              {
+                "source": "fact:atom-005",
+                "layer": "fact",
+                "score": 1.0,
+                "content": "Aria presented the keynote deck yesterday.",
+                "story_time": "2026-05-09",
+                "trace": {
+                  "reader": "atom",
+                  "status": "active"
+                }
+              }
+            ],
+            "ok": true
+          }
+        }
+      }
+    ],
+    "variant_totals": {
+      "flat_text": {
+        "pass": 5,
+        "total": 6,
+        "contract_ok": 0
+      },
+      "dual_backbone": {
+        "pass": 6,
+        "total": 6,
+        "contract_ok": 3
+      },
+      "contract_aware": {
+        "pass": 6,
+        "total": 6,
+        "contract_ok": 4
+      }
+    }
+  }
+}

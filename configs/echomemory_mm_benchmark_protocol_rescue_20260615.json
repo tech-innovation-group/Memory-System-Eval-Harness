@@ -1,0 +1,66 @@
+{
+  "protocol_name": "echomemory_mm_benchmark_protocol_rescue",
+  "protocol_version": "2026-06-15",
+  "paper_track": "EchoMemory-MM",
+  "status": "engineering_rescue_run",
+  "authoritative_entrypoints": {
+    "import": "/Users/chx/locomo-eval-web/scripts/echomemory_locomo_import.py",
+    "orchestration": "/Users/chx/locomo-eval-web/scripts/echomemory_wait_and_eval.py",
+    "qa": "/Users/chx/locomo-eval-web/scripts/echomemory_memory_qa.py",
+    "adapter": "/Users/chx/locomo-eval-web/scripts/benchmark_adapter.py"
+  },
+  "notes": [
+    "This rescue protocol is for engineering completion and error localization after the frozen subset20 baseline timed out during import.",
+    "It is intentionally not the paper-facing frozen protocol because timeout and continuation settings are relaxed."
+  ],
+  "import": {
+    "session_mode": "locomo",
+    "import_wait_mode": "full",
+    "commit_wait_s": 900,
+    "commit_call_timeout_s": 900,
+    "flush_call_timeout_s": 1800,
+    "flush_attempts": 3,
+    "defer_artifact_wait": false,
+    "skip_session_commit": false,
+    "continue_on_session_error": true,
+    "fallback_to_mock": false
+  },
+  "stabilization": {
+    "settle_seconds": 180,
+    "stabilize_timeout_seconds": 900,
+    "stability_polls": 3,
+    "poll_seconds": 30,
+    "repair_before_qa": true,
+    "repair_flush_call_timeout_s": 1800,
+    "repair_flush_attempts": 2,
+    "repair_commit_wait_s": 900
+  },
+  "qa": {
+    "answer_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "answer_model": "deepseek-v4-flash",
+    "judge_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "judge_model": "deepseek-v4-flash",
+    "prompt_mode": "vikingboat_lite",
+    "retrieval_mode": "search",
+    "retrieval_ranker": "score",
+    "top_k": 30,
+    "score_threshold": 0.1,
+    "memory_budget_chars": 6000,
+    "user_memory_budget_chars": 4000,
+    "agent_memory_budget_chars": 2000,
+    "tool_set": "search_read",
+    "tool_search_limit": 20,
+    "tool_min_score": 0.35,
+    "tool_log_chars": 1200,
+    "prefetch_read_count": 4,
+    "prefetch_context_chars": 5000,
+    "max_iterations": 8,
+    "vikingboat_tool_loop": true,
+    "vikingboat_compat": false,
+    "initial_tool_prefetch": true,
+    "fallback_to_one_shot": true,
+    "model_retries": 5,
+    "timeout_s": 300,
+    "question_timeout_s": 600
+  }
+}

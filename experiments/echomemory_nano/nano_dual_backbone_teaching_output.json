@@ -1,0 +1,731 @@
+{
+  "messages": [
+    {
+      "message_id": "msg-000",
+      "role": "user",
+      "content": "Gina 于 2023-01-12 加入了 Figma。",
+      "created_at": "2023-01-13T09:00:00Z",
+      "story_time": "2023-01-12",
+      "role_id": "Gina"
+    },
+    {
+      "message_id": "msg-001",
+      "role": "user",
+      "content": "Gina 于 2023-02-18 结婚，对方是 Alex。",
+      "created_at": "2023-02-19T11:00:00Z",
+      "story_time": "2023-02-18",
+      "role_id": "Gina"
+    },
+    {
+      "message_id": "msg-002",
+      "role": "user",
+      "content": "Nora 于 2023-03-23 帮助了 Gina 准备签证清单。",
+      "created_at": "2023-03-24T09:30:00Z",
+      "story_time": "2023-03-23",
+      "role_id": "Nora"
+    },
+    {
+      "message_id": "msg-003",
+      "role": "user",
+      "content": "Gina 于 2023-03-04 离开了 Figma。",
+      "created_at": "2023-03-05T10:00:00Z",
+      "story_time": "2023-03-04",
+      "role_id": "Gina"
+    },
+    {
+      "message_id": "msg-004",
+      "role": "user",
+      "content": "Gina 在 2023-04-03 签了 Lisbon lease。",
+      "created_at": "2023-04-04T08:40:00Z",
+      "story_time": "2023-04-03",
+      "role_id": "Gina"
+    },
+    {
+      "message_id": "msg-005",
+      "role": "user",
+      "content": "Gina 在 2023-04 计划做 design studio。",
+      "created_at": "2023-04-07T18:00:00Z",
+      "story_time": "2023-04-01",
+      "role_id": "Gina"
+    }
+  ],
+  "readiness": {
+    "messages_persisted": true,
+    "atoms_ready": true,
+    "tree_ready": true,
+    "graph_ready": true,
+    "qa_ready": true
+  },
+  "atoms": [
+    {
+      "atom_id": "atom-000",
+      "atom_type": "event",
+      "statement": "Gina 于 2023-01-12 加入了 Figma。",
+      "subject": "Gina",
+      "predicate": "joined",
+      "obj": "Figma",
+      "mention_time": "2023-01-13T09:00:00Z",
+      "story_time": "2023-01-12"
+    },
+    {
+      "atom_id": "atom-001",
+      "atom_type": "relation",
+      "statement": "Gina 于 2023-02-18 结婚，对方是 Alex。",
+      "subject": "Gina",
+      "predicate": "married_to",
+      "obj": "Alex",
+      "mention_time": "2023-02-19T11:00:00Z",
+      "story_time": "2023-02-18"
+    },
+    {
+      "atom_id": "atom-002",
+      "atom_type": "relation",
+      "statement": "Nora helped Gina prepare a visa checklist.",
+      "subject": "Nora",
+      "predicate": "helped",
+      "obj": "Gina",
+      "mention_time": "2023-03-24T09:30:00Z",
+      "story_time": "2023-03-23"
+    },
+    {
+      "atom_id": "atom-003",
+      "atom_type": "event",
+      "statement": "Gina 于 2023-03-04 离开了 Figma。",
+      "subject": "Gina",
+      "predicate": "left",
+      "obj": "Figma",
+      "mention_time": "2023-03-05T10:00:00Z",
+      "story_time": "2023-03-04"
+    },
+    {
+      "atom_id": "atom-004",
+      "atom_type": "event",
+      "statement": "Gina 在 2023-04-03 签了 Lisbon lease。",
+      "subject": "Gina",
+      "predicate": "signed",
+      "obj": "Lisbon lease",
+      "mention_time": "2023-04-04T08:40:00Z",
+      "story_time": "2023-04-03"
+    },
+    {
+      "atom_id": "atom-005",
+      "atom_type": "plan",
+      "statement": "Gina 在 2023-04 计划做 design studio。",
+      "subject": "Gina",
+      "predicate": "planned",
+      "obj": "design studio",
+      "mention_time": "2023-04-07T18:00:00Z",
+      "story_time": "2023-04"
+    }
+  ],
+  "tree_blocks": [
+    {
+      "block_id": "tree:day:2023-01-12",
+      "level": "day",
+      "key": "2023-01-12",
+      "lines": [
+        "- 2023-01-12: Gina 于 2023-01-12 加入了 Figma。"
+      ]
+    },
+    {
+      "block_id": "tree:day:2023-02-18",
+      "level": "day",
+      "key": "2023-02-18",
+      "lines": [
+        "- 2023-02-18: Gina 于 2023-02-18 结婚，对方是 Alex。"
+      ]
+    },
+    {
+      "block_id": "tree:day:2023-03-04",
+      "level": "day",
+      "key": "2023-03-04",
+      "lines": [
+        "- 2023-03-04: Gina 于 2023-03-04 离开了 Figma。"
+      ]
+    },
+    {
+      "block_id": "tree:day:2023-03-23",
+      "level": "day",
+      "key": "2023-03-23",
+      "lines": [
+        "- 2023-03-23: Nora helped Gina prepare a visa checklist."
+      ]
+    },
+    {
+      "block_id": "tree:day:2023-04",
+      "level": "day",
+      "key": "2023-04",
+      "lines": [
+        "- 2023-04: Gina 在 2023-04 计划做 design studio。"
+      ]
+    },
+    {
+      "block_id": "tree:day:2023-04-03",
+      "level": "day",
+      "key": "2023-04-03",
+      "lines": [
+        "- 2023-04-03: Gina 在 2023-04-03 签了 Lisbon lease。"
+      ]
+    },
+    {
+      "block_id": "tree:month:2023-01",
+      "level": "month",
+      "key": "2023-01",
+      "lines": [
+        "- 2023-01-12: Gina 于 2023-01-12 加入了 Figma。"
+      ]
+    },
+    {
+      "block_id": "tree:month:2023-02",
+      "level": "month",
+      "key": "2023-02",
+      "lines": [
+        "- 2023-02-18: Gina 于 2023-02-18 结婚，对方是 Alex。"
+      ]
+    },
+    {
+      "block_id": "tree:month:2023-03",
+      "level": "month",
+      "key": "2023-03",
+      "lines": [
+        "- 2023-03-23: Nora helped Gina prepare a visa checklist.",
+        "- 2023-03-04: Gina 于 2023-03-04 离开了 Figma。"
+      ]
+    },
+    {
+      "block_id": "tree:month:2023-04",
+      "level": "month",
+      "key": "2023-04",
+      "lines": [
+        "- 2023-04-03: Gina 在 2023-04-03 签了 Lisbon lease。",
+        "- 2023-04: Gina 在 2023-04 计划做 design studio。"
+      ]
+    },
+    {
+      "block_id": "tree:year:2023",
+      "level": "year",
+      "key": "2023",
+      "lines": [
+        "- 2023-01-12: Gina 于 2023-01-12 加入了 Figma。",
+        "- 2023-02-18: Gina 于 2023-02-18 结婚，对方是 Alex。",
+        "- 2023-03-23: Nora helped Gina prepare a visa checklist.",
+        "- 2023-03-04: Gina 于 2023-03-04 离开了 Figma。",
+        "- 2023-04-03: Gina 在 2023-04-03 签了 Lisbon lease。",
+        "- 2023-04: Gina 在 2023-04 计划做 design studio。"
+      ]
+    }
+  ],
+  "graph_nodes": [
+    {
+      "node_id": "fact:atom-000",
+      "node_type": "fact",
+      "content": "Gina 于 2023-01-12 加入了 Figma。",
+      "story_time": "2023-01-12"
+    },
+    {
+      "node_id": "event:atom-000",
+      "node_type": "event",
+      "content": "Gina joined Figma",
+      "story_time": "2023-01-12"
+    },
+    {
+      "node_id": "entity:Gina",
+      "node_type": "entity",
+      "content": "name=Gina",
+      "story_time": ""
+    },
+    {
+      "node_id": "entity:Figma",
+      "node_type": "entity",
+      "content": "name=Figma",
+      "story_time": ""
+    },
+    {
+      "node_id": "fact:atom-001",
+      "node_type": "fact",
+      "content": "Gina 于 2023-02-18 结婚，对方是 Alex。",
+      "story_time": "2023-02-18"
+    },
+    {
+      "node_id": "event:atom-001",
+      "node_type": "event",
+      "content": "Gina married_to Alex",
+      "story_time": "2023-02-18"
+    },
+    {
+      "node_id": "entity:Alex",
+      "node_type": "entity",
+      "content": "name=Alex",
+      "story_time": ""
+    },
+    {
+      "node_id": "fact:atom-002",
+      "node_type": "fact",
+      "content": "Nora helped Gina prepare a visa checklist.",
+      "story_time": "2023-03-23"
+    },
+    {
+      "node_id": "event:atom-002",
+      "node_type": "event",
+      "content": "Nora helped Gina",
+      "story_time": "2023-03-23"
+    },
+    {
+      "node_id": "entity:Nora",
+      "node_type": "entity",
+      "content": "name=Nora",
+      "story_time": ""
+    },
+    {
+      "node_id": "fact:atom-003",
+      "node_type": "fact",
+      "content": "Gina 于 2023-03-04 离开了 Figma。",
+      "story_time": "2023-03-04"
+    },
+    {
+      "node_id": "event:atom-003",
+      "node_type": "event",
+      "content": "Gina left Figma",
+      "story_time": "2023-03-04"
+    },
+    {
+      "node_id": "fact:atom-004",
+      "node_type": "fact",
+      "content": "Gina 在 2023-04-03 签了 Lisbon lease。",
+      "story_time": "2023-04-03"
+    },
+    {
+      "node_id": "event:atom-004",
+      "node_type": "event",
+      "content": "Gina signed Lisbon lease",
+      "story_time": "2023-04-03"
+    },
+    {
+      "node_id": "entity:Lisbon lease",
+      "node_type": "entity",
+      "content": "name=Lisbon lease",
+      "story_time": ""
+    },
+    {
+      "node_id": "fact:atom-005",
+      "node_type": "fact",
+      "content": "Gina 在 2023-04 计划做 design studio。",
+      "story_time": "2023-04"
+    },
+    {
+      "node_id": "event:atom-005",
+      "node_type": "event",
+      "content": "Gina planned design studio",
+      "story_time": "2023-04"
+    },
+    {
+      "node_id": "entity:design studio",
+      "node_type": "entity",
+      "content": "name=design studio",
+      "story_time": ""
+    }
+  ],
+  "graph_edges": [
+    {
+      "source_id": "event:atom-000",
+      "target_id": "fact:atom-000",
+      "relation_type": "evidence_of"
+    },
+    {
+      "source_id": "entity:Gina",
+      "target_id": "fact:atom-000",
+      "relation_type": "has_fact"
+    },
+    {
+      "source_id": "event:atom-000",
+      "target_id": "entity:Gina",
+      "relation_type": "involves"
+    },
+    {
+      "source_id": "entity:Figma",
+      "target_id": "fact:atom-000",
+      "relation_type": "has_fact"
+    },
+    {
+      "source_id": "event:atom-000",
+      "target_id": "entity:Figma",
+      "relation_type": "involves"
+    },
+    {
+      "source_id": "event:atom-001",
+      "target_id": "fact:atom-001",
+      "relation_type": "evidence_of"
+    },
+    {
+      "source_id": "entity:Gina",
+      "target_id": "fact:atom-001",
+      "relation_type": "has_fact"
+    },
+    {
+      "source_id": "event:atom-001",
+      "target_id": "entity:Gina",
+      "relation_type": "involves"
+    },
+    {
+      "source_id": "entity:Alex",
+      "target_id": "fact:atom-001",
+      "relation_type": "has_fact"
+    },
+    {
+      "source_id": "event:atom-001",
+      "target_id": "entity:Alex",
+      "relation_type": "involves"
+    },
+    {
+      "source_id": "event:atom-002",
+      "target_id": "fact:atom-002",
+      "relation_type": "evidence_of"
+    },
+    {
+      "source_id": "entity:Nora",
+      "target_id": "fact:atom-002",
+      "relation_type": "has_fact"
+    },
+    {
+      "source_id": "event:atom-002",
+      "target_id": "entity:Nora",
+      "relation_type": "involves"
+    },
+    {
+      "source_id": "entity:Gina",
+      "target_id": "fact:atom-002",
+      "relation_type": "has_fact"
+    },
+    {
+      "source_id": "event:atom-002",
+      "target_id": "entity:Gina",
+      "relation_type": "involves"
+    },
+    {
+      "source_id": "event:atom-003",
+      "target_id": "fact:atom-003",
+      "relation_type": "evidence_of"
+    },
+    {
+      "source_id": "entity:Gina",
+      "target_id": "fact:atom-003",
+      "relation_type": "has_fact"
+    },
+    {
+      "source_id": "event:atom-003",
+      "target_id": "entity:Gina",
+      "relation_type": "involves"
+    },
+    {
+      "source_id": "entity:Figma",
+      "target_id": "fact:atom-003",
+      "relation_type": "has_fact"
+    },
+    {
+      "source_id": "event:atom-003",
+      "target_id": "entity:Figma",
+      "relation_type": "involves"
+    },
+    {
+      "source_id": "event:atom-004",
+      "target_id": "fact:atom-004",
+      "relation_type": "evidence_of"
+    },
+    {
+      "source_id": "entity:Gina",
+      "target_id": "fact:atom-004",
+      "relation_type": "has_fact"
+    },
+    {
+      "source_id": "event:atom-004",
+      "target_id": "entity:Gina",
+      "relation_type": "involves"
+    },
+    {
+      "source_id": "entity:Lisbon lease",
+      "target_id": "fact:atom-004",
+      "relation_type": "has_fact"
+    },
+    {
+      "source_id": "event:atom-004",
+      "target_id": "entity:Lisbon lease",
+      "relation_type": "involves"
+    },
+    {
+      "source_id": "event:atom-005",
+      "target_id": "fact:atom-005",
+      "relation_type": "evidence_of"
+    },
+    {
+      "source_id": "entity:Gina",
+      "target_id": "fact:atom-005",
+      "relation_type": "has_fact"
+    },
+    {
+      "source_id": "event:atom-005",
+      "target_id": "entity:Gina",
+      "relation_type": "involves"
+    },
+    {
+      "source_id": "entity:design studio",
+      "target_id": "fact:atom-005",
+      "relation_type": "has_fact"
+    },
+    {
+      "source_id": "event:atom-005",
+      "target_id": "entity:design studio",
+      "relation_type": "involves"
+    },
+    {
+      "source_id": "event:atom-000",
+      "target_id": "event:atom-001",
+      "relation_type": "temporal_next"
+    },
+    {
+      "source_id": "event:atom-001",
+      "target_id": "event:atom-003",
+      "relation_type": "temporal_next"
+    },
+    {
+      "source_id": "event:atom-003",
+      "target_id": "event:atom-002",
+      "relation_type": "temporal_next"
+    },
+    {
+      "source_id": "event:atom-002",
+      "target_id": "event:atom-005",
+      "relation_type": "temporal_next"
+    },
+    {
+      "source_id": "event:atom-005",
+      "target_id": "event:atom-004",
+      "relation_type": "temporal_next"
+    }
+  ],
+  "queries": [
+    {
+      "query": "Gina 是什么时候加入 Figma 的？",
+      "plan": {
+        "family": "temporal",
+        "primary_backbone": "tree",
+        "supporting_backbones": [
+          "graph"
+        ],
+        "reason": "Chronology questions should first navigate time structure."
+      },
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "tree_ready": true,
+        "graph_ready": true,
+        "qa_ready": true
+      },
+      "hits": [
+        {
+          "source": "tree:day:2023-01-12",
+          "layer": "tree",
+          "score": 3.0,
+          "content": "DAY 2023-01-12\n- 2023-01-12: Gina 于 2023-01-12 加入了 Figma。"
+        },
+        {
+          "source": "tree:day:2023-03-04",
+          "layer": "tree",
+          "score": 3.0,
+          "content": "DAY 2023-03-04\n- 2023-03-04: Gina 于 2023-03-04 离开了 Figma。"
+        },
+        {
+          "source": "event:atom-000",
+          "layer": "event",
+          "score": 2.55,
+          "content": "Gina joined Figma"
+        },
+        {
+          "source": "event:atom-003",
+          "layer": "event",
+          "score": 2.55,
+          "content": "Gina left Figma"
+        },
+        {
+          "source": "tree:month:2023-01",
+          "layer": "tree",
+          "score": 2.3,
+          "content": "MONTH 2023-01\n- 2023-01-12: Gina 于 2023-01-12 加入了 Figma。"
+        },
+        {
+          "source": "tree:month:2023-03",
+          "layer": "tree",
+          "score": 2.3,
+          "content": "MONTH 2023-03\n- 2023-03-23: Nora helped Gina prepare a visa checklist.\n- 2023-03-04: Gina 于 2023-03-04 离开了 Figma。"
+        }
+      ]
+    },
+    {
+      "query": "Gina 的配偶是谁？",
+      "plan": {
+        "family": "relational",
+        "primary_backbone": "graph",
+        "supporting_backbones": [
+          "tree"
+        ],
+        "reason": "Relation questions should first traverse entity/event links."
+      },
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "tree_ready": true,
+        "graph_ready": true,
+        "qa_ready": true
+      },
+      "hits": [
+        {
+          "source": "event:atom-001",
+          "layer": "event",
+          "score": 4.0,
+          "content": "Gina married_to Alex"
+        },
+        {
+          "source": "entity:Gina",
+          "layer": "entity",
+          "score": 2.5,
+          "content": "name=Gina"
+        },
+        {
+          "source": "event:atom-000",
+          "layer": "event",
+          "score": 1.8,
+          "content": "Gina joined Figma"
+        },
+        {
+          "source": "event:atom-002",
+          "layer": "event",
+          "score": 1.8,
+          "content": "Nora helped Gina"
+        },
+        {
+          "source": "event:atom-003",
+          "layer": "event",
+          "score": 1.8,
+          "content": "Gina left Figma"
+        },
+        {
+          "source": "event:atom-004",
+          "layer": "event",
+          "score": 1.8,
+          "content": "Gina signed Lisbon lease"
+        }
+      ]
+    },
+    {
+      "query": "谁帮助 Gina 准备签证清单？",
+      "plan": {
+        "family": "relational",
+        "primary_backbone": "graph",
+        "supporting_backbones": [
+          "tree"
+        ],
+        "reason": "Relation questions should first traverse entity/event links."
+      },
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "tree_ready": true,
+        "graph_ready": true,
+        "qa_ready": true
+      },
+      "hits": [
+        {
+          "source": "event:atom-002",
+          "layer": "event",
+          "score": 3.8,
+          "content": "Nora helped Gina"
+        },
+        {
+          "source": "fact:atom-002",
+          "layer": "fact",
+          "score": 3.0,
+          "content": "Nora helped Gina prepare a visa checklist."
+        },
+        {
+          "source": "entity:Gina",
+          "layer": "entity",
+          "score": 2.5,
+          "content": "name=Gina"
+        },
+        {
+          "source": "event:atom-000",
+          "layer": "event",
+          "score": 1.8,
+          "content": "Gina joined Figma"
+        },
+        {
+          "source": "event:atom-001",
+          "layer": "event",
+          "score": 1.8,
+          "content": "Gina married_to Alex"
+        },
+        {
+          "source": "event:atom-003",
+          "layer": "event",
+          "score": 1.8,
+          "content": "Gina left Figma"
+        }
+      ]
+    },
+    {
+      "query": "Gina 在签了 Lisbon lease 之后计划做什么？",
+      "plan": {
+        "family": "temporal_relational",
+        "primary_backbone": "graph",
+        "supporting_backbones": [
+          "tree"
+        ],
+        "reason": "Order-sensitive relation questions need event graph plus chronology support."
+      },
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "tree_ready": true,
+        "graph_ready": true,
+        "qa_ready": true
+      },
+      "hits": [
+        {
+          "source": "event:atom-004",
+          "layer": "event",
+          "score": 5.0,
+          "content": "Gina signed Lisbon lease"
+        },
+        {
+          "source": "tree:day:2023-04-03",
+          "layer": "tree",
+          "score": 3.05,
+          "content": "DAY 2023-04-03\n- 2023-04-03: Gina 在 2023-04-03 签了 Lisbon lease。"
+        },
+        {
+          "source": "tree:month:2023-04",
+          "layer": "tree",
+          "score": 3.05,
+          "content": "MONTH 2023-04\n- 2023-04-03: Gina 在 2023-04-03 签了 Lisbon lease。\n- 2023-04: Gina 在 2023-04 计划做 design studio。"
+        },
+        {
+          "source": "tree:year:2023",
+          "layer": "tree",
+          "score": 3.05,
+          "content": "YEAR 2023\n- 2023-01-12: Gina 于 2023-01-12 加入了 Figma。\n- 2023-02-18: Gina 于 2023-02-18 结婚，对方是 Alex。\n- 2023-03-23: Nora helped Gina prepare a visa checklist.\n- 2023-03-04: Gina 于 2023-03-04 离开了 Figma。\n- 2023-04-03: Gina 在 2023-04-03 签了 Lisbon lease。\n- 2023-04: Gina 在 2023-04 计划做 design studio。"
+        },
+        {
+          "source": "event:atom-000",
+          "layer": "event",
+          "score": 3.0,
+          "content": "Gina joined Figma"
+        },
+        {
+          "source": "event:atom-001",
+          "layer": "event",
+          "score": 3.0,
+          "content": "Gina married_to Alex"
+        }
+      ]
+    }
+  ]
+}

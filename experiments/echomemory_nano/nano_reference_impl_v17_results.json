@@ -1,0 +1,151 @@
+{
+  "summary": {
+    "total_cases": 6,
+    "passed_cases": 6,
+    "qa_ready": true,
+    "observation_count": 6,
+    "atom_count": 7,
+    "dossier_count": 4,
+    "temporal_block_count": 9,
+    "graph_node_count": 20,
+    "graph_edge_count": 27
+  },
+  "readiness": {
+    "persisted": true,
+    "atoms_ready": true,
+    "dossier_ready": true,
+    "temporal_ready": true,
+    "graph_ready": true,
+    "qa_ready": true,
+    "updated_at": "2026-04-14T09:00:00"
+  },
+  "cases": [
+    {
+      "case_id": "temporal_visa",
+      "family": "temporal",
+      "query": "When did Maya start the visa paperwork?",
+      "query_time": "2026-03-20",
+      "expected_keywords": [
+        "2026-03-02"
+      ],
+      "answer": "2026-03-02",
+      "contract_ok": true,
+      "second_pass_sources": [
+        "graph",
+        "atom"
+      ],
+      "passed": true,
+      "present_layers": [
+        "event",
+        "event_time",
+        "fact",
+        "graph",
+        "temporal_tree"
+      ],
+      "missing_layers": []
+    },
+    {
+      "case_id": "relational_help",
+      "family": "relational",
+      "query": "Who helped Maya with the visa checklist?",
+      "query_time": "2026-03-20",
+      "expected_keywords": [
+        "Nora helped Maya"
+      ],
+      "answer": "Nora helped Maya with the visa checklist on 2026-03-03.",
+      "contract_ok": true,
+      "second_pass_sources": [
+        "atom"
+      ],
+      "passed": true,
+      "present_layers": [
+        "event",
+        "event_time",
+        "fact",
+        "graph",
+        "path_grounding"
+      ],
+      "missing_layers": []
+    },
+    {
+      "case_id": "visual_address",
+      "family": "visual",
+      "query": "What address was shown in the lease screenshot?",
+      "query_time": "2026-03-20",
+      "expected_keywords": [
+        "Rua Augusta 14"
+      ],
+      "answer": "Rua Augusta 14, Lisbon",
+      "contract_ok": true,
+      "second_pass_sources": [
+        "atom"
+      ],
+      "passed": true,
+      "present_layers": [
+        "event",
+        "event_time",
+        "fact",
+        "graph",
+        "image_evidence"
+      ],
+      "missing_layers": []
+    },
+    {
+      "case_id": "longitudinal_pref",
+      "family": "longitudinal",
+      "query": "What is Maya's latest preference now?",
+      "query_time": "2026-04-10",
+      "expected_keywords": [
+        "2026-04-10",
+        "coffee"
+      ],
+      "answer": "2026-04-10: Maya prefers coffee. [active]",
+      "contract_ok": true,
+      "second_pass_sources": [
+        "atom"
+      ],
+      "passed": true,
+      "present_layers": [
+        "event_time",
+        "fact",
+        "topic_dossier"
+      ],
+      "missing_layers": []
+    },
+    {
+      "case_id": "conflict_badge",
+      "family": "state",
+      "query": "What is Kai's badge number?",
+      "query_time": "2026-04-14",
+      "expected_keywords": [
+        "unknown_conflict"
+      ],
+      "answer": "unknown_conflict",
+      "contract_ok": true,
+      "second_pass_sources": [],
+      "passed": true,
+      "present_layers": [
+        "event_time",
+        "fact"
+      ],
+      "missing_layers": []
+    },
+    {
+      "case_id": "readiness",
+      "family": "readiness",
+      "query": "Can the system answer now?",
+      "query_time": "2026-04-14",
+      "expected_keywords": [
+        "ready"
+      ],
+      "answer": "ready",
+      "contract_ok": true,
+      "second_pass_sources": [],
+      "passed": true,
+      "present_layers": [
+        "readiness"
+      ],
+      "missing_layers": []
+    }
+  ]
+}

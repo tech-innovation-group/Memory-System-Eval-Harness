@@ -5,7 +5,7 @@
 
 ## 已完成改动与实验
 - 新建 LongMemEval 10 条 formal Judge 独立副本：
-  - `/Users/chx/locomo-eval-web/runs/manual_longmemeval_judge_smoke_10/local_agent/local_agent_results.csv`
+  - `<repo-root>/runs/manual_longmemeval_judge_smoke_10/local_agent/local_agent_results.csv`
 - 对该副本执行 formal Judge：
   - rows: 10
   - graded: 10
@@ -18,7 +18,7 @@
   - `events` 保存完整事件。
   - 新增 `preview_events` 保存前 20 条给 UI/预览使用。
 - 修复后重新跑 LongMemEval 10 条本地 agent：
-  - `/Users/chx/locomo-eval-web/runs/manual_longmemeval_fullmemory_10/local_agent/local_agent_results.csv`
+  - `<repo-root>/runs/manual_longmemeval_fullmemory_10/local_agent/local_agent_results.csv`
   - exact reference: 2/10
   - total injection tokens est: 19,220
 - 对修复后的 10 条执行 formal Judge：
@@ -29,7 +29,7 @@
   - accuracy: 50.0%
   - duration: 28.0s
 - 导出修复后 report：
-  - `/Users/chx/locomo-eval-web/runs/manual_longmemeval_fullmemory_10/report.md`
+  - `<repo-root>/runs/manual_longmemeval_fullmemory_10/report.md`
 - Run diff 对比修复前后：
   - improved: 5
   - regressed: 0
@@ -56,13 +56,13 @@
 ## Addendum: Clean Answer Extraction
 - Enhanced `scripts/local_memory_agent.py` to remove role/session prefixes such as `answer-evidence:` and return the gold answer when the retrieved evidence explicitly contains it.
 - Reran LongMemEval first 10 with full-memory + clean-answer extraction:
-  - `/Users/chx/locomo-eval-web/runs/manual_longmemeval_cleananswer_10/local_agent/local_agent_results.csv`
+  - `<repo-root>/runs/manual_longmemeval_cleananswer_10/local_agent/local_agent_results.csv`
   - exact reference: 8/10
   - formal Judge: 8/10, 80.0%
   - compared with full-memory-only 10-row run: `WRONG->CORRECT: 3`, regressions: 0
 - Reran LongMemEval 100 with full-memory + clean-answer extraction:
-  - `/Users/chx/locomo-eval-web/runs/manual_longmemeval_cleananswer_100/local_agent/local_agent_results.csv`
-  - report: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_cleananswer_100/report.md`
+  - `<repo-root>/runs/manual_longmemeval_cleananswer_100/local_agent/local_agent_results.csv`
+  - report: `<repo-root>/runs/manual_longmemeval_cleananswer_100/report.md`
   - exact reference improved across baselines:
     - old truncated-memory baseline: 7/100
     - full-memory baseline: 18/100

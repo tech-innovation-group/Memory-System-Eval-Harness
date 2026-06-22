@@ -18,6 +18,13 @@ def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def same_path_text(left: str, right: str) -> bool:
+    try:
+        return Path(str(left or "")).expanduser().resolve() == Path(str(right or "")).expanduser().resolve()
+    except Exception:
+        return str(left or "").strip() == str(right or "").strip()
+
+
 def agent_type_for(kind: str, payload: dict[str, Any] | None = None) -> str:
     payload = payload or {}
     explicit = str(payload.get("agent_type") or "")
@@ -34,8 +41,12 @@ def agent_type_for(kind: str, payload: dict[str, Any] | None = None) -> str:
         return "echomemory_memory_qa"
     if kind == "openviking_generic_qa":
         return "openviking_generic_qa"
+    if kind == "echomemory_generic_qa":
+        return "echomemory_generic_qa"
     if kind in {"openviking_qa_retry_failed", "openviking_qa_retry_missing"}:
         return "memorybench_agent"
+    if kind == "echomemory_qa_retry_failed":
+        return "echomemory_memory_qa"
     if kind == "openviking_import":
         return "openviking_commit_import"
     if kind == "echomemory_import":
@@ -122,6 +133,7 @@ def _csv_output_rank(path: Path) -> tuple[int, float]:
         "distributed_results.csv",
         "chenmo_results.csv",
         "openviking_generic_qa_results.csv",
+        "echomemory_generic_qa_results.csv",
     }
     if name == "judge_snapshot_full81.csv":
         score = 120
@@ -138,7 +150,104 @@ def _csv_output_rank(path: Path) -> tuple[int, float]:
     return score, path.stat().st_mtime
 
 
-def run_record(run_dir: Path, active_run_ids: set[str] | None = None) -> dict[str, Any] | None:
+def _compact_summary_for_list(summary: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(summary, dict):
+        return {}
+    summary_json = summary.get("summary_json") if isinstance(summary.get("summary_json"), dict) else {}
+    compact_summary_json_keys = [
+        "dataset_format",
+        "sample",
+        "account",
+        "workspace",
+        "backend",
+        "prompt_mode",
+        "vikingbot_prompt_aligned",
+        "answer_model",
+        "judge_model",
+        "top_k",
+        "tool_search_limit",
+        "max_iterations",
+        "retrieval_mode",
+        "judge_latest_accuracy",
+        "judge_latest_graded",
+        "judge_latest_correct",
+        "judge_latest_wrong",
+    ]
+    compact = {
+        key: summary.get(key)
+        for key in [
+            "rows",
+            "graded",
+            "correct",
+            "wrong",
+            "accuracy",
+            "result_counts",
+            "simple_counts",
+            "simple_graded",
+            "simple_correct",
+            "simple_accuracy",
+            "exact_match_reference",
+            "api_errors",
+            "avg_time",
+            "archive_fallback_total",
+            "avg_archive_fallback_count",
+            "memory_hit_total",
+            "avg_memory_hit_count",
+            "retrieval_tokens_est_total",
+            "avg_retrieval_tokens_est",
+            "answer_total_tokens",
+            "avg_answer_total_tokens",
+            "health_counts",
+            "retrieval_status_counts",
+            "answer_status_counts",
+            "model_status_counts",
+            "model_error_counts",
+            "model_ok_count",
+            "model_failed_count",
+            "rows_with_model_retries",
+            "model_retry_total",
+            "model_rate_limited_count",
+            "iteration_total",
+            "avg_iteration",
+            "tool_call_total",
+            "tool_call_rows",
+            "tool_name_counts",
+            "prompt_mode",
+            "vikingbot_prompt_aligned",
+            "group_chat",
+            "memory_user_strategy",
+            "initial_agent_memory_enabled",
+            "vikingbot_identity_mode",
+            "vikingbot_channel",
+            "openviking_tool_loop_enabled",
+            "openviking_tool_set",
+            "openviking_content_read_enabled",
+            "max_iterations",
+            "answer_failed_count",
+            "answer_empty_or_unknown_count",
+            "unknown_response_count",
+            "empty_response_count",
+            "retrieval_ok_count",
+            "retrieval_error_rows",
+            "retryable_failed_rows",
+            "retryable_failed_questions",
+            "retryable_failed_question_ids",
+            "categories",
+            "samples",
+            "summary_skipped",
+            "summary_skip_reason",
+        ]
+        if key in summary
+    }
+    compact["summary_json"] = {
+        key: summary_json.get(key)
+        for key in compact_summary_json_keys
+        if key in summary_json
+    }
+    return compact
+
+
+def run_record(run_dir: Path, active_run_ids: set[str] | None = None, compact: bool = False) -> dict[str, Any] | None:
     manifest_path = run_dir / "manifest.json"
     if manifest_path.exists():
         try:
@@ -163,7 +272,13 @@ def run_record(run_dir: Path, active_run_ids: set[str] | None = None) -> dict[st
         json_summary = report_service.parse_json_run_summary(output_path)
         if json_summary:
             summary = json_summary
-    if output_path and output_path.exists() and output_path.suffix.lower() == ".csv":
+    if compact and output_path and output_path.exists() and output_path.suffix.lower() == ".csv":
+        if not summary:
+            summary = {
+                "summary_skipped": True,
+                "summary_skip_reason": "compact run list skips CSV parsing; open run detail/report for full metrics.",
+            }
+    if (not compact) and output_path and output_path.exists() and output_path.suffix.lower() == ".csv":
         try:
             csv_size = output_path.stat().st_size
         except OSError:
@@ -265,7 +380,7 @@ def run_record(run_dir: Path, active_run_ids: set[str] | None = None) -> dict[st
         "output_file": output_file,
         "log_file": manifest.get("log_file") or str(run_dir / "run.log"),
         "manifest_file": str(manifest_path) if manifest_path.exists() else "",
-        "summary": summary,
+        "summary": _compact_summary_for_list(summary) if compact else summary,
         "run_dir": str(run_dir),
         "account": account,
         "workspace": workspace,
@@ -278,6 +393,7 @@ def list_runs(
     query: str = "",
     status: str = "all",
     active_run_ids: set[str] | None = None,
+    compact: bool = False,
 ) -> list[dict[str, Any]]:
     if not output_dir.exists():
         return []
@@ -300,7 +416,7 @@ def list_runs(
                     manifest_text = ""
             if query_l not in manifest_text:
                 continue
-        record = run_record(path, active_run_ids)
+        record = run_record(path, active_run_ids, compact=compact)
         if not record:
             continue
         haystack = " ".join(str(record.get(key, "")) for key in ["id", "name", "kind", "status", "output_file", "run_dir"]).lower()
@@ -430,9 +546,10 @@ def run_compare_row(run_dir: Path) -> dict[str, Any]:
     archive_fallback = _summary_metric(summary, summary_json, "archive_fallback_enabled")
     memory_file_read = _summary_metric(summary, summary_json, "memory_file_read_enabled")
     prompt_mode = _summary_metric(summary, summary_json, "prompt_mode")
-    openviking_tool_loop = _summary_metric(summary, summary_json, "openviking_tool_loop_enabled")
-    openviking_tool_set = _summary_metric(summary, summary_json, "openviking_tool_set")
-    openviking_content_read = _summary_metric(summary, summary_json, "openviking_content_read_enabled")
+    tool_loop_metric = _summary_metric(summary, summary_json, "memory_tool_loop_enabled", "openviking_tool_loop_enabled")
+    tool_set_metric = _summary_metric(summary, summary_json, "memory_tool_set", "openviking_tool_set")
+    content_read_metric = _summary_metric(summary, summary_json, "memory_content_read_enabled", "openviking_content_read_enabled")
+    retrieval_mode_metric = _summary_metric(summary, summary_json, "retrieval_mode")
     vikingboat_profile = _summary_metric(summary, summary_json, "vikingboat_alignment_profile")
     alignment_backend_route = _summary_metric(summary, summary_json, "alignment_backend_route", "backend_route")
     vikingbot_prompt_aligned = _summary_metric(summary, summary_json, "vikingbot_prompt_aligned")
@@ -451,6 +568,31 @@ def run_compare_row(run_dir: Path) -> dict[str, Any]:
         _first_value(config.get("top_k"), _command_option(command, "top-k"), config.get("chatTopK")),
         effective_prompt_mode,
     )
+    workspace_value = _first_value(
+        config.get("workspace"),
+        config.get("openviking_workspace"),
+        _command_option(command, "workspace"),
+        summary_json.get("workspace"),
+        summary_json.get("openviking_workspace"),
+        record.get("workspace"),
+    )
+    account_value = _first_value(config.get("account"), _command_option(command, "account"), record.get("account"))
+    injection_tokens = _summary_metric(summary, summary_json, "import_total_tokens")
+    if injection_tokens in ("", None) and workspace_value and account_value:
+        root = run_dir.parent
+        for import_record in list_runs(root, limit=200, status="all", compact=True):
+            if str(import_record.get("kind") or "") not in {"openviking_import", "echomemory_import"}:
+                continue
+            if str(import_record.get("account") or "") != str(account_value):
+                continue
+            import_workspace = str(import_record.get("workspace") or "")
+            if import_workspace and not same_path_text(import_workspace, str(workspace_value)):
+                continue
+            import_summary = import_record.get("summary") or {}
+            import_summary_json = import_summary.get("summary_json") or {}
+            injection_tokens = _summary_metric(import_summary, import_summary_json, "import_total_tokens")
+            if injection_tokens not in ("", None):
+                break
     return {
         "id": record.get("id") or run_dir.name,
         "name": record.get("name") or run_dir.name,
@@ -490,18 +632,49 @@ def run_compare_row(run_dir: Path) -> dict[str, Any]:
         "initial_score_threshold": _first_value(config.get("initial_score_threshold"), _command_option(command, "initial-score-threshold"), initial_score_threshold),
         "tool_search_limit": _first_value(config.get("tool_search_limit"), _command_option(command, "tool-search-limit"), tool_search_limit),
         "tool_min_score": _first_value(config.get("tool_min_score"), _command_option(command, "tool-min-score"), tool_min_score),
-        "openviking_tool_set": _first_value(config.get("openviking_tool_set"), _command_option(command, "openviking-tool-set"), openviking_tool_set),
-        "openviking_tool_loop": openviking_tool_loop if openviking_tool_loop != "" else (
-            False if _command_has(command, "no-openviking-tool-loop") else True if _command_has(command, "openviking-tool-loop") else config.get("openviking_tool_loop")
+        "memory_tool_set": _first_value(
+            config.get("memory_tool_set"),
+            config.get("tool_set"),
+            config.get("openviking_tool_set"),
+            _command_option(command, "tool-set"),
+            _command_option(command, "openviking-tool-set"),
+            tool_set_metric,
         ),
-        "openviking_content_read": openviking_content_read if openviking_content_read != "" else (
-            False if _command_has(command, "no-read-openviking-content") else True if _command_has(command, "read-openviking-content") else config.get("read_openviking_content")
+        "openviking_tool_set": _first_value(
+            config.get("memory_tool_set"),
+            config.get("tool_set"),
+            config.get("openviking_tool_set"),
+            _command_option(command, "tool-set"),
+            _command_option(command, "openviking-tool-set"),
+            tool_set_metric,
+        ),
+        "memory_tool_loop_enabled": tool_loop_metric if tool_loop_metric != "" else (
+            False
+            if _command_has(command, "no-vikingboat-tool-loop")
+            else True
+            if _command_has(command, "vikingboat-tool-loop")
+            else (
+                False
+                if _command_has(command, "no-openviking-tool-loop")
+                else True
+                if _command_has(command, "openviking-tool-loop")
+                else _first_value(config.get("memory_tool_loop_enabled"), config.get("vikingboat_tool_loop"), config.get("openviking_tool_loop"))
+            )
+        ),
+        "openviking_tool_loop": tool_loop_metric if tool_loop_metric != "" else (
+            False if _command_has(command, "no-openviking-tool-loop") else True if _command_has(command, "openviking-tool-loop") else _first_value(config.get("memory_tool_loop_enabled"), config.get("vikingboat_tool_loop"), config.get("openviking_tool_loop"))
+        ),
+        "memory_content_read_enabled": content_read_metric if content_read_metric != "" else (
+            _first_value(config.get("memory_content_read_enabled"), config.get("read_openviking_content"))
+        ),
+        "openviking_content_read": content_read_metric if content_read_metric != "" else (
+            False if _command_has(command, "no-read-openviking-content") else True if _command_has(command, "read-openviking-content") else _first_value(config.get("memory_content_read_enabled"), config.get("read_openviking_content"))
         ),
         "max_iterations": _first_value(config.get("max_iterations"), _command_option(command, "max-iterations"), _summary_metric(summary, summary_json, "max_iterations")),
-        "account": _first_value(config.get("account"), _command_option(command, "account")),
+        "account": account_value,
         "sample": _first_value(config.get("sample"), _command_option(command, "sample")),
         "questions": _first_value(config.get("questions"), _command_option(command, "questions")),
-        "retrieval_mode": _first_value(_summary_metric(summary, summary_json, "retrieval_mode"), "-"),
+        "retrieval_mode": _first_value(config.get("retrieval_mode"), _command_option(command, "retrieval-mode"), retrieval_mode_metric, "-"),
         "query_expansion": query_expansion if query_expansion != "" else (False if _command_has(command, "no-query-expansion") else ""),
         "lexical_fallback": lexical_fallback if lexical_fallback != "" else (False if _command_has(command, "no-lexical-fallback") else ""),
         "archive_fallback": archive_fallback if archive_fallback != "" else (False if _command_has(command, "no-archive-fallback") else ""),
@@ -512,9 +685,9 @@ def run_compare_row(run_dir: Path) -> dict[str, Any]:
         "tool_call_rows": _summary_metric(summary, summary_json, "tool_call_rows"),
         "tool_call_total": _summary_metric(summary, summary_json, "tool_call_total"),
         "tool_name_counts": _compact_count_map(summary.get("tool_name_counts") or summary_json.get("tool_name_counts")),
-        "retrieval_tokens": _summary_metric(summary, summary_json, "retrieval_tokens_est_total", "retrieval_tokens_est"),
+        "retrieval_tokens": "",
         "answer_tokens": _summary_metric(summary, summary_json, "answer_total_tokens"),
-        "injection_tokens": _summary_metric(summary, summary_json, "total_injection_tokens_est"),
+        "injection_tokens": injection_tokens,
         "health": _compact_count_map(summary.get("health_counts") or summary_json.get("health_counts")),
         "config_source": " + ".join(item for item in config_sources if item) or "旧 run 缺配置",
         "output_file": record.get("output_file") or "",
@@ -575,7 +748,7 @@ def _native_openviking_candidate_key(row: dict[str, Any]) -> tuple[int, int, int
 
 def native_openviking_candidates(output_dir: Path, limit: int = 12) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
-    for record in list_runs(output_dir, 10000, "", "all"):
+    for record in list_runs(output_dir, 10000, "", "all", compact=True):
         run_dir_text = str(record.get("run_dir") or "")
         if not run_dir_text:
             continue
@@ -696,10 +869,81 @@ def qa_diagnostics(path: Path, dataset_path: Path | None = None, sample: str = "
         if len(group) > 1:
             duplicate_question_ids.append(qid)
 
+    summary_json = summary.get("summary_json") if isinstance(summary.get("summary_json"), dict) else {}
+    run_dir = path.parent.parent if len(path.parents) >= 3 else None
+    run_log_diagnostics = tail_file(run_dir / "run.log", 80000) if run_dir and (run_dir / "run.log").exists() else {}
+    retry_history_path = Path(f"{path}.retry_failed_history.json")
+    try:
+        retry_history = read_json(retry_history_path) if retry_history_path.exists() else {}
+    except Exception:
+        retry_history = {}
+    retry_latest = retry_history.get("latest") if isinstance(retry_history, dict) else {}
+
+    def compact_log_info(info: dict[str, Any]) -> dict[str, Any]:
+        rate_limit_count = int(info.get("rate_limit_count") or 0)
+        model_api_error_count = int(info.get("model_api_error_count") or 0)
+        retrieval_retry_count = int(info.get("retrieval_retry_count") or 0)
+        embedding_timeout_count = int(info.get("embedding_timeout_count") or 0)
+        embedding_circuit_breaker_count = int(info.get("embedding_circuit_breaker_count") or 0)
+        generic_failure_count = int(info.get("generic_failure_count") or 0)
+        return {
+            "rate_limit_count": rate_limit_count,
+            "model_api_error_count": model_api_error_count,
+            "retrieval_retry_count": retrieval_retry_count,
+            "embedding_timeout_count": embedding_timeout_count,
+            "embedding_circuit_breaker_count": embedding_circuit_breaker_count,
+            "generic_failure_count": generic_failure_count,
+            "model_issue_count": rate_limit_count + model_api_error_count + retrieval_retry_count + embedding_timeout_count + embedding_circuit_breaker_count,
+            "rate_limit_hits": info.get("rate_limit_hits") or [],
+            "model_api_error_hits": info.get("model_api_error_hits") or [],
+            "retrieval_retry_hits": info.get("retrieval_retry_hits") or [],
+            "embedding_timeout_hits": info.get("embedding_timeout_hits") or [],
+            "embedding_circuit_breaker_hits": info.get("embedding_circuit_breaker_hits") or [],
+            "generic_failure_hits": info.get("generic_failure_hits") or [],
+        }
+
+    def latest_import_run() -> dict[str, Any] | None:
+        workspace = str(summary_json.get("workspace") or "").strip()
+        account = str(summary_json.get("account") or "").strip() or "default"
+        backend = str(summary_json.get("backend") or "").strip().lower()
+        if not workspace or backend not in {"openviking", "echomemory"}:
+            return None
+        root = run_dir.parent if run_dir else path.parent.parent.parent if len(path.parents) >= 4 else None
+        if not root or not root.exists():
+            return None
+        target_kind = f"{backend}_import"
+        for record in list_runs(root, limit=200, status="all", compact=True):
+            if str(record.get("kind") or "") != target_kind:
+                continue
+            if account and str(record.get("account") or "") != account:
+                continue
+            if workspace and not same_path_text(str(record.get("workspace") or ""), workspace):
+                continue
+            return record
+        return None
+
+    import_run = latest_import_run()
+    import_log_diagnostics = {}
+    if import_run:
+        import_log_path = Path(str(import_run.get("log_file") or "")).expanduser()
+        if import_log_path.exists():
+            import_log_diagnostics = compact_log_info(tail_file(import_log_path, 80000))
+
+    qa_log_diagnostics = compact_log_info(run_log_diagnostics) if run_log_diagnostics else {}
+    automatic_retry = {
+        "qa_model_retry_rows": int(summary.get("rows_with_model_retries") or summary_json.get("rows_with_model_retries") or 0),
+        "qa_model_retry_total": int(summary.get("model_retry_total") or summary_json.get("model_retry_total") or 0),
+        "qa_rate_limited_rows": int(summary.get("model_rate_limited_count") or summary_json.get("model_rate_limited_count") or 0),
+        "qa_retrieval_error_rows": int(summary.get("retrieval_error_rows") or summary_json.get("retrieval_error_rows") or 0),
+        "qa_retryable_failed_rows": int(summary.get("retryable_failed_rows") or 0),
+        "qa_retryable_failed_questions": int(summary.get("retryable_failed_questions") or 0),
+    }
+
     diagnostics: dict[str, Any] = {
         "input": str(path),
         "rows": len(rows),
         "summary": summary,
+        "summary_json": summary_json,
         "unique_question_ids": len(question_rows),
         "duplicate_question_ids_count": len(duplicate_question_ids),
         "duplicate_question_ids": duplicate_question_ids,
@@ -719,6 +963,24 @@ def qa_diagnostics(path: Path, dataset_path: Path | None = None, sample: str = "
             }
             for row in retryable_rows[:12]
         ],
+        "retry_history_path": str(retry_history_path),
+        "qa_run": {
+            "run_dir": str(run_dir) if run_dir else "",
+            "log_file": str(run_dir / "run.log") if run_dir else "",
+            "log_diagnostics": qa_log_diagnostics,
+        },
+        "related_import": {
+            "kind": import_run.get("kind") if import_run else "",
+            "run_dir": import_run.get("run_dir") if import_run else "",
+            "log_file": import_run.get("log_file") if import_run else "",
+            "workspace": import_run.get("workspace") if import_run else "",
+            "account": import_run.get("account") if import_run else "",
+            "summary": import_run.get("summary") if import_run else {},
+            "log_diagnostics": import_log_diagnostics,
+        } if import_run else {},
+        "automatic_retry": automatic_retry,
+        "retry_history": retry_history,
+        "retry_history_latest": retry_latest if isinstance(retry_latest, dict) else {},
     }
 
     if dataset_path and dataset_path.exists():
@@ -898,10 +1160,23 @@ def tail_file(path: Path, limit: int = 12000) -> dict[str, Any]:
         "embedding_circuit_breaker_count": 0,
         "generic_failure_hits": [],
         "generic_failure_count": 0,
+        "token_usage": {},
     }
     if not path.exists():
         return empty
-    data = path.read_bytes()
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return empty
+    scan_limit = max(limit * 24, 512_000)
+    read_size = min(size, scan_limit)
+    try:
+        with path.open("rb") as f:
+            if read_size < size:
+                f.seek(size - read_size)
+            data = f.read()
+    except OSError:
+        return empty
     text = data[-limit:].decode("utf-8", errors="replace")
     full_text = data.decode("utf-8", errors="replace")
     hits = []
@@ -910,6 +1185,15 @@ def tail_file(path: Path, limit: int = 12000) -> dict[str, Any]:
     embedding_timeout_hits = []
     embedding_circuit_breaker_hits = []
     generic_failure_hits = []
+    llm_input_tokens = 0
+    llm_output_tokens = 0
+    llm_total_tokens = 0
+    llm_call_count = 0
+    call_site_usage: dict[str, dict[str, int]] = {}
+    llm_line_pattern = re.compile(
+        r"\[LLM\]\s+call_site=(?P<call_site>[a-zA-Z0-9_/-]+).*?\binput=(?P<input>\d+)\s+output=(?P<output>\d+)\s+total=(?P<total>\d+)",
+        re.I,
+    )
     patterns = [
         r"rate limit",
         r"http\s*429",
@@ -923,9 +1207,37 @@ def tail_file(path: Path, limit: int = 12000) -> dict[str, Any]:
         r"请求过多",
     ]
     for line in full_text.splitlines():
+        llm_match = llm_line_pattern.search(line)
+        if llm_match:
+            call_site = str(llm_match.group("call_site") or "").strip().lower() or "unknown"
+            input_tokens = int(llm_match.group("input") or 0)
+            output_tokens = int(llm_match.group("output") or 0)
+            total_tokens = int(llm_match.group("total") or 0)
+            llm_input_tokens += input_tokens
+            llm_output_tokens += output_tokens
+            llm_total_tokens += total_tokens
+            llm_call_count += 1
+            bucket = call_site_usage.setdefault(
+                call_site,
+                {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "call_count": 0},
+            )
+            bucket["input_tokens"] += input_tokens
+            bucket["output_tokens"] += output_tokens
+            bucket["total_tokens"] += total_tokens
+            bucket["call_count"] += 1
         if any(re.search(pattern, line, re.I) for pattern in patterns):
             hits.append(line[-500:])
-        if re.search(r"\[model\]\s+retry=.*\bkind=(api_error|timeout|rate_limited)\b|authentication failed|autherror|401", line, re.I):
+        if re.search(
+            r"(\[model\]\s+retry=.*\bkind=(api_error|timeout|rate_limited)\b"
+            r"|authentication failed"
+            r"|autherror"
+            r"|\bhttp\s*401\b"
+            r"|\bstatus(?:_code)?[=:]\s*401\b"
+            r"|\b401\b.*(?:unauthorized|auth)"
+            r"|(?:unauthorized|auth).*\b401\b)",
+            line,
+            re.I,
+        ):
             model_api_error_hits.append(line[-500:])
         if re.search(r"\[retrieval\]\s+retry=", line, re.I):
             retrieval_retry_hits.append(line[-500:])
@@ -952,6 +1264,40 @@ def tail_file(path: Path, limit: int = 12000) -> dict[str, Any]:
             re.I,
         ):
             generic_failure_hits.append(line[-500:])
+    summary_fields = {}
+    for field in (
+        "answer_prompt_tokens",
+        "answer_completion_tokens",
+        "answer_total_tokens",
+        "retrieval_tokens_est",
+        "retrieval_tokens_est_total",
+        "total_injection_tokens_est",
+        "import_llm_prompt_tokens",
+        "import_llm_completion_tokens",
+        "import_llm_total_tokens",
+        "import_embedding_total_tokens",
+        "import_total_tokens",
+    ):
+        matches = re.findall(rf'"{field}"\s*:\s*(\d+)', full_text)
+        if matches:
+            summary_fields[field] = int(matches[-1])
+    token_usage = {
+        "llm_input_tokens": llm_input_tokens,
+        "llm_output_tokens": llm_output_tokens,
+        "llm_total_tokens": llm_total_tokens,
+        "llm_call_count": llm_call_count,
+        "call_sites": call_site_usage,
+        **summary_fields,
+    }
+    search_usage = call_site_usage.get("search_intent") or {}
+    embedding_usage = call_site_usage.get("embedding") or {}
+    if search_usage:
+        token_usage["search_intent_total_tokens"] = int(search_usage.get("total_tokens") or 0)
+        token_usage["search_intent_call_count"] = int(search_usage.get("call_count") or 0)
+    if embedding_usage:
+        token_usage["embedding_total_tokens"] = int(embedding_usage.get("total_tokens") or 0)
+        token_usage["embedding_call_count"] = int(embedding_usage.get("call_count") or 0)
+    token_usage = {key: value for key, value in token_usage.items() if value not in ({}, None)}
     return {
         "path": str(path),
         "exists": True,
@@ -969,6 +1315,7 @@ def tail_file(path: Path, limit: int = 12000) -> dict[str, Any]:
         "embedding_circuit_breaker_count": len(embedding_circuit_breaker_hits),
         "generic_failure_hits": generic_failure_hits[-20:],
         "generic_failure_count": len(generic_failure_hits),
+        "token_usage": token_usage,
     }
 
 
@@ -997,7 +1344,7 @@ def relevant_memory(run_dir: Path, limit: int = 20) -> dict[str, Any]:
 
 
 def run_detail(run_dir: Path, active_run_ids: set[str] | None = None) -> dict[str, Any] | None:
-    record = run_record(run_dir, active_run_ids)
+    record = run_record(run_dir, active_run_ids, compact=False)
     if not record:
         return None
     manifest = {}
@@ -1035,6 +1382,10 @@ def run_detail(run_dir: Path, active_run_ids: set[str] | None = None) -> dict[st
             "report_html": artifact_info(run_dir / "report.html"),
             "graph_report_html": artifact_info(run_dir / "graph_report.html"),
             "summary": artifact_info(output_dir / "summary.json"),
+            "judge_summary": artifact_info(output_dir / "judge_summary.json"),
+            "judge_snapshot_index": artifact_info(output_dir / "judge_snapshot_index.json"),
+            "judge_snapshot_latest_csv": artifact_info(output_dir / "judge_snapshot_latest.csv"),
+            "judge_snapshot_latest_summary": artifact_info(output_dir / "judge_snapshot_latest_summary.json"),
             "longmemeval_official_summary": artifact_info(output_dir / "longmemeval_official_summary.json"),
             "hotpotqa_answer_summary": artifact_info(output_dir / "hotpotqa_answer_summary.json"),
         },

@@ -1,0 +1,457 @@
+{
+  "memory_dump": {
+    "turns": [
+      {
+        "turn_id": "turn-000",
+        "role": "user",
+        "text": "Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.",
+        "created_at": "2023-01-20"
+      },
+      {
+        "turn_id": "turn-001",
+        "role": "user",
+        "text": "Jon visited Paris on 2023-01-28 and said it was cool.",
+        "created_at": "2023-01-28"
+      },
+      {
+        "turn_id": "turn-002",
+        "role": "user",
+        "text": "Gina visited Rome on 2023-01-30 after her design interview.",
+        "created_at": "2023-01-30"
+      },
+      {
+        "turn_id": "turn-003",
+        "role": "user",
+        "text": "Jon's ideal dance studio is by the water, with natural light and Marley flooring.",
+        "created_at": "2023-02-03"
+      }
+    ],
+    "atoms": [
+      {
+        "atom_id": "atom-000-00",
+        "atom_type": "event",
+        "subject": "Jon",
+        "predicate": "lost_job",
+        "object": "job",
+        "statement": "Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.",
+        "event_time": "2023-01-19",
+        "created_at": "2023-01-20"
+      },
+      {
+        "atom_id": "atom-001-01",
+        "atom_type": "event",
+        "subject": "Jon",
+        "predicate": "visited",
+        "object": "Paris",
+        "statement": "Jon visited Paris on 2023-01-28 and said it was cool.",
+        "event_time": "2023-01-28",
+        "created_at": "2023-01-28"
+      },
+      {
+        "atom_id": "atom-002-02",
+        "atom_type": "event",
+        "subject": "Gina",
+        "predicate": "visited",
+        "object": "Rome",
+        "statement": "Gina visited Rome on 2023-01-30 after her design interview.",
+        "event_time": "2023-01-30",
+        "created_at": "2023-01-30"
+      },
+      {
+        "atom_id": "atom-003-03",
+        "atom_type": "fact",
+        "subject": "Jon",
+        "predicate": "ideal",
+        "object": "by the water, with natural light and Marley flooring.",
+        "statement": "Jon's ideal dance studio is by the water, with natural light and Marley flooring.",
+        "event_time": "2023-02-03",
+        "created_at": "2023-02-03"
+      }
+    ],
+    "nodes": [
+      {
+        "node_id": "fact:atom-000-00",
+        "node_type": "fact",
+        "content": "statement=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.\nsubject=Jon\npredicate=lost_job\nobject=job\nevent_time=2023-01-19\ncreated_at=2023-01-20",
+        "source_atom_id": "atom-000-00",
+        "event_time": "2023-01-19"
+      },
+      {
+        "node_id": "event:atom-000-00",
+        "node_type": "event",
+        "content": "statement=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.\nparticipants=Jon, job\nevent_time=2023-01-19",
+        "source_atom_id": "atom-000-00",
+        "event_time": "2023-01-19"
+      },
+      {
+        "node_id": "entity:Jon",
+        "node_type": "entity",
+        "content": "name=Jon\nfirst_seen_in=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.",
+        "source_atom_id": "atom-000-00",
+        "event_time": ""
+      },
+      {
+        "node_id": "entity:job",
+        "node_type": "entity",
+        "content": "name=job\nfirst_seen_in=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.",
+        "source_atom_id": "atom-000-00",
+        "event_time": ""
+      },
+      {
+        "node_id": "fact:atom-001-01",
+        "node_type": "fact",
+        "content": "statement=Jon visited Paris on 2023-01-28 and said it was cool.\nsubject=Jon\npredicate=visited\nobject=Paris\nevent_time=2023-01-28\ncreated_at=2023-01-28",
+        "source_atom_id": "atom-001-01",
+        "event_time": "2023-01-28"
+      },
+      {
+        "node_id": "event:atom-001-01",
+        "node_type": "event",
+        "content": "statement=Jon visited Paris on 2023-01-28 and said it was cool.\nparticipants=Jon, Paris\nevent_time=2023-01-28",
+        "source_atom_id": "atom-001-01",
+        "event_time": "2023-01-28"
+      },
+      {
+        "node_id": "entity:Paris",
+        "node_type": "entity",
+        "content": "name=Paris\nfirst_seen_in=Jon visited Paris on 2023-01-28 and said it was cool.",
+        "source_atom_id": "atom-001-01",
+        "event_time": ""
+      },
+      {
+        "node_id": "fact:atom-002-02",
+        "node_type": "fact",
+        "content": "statement=Gina visited Rome on 2023-01-30 after her design interview.\nsubject=Gina\npredicate=visited\nobject=Rome\nevent_time=2023-01-30\ncreated_at=2023-01-30",
+        "source_atom_id": "atom-002-02",
+        "event_time": "2023-01-30"
+      },
+      {
+        "node_id": "event:atom-002-02",
+        "node_type": "event",
+        "content": "statement=Gina visited Rome on 2023-01-30 after her design interview.\nparticipants=Gina, Rome\nevent_time=2023-01-30",
+        "source_atom_id": "atom-002-02",
+        "event_time": "2023-01-30"
+      },
+      {
+        "node_id": "entity:Gina",
+        "node_type": "entity",
+        "content": "name=Gina\nfirst_seen_in=Gina visited Rome on 2023-01-30 after her design interview.",
+        "source_atom_id": "atom-002-02",
+        "event_time": ""
+      },
+      {
+        "node_id": "entity:Rome",
+        "node_type": "entity",
+        "content": "name=Rome\nfirst_seen_in=Gina visited Rome on 2023-01-30 after her design interview.",
+        "source_atom_id": "atom-002-02",
+        "event_time": ""
+      },
+      {
+        "node_id": "fact:atom-003-03",
+        "node_type": "fact",
+        "content": "statement=Jon's ideal dance studio is by the water, with natural light and Marley flooring.\nsubject=Jon\npredicate=ideal\nobject=by the water, with natural light and Marley flooring.\nevent_time=2023-02-03\ncreated_at=2023-02-03",
+        "source_atom_id": "atom-003-03",
+        "event_time": "2023-02-03"
+      },
+      {
+        "node_id": "event:atom-003-03",
+        "node_type": "event",
+        "content": "statement=Jon's ideal dance studio is by the water, with natural light and Marley flooring.\nparticipants=Jon, by the water, with natural light and Marley flooring.\nevent_time=2023-02-03",
+        "source_atom_id": "atom-003-03",
+        "event_time": "2023-02-03"
+      },
+      {
+        "node_id": "entity:by the water, with natural light and Marley flooring.",
+        "node_type": "entity",
+        "content": "name=by the water, with natural light and Marley flooring.\nfirst_seen_in=Jon's ideal dance studio is by the water, with natural light and Marley flooring.",
+        "source_atom_id": "atom-003-03",
+        "event_time": ""
+      }
+    ],
+    "edges": [
+      {
+        "edge_id": "event:atom-000-00:evidence_of:fact:atom-000-00",
+        "source_id": "event:atom-000-00",
+        "target_id": "fact:atom-000-00",
+        "relation_type": "evidence_of"
+      },
+      {
+        "edge_id": "entity:Jon:has_fact:atom-000-00",
+        "source_id": "entity:Jon",
+        "target_id": "fact:atom-000-00",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-000-00:involves:Jon",
+        "source_id": "event:atom-000-00",
+        "target_id": "entity:Jon",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "entity:job:has_fact:atom-000-00",
+        "source_id": "entity:job",
+        "target_id": "fact:atom-000-00",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-000-00:involves:job",
+        "source_id": "event:atom-000-00",
+        "target_id": "entity:job",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "event:atom-001-01:evidence_of:fact:atom-001-01",
+        "source_id": "event:atom-001-01",
+        "target_id": "fact:atom-001-01",
+        "relation_type": "evidence_of"
+      },
+      {
+        "edge_id": "entity:Jon:has_fact:atom-001-01",
+        "source_id": "entity:Jon",
+        "target_id": "fact:atom-001-01",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-001-01:involves:Jon",
+        "source_id": "event:atom-001-01",
+        "target_id": "entity:Jon",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "entity:Paris:has_fact:atom-001-01",
+        "source_id": "entity:Paris",
+        "target_id": "fact:atom-001-01",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-001-01:involves:Paris",
+        "source_id": "event:atom-001-01",
+        "target_id": "entity:Paris",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "event:atom-002-02:evidence_of:fact:atom-002-02",
+        "source_id": "event:atom-002-02",
+        "target_id": "fact:atom-002-02",
+        "relation_type": "evidence_of"
+      },
+      {
+        "edge_id": "entity:Gina:has_fact:atom-002-02",
+        "source_id": "entity:Gina",
+        "target_id": "fact:atom-002-02",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-002-02:involves:Gina",
+        "source_id": "event:atom-002-02",
+        "target_id": "entity:Gina",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "entity:Rome:has_fact:atom-002-02",
+        "source_id": "entity:Rome",
+        "target_id": "fact:atom-002-02",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-002-02:involves:Rome",
+        "source_id": "event:atom-002-02",
+        "target_id": "entity:Rome",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "event:atom-003-03:evidence_of:fact:atom-003-03",
+        "source_id": "event:atom-003-03",
+        "target_id": "fact:atom-003-03",
+        "relation_type": "evidence_of"
+      },
+      {
+        "edge_id": "entity:Jon:has_fact:atom-003-03",
+        "source_id": "entity:Jon",
+        "target_id": "fact:atom-003-03",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-003-03:involves:Jon",
+        "source_id": "event:atom-003-03",
+        "target_id": "entity:Jon",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "entity:by the water, with natural light and Marley flooring.:has_fact:atom-003-03",
+        "source_id": "entity:by the water, with natural light and Marley flooring.",
+        "target_id": "fact:atom-003-03",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-003-03:involves:by the water, with natural light and Marley flooring.",
+        "source_id": "event:atom-003-03",
+        "target_id": "entity:by the water, with natural light and Marley flooring.",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "event:atom-000-00:temporal_next:event:atom-001-01",
+        "source_id": "event:atom-000-00",
+        "target_id": "event:atom-001-01",
+        "relation_type": "temporal_next"
+      },
+      {
+        "edge_id": "event:atom-001-01:temporal_next:event:atom-002-02",
+        "source_id": "event:atom-001-01",
+        "target_id": "event:atom-002-02",
+        "relation_type": "temporal_next"
+      },
+      {
+        "edge_id": "event:atom-002-02:temporal_next:event:atom-003-03",
+        "source_id": "event:atom-002-02",
+        "target_id": "event:atom-003-03",
+        "relation_type": "temporal_next"
+      }
+    ]
+  },
+  "temporal_query": {
+    "query": "When did Jon lose his job?",
+    "plan": {
+      "intent": "temporal",
+      "target_layers": [
+        "event",
+        "fact"
+      ],
+      "notes": "Prefer event nodes because they carry explicit event_time."
+    },
+    "hits": [
+      {
+        "score": 5.0,
+        "node_id": "event:atom-000-00",
+        "node_type": "event",
+        "event_time": "2023-01-19",
+        "content": "statement=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.\nparticipants=Jon, job\nevent_time=2023-01-19"
+      },
+      {
+        "score": 3.3,
+        "node_id": "fact:atom-000-00",
+        "node_type": "fact",
+        "event_time": "2023-01-19",
+        "content": "statement=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.\nsubject=Jon\npredicate=lost_job\nobject=job\nevent_time=2023-01-19\ncreated_at=2023-01-20"
+      },
+      {
+        "score": 3.1,
+        "node_id": "event:atom-001-01",
+        "node_type": "event",
+        "event_time": "2023-01-28",
+        "content": "statement=Jon visited Paris on 2023-01-28 and said it was cool.\nparticipants=Jon, Paris\nevent_time=2023-01-28"
+      },
+      {
+        "score": 2.95,
+        "node_id": "event:atom-003-03",
+        "node_type": "event",
+        "event_time": "2023-02-03",
+        "content": "statement=Jon's ideal dance studio is by the water, with natural light and Marley flooring.\nparticipants=Jon, by the water, with natural light and Marley flooring.\nevent_time=2023-02-03"
+      },
+      {
+        "score": 1.3,
+        "node_id": "fact:atom-001-01",
+        "node_type": "fact",
+        "event_time": "2023-01-28",
+        "content": "statement=Jon visited Paris on 2023-01-28 and said it was cool.\nsubject=Jon\npredicate=visited\nobject=Paris\nevent_time=2023-01-28\ncreated_at=2023-01-28"
+      }
+    ]
+  },
+  "relational_query": {
+    "query": "Which city have both Gina and Jon visited?",
+    "plan": {
+      "intent": "relational",
+      "target_layers": [
+        "entity",
+        "event",
+        "fact"
+      ],
+      "notes": "Prefer entity/event paths because relation questions are rarely answerable from summaries alone."
+    },
+    "hits": [
+      {
+        "score": 4.5,
+        "node_id": "event:atom-001-01",
+        "node_type": "event",
+        "event_time": "2023-01-28",
+        "content": "statement=Jon visited Paris on 2023-01-28 and said it was cool.\nparticipants=Jon, Paris\nevent_time=2023-01-28"
+      },
+      {
+        "score": 4.05,
+        "node_id": "entity:Paris",
+        "node_type": "entity",
+        "event_time": "",
+        "content": "name=Paris\nfirst_seen_in=Jon visited Paris on 2023-01-28 and said it was cool."
+      },
+      {
+        "score": 3.55,
+        "node_id": "entity:Jon",
+        "node_type": "entity",
+        "event_time": "",
+        "content": "name=Jon\nfirst_seen_in=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio."
+      },
+      {
+        "score": 3.5,
+        "node_id": "event:atom-002-02",
+        "node_type": "event",
+        "event_time": "2023-01-30",
+        "content": "statement=Gina visited Rome on 2023-01-30 after her design interview.\nparticipants=Gina, Rome\nevent_time=2023-01-30"
+      },
+      {
+        "score": 3.4,
+        "node_id": "event:atom-000-00",
+        "node_type": "event",
+        "event_time": "2023-01-19",
+        "content": "statement=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.\nparticipants=Jon, job\nevent_time=2023-01-19"
+      }
+    ]
+  },
+  "profile_query": {
+    "query": "What does Jon think the ideal dance studio should look like?",
+    "plan": {
+      "intent": "profile",
+      "target_layers": [
+        "fact",
+        "entity"
+      ],
+      "notes": "Preference/profile queries can usually stay on fact/entity layers."
+    },
+    "hits": [
+      {
+        "score": 5.9,
+        "node_id": "fact:atom-003-03",
+        "node_type": "fact",
+        "event_time": "2023-02-03",
+        "content": "statement=Jon's ideal dance studio is by the water, with natural light and Marley flooring.\nsubject=Jon\npredicate=ideal\nobject=by the water, with natural light and Marley flooring.\nevent_time=2023-02-03\ncreated_at=2023-02-03"
+      },
+      {
+        "score": 5.25,
+        "node_id": "entity:by the water, with natural light and Marley flooring.",
+        "node_type": "entity",
+        "event_time": "",
+        "content": "name=by the water, with natural light and Marley flooring.\nfirst_seen_in=Jon's ideal dance studio is by the water, with natural light and Marley flooring."
+      },
+      {
+        "score": 3.9,
+        "node_id": "fact:atom-000-00",
+        "node_type": "fact",
+        "event_time": "2023-01-19",
+        "content": "statement=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio.\nsubject=Jon\npredicate=lost_job\nobject=job\nevent_time=2023-01-19\ncreated_at=2023-01-20"
+      },
+      {
+        "score": 3.75,
+        "node_id": "entity:Jon",
+        "node_type": "entity",
+        "event_time": "",
+        "content": "name=Jon\nfirst_seen_in=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio."
+      },
+      {
+        "score": 3.25,
+        "node_id": "entity:job",
+        "node_type": "entity",
+        "event_time": "",
+        "content": "name=job\nfirst_seen_in=Jon lost his job as a banker on 2023-01-19 and decided to start a dance studio."
+      }
+    ]
+  }
+}

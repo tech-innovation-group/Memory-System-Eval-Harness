@@ -1,0 +1,102 @@
+{
+  "summary": {
+    "total_cases": 5,
+    "aligned_cases": 2,
+    "gap_cases": 3
+  },
+  "cases": [
+    {
+      "case_id": "visual_ocr",
+      "query": "截图里写着什么？",
+      "expected": "image_evidence direct seed and visual diffusion",
+      "current": {
+        "visual_query": true,
+        "force_l2": false,
+        "explicit_graph_memory_type": true,
+        "likely_graph_prefetch": true,
+        "summary": "visual_lookup/visual keywords directly allow graph/image_evidence path"
+      },
+      "target": {
+        "target_mode": "graph-first visual",
+        "why": "image_evidence should be the primary seed plane"
+      },
+      "gap": "aligned"
+    },
+    {
+      "case_id": "temporal_date",
+      "query": "When did Gina lose her job?",
+      "expected": "event-first retrieval",
+      "current": {
+        "visual_query": false,
+        "force_l2": false,
+        "explicit_graph_memory_type": false,
+        "likely_graph_prefetch": false,
+        "summary": "default path is still layered retrieval with graph as conditional add-on"
+      },
+      "target": {
+        "target_mode": "graph-first temporal",
+        "why": "event nodes should outrank generic blocks/facts for story-time questions"
+      },
+      "gap": "gap"
+    },
+    {
+      "case_id": "temporal_relation",
+      "query": "Who married Alice and when?",
+      "expected": "event + relation chain",
+      "current": {
+        "visual_query": false,
+        "force_l2": false,
+        "explicit_graph_memory_type": false,
+        "likely_graph_prefetch": false,
+        "summary": "relation-style wording is visible, but current trigger still depends on intent memory_types or sparse L2"
+      },
+      "target": {
+        "target_mode": "graph-first temporal-relational",
+        "why": "event nodes plus relation edges should be the default evidence backbone"
+      },
+      "gap": "gap"
+    },
+    {
+      "case_id": "list_relation",
+      "query": "Which two people were involved in the Seattle wedding?",
+      "expected": "entity/event relation path",
+      "current": {
+        "visual_query": false,
+        "force_l2": false,
+        "explicit_graph_memory_type": false,
+        "likely_graph_prefetch": false,
+        "summary": "relation-style wording is visible, but current trigger still depends on intent memory_types or sparse L2"
+      },
+      "target": {
+        "target_mode": "graph-first relational",
+        "why": "entity/event/fact chains are more faithful than flat lexical matches"
+      },
+      "gap": "gap"
+    },
+    {
+      "case_id": "plan_general",
+      "query": "What does Gina plan to do after spring hiring season?",
+      "expected": "block/fact hybrid is acceptable",
+      "current": {
+        "visual_query": false,
+        "force_l2": false,
+        "explicit_graph_memory_type": false,
+        "likely_graph_prefetch": false,
+        "summary": "default path is still layered retrieval with graph as conditional add-on"
+      },
+      "target": {
+        "target_mode": "hybrid",
+        "why": "general/profile questions can remain mixed block/fact retrieval"
+      },
+      "gap": "aligned"
+    }
+  ],
+  "evidence": {
+    "search_service_path": "/Users/chx/Code/echomemory/echo_memory_v006/echomem/index_engine/search_service.py:106",
+    "search_visual_trigger_line": 833,
+    "search_graph_gate_line": 834,
+    "search_visual_relation_filter_line": 1468,
+    "test_intent_path": "/Users/chx/Code/echomemory/echo_memory_v006/tests/unit/service/test_search_intent.py:185",
+    "test_graph_path": "/Users/chx/Code/echomemory/echo_memory_v006/tests/unit/service/test_search_graph_integration.py:192"
+  }
+}

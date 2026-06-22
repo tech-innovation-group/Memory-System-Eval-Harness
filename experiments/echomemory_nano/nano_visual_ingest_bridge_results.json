@@ -1,0 +1,1882 @@
+{
+  "cases": [
+    {
+      "case_id": "ocr_time",
+      "query": "What time was visible in Gina's screenshot?",
+      "expected_keywords": [
+        "08:42"
+      ],
+      "required_types": [
+        "image_evidence",
+        "fact"
+      ],
+      "note": "OCR-only detail should be invisible if visual ingest never extracted OCR."
+    },
+    {
+      "case_id": "arrival_day_anchor",
+      "query": "What screenshot evidence do we have from Gina's arrival day?",
+      "expected_keywords": [
+        "Roma Termini",
+        "Platform 7"
+      ],
+      "required_types": [
+        "image_evidence",
+        "event"
+      ],
+      "note": "This needs the image node to be linked to the same-day event rather than only caption-matched."
+    },
+    {
+      "case_id": "dashboard_owner",
+      "query": "Whose screenshot showed Revenue 123 Margin 18%?",
+      "expected_keywords": [
+        "Alice"
+      ],
+      "required_types": [
+        "image_evidence",
+        "entity"
+      ],
+      "note": "Owner linkage is a write-side problem, not a query-time reranking trick."
+    },
+    {
+      "case_id": "moodboard_style",
+      "query": "What kind of studio look was shown in Jon's moodboard screenshot?",
+      "expected_keywords": [
+        "waterfront",
+        "natural light",
+        "Marley"
+      ],
+      "required_types": [
+        "image_evidence",
+        "fact"
+      ],
+      "note": "Surface caption helps a little, but the stronger answer needs OCR-like text extracted from the image."
+    },
+    {
+      "case_id": "trip_city_board",
+      "query": "Which station board was visible in Gina's trip screenshot?",
+      "expected_keywords": [
+        "Roma Termini"
+      ],
+      "required_types": [
+        "image_evidence",
+        "fact"
+      ],
+      "note": "A simple lexical visual question should favor the image node itself."
+    },
+    {
+      "case_id": "metrics_visible",
+      "query": "What metrics were visible in the dashboard screenshot?",
+      "expected_keywords": [
+        "Revenue 123",
+        "Margin 18%"
+      ],
+      "required_types": [
+        "image_evidence",
+        "fact"
+      ],
+      "note": "A second OCR-heavy case, to avoid relying on a single example."
+    }
+  ],
+  "results": {
+    "no_visual_ingest": {
+      "mode": "no_visual_ingest",
+      "summary": {
+        "correct": 0,
+        "total": 6,
+        "accuracy": 0.0,
+        "image_nodes": 0,
+        "edges": 13
+      },
+      "rows": [
+        {
+          "case_id": "ocr_time",
+          "query": "What time was visible in Gina's screenshot?",
+          "note": "OCR-only detail should be invisible if visual ingest never extracted OCR.",
+          "expected_keywords": [
+            "08:42"
+          ],
+          "expected_types": [
+            "image_evidence",
+            "fact"
+          ],
+          "result": {
+            "mode": "no_visual_ingest",
+            "query": "What time was visible in Gina's screenshot?",
+            "required_types": [
+              "image_evidence",
+              "fact"
+            ],
+            "hits": [
+              {
+                "node_id": "fact:turn-000",
+                "node_type": "fact",
+                "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+                "event_time": "2026-03-02",
+                "score": 3.0
+              },
+              {
+                "node_id": "event:turn-000",
+                "node_type": "event",
+                "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+                "event_time": "2026-03-02",
+                "score": 3.0
+              },
+              {
+                "node_id": "fact:turn-001",
+                "node_type": "fact",
+                "content": "Jon wanted the studio to feel like a waterfront loft with natural light and Marley flooring.",
+                "event_time": "2026-03-06",
+                "score": 2.0
+              },
+              {
+                "node_id": "fact:turn-002",
+                "node_type": "fact",
+                "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+                "event_time": "2026-03-07",
+                "score": 2.0
+              },
+              {
+                "node_id": "entity:Gina",
+                "node_type": "entity",
+                "content": "name=Gina",
+                "event_time": "",
+                "score": 2.0
+              }
+            ],
+            "present_types": [
+              "fact",
+              "event",
+              "entity"
+            ],
+            "missing_types": [
+              "image_evidence"
+            ],
+            "contract_ok": false
+          },
+          "keyword_ok": false,
+          "contract_ok": false,
+          "passed": false
+        },
+        {
+          "case_id": "arrival_day_anchor",
+          "query": "What screenshot evidence do we have from Gina's arrival day?",
+          "note": "This needs the image node to be linked to the same-day event rather than only caption-matched.",
+          "expected_keywords": [
+            "Roma Termini",
+            "Platform 7"
+          ],
+          "expected_types": [
+            "image_evidence",
+            "event"
+          ],
+          "result": {
+            "mode": "no_visual_ingest",
+            "query": "What screenshot evidence do we have from Gina's arrival day?",
+            "required_types": [
+              "image_evidence",
+              "event"
+            ],
+            "hits": [
+              {
+                "node_id": "event:turn-000",
+                "node_type": "event",
+                "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+                "event_time": "2026-03-02",
+                "score": 2.8
+              },
+              {
+                "node_id": "event:turn-002",
+                "node_type": "event",
+                "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+                "event_time": "2026-03-07",
+                "score": 2.8
+              },
+              {
+                "node_id": "fact:turn-000",
+                "node_type": "fact",
+                "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+                "event_time": "2026-03-02",
+                "score": 2.0
+              },
+              {
+                "node_id": "fact:turn-002",
+                "node_type": "fact",
+                "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+                "event_time": "2026-03-07",
+                "score": 2.0
+              },
+              {
+                "node_id": "event:turn-001",
+                "node_type": "event",
+                "content": "Jon wanted the studio to feel like a waterfront loft with natural light and Marley flooring.",
+                "event_time": "2026-03-06",
+                "score": 1.8
+              }
+            ],
+            "present_types": [
+              "event",
+              "fact"
+            ],
+            "missing_types": [
+              "image_evidence"
+            ],
+            "contract_ok": false
+          },
+          "keyword_ok": false,
+          "contract_ok": false,
+          "passed": false
+        },
+        {
+          "case_id": "dashboard_owner",
+          "query": "Whose screenshot showed Revenue 123 Margin 18%?",
+          "note": "Owner linkage is a write-side problem, not a query-time reranking trick.",
+          "expected_keywords": [
+            "Alice"
+          ],
+          "expected_types": [
+            "image_evidence",
+            "entity"
+          ],
+          "result": {
+            "mode": "no_visual_ingest",
+            "query": "Whose screenshot showed Revenue 123 Margin 18%?",
+            "required_types": [
+              "image_evidence",
+              "entity"
+            ],
+            "hits": [],
+            "present_types": [],
+            "missing_types": [
+              "image_evidence",
+              "entity"
+            ],
+            "contract_ok": false
+          },
+          "keyword_ok": false,
+          "contract_ok": false,
+          "passed": false
+        },
+        {
+          "case_id": "moodboard_style",
+          "query": "What kind of studio look was shown in Jon's moodboard screenshot?",
+          "note": "Surface caption helps a little, but the stronger answer needs OCR-like text extracted from the image.",
+          "expected_keywords": [
+            "waterfront",
+            "natural light",
+            "Marley"
+          ],
+          "expected_types": [
+            "image_evidence",
+            "fact"
+          ],
+          "result": {
+            "mode": "no_visual_ingest",
+            "query": "What kind of studio look was shown in Jon's moodboard screenshot?",
+            "required_types": [
+              "image_evidence",
+              "fact"
+            ],
+            "hits": [
+              {
+                "node_id": "fact:turn-001",
+                "node_type": "fact",
+                "content": "Jon wanted the studio to feel like a waterfront loft with natural light and Marley flooring.",
+                "event_time": "2026-03-06",
+                "score": 5.0
+              },
+              {
+                "node_id": "event:turn-001",
+                "node_type": "event",
+                "content": "Jon wanted the studio to feel like a waterfront loft with natural light and Marley flooring.",
+                "event_time": "2026-03-06",
+                "score": 5.0
+              },
+              {
+                "node_id": "fact:turn-000",
+                "node_type": "fact",
+                "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+                "event_time": "2026-03-02",
+                "score": 2.0
+              },
+              {
+                "node_id": "fact:turn-002",
+                "node_type": "fact",
+                "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+                "event_time": "2026-03-07",
+                "score": 2.0
+              },
+              {
+                "node_id": "event:turn-000",
+                "node_type": "event",
+                "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+                "event_time": "2026-03-02",
+                "score": 2.0
+              }
+            ],
+            "present_types": [
+              "fact",
+              "event"
+            ],
+            "missing_types": [
+              "image_evidence"
+            ],
+            "contract_ok": false
+          },
+          "keyword_ok": true,
+          "contract_ok": false,
+          "passed": false
+        },
+        {
+          "case_id": "trip_city_board",
+          "query": "Which station board was visible in Gina's trip screenshot?",
+          "note": "A simple lexical visual question should favor the image node itself.",
+          "expected_keywords": [
+            "Roma Termini"
+          ],
+          "expected_types": [
+            "image_evidence",
+            "fact"
+          ],
+          "result": {
+            "mode": "no_visual_ingest",
+            "query": "Which station board was visible in Gina's trip screenshot?",
+            "required_types": [
+              "image_evidence",
+              "fact"
+            ],
+            "hits": [
+              {
+                "node_id": "fact:turn-000",
+                "node_type": "fact",
+                "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+                "event_time": "2026-03-02",
+                "score": 3.0
+              },
+              {
+                "node_id": "fact:turn-002",
+                "node_type": "fact",
+                "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+                "event_time": "2026-03-07",
+                "score": 3.0
+              },
+              {
+                "node_id": "event:turn-000",
+                "node_type": "event",
+                "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+                "event_time": "2026-03-02",
+                "score": 3.0
+              },
+              {
+                "node_id": "event:turn-002",
+                "node_type": "event",
+                "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+                "event_time": "2026-03-07",
+                "score": 3.0
+              },
+              {
+                "node_id": "fact:turn-001",
+                "node_type": "fact",
+                "content": "Jon wanted the studio to feel like a waterfront loft with natural light and Marley flooring.",
+                "event_time": "2026-03-06",
+                "score": 2.0
+              }
+            ],
+            "present_types": [
+              "fact",
+              "event"
+            ],
+            "missing_types": [
+              "image_evidence"
+            ],
+            "contract_ok": false
+          },
+          "keyword_ok": false,
+          "contract_ok": false,
+          "passed": false
+        },
+        {
+          "case_id": "metrics_visible",
+          "query": "What metrics were visible in the dashboard screenshot?",
+          "note": "A second OCR-heavy case, to avoid relying on a single example.",
+          "expected_keywords": [
+            "Revenue 123",
+            "Margin 18%"
+          ],
+          "expected_types": [
+            "image_evidence",
+            "fact"
+          ],
+          "result": {
+            "mode": "no_visual_ingest",
+            "query": "What metrics were visible in the dashboard screenshot?",
+            "required_types": [
+              "image_evidence",
+              "fact"
+            ],
+            "hits": [
+              {
+                "node_id": "fact:turn-002",
+                "node_type": "fact",
+                "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+                "event_time": "2026-03-07",
+                "score": 3.0
+              },
+              {
+                "node_id": "event:turn-002",
+                "node_type": "event",
+                "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+                "event_time": "2026-03-07",
+                "score": 3.0
+              },
+              {
+                "node_id": "fact:turn-001",
+                "node_type": "fact",
+                "content": "Jon wanted the studio to feel like a waterfront loft with natural light and Marley flooring.",
+                "event_time": "2026-03-06",
+                "score": 2.0
+              },
+              {
+                "node_id": "event:turn-001",
+                "node_type": "event",
+                "content": "Jon wanted the studio to feel like a waterfront loft with natural light and Marley flooring.",
+                "event_time": "2026-03-06",
+                "score": 2.0
+              },
+              {
+                "node_id": "fact:turn-000",
+                "node_type": "fact",
+                "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+                "event_time": "2026-03-02",
+                "score": 1.0
+              }
+            ],
+            "present_types": [
+              "fact",
+              "event"
+            ],
+            "missing_types": [
+              "image_evidence"
+            ],
+            "contract_ok": false
+          },
+          "keyword_ok": false,
+          "contract_ok": false,
+          "passed": false
+        }
+      ],
+      "memory_snapshot": {
+        "nodes": [
+          {
+            "node_id": "fact:turn-000",
+            "node_type": "fact",
+            "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+            "event_time": "2026-03-02",
+            "source_ref": "turn-000",
+            "metadata": {}
+          },
+          {
+            "node_id": "event:turn-000",
+            "node_type": "event",
+            "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+            "event_time": "2026-03-02",
+            "source_ref": "turn-000",
+            "metadata": {}
+          },
+          {
+            "node_id": "entity:Gina",
+            "node_type": "entity",
+            "content": "name=Gina",
+            "event_time": "",
+            "source_ref": "turn-000",
+            "metadata": {}
+          },
+          {
+            "node_id": "entity:Rome",
+            "node_type": "entity",
+            "content": "name=Rome",
+            "event_time": "",
+            "source_ref": "turn-000",
+            "metadata": {}
+          },
+          {
+            "node_id": "fact:turn-001",
+            "node_type": "fact",
+            "content": "Jon wanted the studio to feel like a waterfront loft with natural light and Marley flooring.",
+            "event_time": "2026-03-06",
+            "source_ref": "turn-001",
+            "metadata": {}
+          },
+          {
+            "node_id": "event:turn-001",
+            "node_type": "event",
+            "content": "Jon wanted the studio to feel like a waterfront loft with natural light and Marley flooring.",
+            "event_time": "2026-03-06",
+            "source_ref": "turn-001",
+            "metadata": {}
+          },
+          {
+            "node_id": "entity:Jon",
+            "node_type": "entity",
+            "content": "name=Jon",
+            "event_time": "",
+            "source_ref": "turn-001",
+            "metadata": {}
+          },
+          {
+            "node_id": "entity:Marley",
+            "node_type": "entity",
+            "content": "name=Marley",
+            "event_time": "",
+            "source_ref": "turn-001",
+            "metadata": {}
+          },
+          {
+            "node_id": "fact:turn-002",
+            "node_type": "fact",
+            "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+            "event_time": "2026-03-07",
+            "source_ref": "turn-002",
+            "metadata": {}
+          },
+          {
+            "node_id": "event:turn-002",
+            "node_type": "event",
+            "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+            "event_time": "2026-03-07",
+            "source_ref": "turn-002",
+            "metadata": {}
+          },
+          {
+            "node_id": "entity:Alice",
+            "node_type": "entity",
+            "content": "name=Alice",
+            "event_time": "",
+            "source_ref": "turn-002",
+            "metadata": {}
+          }
+        ],
+        "edges": [
+          {
+            "source_id": "event:turn-000",
+            "target_id": "fact:turn-000",
+            "relation_type": "evidence_of"
+          },
+          {
+            "source_id": "entity:Gina",
+            "target_id": "fact:turn-000",
+            "relation_type": "has_fact"
+          },
+          {
+            "source_id": "event:turn-000",
+            "target_id": "entity:Gina",
+            "relation_type": "involves"
+          },
+          {
+            "source_id": "entity:Rome",
+            "target_id": "fact:turn-000",
+            "relation_type": "has_fact"
+          },
+          {
+            "source_id": "event:turn-000",
+            "target_id": "entity:Rome",
+            "relation_type": "involves"
+          },
+          {
+            "source_id": "event:turn-001",
+            "target_id": "fact:turn-001",
+            "relation_type": "evidence_of"
+          },
+          {
+            "source_id": "entity:Jon",
+            "target_id": "fact:turn-001",
+            "relation_type": "has_fact"
+          },
+          {
+            "source_id": "event:turn-001",
+            "target_id": "entity:Jon",
+            "relation_type": "involves"
+          },
+          {
+            "source_id": "entity:Marley",
+            "target_id": "fact:turn-001",
+            "relation_type": "has_fact"
+          },
+          {
+            "source_id": "event:turn-001",
+            "target_id": "entity:Marley",
+            "relation_type": "involves"
+          },
+          {
+            "source_id": "event:turn-002",
+            "target_id": "fact:turn-002",
+            "relation_type": "evidence_of"
+          },
+          {
+            "source_id": "entity:Alice",
+            "target_id": "fact:turn-002",
+            "relation_type": "has_fact"
+          },
+          {
+            "source_id": "event:turn-002",
+            "target_id": "entity:Alice",
+            "relation_type": "involves"
+          }
+        ]
+      }
+    },
+    "surface_visual_ingest": {
+      "mode": "surface_visual_ingest",
+      "summary": {
+        "correct": 1,
+        "total": 6,
+        "accuracy": 0.167,
+        "image_nodes": 3,
+        "edges": 13
+      },
+      "rows": [
+        {
+          "case_id": "ocr_time",
+          "query": "What time was visible in Gina's screenshot?",
+          "note": "OCR-only detail should be invisible if visual ingest never extracted OCR.",
+          "expected_keywords": [
+            "08:42"
+          ],
+          "expected_types": [
+            "image_evidence",
+            "fact"
+          ],
+          "result": {
+            "mode": "surface_visual_ingest",
+            "query": "What time was visible in Gina's screenshot?",
+            "required_types": [
+              "image_evidence",
+              "fact"
+            ],
+            "hits": [
+              {
+                "node_id": "image:img-000",
+                "node_type": "image_evidence",
+                "content": "Phone screenshot from Gina's arrival day showing Roma Termini station board.",
+                "event_time": "2026-03-02",
+                "score": 6.2
+              },
+              {
+                "node_id": "image:img-001",
+                "node_type": "image_evidence",
+                "content": "Moodboard screenshot for Jon's studio idea.",
+                "event_time": "2026-03-06",
+                "score": 5.2
+              },
+              {
+                "node_id": "image:img-002",
+                "node_type": "image_evidence",
+                "content": "Finance dashboard screenshot.",
+                "event_time": "2026-03-07",
+                "score": 5.2
+              },
+              {
+                "node_id": "fact:turn-000",
+                "node_type": "fact",
+                "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+                "event_time": "2026-03-02",
+                "score": 3.0
+              },
+              {
+                "node_id": "event:turn-000",
+                "node_type": "event",
+                "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+                "event_time": "2026-03-02",
+                "score": 3.0
+              }
+            ],
+            "present_types": [
+              "image_evidence",
+              "fact",
+              "event"
+            ],
+            "missing_types": [],
+            "contract_ok": true
+          },
+          "keyword_ok": false,
+          "contract_ok": true,
+          "passed": false
+        },
+        {
+          "case_id": "arrival_day_anchor",
+          "query": "What screenshot evidence do we have from Gina's arrival day?",
+          "note": "This needs the image node to be linked to the same-day event rather than only caption-matched.",
+          "expected_keywords": [
+            "Roma Termini",
+            "Platform 7"
+          ],
+          "expected_types": [
+            "image_evidence",
+            "event"
+          ],
+          "result": {
+            "mode": "surface_visual_ingest",
+            "query": "What screenshot evidence do we have from Gina's arrival day?",
+            "required_types": [
+              "image_evidence",
+              "event"
+            ],
+            "hits": [
+              {
+                "node_id": "image:img-000",
+                "node_type": "image_evidence",
+                "content": "Phone screenshot from Gina's arrival day showing Roma Termini station board.",
+                "event_time": "2026-03-02",
+                "score": 8.2
+              },
+              {
+                "node_id": "image:img-001",
+                "node_type": "image_evidence",
+                "content": "Moodboard screenshot for Jon's studio idea.",
+                "event_time": "2026-03-06",
+                "score": 4.2
+              },
+              {
+                "node_id": "image:img-002",
+                "node_type": "image_evidence",
+                "content": "Finance dashboard screenshot.",
+                "event_time": "2026-03-07",
+                "score": 4.2
+              },
+              {
+                "node_id": "event:turn-000",
+                "node_type": "event",
+                "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+                "event_time": "2026-03-02",
+                "score": 2.8
+              },
+              {
+                "node_id": "event:turn-002",
+                "node_type": "event",
+                "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+                "event_time": "2026-03-07",
+                "score": 2.8
+              }
+            ],
+            "present_types": [
+              "image_evidence",
+              "event"
+            ],
+            "missing_types": [],
+            "contract_ok": true
+          },
+          "keyword_ok": false,
+          "contract_ok": true,
+          "passed": false
+        },
+        {
+          "case_id": "dashboard_owner",
+          "query": "Whose screenshot showed Revenue 123 Margin 18%?",
+          "note": "Owner linkage is a write-side problem, not a query-time reranking trick.",
+          "expected_keywords": [
+            "Alice"
+          ],
+          "expected_types": [
+            "image_evidence",
+            "entity"
+          ],
+          "result": {
+            "mode": "surface_visual_ingest",
+            "query": "Whose screenshot showed Revenue 123 Margin 18%?",
+            "required_types": [
+              "image_evidence",
+              "entity"
+            ],
+            "hits": [
+              {
+                "node_id": "image:img-000",
+                "node_type": "image_evidence",
+                "content": "Phone screenshot from Gina's arrival day showing Roma Termini station board.",
+                "event_time": "2026-03-02",
+                "score": 3.2
+              },
+              {
+                "node_id": "image:img-001",
+                "node_type": "image_evidence",
+                "content": "Moodboard screenshot for Jon's studio idea.",
+                "event_time": "2026-03-06",
+                "score": 3.2
+              },
+              {
+                "node_id": "image:img-002",
+                "node_type": "image_evidence",
+                "content": "Finance dashboard screenshot.",
+                "event_time": "2026-03-07",
+                "score": 3.2
+              }
+            ],
+            "present_types": [
+              "image_evidence"
+            ],
+            "missing_types": [
+              "entity"
+            ],
+            "contract_ok": false
+          },
+          "keyword_ok": false,
+          "contract_ok": false,
+          "passed": false
+        },
+        {
+          "case_id": "moodboard_style",
+          "query": "What kind of studio look was shown in Jon's moodboard screenshot?",
+          "note": "Surface caption helps a little, but the stronger answer needs OCR-like text extracted from the image.",
+          "expected_keywords": [
+            "waterfront",
+            "natural light",
+            "Marley"
+          ],
+          "expected_types": [
+            "image_evidence",
+            "fact"
+          ],
+          "result": {
+            "mode": "surface_visual_ingest",
+            "query": "What kind of studio look was shown in Jon's moodboard screenshot?",
+            "required_types": [
+              "image_evidence",
+              "fact"
+            ],
+            "hits": [
+              {
+                "node_id": "image:img-001",
+                "node_type": "image_evidence",
+                "content": "Moodboard screenshot for Jon's studio idea.",
+                "event_time": "2026-03-06",
+                "score": 8.2
+              },
+              {
+                "node_id": "image:img-000",
+                "node_type": "image_evidence",
+                "content": "Phone screenshot from Gina's arrival day showing Roma Termini station board.",
+                "event_time": "2026-03-02",
+                "score": 5.2
+              },
+              {
+                "node_id": "image:img-002",
+                "node_type": "image_evidence",
+                "content": "Finance dashboard screenshot.",
+                "event_time": "2026-03-07",
+                "score": 5.2
+              },
+              {
+                "node_id": "fact:turn-001",
+                "node_type": "fact",
+                "content": "Jon wanted the studio to feel like a waterfront loft with natural light and Marley flooring.",
+                "event_time": "2026-03-06",
+                "score": 5.0
+              },
+              {
+                "node_id": "event:turn-001",
+                "node_type": "event",
+                "content": "Jon wanted the studio to feel like a waterfront loft with natural light and Marley flooring.",
+                "event_time": "2026-03-06",
+                "score": 5.0
+              }
+            ],
+            "present_types": [
+              "image_evidence",
+              "fact",
+              "event"
+            ],
+            "missing_types": [],
+            "contract_ok": true
+          },
+          "keyword_ok": false,
+          "contract_ok": true,
+          "passed": false
+        },
+        {
+          "case_id": "trip_city_board",
+          "query": "Which station board was visible in Gina's trip screenshot?",
+          "note": "A simple lexical visual question should favor the image node itself.",
+          "expected_keywords": [
+            "Roma Termini"
+          ],
+          "expected_types": [
+            "image_evidence",
+            "fact"
+          ],
+          "result": {
+            "mode": "surface_visual_ingest",
+            "query": "Which station board was visible in Gina's trip screenshot?",
+            "required_types": [
+              "image_evidence",
+              "fact"
+            ],
+            "hits": [
+              {
+                "node_id": "image:img-000",
+                "node_type": "image_evidence",
+                "content": "Phone screenshot from Gina's arrival day showing Roma Termini station board.",
+                "event_time": "2026-03-02",
+                "score": 8.2
+              },
+              {
+                "node_id": "image:img-001",
+                "node_type": "image_evidence",
+                "content": "Moodboard screenshot for Jon's studio idea.",
+                "event_time": "2026-03-06",
+                "score": 6.2
+              },
+              {
+                "node_id": "image:img-002",
+                "node_type": "image_evidence",
+                "content": "Finance dashboard screenshot.",
+                "event_time": "2026-03-07",
+                "score": 6.2
+              },
+              {
+                "node_id": "fact:turn-000",
+                "node_type": "fact",
+                "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+                "event_time": "2026-03-02",
+                "score": 3.0
+              },
+              {
+                "node_id": "fact:turn-002",
+                "node_type": "fact",
+                "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+                "event_time": "2026-03-07",
+                "score": 3.0
+              }
+            ],
+            "present_types": [
+              "image_evidence",
+              "fact"
+            ],
+            "missing_types": [],
+            "contract_ok": true
+          },
+          "keyword_ok": true,
+          "contract_ok": true,
+          "passed": true
+        },
+        {
+          "case_id": "metrics_visible",
+          "query": "What metrics were visible in the dashboard screenshot?",
+          "note": "A second OCR-heavy case, to avoid relying on a single example.",
+          "expected_keywords": [
+            "Revenue 123",
+            "Margin 18%"
+          ],
+          "expected_types": [
+            "image_evidence",
+            "fact"
+          ],
+          "result": {
+            "mode": "surface_visual_ingest",
+            "query": "What metrics were visible in the dashboard screenshot?",
+            "required_types": [
+              "image_evidence",
+              "fact"
+            ],
+            "hits": [
+              {
+                "node_id": "image:img-002",
+                "node_type": "image_evidence",
+                "content": "Finance dashboard screenshot.",
+                "event_time": "2026-03-07",
+                "score": 5.2
+              },
+              {
+                "node_id": "image:img-000",
+                "node_type": "image_evidence",
+                "content": "Phone screenshot from Gina's arrival day showing Roma Termini station board.",
+                "event_time": "2026-03-02",
+                "score": 4.2
+              },
+              {
+                "node_id": "image:img-001",
+                "node_type": "image_evidence",
+                "content": "Moodboard screenshot for Jon's studio idea.",
+                "event_time": "2026-03-06",
+                "score": 4.2
+              },
+              {
+                "node_id": "fact:turn-002",
+                "node_type": "fact",
+                "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+                "event_time": "2026-03-07",
+                "score": 3.0
+              },
+              {
+                "node_id": "event:turn-002",
+                "node_type": "event",
+                "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+                "event_time": "2026-03-07",
+                "score": 3.0
+              }
+            ],
+            "present_types": [
+              "image_evidence",
+              "fact",
+              "event"
+            ],
+            "missing_types": [],
+            "contract_ok": true
+          },
+          "keyword_ok": false,
+          "contract_ok": true,
+          "passed": false
+        }
+      ],
+      "memory_snapshot": {
+        "nodes": [
+          {
+            "node_id": "fact:turn-000",
+            "node_type": "fact",
+            "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+            "event_time": "2026-03-02",
+            "source_ref": "turn-000",
+            "metadata": {}
+          },
+          {
+            "node_id": "event:turn-000",
+            "node_type": "event",
+            "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+            "event_time": "2026-03-02",
+            "source_ref": "turn-000",
+            "metadata": {}
+          },
+          {
+            "node_id": "entity:Gina",
+            "node_type": "entity",
+            "content": "name=Gina",
+            "event_time": "",
+            "source_ref": "turn-000",
+            "metadata": {}
+          },
+          {
+            "node_id": "entity:Rome",
+            "node_type": "entity",
+            "content": "name=Rome",
+            "event_time": "",
+            "source_ref": "turn-000",
+            "metadata": {}
+          },
+          {
+            "node_id": "fact:turn-001",
+            "node_type": "fact",
+            "content": "Jon wanted the studio to feel like a waterfront loft with natural light and Marley flooring.",
+            "event_time": "2026-03-06",
+            "source_ref": "turn-001",
+            "metadata": {}
+          },
+          {
+            "node_id": "event:turn-001",
+            "node_type": "event",
+            "content": "Jon wanted the studio to feel like a waterfront loft with natural light and Marley flooring.",
+            "event_time": "2026-03-06",
+            "source_ref": "turn-001",
+            "metadata": {}
+          },
+          {
+            "node_id": "entity:Jon",
+            "node_type": "entity",
+            "content": "name=Jon",
+            "event_time": "",
+            "source_ref": "turn-001",
+            "metadata": {}
+          },
+          {
+            "node_id": "entity:Marley",
+            "node_type": "entity",
+            "content": "name=Marley",
+            "event_time": "",
+            "source_ref": "turn-001",
+            "metadata": {}
+          },
+          {
+            "node_id": "fact:turn-002",
+            "node_type": "fact",
+            "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+            "event_time": "2026-03-07",
+            "source_ref": "turn-002",
+            "metadata": {}
+          },
+          {
+            "node_id": "event:turn-002",
+            "node_type": "event",
+            "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+            "event_time": "2026-03-07",
+            "source_ref": "turn-002",
+            "metadata": {}
+          },
+          {
+            "node_id": "entity:Alice",
+            "node_type": "entity",
+            "content": "name=Alice",
+            "event_time": "",
+            "source_ref": "turn-002",
+            "metadata": {}
+          },
+          {
+            "node_id": "image:img-000",
+            "node_type": "image_evidence",
+            "content": "Phone screenshot from Gina's arrival day showing Roma Termini station board.",
+            "event_time": "2026-03-02",
+            "source_ref": "img-000",
+            "metadata": {
+              "caption": "Phone screenshot from Gina's arrival day showing Roma Termini station board.",
+              "ocr": "",
+              "linked_subject": ""
+            }
+          },
+          {
+            "node_id": "image:img-001",
+            "node_type": "image_evidence",
+            "content": "Moodboard screenshot for Jon's studio idea.",
+            "event_time": "2026-03-06",
+            "source_ref": "img-001",
+            "metadata": {
+              "caption": "Moodboard screenshot for Jon's studio idea.",
+              "ocr": "",
+              "linked_subject": ""
+            }
+          },
+          {
+            "node_id": "image:img-002",
+            "node_type": "image_evidence",
+            "content": "Finance dashboard screenshot.",
+            "event_time": "2026-03-07",
+            "source_ref": "img-002",
+            "metadata": {
+              "caption": "Finance dashboard screenshot.",
+              "ocr": "",
+              "linked_subject": ""
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source_id": "event:turn-000",
+            "target_id": "fact:turn-000",
+            "relation_type": "evidence_of"
+          },
+          {
+            "source_id": "entity:Gina",
+            "target_id": "fact:turn-000",
+            "relation_type": "has_fact"
+          },
+          {
+            "source_id": "event:turn-000",
+            "target_id": "entity:Gina",
+            "relation_type": "involves"
+          },
+          {
+            "source_id": "entity:Rome",
+            "target_id": "fact:turn-000",
+            "relation_type": "has_fact"
+          },
+          {
+            "source_id": "event:turn-000",
+            "target_id": "entity:Rome",
+            "relation_type": "involves"
+          },
+          {
+            "source_id": "event:turn-001",
+            "target_id": "fact:turn-001",
+            "relation_type": "evidence_of"
+          },
+          {
+            "source_id": "entity:Jon",
+            "target_id": "fact:turn-001",
+            "relation_type": "has_fact"
+          },
+          {
+            "source_id": "event:turn-001",
+            "target_id": "entity:Jon",
+            "relation_type": "involves"
+          },
+          {
+            "source_id": "entity:Marley",
+            "target_id": "fact:turn-001",
+            "relation_type": "has_fact"
+          },
+          {
+            "source_id": "event:turn-001",
+            "target_id": "entity:Marley",
+            "relation_type": "involves"
+          },
+          {
+            "source_id": "event:turn-002",
+            "target_id": "fact:turn-002",
+            "relation_type": "evidence_of"
+          },
+          {
+            "source_id": "entity:Alice",
+            "target_id": "fact:turn-002",
+            "relation_type": "has_fact"
+          },
+          {
+            "source_id": "event:turn-002",
+            "target_id": "entity:Alice",
+            "relation_type": "involves"
+          }
+        ]
+      }
+    },
+    "structured_visual_ingest": {
+      "mode": "structured_visual_ingest",
+      "summary": {
+        "correct": 6,
+        "total": 6,
+        "accuracy": 1.0,
+        "image_nodes": 3,
+        "edges": 22
+      },
+      "rows": [
+        {
+          "case_id": "ocr_time",
+          "query": "What time was visible in Gina's screenshot?",
+          "note": "OCR-only detail should be invisible if visual ingest never extracted OCR.",
+          "expected_keywords": [
+            "08:42"
+          ],
+          "expected_types": [
+            "image_evidence",
+            "fact"
+          ],
+          "result": {
+            "mode": "structured_visual_ingest",
+            "query": "What time was visible in Gina's screenshot?",
+            "required_types": [
+              "image_evidence",
+              "fact"
+            ],
+            "hits": [
+              {
+                "node_id": "image:img-000",
+                "node_type": "image_evidence",
+                "content": "Phone screenshot from Gina's arrival day showing Roma Termini station board.\nRoma Termini 08:42 Platform 7\nrome, arrival, station",
+                "event_time": "2026-03-02",
+                "score": 6.2
+              },
+              {
+                "node_id": "image:img-001",
+                "node_type": "image_evidence",
+                "content": "Moodboard screenshot for Jon's studio idea.\nwaterfront loft natural light Marley floor\nstudio, moodboard, interior",
+                "event_time": "2026-03-06",
+                "score": 5.2
+              },
+              {
+                "node_id": "image:img-002",
+                "node_type": "image_evidence",
+                "content": "Finance dashboard screenshot.\nRevenue 123 Margin 18%\nfinance, dashboard, metrics",
+                "event_time": "2026-03-07",
+                "score": 5.2
+              },
+              {
+                "node_id": "fact:turn-000",
+                "node_type": "fact",
+                "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+                "event_time": "2026-03-02",
+                "score": 3.0
+              },
+              {
+                "node_id": "event:turn-000",
+                "node_type": "event",
+                "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+                "event_time": "2026-03-02",
+                "score": 3.0
+              }
+            ],
+            "present_types": [
+              "image_evidence",
+              "fact",
+              "event"
+            ],
+            "missing_types": [],
+            "contract_ok": true
+          },
+          "keyword_ok": true,
+          "contract_ok": true,
+          "passed": true
+        },
+        {
+          "case_id": "arrival_day_anchor",
+          "query": "What screenshot evidence do we have from Gina's arrival day?",
+          "note": "This needs the image node to be linked to the same-day event rather than only caption-matched.",
+          "expected_keywords": [
+            "Roma Termini",
+            "Platform 7"
+          ],
+          "expected_types": [
+            "image_evidence",
+            "event"
+          ],
+          "result": {
+            "mode": "structured_visual_ingest",
+            "query": "What screenshot evidence do we have from Gina's arrival day?",
+            "required_types": [
+              "image_evidence",
+              "event"
+            ],
+            "hits": [
+              {
+                "node_id": "image:img-000",
+                "node_type": "image_evidence",
+                "content": "Phone screenshot from Gina's arrival day showing Roma Termini station board.\nRoma Termini 08:42 Platform 7\nrome, arrival, station",
+                "event_time": "2026-03-02",
+                "score": 8.2
+              },
+              {
+                "node_id": "image:img-001",
+                "node_type": "image_evidence",
+                "content": "Moodboard screenshot for Jon's studio idea.\nwaterfront loft natural light Marley floor\nstudio, moodboard, interior",
+                "event_time": "2026-03-06",
+                "score": 4.2
+              },
+              {
+                "node_id": "image:img-002",
+                "node_type": "image_evidence",
+                "content": "Finance dashboard screenshot.\nRevenue 123 Margin 18%\nfinance, dashboard, metrics",
+                "event_time": "2026-03-07",
+                "score": 4.2
+              },
+              {
+                "node_id": "event:turn-000",
+                "node_type": "event",
+                "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+                "event_time": "2026-03-02",
+                "score": 2.8
+              },
+              {
+                "node_id": "event:turn-002",
+                "node_type": "event",
+                "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+                "event_time": "2026-03-07",
+                "score": 2.8
+              }
+            ],
+            "present_types": [
+              "image_evidence",
+              "event"
+            ],
+            "missing_types": [],
+            "contract_ok": true
+          },
+          "keyword_ok": true,
+          "contract_ok": true,
+          "passed": true
+        },
+        {
+          "case_id": "dashboard_owner",
+          "query": "Whose screenshot showed Revenue 123 Margin 18%?",
+          "note": "Owner linkage is a write-side problem, not a query-time reranking trick.",
+          "expected_keywords": [
+            "Alice"
+          ],
+          "expected_types": [
+            "image_evidence",
+            "entity"
+          ],
+          "result": {
+            "mode": "structured_visual_ingest",
+            "query": "Whose screenshot showed Revenue 123 Margin 18%?",
+            "required_types": [
+              "image_evidence",
+              "entity"
+            ],
+            "hits": [
+              {
+                "node_id": "image:img-002",
+                "node_type": "image_evidence",
+                "content": "Finance dashboard screenshot.\nRevenue 123 Margin 18%\nfinance, dashboard, metrics",
+                "event_time": "2026-03-07",
+                "score": 7.2
+              },
+              {
+                "node_id": "entity:Alice",
+                "node_type": "entity",
+                "content": "name=Alice",
+                "event_time": "",
+                "score": 5.0
+              },
+              {
+                "node_id": "image:img-000",
+                "node_type": "image_evidence",
+                "content": "Phone screenshot from Gina's arrival day showing Roma Termini station board.\nRoma Termini 08:42 Platform 7\nrome, arrival, station",
+                "event_time": "2026-03-02",
+                "score": 3.2
+              },
+              {
+                "node_id": "image:img-001",
+                "node_type": "image_evidence",
+                "content": "Moodboard screenshot for Jon's studio idea.\nwaterfront loft natural light Marley floor\nstudio, moodboard, interior",
+                "event_time": "2026-03-06",
+                "score": 3.2
+              },
+              {
+                "node_id": "event:turn-002",
+                "node_type": "event",
+                "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+                "event_time": "2026-03-07",
+                "score": 0.8
+              }
+            ],
+            "present_types": [
+              "image_evidence",
+              "entity",
+              "event"
+            ],
+            "missing_types": [],
+            "contract_ok": true
+          },
+          "keyword_ok": true,
+          "contract_ok": true,
+          "passed": true
+        },
+        {
+          "case_id": "moodboard_style",
+          "query": "What kind of studio look was shown in Jon's moodboard screenshot?",
+          "note": "Surface caption helps a little, but the stronger answer needs OCR-like text extracted from the image.",
+          "expected_keywords": [
+            "waterfront",
+            "natural light",
+            "Marley"
+          ],
+          "expected_types": [
+            "image_evidence",
+            "fact"
+          ],
+          "result": {
+            "mode": "structured_visual_ingest",
+            "query": "What kind of studio look was shown in Jon's moodboard screenshot?",
+            "required_types": [
+              "image_evidence",
+              "fact"
+            ],
+            "hits": [
+              {
+                "node_id": "image:img-001",
+                "node_type": "image_evidence",
+                "content": "Moodboard screenshot for Jon's studio idea.\nwaterfront loft natural light Marley floor\nstudio, moodboard, interior",
+                "event_time": "2026-03-06",
+                "score": 9.2
+              },
+              {
+                "node_id": "image:img-000",
+                "node_type": "image_evidence",
+                "content": "Phone screenshot from Gina's arrival day showing Roma Termini station board.\nRoma Termini 08:42 Platform 7\nrome, arrival, station",
+                "event_time": "2026-03-02",
+                "score": 5.2
+              },
+              {
+                "node_id": "image:img-002",
+                "node_type": "image_evidence",
+                "content": "Finance dashboard screenshot.\nRevenue 123 Margin 18%\nfinance, dashboard, metrics",
+                "event_time": "2026-03-07",
+                "score": 5.2
+              },
+              {
+                "node_id": "fact:turn-001",
+                "node_type": "fact",
+                "content": "Jon wanted the studio to feel like a waterfront loft with natural light and Marley flooring.",
+                "event_time": "2026-03-06",
+                "score": 5.0
+              },
+              {
+                "node_id": "event:turn-001",
+                "node_type": "event",
+                "content": "Jon wanted the studio to feel like a waterfront loft with natural light and Marley flooring.",
+                "event_time": "2026-03-06",
+                "score": 5.0
+              }
+            ],
+            "present_types": [
+              "image_evidence",
+              "fact",
+              "event"
+            ],
+            "missing_types": [],
+            "contract_ok": true
+          },
+          "keyword_ok": true,
+          "contract_ok": true,
+          "passed": true
+        },
+        {
+          "case_id": "trip_city_board",
+          "query": "Which station board was visible in Gina's trip screenshot?",
+          "note": "A simple lexical visual question should favor the image node itself.",
+          "expected_keywords": [
+            "Roma Termini"
+          ],
+          "expected_types": [
+            "image_evidence",
+            "fact"
+          ],
+          "result": {
+            "mode": "structured_visual_ingest",
+            "query": "Which station board was visible in Gina's trip screenshot?",
+            "required_types": [
+              "image_evidence",
+              "fact"
+            ],
+            "hits": [
+              {
+                "node_id": "image:img-000",
+                "node_type": "image_evidence",
+                "content": "Phone screenshot from Gina's arrival day showing Roma Termini station board.\nRoma Termini 08:42 Platform 7\nrome, arrival, station",
+                "event_time": "2026-03-02",
+                "score": 8.2
+              },
+              {
+                "node_id": "image:img-001",
+                "node_type": "image_evidence",
+                "content": "Moodboard screenshot for Jon's studio idea.\nwaterfront loft natural light Marley floor\nstudio, moodboard, interior",
+                "event_time": "2026-03-06",
+                "score": 6.2
+              },
+              {
+                "node_id": "image:img-002",
+                "node_type": "image_evidence",
+                "content": "Finance dashboard screenshot.\nRevenue 123 Margin 18%\nfinance, dashboard, metrics",
+                "event_time": "2026-03-07",
+                "score": 6.2
+              },
+              {
+                "node_id": "fact:turn-000",
+                "node_type": "fact",
+                "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+                "event_time": "2026-03-02",
+                "score": 3.0
+              },
+              {
+                "node_id": "fact:turn-002",
+                "node_type": "fact",
+                "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+                "event_time": "2026-03-07",
+                "score": 3.0
+              }
+            ],
+            "present_types": [
+              "image_evidence",
+              "fact"
+            ],
+            "missing_types": [],
+            "contract_ok": true
+          },
+          "keyword_ok": true,
+          "contract_ok": true,
+          "passed": true
+        },
+        {
+          "case_id": "metrics_visible",
+          "query": "What metrics were visible in the dashboard screenshot?",
+          "note": "A second OCR-heavy case, to avoid relying on a single example.",
+          "expected_keywords": [
+            "Revenue 123",
+            "Margin 18%"
+          ],
+          "expected_types": [
+            "image_evidence",
+            "fact"
+          ],
+          "result": {
+            "mode": "structured_visual_ingest",
+            "query": "What metrics were visible in the dashboard screenshot?",
+            "required_types": [
+              "image_evidence",
+              "fact"
+            ],
+            "hits": [
+              {
+                "node_id": "image:img-002",
+                "node_type": "image_evidence",
+                "content": "Finance dashboard screenshot.\nRevenue 123 Margin 18%\nfinance, dashboard, metrics",
+                "event_time": "2026-03-07",
+                "score": 6.2
+              },
+              {
+                "node_id": "image:img-000",
+                "node_type": "image_evidence",
+                "content": "Phone screenshot from Gina's arrival day showing Roma Termini station board.\nRoma Termini 08:42 Platform 7\nrome, arrival, station",
+                "event_time": "2026-03-02",
+                "score": 4.2
+              },
+              {
+                "node_id": "image:img-001",
+                "node_type": "image_evidence",
+                "content": "Moodboard screenshot for Jon's studio idea.\nwaterfront loft natural light Marley floor\nstudio, moodboard, interior",
+                "event_time": "2026-03-06",
+                "score": 4.2
+              },
+              {
+                "node_id": "fact:turn-002",
+                "node_type": "fact",
+                "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+                "event_time": "2026-03-07",
+                "score": 3.0
+              },
+              {
+                "node_id": "event:turn-002",
+                "node_type": "event",
+                "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+                "event_time": "2026-03-07",
+                "score": 3.0
+              }
+            ],
+            "present_types": [
+              "image_evidence",
+              "fact",
+              "event"
+            ],
+            "missing_types": [],
+            "contract_ok": true
+          },
+          "keyword_ok": true,
+          "contract_ok": true,
+          "passed": true
+        }
+      ],
+      "memory_snapshot": {
+        "nodes": [
+          {
+            "node_id": "fact:turn-000",
+            "node_type": "fact",
+            "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+            "event_time": "2026-03-02",
+            "source_ref": "turn-000",
+            "metadata": {}
+          },
+          {
+            "node_id": "event:turn-000",
+            "node_type": "event",
+            "content": "Gina arrived in Rome on 2026-03-02 for a design interview.",
+            "event_time": "2026-03-02",
+            "source_ref": "turn-000",
+            "metadata": {}
+          },
+          {
+            "node_id": "entity:Gina",
+            "node_type": "entity",
+            "content": "name=Gina",
+            "event_time": "",
+            "source_ref": "turn-000",
+            "metadata": {}
+          },
+          {
+            "node_id": "entity:Rome",
+            "node_type": "entity",
+            "content": "name=Rome",
+            "event_time": "",
+            "source_ref": "turn-000",
+            "metadata": {}
+          },
+          {
+            "node_id": "fact:turn-001",
+            "node_type": "fact",
+            "content": "Jon wanted the studio to feel like a waterfront loft with natural light and Marley flooring.",
+            "event_time": "2026-03-06",
+            "source_ref": "turn-001",
+            "metadata": {}
+          },
+          {
+            "node_id": "event:turn-001",
+            "node_type": "event",
+            "content": "Jon wanted the studio to feel like a waterfront loft with natural light and Marley flooring.",
+            "event_time": "2026-03-06",
+            "source_ref": "turn-001",
+            "metadata": {}
+          },
+          {
+            "node_id": "entity:Jon",
+            "node_type": "entity",
+            "content": "name=Jon",
+            "event_time": "",
+            "source_ref": "turn-001",
+            "metadata": {}
+          },
+          {
+            "node_id": "entity:Marley",
+            "node_type": "entity",
+            "content": "name=Marley",
+            "event_time": "",
+            "source_ref": "turn-001",
+            "metadata": {}
+          },
+          {
+            "node_id": "fact:turn-002",
+            "node_type": "fact",
+            "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+            "event_time": "2026-03-07",
+            "source_ref": "turn-002",
+            "metadata": {}
+          },
+          {
+            "node_id": "event:turn-002",
+            "node_type": "event",
+            "content": "Alice reviewed a finance dashboard during the weekly planning check-in.",
+            "event_time": "2026-03-07",
+            "source_ref": "turn-002",
+            "metadata": {}
+          },
+          {
+            "node_id": "entity:Alice",
+            "node_type": "entity",
+            "content": "name=Alice",
+            "event_time": "",
+            "source_ref": "turn-002",
+            "metadata": {}
+          },
+          {
+            "node_id": "image:img-000",
+            "node_type": "image_evidence",
+            "content": "Phone screenshot from Gina's arrival day showing Roma Termini station board.\nRoma Termini 08:42 Platform 7\nrome, arrival, station",
+            "event_time": "2026-03-02",
+            "source_ref": "img-000",
+            "metadata": {
+              "caption": "Phone screenshot from Gina's arrival day showing Roma Termini station board.",
+              "ocr": "Roma Termini 08:42 Platform 7",
+              "linked_subject": "Gina"
+            }
+          },
+          {
+            "node_id": "image:img-001",
+            "node_type": "image_evidence",
+            "content": "Moodboard screenshot for Jon's studio idea.\nwaterfront loft natural light Marley floor\nstudio, moodboard, interior",
+            "event_time": "2026-03-06",
+            "source_ref": "img-001",
+            "metadata": {
+              "caption": "Moodboard screenshot for Jon's studio idea.",
+              "ocr": "waterfront loft natural light Marley floor",
+              "linked_subject": "Jon"
+            }
+          },
+          {
+            "node_id": "image:img-002",
+            "node_type": "image_evidence",
+            "content": "Finance dashboard screenshot.\nRevenue 123 Margin 18%\nfinance, dashboard, metrics",
+            "event_time": "2026-03-07",
+            "source_ref": "img-002",
+            "metadata": {
+              "caption": "Finance dashboard screenshot.",
+              "ocr": "Revenue 123 Margin 18%",
+              "linked_subject": "Alice"
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source_id": "event:turn-000",
+            "target_id": "fact:turn-000",
+            "relation_type": "evidence_of"
+          },
+          {
+            "source_id": "entity:Gina",
+            "target_id": "fact:turn-000",
+            "relation_type": "has_fact"
+          },
+          {
+            "source_id": "event:turn-000",
+            "target_id": "entity:Gina",
+            "relation_type": "involves"
+          },
+          {
+            "source_id": "entity:Rome",
+            "target_id": "fact:turn-000",
+            "relation_type": "has_fact"
+          },
+          {
+            "source_id": "event:turn-000",
+            "target_id": "entity:Rome",
+            "relation_type": "involves"
+          },
+          {
+            "source_id": "event:turn-001",
+            "target_id": "fact:turn-001",
+            "relation_type": "evidence_of"
+          },
+          {
+            "source_id": "entity:Jon",
+            "target_id": "fact:turn-001",
+            "relation_type": "has_fact"
+          },
+          {
+            "source_id": "event:turn-001",
+            "target_id": "entity:Jon",
+            "relation_type": "involves"
+          },
+          {
+            "source_id": "entity:Marley",
+            "target_id": "fact:turn-001",
+            "relation_type": "has_fact"
+          },
+          {
+            "source_id": "event:turn-001",
+            "target_id": "entity:Marley",
+            "relation_type": "involves"
+          },
+          {
+            "source_id": "event:turn-002",
+            "target_id": "fact:turn-002",
+            "relation_type": "evidence_of"
+          },
+          {
+            "source_id": "entity:Alice",
+            "target_id": "fact:turn-002",
+            "relation_type": "has_fact"
+          },
+          {
+            "source_id": "event:turn-002",
+            "target_id": "entity:Alice",
+            "relation_type": "involves"
+          },
+          {
+            "source_id": "image:img-000",
+            "target_id": "event:turn-000",
+            "relation_type": "depicts_event"
+          },
+          {
+            "source_id": "image:img-000",
+            "target_id": "fact:turn-000",
+            "relation_type": "supports_fact"
+          },
+          {
+            "source_id": "image:img-000",
+            "target_id": "entity:Gina",
+            "relation_type": "shows_subject"
+          },
+          {
+            "source_id": "image:img-001",
+            "target_id": "event:turn-001",
+            "relation_type": "depicts_event"
+          },
+          {
+            "source_id": "image:img-001",
+            "target_id": "fact:turn-001",
+            "relation_type": "supports_fact"
+          },
+          {
+            "source_id": "image:img-001",
+            "target_id": "entity:Jon",
+            "relation_type": "shows_subject"
+          },
+          {
+            "source_id": "image:img-002",
+            "target_id": "event:turn-002",
+            "relation_type": "depicts_event"
+          },
+          {
+            "source_id": "image:img-002",
+            "target_id": "fact:turn-002",
+            "relation_type": "supports_fact"
+          },
+          {
+            "source_id": "image:img-002",
+            "target_id": "entity:Alice",
+            "relation_type": "shows_subject"
+          }
+        ]
+      }
+    }
+  },
+  "takeaway": "Query-time multimodal routing is not enough. Accuracy rises only when write-side visual ingest produces searchable image nodes with OCR text, owner links, and event/fact graph edges."
+}

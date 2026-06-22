@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EchoMemory Nano Coverage-Aware Gating Ablation</title>
+  <style>
+    :root {
+      --bg: #f5f7fb; --panel: #fff; --line: #d9e2ec; --text: #0f172a; --muted: #475569; --blue: #2563eb;
+      --green: #166534; --green-soft: #dcfce7; --amber: #92400e; --amber-soft: #fef3c7;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    .hero, .section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+    .hero { padding: 24px 26px; background: linear-gradient(135deg, #eef4ff, #ffffff 60%); }
+    .section { margin-top: 18px; }
+    .section-header { padding: 16px 18px; border-bottom: 1px solid var(--line); }
+    .section-body { padding: 16px 18px 18px; }
+    h1 { margin: 0 0 10px; font-size: 28px; }
+    h2 { margin: 0; font-size: 20px; }
+    p, li, td, th { color: var(--muted); font-size: 14px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+    .pill { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; padding: 6px 10px; font-size: 12px; background: #fff; color: var(--muted); }
+    .grid { display: grid; grid-template-columns: repeat(12, minmax(0,1fr)); gap: 14px; }
+    .card { grid-column: span 4; background: #f8fafc; border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+    .full { grid-column: span 12; }
+    .tag { display: inline-flex; border-radius: 999px; padding: 4px 8px; font-size: 12px; font-weight: 600; }
+    .ok { background: var(--green-soft); color: var(--green); }
+    .warn { background: var(--amber-soft); color: var(--amber); }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+    table { width: 100%; border-collapse: collapse; min-width: 860px; background: #fff; }
+    th, td { text-align: left; padding: 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { background: #f8fafc; color: #334155; }
+    tr:last-child td { border-bottom: 0; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #eef2f7; color: #0f172a; border-radius: 6px; padding: 1px 6px; font-size: 12px; }
+    @media (max-width: 960px) { .card, .full { grid-column: span 12; } .wrap { padding: 14px; } .hero { padding: 18px; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>EchoMemory Nano: Coverage-Aware Gating Ablation</h1>
+      <p>
+        这个小实验专门测一个很系统层、也很泛化的问题：
+        <strong>当 primary backbone 已经给出高分命中时，系统要不要因为“分数高”就提早停？</strong>
+        我们对比两种策略：
+        <code>confidence-only gating</code> 和 <code>coverage-aware gating</code>。
+      </p>
+      <div class="meta">
+        <span class="pill">cases=6</span>
+        <span class="pill">confidence-only contract ok=1</span>
+        <span class="pill">coverage-aware contract ok=2</span>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-header"><h2>结果概览</h2></div>
+      <div class="section-body">
+        <div class="grid">
+          <div class="card">
+            <span class="tag warn">confidence-only</span>
+            <h3>关键词命中</h3>
+            <p><b>6 / 6</b></p>
+            <p>表面答案相关性通常还行，但更容易在 evidence contract 没补齐时提前停。</p>
+          </div>
+          <div class="card">
+            <span class="tag ok">coverage-aware</span>
+            <h3>关键词命中</h3>
+            <p><b>6 / 6</b></p>
+            <p>表面答案不降，同时更稳定地补齐计划要求的证据层。</p>
+          </div>
+          <div class="card">
+            <span class="tag ok">contract gain</span>
+            <h3>Contract 完整通过</h3>
+            <p><b>1 / 6</b> -> <b>2 / 6</b></p>
+            <p>这更能说明系统是不是“真的按计划拿到了该拿的证据”。</p>
+          </div>
+          <div class="card full">
+            <h3>改进案例</h3>
+            <ul><li>temporal_join_date</li></ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-header"><h2>逐题对比</h2></div>
+      <div class="section-body">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Case</th>
+                <th>Confidence-Only</th>
+                <th>Coverage-Aware</th>
+                <th>Why It Matters</th>
+              </tr>
+            </thead>
+            <tbody>
+              
+            <tr>
+              <td><b>temporal_leave_date</b><br>When did Gina leave Figma?</td>
+              <td>True<br>coverage=0.5<br>missing=event</td>
+              <td>True<br>coverage=0.5<br>missing=temporal_tree</td>
+              <td>Tree primary can be high-confidence, but contract still wants event support.</td>
+            </tr>
+            
+            <tr>
+              <td><b>temporal_join_date</b><br>When did Gina join Figma?</td>
+              <td>True<br>coverage=0.5<br>missing=event</td>
+              <td>True<br>coverage=1.0<br>missing=-</td>
+              <td>Another chronology-first query that should not stop at a tree-only surface hit.</td>
+            </tr>
+            
+            <tr>
+              <td><b>relational_helper</b><br>Who helped Gina with the Lisbon visa checklist?</td>
+              <td>True<br>coverage=0.5<br>missing=entity</td>
+              <td>True<br>coverage=0.5<br>missing=entity</td>
+              <td>Graph route usually gets relation context first, but fact grounding still matters.</td>
+            </tr>
+            
+            <tr>
+              <td><b>temporal_relational_plan</b><br>What did Gina plan to do after leaving Figma?</td>
+              <td>True<br>coverage=1.0<br>missing=-</td>
+              <td>True<br>coverage=1.0<br>missing=-</td>
+              <td>Mixed query family: relation/path support should still be grounded by fact evidence.</td>
+            </tr>
+            
+            <tr>
+              <td><b>visual_lease</b><br>What did the screenshot of the lease contract show?</td>
+              <td>True<br>coverage=0.5<br>missing=image_evidence</td>
+              <td>True<br>coverage=0.5<br>missing=image_evidence</td>
+              <td>Image evidence alone should not satisfy the full contract without fact support.</td>
+            </tr>
+            
+            <tr>
+              <td><b>visual_arrival</b><br>What did the arrival photo show?</td>
+              <td>True<br>coverage=0.5<br>missing=image_evidence</td>
+              <td>True<br>coverage=0.5<br>missing=image_evidence</td>
+              <td>Visual family again tests whether confidence-only stopping over-trusts image evidence.</td>
+            </tr>
+            
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

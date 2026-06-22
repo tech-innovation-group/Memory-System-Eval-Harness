@@ -1,0 +1,767 @@
+{
+  "summary": {
+    "cases": 7,
+    "primary_direct_correct": 1,
+    "advisory_only_correct": 1,
+    "executive_policy_correct": 7,
+    "advisory_gap_detected": 6,
+    "advisory_detected_but_still_wrong": [
+      "temporal_mention_vs_event",
+      "relational_untyped_bridge",
+      "longitudinal_fragment",
+      "visual_ocr_ambiguous",
+      "readiness_premature",
+      "relational_should_abstain"
+    ],
+    "executive_fixed_cases": [
+      "temporal_mention_vs_event",
+      "relational_untyped_bridge",
+      "longitudinal_fragment",
+      "visual_ocr_ambiguous",
+      "readiness_premature",
+      "relational_should_abstain"
+    ],
+    "executive_abstained_cases": [
+      "relational_should_abstain"
+    ],
+    "executive_not_ready_cases": [
+      "readiness_premature"
+    ]
+  },
+  "rows": [
+    {
+      "case_id": "temporal_mention_vs_event",
+      "family": "temporal",
+      "query": "When did the consulate request one more financial statement?",
+      "expected_answer": "2026-04-08",
+      "note": "Primary chronology text mentions the event on 2026-04-09, but the true story time is yesterday = 2026-04-08.",
+      "required_layers": [
+        "temporal_tree",
+        "event",
+        "event_time"
+      ],
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "graph_ready": true,
+        "organized_ready": true,
+        "qa_ready": true
+      },
+      "primary_direct": {
+        "mode": "primary_direct",
+        "answer": "2026-04-09",
+        "correct": false,
+        "present_layers": [
+          "temporal_tree"
+        ],
+        "missing_layers": [
+          "event",
+          "event_time"
+        ],
+        "used_readers": [
+          "primary"
+        ],
+        "note": "Answer directly from primary hits without any review.",
+        "hits": [
+          {
+            "source": "tree:2026-04-09",
+            "layer": "temporal_tree",
+            "score": 0.93,
+            "content": "2026-04-09 note: Maya said the consulate requested one more financial statement yesterday.",
+            "answer_hint": "2026-04-09",
+            "trace": {}
+          }
+        ]
+      },
+      "advisory_only": {
+        "mode": "advisory_only",
+        "answer": "2026-04-09",
+        "correct": false,
+        "present_layers": [
+          "temporal_tree"
+        ],
+        "missing_layers": [
+          "event",
+          "event_time"
+        ],
+        "used_readers": [
+          "primary"
+        ],
+        "note": "Self-check diagnoses the gap but does not change the answer path.",
+        "hits": [
+          {
+            "source": "tree:2026-04-09",
+            "layer": "temporal_tree",
+            "score": 0.93,
+            "content": "2026-04-09 note: Maya said the consulate requested one more financial statement yesterday.",
+            "answer_hint": "2026-04-09",
+            "trace": {}
+          }
+        ]
+      },
+      "executive_policy": {
+        "mode": "executive_policy",
+        "answer": "2026-04-08",
+        "correct": true,
+        "present_layers": [
+          "event",
+          "event_time",
+          "fact",
+          "graph",
+          "temporal_tree"
+        ],
+        "missing_layers": [],
+        "used_readers": [
+          "primary",
+          "graph",
+          "atom"
+        ],
+        "note": "Targeted re-read completes the contract.",
+        "hits": [
+          {
+            "source": "atom:consulate_request",
+            "layer": "fact",
+            "score": 0.99,
+            "content": "Consulate requested one more financial statement. event_time=2026-04-08",
+            "answer_hint": "2026-04-08",
+            "trace": {
+              "event_time": "2026-04-08"
+            }
+          },
+          {
+            "source": "tree:2026-04-09",
+            "layer": "temporal_tree",
+            "score": 0.93,
+            "content": "2026-04-09 note: Maya said the consulate requested one more financial statement yesterday.",
+            "answer_hint": "2026-04-09",
+            "trace": {}
+          },
+          {
+            "source": "graph:event:consulate_request",
+            "layer": "graph",
+            "score": 0.88,
+            "content": "Event node for consulate request.",
+            "answer_hint": "2026-04-08",
+            "trace": {}
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "relational_untyped_bridge",
+      "family": "relational",
+      "query": "Who introduced Jon to Lena?",
+      "expected_answer": "Maya",
+      "note": "A shared-neighbor graph hit points to Figma, but typed path grounding plus fact support recovers Maya as the introducer.",
+      "required_layers": [
+        "graph",
+        "fact",
+        "path_grounding"
+      ],
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "graph_ready": true,
+        "organized_ready": true,
+        "qa_ready": true
+      },
+      "primary_direct": {
+        "mode": "primary_direct",
+        "answer": "Figma",
+        "correct": false,
+        "present_layers": [
+          "event",
+          "graph"
+        ],
+        "missing_layers": [
+          "fact",
+          "path_grounding"
+        ],
+        "used_readers": [
+          "primary"
+        ],
+        "note": "Answer directly from primary hits without any review.",
+        "hits": [
+          {
+            "source": "graph:shared_neighbor:figma",
+            "layer": "graph",
+            "score": 0.92,
+            "content": "Figma is connected to Jon and Lena through multiple collaboration edges.",
+            "answer_hint": "Figma",
+            "trace": {}
+          }
+        ]
+      },
+      "advisory_only": {
+        "mode": "advisory_only",
+        "answer": "Figma",
+        "correct": false,
+        "present_layers": [
+          "event",
+          "graph"
+        ],
+        "missing_layers": [
+          "fact",
+          "path_grounding"
+        ],
+        "used_readers": [
+          "primary"
+        ],
+        "note": "Self-check diagnoses the gap but does not change the answer path.",
+        "hits": [
+          {
+            "source": "graph:shared_neighbor:figma",
+            "layer": "graph",
+            "score": 0.92,
+            "content": "Figma is connected to Jon and Lena through multiple collaboration edges.",
+            "answer_hint": "Figma",
+            "trace": {}
+          }
+        ]
+      },
+      "executive_policy": {
+        "mode": "executive_policy",
+        "answer": "Maya",
+        "correct": true,
+        "present_layers": [
+          "event",
+          "fact",
+          "graph",
+          "path_grounding"
+        ],
+        "missing_layers": [],
+        "used_readers": [
+          "primary",
+          "atom",
+          "graph"
+        ],
+        "note": "Targeted re-read completes the contract.",
+        "hits": [
+          {
+            "source": "graph:path:maya_intro",
+            "layer": "graph",
+            "score": 0.98,
+            "content": "Maya -> introduced -> Jon ; Maya -> introduced -> Lena",
+            "answer_hint": "Maya",
+            "trace": {
+              "path_grounding": true
+            }
+          },
+          {
+            "source": "atom:maya_intro",
+            "layer": "fact",
+            "score": 0.97,
+            "content": "Maya introduced Jon to Lena during the spring launch dinner.",
+            "answer_hint": "Maya",
+            "trace": {}
+          },
+          {
+            "source": "graph:shared_neighbor:figma",
+            "layer": "graph",
+            "score": 0.92,
+            "content": "Figma is connected to Jon and Lena through multiple collaboration edges.",
+            "answer_hint": "Figma",
+            "trace": {}
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "longitudinal_fragment",
+      "family": "longitudinal",
+      "query": "How did the partnership review evolve over time?",
+      "expected_answer": "2026-04-12 kickoff; 2026-05-02 budget revision; 2026-05-20 partner approval.",
+      "note": "A single flat fact gives only the latest fragment; dossier expansion restores the cross-session evolution chain.",
+      "required_layers": [
+        "topic_dossier",
+        "fact"
+      ],
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "graph_ready": true,
+        "organized_ready": true,
+        "qa_ready": true
+      },
+      "primary_direct": {
+        "mode": "primary_direct",
+        "answer": "Budget revision on 2026-05-02.",
+        "correct": false,
+        "present_layers": [
+          "fact"
+        ],
+        "missing_layers": [
+          "topic_dossier"
+        ],
+        "used_readers": [
+          "primary"
+        ],
+        "note": "Answer directly from primary hits without any review.",
+        "hits": [
+          {
+            "source": "atom:budget_revision",
+            "layer": "fact",
+            "score": 0.94,
+            "content": "2026-05-02: Board requested one more budget revision.",
+            "answer_hint": "Budget revision on 2026-05-02.",
+            "trace": {}
+          }
+        ]
+      },
+      "advisory_only": {
+        "mode": "advisory_only",
+        "answer": "Budget revision on 2026-05-02.",
+        "correct": false,
+        "present_layers": [
+          "fact"
+        ],
+        "missing_layers": [
+          "topic_dossier"
+        ],
+        "used_readers": [
+          "primary"
+        ],
+        "note": "Self-check diagnoses the gap but does not change the answer path.",
+        "hits": [
+          {
+            "source": "atom:budget_revision",
+            "layer": "fact",
+            "score": 0.94,
+            "content": "2026-05-02: Board requested one more budget revision.",
+            "answer_hint": "Budget revision on 2026-05-02.",
+            "trace": {}
+          }
+        ]
+      },
+      "executive_policy": {
+        "mode": "executive_policy",
+        "answer": "2026-04-12 kickoff; 2026-05-02 budget revision; 2026-05-20 partner approval.",
+        "correct": true,
+        "present_layers": [
+          "fact",
+          "topic_dossier"
+        ],
+        "missing_layers": [],
+        "used_readers": [
+          "primary",
+          "dossier"
+        ],
+        "note": "Targeted re-read completes the contract.",
+        "hits": [
+          {
+            "source": "dossier:partnership_review",
+            "layer": "topic_dossier",
+            "score": 0.99,
+            "content": "Topic: partnership_review\n- 2026-04-12 kickoff\n- 2026-05-02 budget revision\n- 2026-05-20 partner approval",
+            "answer_hint": "2026-04-12 kickoff; 2026-05-02 budget revision; 2026-05-20 partner approval.",
+            "trace": {}
+          },
+          {
+            "source": "atom:budget_revision",
+            "layer": "fact",
+            "score": 0.94,
+            "content": "2026-05-02: Board requested one more budget revision.",
+            "answer_hint": "Budget revision on 2026-05-02.",
+            "trace": {}
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "visual_ocr_ambiguous",
+      "family": "visual",
+      "query": "What address was shown in the lease screenshot?",
+      "expected_answer": "Rua Augusta 14",
+      "note": "Raw OCR contains multiple numeric strings; fact grounding linked to the lease resolves the correct address.",
+      "required_layers": [
+        "image_evidence",
+        "fact"
+      ],
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "graph_ready": true,
+        "organized_ready": true,
+        "qa_ready": true
+      },
+      "primary_direct": {
+        "mode": "primary_direct",
+        "answer": "Rua Augusta 41",
+        "correct": false,
+        "present_layers": [
+          "event",
+          "graph",
+          "image_evidence"
+        ],
+        "missing_layers": [
+          "fact"
+        ],
+        "used_readers": [
+          "primary"
+        ],
+        "note": "Answer directly from primary hits without any review.",
+        "hits": [
+          {
+            "source": "image:lease_page_2",
+            "layer": "image_evidence",
+            "score": 0.95,
+            "content": "OCR: Rua Augusta 41 ; ref code 14 ; tenant Maya ; lease screenshot page 2",
+            "answer_hint": "Rua Augusta 41",
+            "trace": {}
+          }
+        ]
+      },
+      "advisory_only": {
+        "mode": "advisory_only",
+        "answer": "Rua Augusta 41",
+        "correct": false,
+        "present_layers": [
+          "event",
+          "graph",
+          "image_evidence"
+        ],
+        "missing_layers": [
+          "fact"
+        ],
+        "used_readers": [
+          "primary"
+        ],
+        "note": "Self-check diagnoses the gap but does not change the answer path.",
+        "hits": [
+          {
+            "source": "image:lease_page_2",
+            "layer": "image_evidence",
+            "score": 0.95,
+            "content": "OCR: Rua Augusta 41 ; ref code 14 ; tenant Maya ; lease screenshot page 2",
+            "answer_hint": "Rua Augusta 41",
+            "trace": {}
+          }
+        ]
+      },
+      "executive_policy": {
+        "mode": "executive_policy",
+        "answer": "Rua Augusta 14",
+        "correct": true,
+        "present_layers": [
+          "event",
+          "fact",
+          "graph",
+          "image_evidence"
+        ],
+        "missing_layers": [],
+        "used_readers": [
+          "primary",
+          "atom"
+        ],
+        "note": "Targeted re-read completes the contract.",
+        "hits": [
+          {
+            "source": "atom:lease_address",
+            "layer": "fact",
+            "score": 0.98,
+            "content": "Maya signed the lease for Rua Augusta 14 in Lisbon.",
+            "answer_hint": "Rua Augusta 14",
+            "trace": {}
+          },
+          {
+            "source": "image:lease_page_2",
+            "layer": "image_evidence",
+            "score": 0.95,
+            "content": "OCR: Rua Augusta 41 ; ref code 14 ; tenant Maya ; lease screenshot page 2",
+            "answer_hint": "Rua Augusta 41",
+            "trace": {}
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "readiness_premature",
+      "family": "readiness_sensitive",
+      "query": "Can the system answer the latest relocation question now?",
+      "expected_answer": "not_ready",
+      "note": "Persisted facts are present, but organized memory is not answer-ready yet.",
+      "required_layers": [
+        "readiness",
+        "topic_dossier"
+      ],
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "graph_ready": true,
+        "organized_ready": false,
+        "qa_ready": false
+      },
+      "primary_direct": {
+        "mode": "primary_direct",
+        "answer": "Partner approval happened.",
+        "correct": false,
+        "present_layers": [
+          "fact"
+        ],
+        "missing_layers": [
+          "readiness",
+          "topic_dossier"
+        ],
+        "used_readers": [
+          "primary"
+        ],
+        "note": "Answer directly from primary hits without any review.",
+        "hits": [
+          {
+            "source": "atom:relocation_latest",
+            "layer": "fact",
+            "score": 0.91,
+            "content": "2026-06-01: Partner approval happened for the relocation plan.",
+            "answer_hint": "Partner approval happened.",
+            "trace": {}
+          }
+        ]
+      },
+      "advisory_only": {
+        "mode": "advisory_only",
+        "answer": "Partner approval happened.",
+        "correct": false,
+        "present_layers": [
+          "fact"
+        ],
+        "missing_layers": [
+          "readiness",
+          "topic_dossier"
+        ],
+        "used_readers": [
+          "primary"
+        ],
+        "note": "Self-check diagnoses the gap but does not change the answer path.",
+        "hits": [
+          {
+            "source": "atom:relocation_latest",
+            "layer": "fact",
+            "score": 0.91,
+            "content": "2026-06-01: Partner approval happened for the relocation plan.",
+            "answer_hint": "Partner approval happened.",
+            "trace": {}
+          }
+        ]
+      },
+      "executive_policy": {
+        "mode": "executive_policy",
+        "answer": "not_ready",
+        "correct": true,
+        "present_layers": [],
+        "missing_layers": [
+          "readiness",
+          "topic_dossier"
+        ],
+        "used_readers": [
+          "readiness_gate"
+        ],
+        "note": "Readiness gate blocks answering before the required memory planes are answer-ready.",
+        "hits": []
+      }
+    },
+    {
+      "case_id": "relational_should_abstain",
+      "family": "relational",
+      "query": "Who connected Omar to the investor?",
+      "expected_answer": "unknown",
+      "note": "Co-occurrence suggests Sasha, but no typed introduction path or grounding fact exists, so the policy should abstain.",
+      "required_layers": [
+        "graph",
+        "fact",
+        "path_grounding"
+      ],
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "graph_ready": true,
+        "organized_ready": true,
+        "qa_ready": true
+      },
+      "primary_direct": {
+        "mode": "primary_direct",
+        "answer": "Sasha",
+        "correct": false,
+        "present_layers": [
+          "event",
+          "graph"
+        ],
+        "missing_layers": [
+          "fact",
+          "path_grounding"
+        ],
+        "used_readers": [
+          "primary"
+        ],
+        "note": "Answer directly from primary hits without any review.",
+        "hits": [
+          {
+            "source": "graph:cooccur:sasha",
+            "layer": "graph",
+            "score": 0.93,
+            "content": "Sasha appears in the same meeting cluster as Omar and the investor.",
+            "answer_hint": "Sasha",
+            "trace": {}
+          }
+        ]
+      },
+      "advisory_only": {
+        "mode": "advisory_only",
+        "answer": "Sasha",
+        "correct": false,
+        "present_layers": [
+          "event",
+          "graph"
+        ],
+        "missing_layers": [
+          "fact",
+          "path_grounding"
+        ],
+        "used_readers": [
+          "primary"
+        ],
+        "note": "Self-check diagnoses the gap but does not change the answer path.",
+        "hits": [
+          {
+            "source": "graph:cooccur:sasha",
+            "layer": "graph",
+            "score": 0.93,
+            "content": "Sasha appears in the same meeting cluster as Omar and the investor.",
+            "answer_hint": "Sasha",
+            "trace": {}
+          }
+        ]
+      },
+      "executive_policy": {
+        "mode": "executive_policy",
+        "answer": "unknown",
+        "correct": true,
+        "present_layers": [
+          "event",
+          "fact",
+          "graph"
+        ],
+        "missing_layers": [
+          "path_grounding"
+        ],
+        "used_readers": [
+          "primary",
+          "atom",
+          "graph"
+        ],
+        "note": "Policy refuses to answer after review because the contract remains incomplete.",
+        "hits": [
+          {
+            "source": "graph:cooccur:sasha",
+            "layer": "graph",
+            "score": 0.93,
+            "content": "Sasha appears in the same meeting cluster as Omar and the investor.",
+            "answer_hint": "Sasha",
+            "trace": {}
+          },
+          {
+            "source": "graph:meeting_cluster",
+            "layer": "graph",
+            "score": 0.89,
+            "content": "Meeting cluster: Omar, Sasha, investor, strategy review.",
+            "answer_hint": "Sasha",
+            "trace": {}
+          },
+          {
+            "source": "atom:sasha_meeting",
+            "layer": "fact",
+            "score": 0.87,
+            "content": "Sasha attended the same strategy review meeting as Omar.",
+            "answer_hint": "Sasha",
+            "trace": {}
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "control_direct_fact",
+      "family": "state",
+      "query": "What is Maya's current drink preference?",
+      "expected_answer": "Maya prefers coffee.",
+      "note": "Control case: when the primary fact already satisfies the contract, all modes should agree.",
+      "required_layers": [
+        "fact"
+      ],
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "graph_ready": true,
+        "organized_ready": true,
+        "qa_ready": true
+      },
+      "primary_direct": {
+        "mode": "primary_direct",
+        "answer": "Maya prefers coffee.",
+        "correct": true,
+        "present_layers": [
+          "fact"
+        ],
+        "missing_layers": [],
+        "used_readers": [
+          "primary"
+        ],
+        "note": "Answer directly from primary hits without any review.",
+        "hits": [
+          {
+            "source": "atom:maya_pref",
+            "layer": "fact",
+            "score": 0.97,
+            "content": "Maya prefers coffee.",
+            "answer_hint": "Maya prefers coffee.",
+            "trace": {}
+          }
+        ]
+      },
+      "advisory_only": {
+        "mode": "advisory_only",
+        "answer": "Maya prefers coffee.",
+        "correct": true,
+        "present_layers": [
+          "fact"
+        ],
+        "missing_layers": [],
+        "used_readers": [
+          "primary"
+        ],
+        "note": "Primary evidence already satisfies the contract.",
+        "hits": [
+          {
+            "source": "atom:maya_pref",
+            "layer": "fact",
+            "score": 0.97,
+            "content": "Maya prefers coffee.",
+            "answer_hint": "Maya prefers coffee.",
+            "trace": {}
+          }
+        ]
+      },
+      "executive_policy": {
+        "mode": "executive_policy",
+        "answer": "Maya prefers coffee.",
+        "correct": true,
+        "present_layers": [
+          "fact"
+        ],
+        "missing_layers": [],
+        "used_readers": [
+          "primary"
+        ],
+        "note": "Targeted re-read completes the contract.",
+        "hits": [
+          {
+            "source": "atom:maya_pref",
+            "layer": "fact",
+            "score": 0.97,
+            "content": "Maya prefers coffee.",
+            "answer_hint": "Maya prefers coffee.",
+            "trace": {}
+          }
+        ]
+      }
+    }
+  ]
+}

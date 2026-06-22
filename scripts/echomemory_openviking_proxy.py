@@ -402,7 +402,7 @@ def main() -> None:
     parser.add_argument("--agent-id", default="default")
     parser.add_argument("--top-k", type=int, default=30)
     parser.add_argument("--score-threshold", type=float, default=0.1)
-    parser.add_argument("--retrieval-mode", choices=["find", "search", "both"], default="both")
+    parser.add_argument("--retrieval-mode", choices=["find", "search", "both"], default="search")
     parser.add_argument("--abstract-chars", type=int, default=1200)
     parser.add_argument("--request-timeout-s", type=float, default=180.0)
     parser.add_argument("--log-file", required=True)

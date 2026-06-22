@@ -1,0 +1,156 @@
+{
+  "project": "EchoMemory-TG",
+  "date": "2026-06-13",
+  "scope": "text-first submission package before multimodal CVPR branch",
+  "benchmarks": [
+    {
+      "name": "LoCoMo",
+      "status": "planned_for_formal_run",
+      "purpose": [
+        "long-horizon conversational QA",
+        "temporal reasoning",
+        "profile/detail questions",
+        "relational recall"
+      ]
+    },
+    {
+      "name": "LongMemEval",
+      "status": "planned_for_formal_run",
+      "purpose": [
+        "long-term interactive memory",
+        "session decomposition",
+        "update and abstention behavior",
+        "temporal consistency"
+      ]
+    }
+  ],
+  "baselines": [
+    {
+      "id": "b1_summary_only",
+      "name": "Summary-heavy baseline",
+      "description": "L0/L1-heavy retrieval with minimal deep evidence usage",
+      "status": "not_run"
+    },
+    {
+      "id": "b2_atom_vector",
+      "name": "Atom + vector baseline",
+      "description": "Atomic memory plus vector retrieval, no graph-first routing",
+      "status": "partially_available_in_code"
+    },
+    {
+      "id": "b3_atom_graph_no_planner",
+      "name": "Atom + graph without planner",
+      "description": "Temporal graph available but not query-planned",
+      "status": "partially_available_in_code"
+    },
+    {
+      "id": "b4_atom_graph_planner",
+      "name": "Atom + graph + planner",
+      "description": "Current strongest text-first target path",
+      "status": "implemented_component_level"
+    },
+    {
+      "id": "b5_atom_graph_planner_ready",
+      "name": "Atom + graph + planner + readiness gate",
+      "description": "Submission-grade systems version",
+      "status": "planned"
+    }
+  ],
+  "metrics": [
+    {
+      "name": "answer_accuracy",
+      "status": "planned"
+    },
+    {
+      "name": "temporal_correctness",
+      "status": "planned"
+    },
+    {
+      "name": "evidence_hit_rate",
+      "status": "planned"
+    },
+    {
+      "name": "false_ready_rate",
+      "status": "planned"
+    },
+    {
+      "name": "ingestion_latency",
+      "status": "planned"
+    },
+    {
+      "name": "retrieval_latency",
+      "status": "planned"
+    }
+  ],
+  "ablations": [
+    {
+      "id": "a1_no_planner",
+      "remove": "query planner",
+      "question": "How much does planner-guided routing help beyond flat fusion?",
+      "status": "supported_by_nano_toy"
+    },
+    {
+      "id": "a2_no_temporal_resolver",
+      "remove": "event-time aware handling",
+      "question": "How much error comes from event_time vs created_at confusion?",
+      "status": "supported_by_nano_toy"
+    },
+    {
+      "id": "a3_no_graph_path",
+      "remove": "graph retrieval path",
+      "question": "How much do graph seeds and diffusion matter on relational questions?",
+      "status": "planned"
+    },
+    {
+      "id": "a4_no_event_nodes",
+      "remove": "event nodes",
+      "question": "Are event nodes necessary beyond fact nodes for time-sensitive questions?",
+      "status": "planned"
+    },
+    {
+      "id": "a5_no_readiness_gate",
+      "remove": "QA-ready gating",
+      "question": "How often does the system claim readiness too early?",
+      "status": "planned"
+    }
+  ],
+  "current_evidence": {
+    "real_code_planner": {
+      "status": "implemented",
+      "evidence": [
+        "/Users/chx/Code/echomemory/echo_memory/echomem/index_engine/search_service.py",
+        "/Users/chx/locomo-eval-web/web/static/generated-reports/echomemory_realcode_planner_progress_20260613.html"
+      ]
+    },
+    "nano_ablation": {
+      "status": "implemented",
+      "summary": {
+        "extraction_v1_correct": 0,
+        "extraction_v2_correct": 2,
+        "retrieval_flat_correct": 1,
+        "retrieval_planned_correct": 3
+      },
+      "evidence": [
+        "/Users/chx/locomo-eval-web/experiments/echomemory_nano/nano_ablation_results.json",
+        "/Users/chx/locomo-eval-web/web/static/generated-reports/echomemory_nano_ablation_20260613.html"
+      ]
+    }
+  },
+  "next_required_runs": [
+    {
+      "priority": "P0",
+      "task": "Run LoCoMo on planner-enabled real code path",
+      "why": "Converts component-level claim into benchmark-level evidence"
+    },
+    {
+      "priority": "P0",
+      "task": "Run LongMemEval on planner-enabled real code path",
+      "why": "Strengthens generality beyond one benchmark"
+    },
+    {
+      "priority": "P1",
+      "task": "Measure readiness-gate behavior",
+      "why": "Provides systems contribution beyond retrieval quality"
+    }
+  ]
+}

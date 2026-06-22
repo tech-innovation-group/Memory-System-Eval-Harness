@@ -17,6 +17,9 @@ if str(ROOT) not in sys.path:
 from memory.plugins.echomemory.inspector import count_files, current_session_snapshot, first_existing_root
 
 
+SCRIPTS = ROOT / "scripts"
+
+
 def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -42,14 +45,20 @@ def run_and_log(cmd: list[str], log_path: Path, env: dict[str, str]) -> int:
 
 def expected_session_count(summary: dict[str, Any]) -> int:
     best = 0
+    fallback = 0
     for record in summary.get("records") or []:
-        for key in ("original_session_count", "session_limit", "progress_sessions_total", "session_count"):
+        # Prefer the actual imported/selected session count for the current run.
+        for key in ("session_count", "session_limit", "progress_sessions_total"):
             try:
                 best = max(best, int(record.get(key) or 0))
             except Exception:
                 continue
         best = max(best, len(record.get("session_records") or []))
-    return best
+        try:
+            fallback = max(fallback, int(record.get("original_session_count") or 0))
+        except Exception:
+            pass
+    return best or fallback
 
 
 def build_workspace_snapshot(workspace: Path, account: str, sample: str) -> dict[str, Any]:
@@ -60,7 +69,7 @@ def build_workspace_snapshot(workspace: Path, account: str, sample: str) -> dict
     overview_count = sum(1 for row in rows if Path(str(row.get("session_path") or "")).joinpath("overview.md").exists())
     memory_root = account_root / "memory"
     vector_root = account_root.parent / "system" / "vector_index"
-    atom_count = count_files(memory_root / ".structured" / "atoms")
+    atom_count = count_atom_artifacts(memory_root)
     graph_count = count_files(memory_root / ".graph")
     vector_count = count_files(vector_root)
     complete_sessions = sum(1 for row in rows if row.get("ok"))
@@ -93,6 +102,27 @@ def build_workspace_snapshot(workspace: Path, account: str, sample: str) -> dict
     return snapshot
 
 
+def count_atom_artifacts(memory_root: Path) -> int:
+    atom_dir = memory_root / ".structured" / "atoms"
+    atom_bundle = memory_root / ".structured" / "atoms.json"
+    count = count_files(atom_dir)
+    if count > 0 or not atom_bundle.exists():
+        return count
+    try:
+        payload = json.loads(atom_bundle.read_text(encoding="utf-8"))
+    except Exception:
+        return count
+    if isinstance(payload, dict):
+        atoms = payload.get("atoms")
+        if isinstance(atoms, dict):
+            return len(atoms)
+        if isinstance(atoms, list):
+            return len(atoms)
+    if isinstance(payload, list):
+        return len(payload)
+    return count
+
+
 def snapshot_ready(snapshot: dict[str, Any], expected_sessions_total: int) -> bool:
     session_count = int(snapshot.get("session_count") or 0)
     complete_sessions = int(snapshot.get("complete_sessions") or 0)
@@ -102,15 +132,20 @@ def snapshot_ready(snapshot: dict[str, Any], expected_sessions_total: int) -> bo
     graph_count = int(snapshot.get("graph_count") or 0)
     vector_count = int(snapshot.get("vector_count") or 0)
     enough_sessions = session_count >= max(1, expected_sessions_total or session_count)
-    return bool(
+    artifact_ready = bool(
         enough_sessions
-        and complete_sessions == session_count
         and abstract_count == session_count
         and overview_count == session_count
         and atom_count > 0
         and graph_count > 0
         and vector_count > 0
     )
+    # Fast-import LoCoMo runs can land stable retrieval artifacts before the
+    # legacy atom cursor fields (`atom_pipeline_index`, `last_extracted_turn_id`)
+    # are fully back-filled in every session meta.json. In that case the
+    # workspace is already good enough for repair/QA to proceed, even though
+    # `current_session_snapshot()` still reports `complete_sessions == 0`.
+    return bool(artifact_ready)
 
 
 def wait_for_async_memory_stability(
@@ -159,6 +194,13 @@ def wait_for_async_memory_stability(
         if ready and stable_hits >= max(1, int(stability_polls)):
             return {
                 "ready": True,
+                "timed_out": False,
+                "stable_hits": stable_hits,
+                "snapshot": snapshot,
+            }
+        if (not ready) and stable_hits >= max(1, int(stability_polls)):
+            return {
+                "ready": False,
                 "timed_out": False,
                 "stable_hits": stable_hits,
                 "snapshot": snapshot,
@@ -219,6 +261,7 @@ def main() -> None:
     parser.add_argument("--qa-out-dir", required=True)
     parser.add_argument("--python-bin", default=sys.executable)
     parser.add_argument("--sample", default="conv-30")
+    parser.add_argument("--questions", default="")
     parser.add_argument("--settle-seconds", type=int, default=180)
     parser.add_argument("--stabilize-timeout-seconds", type=int, default=300)
     parser.add_argument("--stability-polls", type=int, default=3)
@@ -240,15 +283,19 @@ def main() -> None:
     parser.add_argument("--memory-budget-chars", type=int, default=6000)
     parser.add_argument("--user-memory-budget-chars", type=int, default=4000)
     parser.add_argument("--agent-memory-budget-chars", type=int, default=2000)
-    parser.add_argument("--retrieval-mode", choices=["find", "search", "both", "local"], default="local")
+    parser.add_argument("--retrieval-mode", choices=["find", "search", "both", "local"], default="search")
     parser.add_argument("--retrieval-ranker", choices=["diversified", "score"], default="score")
-    parser.add_argument("--tool-set", choices=["vikingboat_default", "search_read", "search_only"], default="search_read")
+    parser.add_argument("--retrieval-uri-dedup", dest="retrieval_uri_dedup", action="store_true", default=True)
+    parser.add_argument("--no-retrieval-uri-dedup", dest="retrieval_uri_dedup", action="store_false")
+    parser.add_argument("--tool-set", choices=["vikingboat_default", "search_read", "search_only", "vikingbot_native_safe"], default="search_read")
     parser.add_argument("--tool-search-limit", type=int, default=20)
     parser.add_argument("--tool-min-score", type=float, default=0.35)
     parser.add_argument("--tool-log-chars", type=int, default=1200)
     parser.add_argument("--prefetch-read-count", type=int, default=4)
     parser.add_argument("--prefetch-context-chars", type=int, default=5000)
     parser.add_argument("--max-iterations", type=int, default=8)
+    parser.add_argument("--search-overview-enrichment", dest="search_overview_enrichment", action="store_true", default=True)
+    parser.add_argument("--no-search-overview-enrichment", dest="search_overview_enrichment", action="store_false")
     parser.add_argument("--vikingboat-tool-loop", dest="vikingboat_tool_loop", action="store_true", default=True)
     parser.add_argument("--no-vikingboat-tool-loop", dest="vikingboat_tool_loop", action="store_false")
     parser.add_argument("--vikingboat-compat", dest="vikingboat_compat", action="store_true", default=False)
@@ -332,7 +379,7 @@ def main() -> None:
     if args.repair_before_qa:
         repair_cmd = [
             args.python_bin,
-            "/Users/chx/locomo-eval-web/scripts/echomemory_repair_sessions.py",
+            str(SCRIPTS / "echomemory_repair_sessions.py"),
             "--out-dir",
             str(qa_out_dir),
             "--echomem-root",
@@ -401,7 +448,7 @@ def main() -> None:
 
     qa_cmd = [
         args.python_bin,
-        "/Users/chx/locomo-eval-web/scripts/echomemory_memory_qa.py",
+        str(SCRIPTS / "echomemory_memory_qa.py"),
         "--dataset",
         args.dataset,
         "--out-dir",
@@ -438,8 +485,6 @@ def main() -> None:
         args.answer_base_url,
         "--answer-model",
         args.answer_model,
-        "--answer-token",
-        args.answer_token,
         "--model-retries",
         "5",
         "--timeout-s",
@@ -460,14 +505,31 @@ def main() -> None:
         str(args.prefetch_context_chars),
         "--max-iterations",
         str(args.max_iterations),
-        "--no-local-messages",
-        "--local-session-summaries",
-        "--local-atoms",
-        "--local-timeline-hints",
-        "--local-memory-artifacts",
     ]
+    if args.answer_token:
+        qa_cmd.extend(["--answer-token", args.answer_token])
+    if str(args.questions or "").strip():
+        qa_cmd.extend(["--questions", str(args.questions).strip()])
+    if args.retrieval_mode == "local":
+        qa_cmd.extend([
+            "--local-session-summaries",
+            "--local-atoms",
+            "--no-local-messages",
+            "--local-timeline-hints",
+            "--local-memory-artifacts",
+        ])
+    else:
+        qa_cmd.extend([
+            "--no-local-session-summaries",
+            "--no-local-atoms",
+            "--no-local-messages",
+            "--no-local-timeline-hints",
+            "--no-local-memory-artifacts",
+        ])
     qa_cmd.extend(
         [
+            "--retrieval-uri-dedup" if args.retrieval_uri_dedup else "--no-retrieval-uri-dedup",
+            "--search-overview-enrichment" if args.search_overview_enrichment else "--no-search-overview-enrichment",
             "--vikingboat-tool-loop" if args.vikingboat_tool_loop else "--no-vikingboat-tool-loop",
             "--vikingboat-compat" if args.vikingboat_compat else "--no-vikingboat-compat",
             "--initial-tool-prefetch" if args.initial_tool_prefetch else "--no-initial-tool-prefetch",
@@ -506,7 +568,7 @@ def main() -> None:
         judge_env["DASHSCOPE_API_KEY"] = judge_token
     judge_cmd = [
         args.python_bin,
-        "/Users/chx/locomo-eval-web/scripts/local_judge.py",
+        str(SCRIPTS / "local_judge.py"),
         "--input",
         str(qa_csv),
         "--base-url",

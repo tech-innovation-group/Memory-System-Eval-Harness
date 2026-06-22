@@ -43,7 +43,7 @@ Before sharing or publishing a checkout:
 
 ```bash
 ./preflight.sh
-curl -s http://127.0.0.1:19181/api/handoff-audit | python3 -m json.tool | head -160
+curl -s <WEB_BASE_URL>/api/handoff-audit | python3 -m json.tool | head -160
 ```
 
 The project intentionally ignores local secrets, run history, large datasets,

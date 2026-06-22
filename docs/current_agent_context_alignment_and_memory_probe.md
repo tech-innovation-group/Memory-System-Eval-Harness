@@ -24,22 +24,22 @@ Not fully aligned:
 
 ## Key Code Paths
 
-- Batch QA context: `/Users/chx/locomo-eval-web/scripts/openviking_memory_qa.py`
-- Web chat context preview: `/Users/chx/locomo-eval-web/server.py` (`build_agent_context_preview`)
-- LoCoMo OpenViking import: `/Users/chx/locomo-eval-web/scripts/openviking_locomo_import.py`
-- VikingBot reference context: `/Users/chx/openviking-src-latest-2026-05-08/bot/vikingbot/agent/context.py`
-- VikingBot memory parser: `/Users/chx/openviking-src-latest-2026-05-08/bot/vikingbot/agent/memory.py`
+- Batch QA context: `<repo-root>/scripts/openviking_memory_qa.py`
+- Web chat context preview: `<repo-root>/server.py` (`build_agent_context_preview`)
+- LoCoMo OpenViking import: `<repo-root>/scripts/openviking_locomo_import.py`
+- VikingBot reference context: `<openviking-source>`
+- VikingBot memory parser: `<openviking-source>`
 
 ## Probe Suite
 
 Executable probe:
 
 ```bash
-python3 /Users/chx/locomo-eval-web/scripts/locomo_memory_probe.py \
+python3 <repo-root>/scripts/locomo_memory_probe.py \
   --dataset dataset/locomo10.json \
   --sample conv-30 \
-  --workspace /Users/chx/openviking_workspace_locomo_20260601_014238_5b2c49 \
-  --openviking-url http://127.0.0.1:1933 \
+  --workspace <openviking-workspace> \
+  --openviking-url <OPENVIKING_BASE_URL> \
   --account default \
   --user-id default \
   --agent-id default \
@@ -66,8 +66,8 @@ Test cases:
 
 Latest report:
 
-- JSON: `/Users/chx/locomo-eval-web/runs/locomo_memory_probe_20260601_172736/locomo_memory_probe.json`
-- Markdown: `/Users/chx/locomo-eval-web/runs/locomo_memory_probe_20260601_172736/locomo_memory_probe.md`
+- JSON: `<repo-root>/runs/locomo_memory_probe_20260601_172736/locomo_memory_probe.json`
+- Markdown: `<repo-root>/runs/locomo_memory_probe_20260601_172736/locomo_memory_probe.md`
 
 Storage is healthy:
 

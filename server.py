@@ -8,6 +8,7 @@ import json
 import os
 import re
 import signal
+import shutil
 import subprocess
 import threading
 import time
@@ -23,14 +24,17 @@ import urllib.request
 from urllib.parse import parse_qs, urlparse
 
 import sys
+from web import load_web_package  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent
+WEB_PACKAGE = load_web_package(ROOT)
 DATASET_DIR = ROOT / "dataset"
 DATASET_MANIFEST = DATASET_DIR / "manifest.json"
-WEB_STATIC = ROOT / "web" / "static"
-UI_CONTRACT_FILE = ROOT / "web" / "ui_contract.json"
-LEGACY_STATIC = ROOT / "static"
-STATIC = WEB_STATIC if WEB_STATIC.exists() else LEGACY_STATIC
+WEB_STATIC = WEB_PACKAGE.static_root
+UI_CONTRACT_FILE = WEB_PACKAGE.ui_contract_file
+LEGACY_STATIC = WEB_PACKAGE.legacy_static_root
+STATIC = WEB_PACKAGE.active_static_root
+GENERATED_REPORTS_DIR = ROOT / "generated-reports"
 SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
@@ -41,13 +45,21 @@ from memory import evidence_contract as evidence_contract_service  # noqa: E402
 from memory import report_export as report_export_service  # noqa: E402
 from memory import reports as report_service  # noqa: E402
 from memory import runs as run_service  # noqa: E402
+from memory.services import RuntimeStatusContext  # noqa: E402
+from memory.services import TaskFactoryContext  # noqa: E402
+from memory.services import TaskOrchestratorContext  # noqa: E402
+from memory.services import backend_runtime_status as build_backend_runtime_status  # noqa: E402
+from memory.services import build_single_command as build_backend_command  # noqa: E402
+from memory.services import create_task as orchestrate_task  # noqa: E402
+from memory.services import normalize_task_payload  # noqa: E402
 from memory import status as status_service  # noqa: E402
 from memory import task_specs as task_spec_service  # noqa: E402
 from memory import tasking as tasking_service  # noqa: E402
 from memory import validation as validation_service  # noqa: E402
 from memory.adapters.doctor import build_report as adapter_doctor_report  # noqa: E402
-from memory.plugins.registry import available_plugins as available_adapters  # noqa: E402
-from memory.plugins.registry import get_plugin as get_adapter  # noqa: E402
+from memory.plugins.service import available_backends as available_adapters  # noqa: E402
+from memory.plugins.service import get_backend as get_adapter  # noqa: E402
+from memory.plugins.service import plugin_service  # noqa: E402
 from memory.vikingboat_alignment import (  # noqa: E402
     VIKINGBOT_AGENT_MEMORY_BUDGET_CHARS,
     VIKINGBOT_ALIGNMENT_PROFILE,
@@ -59,12 +71,12 @@ from memory.vikingboat_alignment import (  # noqa: E402
     VIKINGBOT_TOOL_SET,
     VIKINGBOT_USER_MEMORY_BUDGET_CHARS,
 )
+from web.api import handle_agent_backend_post  # noqa: E402
+from web.api import handle_memory_backend_get  # noqa: E402
+from web.api import handle_task_post  # noqa: E402
 
 def load_ui_contract() -> dict[str, Any]:
-    try:
-        return json.loads(UI_CONTRACT_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    return WEB_PACKAGE.load_ui_contract()
 
 
 UI_CONTRACT = load_ui_contract()
@@ -90,6 +102,8 @@ CURRENT_SCOPE_RUN_KINDS = {
     "openviking_qa_retry_missing",
     "echomemory",
     "echomemory_qa",
+    "echomemory_generic_qa",
+    "echomemory_qa_retry_failed",
     "echomemory_import",
     "judge",
     "formal",
@@ -100,6 +114,7 @@ CURRENT_SCOPE_AGENT_TYPES = {
     "openviking_memory_qa",
     "openviking_generic_qa",
     "echomemory_memory_qa",
+    "echomemory_generic_qa",
     "openviking_commit_import",
     "echomemory_commit_import",
     "native_vikingbot_cli",
@@ -109,29 +124,52 @@ CURRENT_SCOPE_AGENT_TYPES = {
 HISTORICAL_RUN_KINDS = {"adapter", "conv30", "local_agent", "manual", "stats", "vikingboat"}
 
 def contract_public_static_files() -> set[str]:
-    delivery = UI_CONTRACT.get("delivery_boundary") if isinstance(UI_CONTRACT.get("delivery_boundary"), dict) else {}
-    configured = [
-        str(item)
-        for item in (delivery.get("public_static_files") or [])
-        if str(item).strip()
-    ]
-    canonical = configured or [
-        "web/static/index.html",
-        "web/static/app.js",
-        "web/static/styles.css",
-        "web/static/product-roadmap.html",
-    ]
-    public_files = set(canonical)
-    for rel in list(public_files):
-        if rel.startswith("web/static/"):
-            public_files.add("static/" + rel.removeprefix("web/static/"))
-    return public_files
+    return WEB_PACKAGE.contract_public_static_files(UI_CONTRACT)
 
 def first_existing_path(candidates: list[Path], fallback: Path) -> Path:
     for path in candidates:
         if path.exists():
             return path.resolve()
     return fallback.expanduser().resolve()
+
+
+def first_existing_command(candidates: list[str], fallback: str) -> Path:
+    for candidate in candidates:
+        text = str(candidate or "").strip()
+        if not text:
+            continue
+        resolved = shutil.which(text) if "/" not in text and "\\" not in text else text
+        if not resolved:
+            continue
+        path = Path(resolved).expanduser()
+        if path.exists():
+            return path.resolve()
+    return Path(fallback).expanduser().resolve()
+
+
+def openviking_config_candidates(*path_likes: Any) -> list[Path]:
+    candidates: list[Path] = []
+    seen: set[str] = set()
+
+    def add(path_like: Any) -> None:
+        text = str(path_like or "").strip()
+        if not text:
+            return
+        try:
+            path = Path(text).expanduser().resolve()
+        except Exception:
+            return
+        key = str(path)
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append(path)
+
+    add(os.environ.get("OPENVIKING_CONFIG_FILE"))
+    for path_like in path_likes:
+        add(path_like)
+    add(Path.home() / ".openviking" / "ov.conf")
+    return candidates
 
 
 def discover_repo() -> Path:
@@ -196,21 +234,28 @@ DEFAULT_LOCOMO_MEMORY_TEMPLATES = ROOT / "openviking_custom_memory_templates" / 
 DEFAULT_OPENVIKING_SOURCE = first_existing_path(
     [
         Path(os.environ.get("OPENVIKING_SOURCE", "")) if os.environ.get("OPENVIKING_SOURCE") else Path("__missing__"),
+        Path.home() / "Code/openviking/versions/v0.3.24",
+        Path.cwd() / "openviking-src",
+        Path.cwd() / "openviking-latest",
+        ROOT.parent / "openviking-src",
+        ROOT.parent / "openviking-latest",
         Path.home() / "openviking-src-latest-2026-05-08",
         Path.home() / "openviking-locomo-latest-20260528",
         Path.home() / "openviking-latest",
         Path.home() / "openviking-src",
     ],
-    Path.home() / "openviking-src-latest-2026-05-08",
+    ROOT.parent / "openviking-src",
 )
 _OPENVIKING_PYTHON_CANDIDATES = [
-    Path(os.environ.get("OPENVIKING_PYTHON", "")) if os.environ.get("OPENVIKING_PYTHON") else Path("__missing__"),
-    Path.home() / "openviking-v0312-fresh-venv/bin/python",
-    Path.home() / "jiuwenclaw/bin/python",
-    Path.home() / "openviking-env/bin/python",
-    Path("/usr/bin/python3"),
+    os.environ.get("OPENVIKING_PYTHON", ""),
+    str(Path.home() / "Code/openviking/versions/v0.3.24/.venv/bin/python"),
+    "python3",
+    str(Path.home() / "openviking-v0312-fresh-venv/bin/python"),
+    str(Path.home() / "jiuwenclaw/bin/python"),
+    str(Path.home() / "openviking-env/bin/python"),
+    "/usr/bin/python3",
 ]
-DEFAULT_OPENVIKING_PYTHON = next((p.expanduser() for p in _OPENVIKING_PYTHON_CANDIDATES if p.expanduser().exists()), Path("/usr/bin/python3"))
+DEFAULT_OPENVIKING_PYTHON = first_existing_command(_OPENVIKING_PYTHON_CANDIDATES, "python3")
 DATASET_SCAN_LIMIT_BYTES = 96 * 1024 * 1024
 DATASET_CACHE: dict[str, dict[str, Any]] = {}
 
@@ -233,6 +278,8 @@ def manifest_dataset_candidates() -> list[dict[str, str]]:
                 "path": str(path.resolve()),
                 "format": str(item.get("format") or item.get("type") or "generic"),
                 "description": str(item.get("description") or ""),
+                "samples": item.get("samples"),
+                "questions": item.get("questions"),
             }
         )
     return records
@@ -302,7 +349,13 @@ def dataset_registry() -> list[dict[str, Any]]:
     records = []
     for candidate in dataset_candidates():
         path = safe_path(candidate["path"])
-        record: dict[str, Any] = {**candidate, "path": str(Path(candidate["path"]).expanduser()), "resolved_path": str(path), "exists": path.exists()}
+        record: dict[str, Any] = {
+            **candidate,
+            "path": str(Path(candidate["path"]).expanduser()),
+            "resolved_path": str(path),
+            "exists": path.exists(),
+            "scope": dataset_service.dataset_scope(path, dataset_candidates()),
+        }
         if path.exists():
             try:
                 stat = path.stat()
@@ -321,8 +374,8 @@ def dataset_registry() -> list[dict[str, Any]]:
                 else:
                     record.update(
                         {
-                            "samples": "?",
-                            "questions": "?",
+                            "samples": record.get("samples") or "?",
+                            "questions": record.get("questions") or "?",
                             "categories": {},
                             "runner_status": "large_dataset_lazy",
                             "runner_note": f"文件较大（{record['size_mb']} MB）；页面概览按需加载，测试时可直接运行 100 题。",
@@ -337,6 +390,10 @@ def dataset_registry() -> list[dict[str, Any]]:
 TASKS: dict[str, "Task"] = {}
 TASK_LOCK = threading.Lock()
 TASK_CREATION_LOCK = threading.Lock()
+TASK_RECOVERY_SOURCES = (
+    ROOT / "runs",
+    GENERATED_REPORTS_DIR,
+)
 
 
 def task_log_diagnostics(task: "Task") -> dict[str, Any]:
@@ -404,6 +461,8 @@ TASK_DEDUP_KINDS = {
     "echomemory_import",
     "openviking_qa",
     "echomemory_qa",
+    "echomemory_generic_qa",
+    "echomemory_qa_retry_failed",
     "openviking_generic_qa",
     "openviking_qa_retry_failed",
     "openviking_qa_retry_missing",
@@ -542,7 +601,7 @@ def load_ov_defaults(config_path: Path = DEFAULT_CONFIG) -> dict[str, Any]:
         "account": "default",
         "judge_base_url": os.environ.get("JUDGE_BASE_URL", ""),
         "judge_model": os.environ.get("JUDGE_MODEL", "gpt-5.5"),
-        "answer_model": os.environ.get("ANSWER_MODEL", "gpt-5.5"),
+        "answer_model": os.environ.get("ANSWER_MODEL") or os.environ.get("JUDGE_MODEL") or "gpt-5.5",
         "judge_token_set": bool(os.environ.get("JUDGE_TOKEN")),
         "runner": "local_agent",
         "memory_safety_mode": "read_only_recommended",
@@ -552,7 +611,13 @@ def load_ov_defaults(config_path: Path = DEFAULT_CONFIG) -> dict[str, Any]:
         "plugins": available_adapters(),
     }
     try:
-        cfg = read_json(config_path)
+        cfg = {}
+        for candidate in openviking_config_candidates(config_path):
+            try:
+                cfg = read_json(candidate)
+                break
+            except Exception:
+                continue
         server = cfg.get("server", {})
         bot_server = cfg.get("bot", {}).get("ov_server", {})
         vlm = cfg.get("vlm", {})
@@ -570,22 +635,59 @@ def load_ov_defaults(config_path: Path = DEFAULT_CONFIG) -> dict[str, Any]:
         defaults["account"] = bot_server.get("account_id") or defaults["account"]
         defaults["judge_base_url"] = vlm.get("api_base", "")
         defaults["judge_model"] = vlm.get("model", defaults["judge_model"])
+        defaults["answer_model"] = vlm.get("model", defaults["answer_model"])
         defaults["judge_token_set"] = bool(vlm.get("api_key"))
     except Exception:
         pass
-    try:
-        ov_cfg = read_json(Path.home() / ".openviking" / "ov.conf")
+    for candidate in openviking_config_candidates(config_path):
+        try:
+            ov_cfg = read_json(candidate)
+        except Exception:
+            continue
         ov_workspace = ov_cfg.get("storage", {}).get("workspace")
         if ov_workspace and not account_service.is_legacy_fixed_workspace(ov_workspace):
             defaults["openviking_workspace"] = str(Path(ov_workspace).expanduser().resolve())
-        elif ov_workspace:
+            break
+        if ov_workspace:
             defaults["openviking_workspace"] = account_service.clean_workspace(defaults["home"], defaults["account"])
-    except Exception:
-        pass
+            break
     for key in ("workspace", "openviking_workspace"):
         if account_service.is_legacy_fixed_workspace(defaults.get(key)):
             defaults[key] = account_service.clean_workspace(defaults["home"], defaults["account"])
     return defaults
+
+
+def ui_boot_config() -> dict[str, Any]:
+    defaults = load_ov_defaults()
+    try:
+        account_state = account_service.public_state(ACCOUNT_STATE_FILE, load_ov_defaults())
+    except Exception:
+        account_state = {}
+    active_account = account_service.slug_account(
+        str(account_state.get("active_account") or defaults.get("account") or "default")
+    )
+    records = account_state.get("accounts") if isinstance(account_state.get("accounts"), list) else []
+    active_record = next(
+        (
+            record
+            for record in records
+            if str(record.get("id") or "").strip() == active_account
+        ),
+        {},
+    )
+    merged = {**defaults}
+    merged["active_account"] = active_account
+    merged["account"] = active_account
+    merged["accounts"] = records
+    merged["account_state_file"] = str(account_state.get("state_file") or "")
+    if isinstance(active_record, dict):
+        active_config = active_record.get("config") if isinstance(active_record.get("config"), dict) else {}
+        if active_config:
+            merged["active_account_config"] = active_config
+            merged["memoryBackend"] = active_config.get("memoryBackend") or merged.get("memoryBackend") or ""
+            merged["workspace"] = active_config.get("ovWorkspace") or active_config.get("memoryWorkspace") or merged.get("workspace") or ""
+            merged["openviking_workspace"] = active_config.get("ovWorkspace") or merged.get("openviking_workspace") or ""
+    return merged
 
 
 def looks_like_locomo_data(data: Any) -> bool:
@@ -818,9 +920,90 @@ def active_public_tasks() -> list[dict[str, Any]]:
         return [task.public() for task in TASKS.values() if task.status in ACTIVE_TASK_STATUSES]
 
 
+def _task_from_manifest(run_dir: Path, manifest: dict[str, Any]) -> Task | None:
+    task_id = str(manifest.get("id") or run_dir.name).strip()
+    if not task_id:
+        return None
+    task = Task(
+        id=task_id,
+        kind=str(manifest.get("kind") or run_dir.name.split("_", 1)[0]),
+        name=str(manifest.get("name") or run_dir.name),
+        status=str(manifest.get("status") or "unknown"),
+        created_at=time.time(),
+        started_at=None,
+        ended_at=None,
+        command=list(manifest.get("command") or []),
+        cwd=str(manifest.get("cwd") or ""),
+        output_file=str(manifest.get("output_file") or ""),
+        log_file=str(manifest.get("log_file") or run_dir / "run.log"),
+        run_dir=str(run_dir),
+        manifest_file=str(run_dir / "manifest.json"),
+        returncode=manifest.get("returncode"),
+        summary=manifest.get("summary") if isinstance(manifest.get("summary"), dict) else {},
+        error=str(manifest.get("error") or ""),
+        pid=manifest.get("pid"),
+        display_command=list(manifest.get("command") or []),
+        meta={"config": manifest.get("config") if isinstance(manifest.get("config"), dict) else {}},
+    )
+    try:
+        created = manifest.get("created_at")
+        if created:
+            task.created_at = datetime.fromisoformat(str(created)).timestamp()
+        started = manifest.get("started_at")
+        if started:
+            task.started_at = datetime.fromisoformat(str(started)).timestamp()
+        ended = manifest.get("ended_at")
+        if ended:
+            task.ended_at = datetime.fromisoformat(str(ended)).timestamp()
+    except Exception:
+        pass
+    normalized = run_service.run_record(run_dir, active_run_ids(), compact=True)
+    if isinstance(normalized, dict):
+        status = str(normalized.get("status") or "").strip()
+        if status:
+            task.status = status
+        summary = normalized.get("summary")
+        if isinstance(summary, dict) and summary:
+            task.summary = summary
+    return task
+
+
+def recover_tasks_from_disk() -> None:
+    recovered: dict[str, Task] = {}
+    for base in TASK_RECOVERY_SOURCES:
+        if not base.exists():
+            continue
+        for manifest_path in base.rglob("manifest.json"):
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if not isinstance(manifest, dict):
+                continue
+            run_dir = manifest_path.parent
+            task = _task_from_manifest(run_dir, manifest)
+            if not task:
+                continue
+            if task.status in ACTIVE_TASK_STATUSES:
+                task.meta = {**task.meta, "recovered_from_manifest": True, "recovery_reason": "server_restart"}
+                if task.status == "queued" and not task.started_at:
+                    task.status = "canceled"
+                    task.error = task.error or "任务在服务重启后恢复时未发现活跃进程，已标记为取消。"
+                else:
+                    task.status = "interrupted"
+                    task.error = task.error or "任务在服务重启后恢复展示，原进程状态不可用。"
+                task.ended_at = task.ended_at or time.time()
+            recovered[task.id] = task
+    with TASK_LOCK:
+        for task_id, task in recovered.items():
+            if task_id not in TASKS:
+                TASKS[task_id] = task
+
+
+recover_tasks_from_disk()
+
+
 def health_status() -> dict[str, Any]:
-    running = active_public_tasks()
-    recent = list_runs(DEFAULT_OUTPUT_DIR, 5)
     return status_service.build_health_status(
         service="locomo-eval-web",
         version=Handler.server_version,
@@ -828,9 +1011,9 @@ def health_status() -> dict[str, Any]:
         static=str(STATIC),
         runs_dir=str(DEFAULT_OUTPUT_DIR),
         default_dataset=str(DEFAULT_DATA),
-        datasets=dataset_registry(),
-        running_tasks=running,
-        recent_runs=recent,
+        datasets=[],
+        running_tasks=[],
+        recent_runs=[],
     )
 
 
@@ -847,11 +1030,40 @@ def model_config_status(config: dict[str, Any], defaults: dict[str, Any]) -> dic
     answer_model = str(config.get("answerModel") or defaults.get("answer_model") or config.get("judgeModel") or defaults.get("judge_model") or "").strip()
     judge_base_url = str(config.get("judgeBaseUrl") or defaults.get("judge_base_url") or "").strip()
     judge_model = str(config.get("judgeModel") or defaults.get("judge_model") or "").strip()
+    embedding_config = resolve_openviking_embedding_config()
+    openviking_vlm = resolve_openviking_vlm_config()
+    echomem_embedding_token = str(
+        config.get("dashscope_api_key")
+        or config.get("echomem_api_key")
+        or config.get("echomemEmbeddingApiKey")
+        or config.get("embedding_api_key")
+        or config.get("memory_token")
+        or config.get("vlm_api_key")
+        or os.environ.get("DASHSCOPE_API_KEY")
+        or os.environ.get("ECHOMEM_API_KEY")
+        or embedding_config.get("api_key")
+        or openviking_vlm.get("api_key")
+        or ""
+    ).strip()
+    echomem_chat_token = str(
+        config.get("echomem_chat_api_key")
+        or config.get("echomemChatApiKey")
+        or config.get("vlm_api_key")
+        or config.get("answer_token")
+        or config.get("judge_token")
+        or config.get("memory_token")
+        or os.environ.get("ECHOMEM_CHAT_API_KEY")
+        or openviking_vlm.get("api_key")
+        or echomem_embedding_token
+        or ""
+    ).strip()
+    if not echomem_embedding_token and echomem_chat_token:
+        echomem_embedding_token = echomem_chat_token
     token_sources = {
         "answer_token_set": bool(config.get("answerTokenSet") or os.environ.get("ANSWER_TOKEN") or os.environ.get("LOCOMO_ANSWER_TOKEN")),
         "judge_token_set": bool(config.get("judgeTokenSet") or os.environ.get("JUDGE_TOKEN") or defaults.get("judge_token_set")),
-        "echomem_embedding_token_set": bool(config.get("echomemTokenSet") or config.get("echomemEmbeddingTokenSet") or os.environ.get("DASHSCOPE_API_KEY") or os.environ.get("ECHOMEM_API_KEY")),
-        "echomem_chat_token_set": bool(config.get("echomemChatTokenSet") or os.environ.get("ECHOMEM_CHAT_API_KEY") or os.environ.get("DASHSCOPE_API_KEY")),
+        "echomem_embedding_token_set": bool(config.get("echomemTokenSet") or config.get("echomemEmbeddingTokenSet") or echomem_embedding_token),
+        "echomem_chat_token_set": bool(config.get("echomemChatTokenSet") or echomem_chat_token),
     }
     any_token = token_sources["answer_token_set"] or token_sources["judge_token_set"] or token_sources["echomem_embedding_token_set"] or token_sources["echomem_chat_token_set"]
     return {
@@ -916,145 +1128,19 @@ def locomo_dataset_status(dataset_text: str = "") -> dict[str, Any]:
     }
 
 
-def looks_like_echomem_root(path: Path) -> bool:
-    return (
-        ((path / "packages" / "echomem" / "src").exists() and (path / "packages" / "echofs" / "src").exists())
-        or ((path / "echomem").exists() and (path / "pyproject.toml").exists())
-    )
-
-
-def discover_echomem_roots(config: dict[str, Any]) -> list[dict[str, Any]]:
-    default_root = (Path.home() / "Code" / "echomemory" / "echo_memory_v006").expanduser().resolve()
-    legacy_root = (Path.home() / "Code" / "echomemory" / "echo_memory").expanduser().resolve()
-    raw_candidates = [
-        config.get("echomemRoot"),
-        config.get("echomem_root"),
-        os.environ.get("ECHOMEM_ROOT"),
-        os.environ.get("ECHOMEMORY_ROOT"),
-        default_root,
-        legacy_root,
-    ]
-    seen: set[str] = set()
-    rows: list[dict[str, Any]] = []
-    for raw in raw_candidates:
-        if not raw:
-            continue
-        path = Path(str(raw)).expanduser().resolve()
-        key = str(path)
-        if key in seen:
-            continue
-        seen.add(key)
-        rows.append(
-            {
-                "path": key,
-                "exists": path.exists(),
-                "sdk_layout": looks_like_echomem_root(path),
-                "default": key == str(default_root),
-                "explicit": key in {
-                    str(Path(str(value)).expanduser().resolve())
-                    for value in [config.get("echomemRoot"), config.get("echomem_root"), os.environ.get("ECHOMEM_ROOT"), os.environ.get("ECHOMEMORY_ROOT")]
-                    if value
-                },
-            }
-        )
-    return rows
-
-
-def echomem_git_info(root: str | Path) -> dict[str, Any]:
-    path = Path(str(root)).expanduser()
-    if not path.exists():
-        return {"tag": "", "commit": "", "describe": "", "version_ok": False}
-
-    def run_git(args: list[str]) -> str:
-        try:
-            result = subprocess.run(
-                ["git", "-C", str(path), *args],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=True,
-            )
-            return result.stdout.strip()
-        except Exception:
-            return ""
-
-    tag = run_git(["describe", "--tags", "--exact-match"])
-    describe = run_git(["describe", "--tags", "--always", "--dirty"])
-    commit = run_git(["rev-parse", "HEAD"])
-    return {
-        "tag": tag,
-        "commit": commit,
-        "short_commit": commit[:12] if commit else "",
-        "describe": describe,
-        "required_tag": "version_0.0.6",
-        "version_ok": tag == "version_0.0.6" or describe == "version_0.0.6",
-    }
-
-
 def backend_runtime_status(backend: str, config: dict[str, Any], defaults: dict[str, Any]) -> dict[str, Any]:
-    if backend == "openviking":
-        host = str(config.get("ovHost") or defaults.get("server_host") or "127.0.0.1").strip() or "127.0.0.1"
-        default_port = str(defaults.get("server_port") or "19080")
-        port = str(config.get("ovPort") or default_port).strip() or default_port
-        api_key = str(config.get("root_api_key") or defaults.get("root_api_key") or "").strip()
-        try:
-            probe = get_adapter(backend).probe(host, port, api_key)
-        except Exception as exc:
-            probe = {"ok": False, "error": str(exc)}
-        return {
-            "status": "ok" if probe.get("ok") else "warn",
-            "kind": "service",
-            "label": "OpenViking 服务",
-            "url": f"http://{host}:{port}",
-            "probe": probe,
-        }
-    candidates = discover_echomem_roots(config)
-    explicit = next((item for item in candidates if item.get("explicit") and item.get("sdk_layout")), None)
-    discovered = explicit or next((item for item in candidates if item.get("sdk_layout")), None)
-    root = str((discovered or {}).get("path") or "")
-    root_exists = bool(discovered and discovered.get("exists"))
-    sdk_ready = bool(discovered and discovered.get("sdk_layout"))
-    explicit_ready = bool(explicit)
-    default_ready = bool(discovered and discovered.get("default"))
-    configured_root_ready = explicit_ready or default_ready
-    source = echomem_git_info(root) if root else {"version_ok": False, "required_tag": "version_0.0.6"}
-    version_ready = bool(source.get("version_ok"))
-    embedding_ready = bool(config.get("echomemTokenSet") or os.environ.get("DASHSCOPE_API_KEY") or os.environ.get("ECHOMEM_API_KEY"))
-    chat_ready = bool(config.get("echomemChatTokenSet") or os.environ.get("ECHOMEM_CHAT_API_KEY") or os.environ.get("DASHSCOPE_API_KEY"))
-    status = "ok" if configured_root_ready and version_ready and embedding_ready and chat_ready else ("warn" if sdk_ready else "fail")
-    if not sdk_ready:
-        message = "未找到 EchoMemory SDK 目录；需要设置 ECHOMEM_ROOT。"
-    elif not configured_root_ready:
-        message = f"已发现 EchoMemory 目录，建议显式设置 ECHOMEM_ROOT={root}。"
-    elif not version_ready:
-        found = source.get("describe") or source.get("tag") or source.get("short_commit") or "unknown"
-        message = f"EchoMemory 源码版本不是 version_0.0.6；当前检测到 {found}。"
-    elif not embedding_ready or not chat_ready:
-        missing = []
-        if not embedding_ready:
-            missing.append("embedding token")
-        if not chat_ready:
-            missing.append("chat token")
-        message = "缺少 " + "、".join(missing) + "；可在 .env.local 中配置。"
-    else:
-        message = "EchoMemory SDK version_0.0.6、embedding/chat token 均已检测到。"
-    return {
-        "status": status,
-        "kind": "local-sdk",
-        "label": "EchoMemory 本地 SDK",
-        "root": root,
-        "source": source,
-        "root_exists": root_exists,
-        "explicit_root": explicit_ready,
-        "default_root": default_ready,
-        "sdk_layout": sdk_ready,
-        "version_ok": version_ready,
-        "embedding_token_set": embedding_ready,
-        "chat_token_set": chat_ready,
-        "candidates": candidates[:6],
-        "message": message,
-        "next_action": "在 .env.local 中设置 ECHOMEM_ROOT、DASHSCOPE_API_KEY、ECHOMEM_CHAT_API_KEY 后重启服务。" if status != "ok" else "",
-    }
+    return build_backend_runtime_status(
+        backend,
+        config,
+        defaults,
+        context=RuntimeStatusContext(
+            repo_root=ROOT,
+            first_existing_path=first_existing_path,
+            resolve_openviking_embedding_config=resolve_openviking_embedding_config,
+            resolve_openviking_vlm_config=resolve_openviking_vlm_config,
+            plugin_service=plugin_service,
+        ),
+    )
 
 
 def preflight_fixes(
@@ -1129,11 +1215,11 @@ def preflight_fixes(
         if runtime_status.get("version_ok") is False:
             add_fix(
                 "echomemory_version",
-                "切换到 EchoMemory version_0.0.6",
-                "当前 EchoMemory 源码必须使用官方 release tag version_0.0.6。旧版、develop 或历史 fork 会导致导入、检索和报告结果不可比。",
+                "切换到 EchoMemory version_0.1.0",
+                "当前 EchoMemory 源码建议使用官方 release tag version_0.1.0。旧版、develop 或历史 fork 会导致导入、检索和报告结果不可比。",
                 "required",
                 env={"ECHOMEM_ROOT": "/absolute/path/to/echo_memory"},
-                command="git clone -b version_0.0.6 https://github.com/tech-innovation-group/echo_memory.git /absolute/path/to/echo_memory",
+                command="git clone -b version_0.1.0 https://github.com/tech-innovation-group/echo_memory.git /absolute/path/to/echo_memory",
             )
         if not runtime_status.get("embedding_token_set"):
             env["DASHSCOPE_API_KEY"] = "<your-embedding-api-key>"
@@ -2171,7 +2257,7 @@ def system_readiness(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     datasets = dataset_registry()
     locomo = next((item for item in datasets if item.get("id") == "locomo10"), None)
     running_tasks = active_public_tasks()
-    recent = list_runs(DEFAULT_OUTPUT_DIR, 5)
+    recent = list_runs(DEFAULT_OUTPUT_DIR, 5, compact=True)
     backend = str(preflight.get("backend") or "openviking")
     account = str(preflight.get("account") or "default")
     dataset = preflight.get("dataset") or {}
@@ -2902,9 +2988,9 @@ def github_launch_kit_markdown(data: dict[str, Any]) -> str:
     issue_templates = data.get("issue_templates") or []
     commands = smoke.get("commands") or []
     lines = [
-        "# LoCoMo Memory Eval",
+        "# MemoryBench Eval Workbench",
         "",
-        "A local-first memory benchmark workbench for LoCoMo, focused on OpenViking and EchoMemory. It imports conversations, commits long-term memory, runs memory-grounded QA, judges answers, and exports evidence-rich HTML reports.",
+        "A local-first memory benchmark workbench for OpenViking and EchoMemory. It supports LoCoMo, LongMemEval, EvolvingEvents, and other registered datasets through one inspectable run pipeline.",
         "",
         "## Why It Exists",
         "",
@@ -2930,12 +3016,12 @@ def github_launch_kit_markdown(data: dict[str, Any]) -> str:
             "",
             f"`{smoke.get('web_url') or 'http://127.0.0.1:19181/'}`",
             "",
-            "Recommended route: README / Delivery Guide -> System Config -> LoCoMo Workbench -> Results Center.",
+            "Recommended route: README -> System Config -> target benchmark page -> Judge / report export.",
             "",
             "## Memory Backend Scope",
             "",
-            "- OpenViking: commit sessions, relevant-memory retrieval, memory browser, import integrity, and LoCoMo QA.",
-            "- EchoMemory: local SDK integration, account-scoped storage, session commit, retrieval evidence, and LoCoMo QA.",
+            "- OpenViking: service-backed memory import, retrieval, and benchmark QA.",
+            "- EchoMemory: local SDK integration, account-scoped storage, session commit, retrieval evidence, and benchmark QA.",
             f"- Current release scope is only {MEMORY_BACKEND_SCOPE}.",
             "",
             "## EchoMemory Fork Integration",
@@ -3235,8 +3321,8 @@ def latest_flow_artifacts() -> dict[str, Any]:
         dataset_format = str(record.get("dataset_format") or summary.get("dataset_format") or "").lower()
         run_dir = Path(str(record.get("run_dir") or ""))
         is_memory_qa = (
-            kind in {"openviking_qa", "echomemory_qa", "openviking_generic_qa"}
-            or agent_type in {"echomemory_memory_qa", "openviking_memory_qa", "openviking_generic_qa"}
+            kind in {"openviking_qa", "echomemory_qa", "openviking_generic_qa", "echomemory_generic_qa"}
+            or agent_type in {"echomemory_memory_qa", "openviking_memory_qa", "openviking_generic_qa", "echomemory_generic_qa"}
             or (dataset_format == "locomo" and output_file.endswith(".csv") and summary.get("rows") is not None and kind not in {"judge", "stats", "openviking_import", "echomemory_import", "adapter"})
         )
         if is_memory_qa:
@@ -3661,7 +3747,7 @@ def agent_alignment_status(payload: dict[str, Any] | None = None) -> dict[str, A
         or defaults.get("memory_backend")
         or "openviking"
     )
-    runs = list_runs(DEFAULT_OUTPUT_DIR, 120)
+    runs = list_runs(DEFAULT_OUTPUT_DIR, 120, compact=True)
     backend_rows = locomo_alignment_candidate_rows(runs, backend)
     all_rows = locomo_alignment_candidate_rows(runs, "")
     latest_backend = backend_rows[0] if backend_rows else {}
@@ -3999,9 +4085,19 @@ def locomo_flow_status(payload: dict[str, Any] | None = None, readiness: dict[st
     runtime = preflight.get("runtime") or {}
     running_tasks = active_public_tasks()
     running_import = next((item for item in running_tasks if str(item.get("kind") or "") in {"openviking_import", "echomemory_import"}), {})
-    running_qa = next((item for item in running_tasks if str(item.get("kind") or "") in {"openviking_qa", "echomemory_qa"}), {})
+    running_qa = next((
+        item for item in running_tasks
+        if str(item.get("kind") or "") in {
+            "openviking_qa",
+            "echomemory_qa",
+            "echomemory_generic_qa",
+            "openviking_qa_retry_failed",
+            "openviking_qa_retry_missing",
+            "echomemory_qa_retry_failed",
+        }
+    ), {})
     running_judge = next((item for item in running_tasks if str(item.get("kind") or "") == "judge"), {})
-    runs = list_runs(DEFAULT_OUTPUT_DIR, 60)
+    runs = list_runs(DEFAULT_OUTPUT_DIR, 60, compact=True)
     workspace_text = str(workspace.get("workspace") or "")
     latest_qa = latest_backend_locomo_qa(runs, backend, account=account, workspace=workspace_text, strict_scope=True)
     latest_report = latest_locomo_report(runs, backend, account=account, workspace=workspace_text, strict_scope=True)
@@ -4017,7 +4113,7 @@ def locomo_flow_status(payload: dict[str, Any] | None = None, readiness: dict[st
     }
     if workspace_text and Path(workspace_text).exists():
         try:
-            imported_raw = get_adapter(backend).list_imported_memories(safe_path(workspace_text), account, DEFAULT_OUTPUT_DIR, 80, "")
+            imported_raw = plugin_service.list_imported_memories(backend, safe_path(workspace_text), account, DEFAULT_OUTPUT_DIR, 80, "")
             sessions = imported_raw.get("sessions") if isinstance(imported_raw.get("sessions"), list) else []
             summaries = imported_raw.get("summaries") if isinstance(imported_raw.get("summaries"), list) else []
             complete_count = sum(1 for item in summaries if str(item.get("integrity") or "").lower() == "complete")
@@ -4047,7 +4143,7 @@ def locomo_flow_status(payload: dict[str, Any] | None = None, readiness: dict[st
     graded = int(latest_summary.get("graded") or 0)
     pending = int((latest_summary.get("result_counts") or {}).get("UNSCORED") or max(0, rows - graded))
     accuracy = latest_summary.get("accuracy")
-    token_total = latest_summary.get("total_injection_tokens_est") or latest_summary.get("answer_total_tokens")
+    token_total = latest_summary.get("answer_total_tokens")
     model_issue_count = sum(int(item.get("log_diagnostics", {}).get("model_issue_count") or 0) for item in running_tasks)
     token_available = bool(
         ((models.get("answer") or {}).get("token_set"))
@@ -4801,7 +4897,10 @@ def echomem_contract(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         {"file": str(qa_script), "required": sorted(required_qa_args), "missing": sorted(required_qa_args - qa_args)},
     )
     import_contract_text = text_contains(import_script, [r"create_session", r"add_message", r"commit_session", r"keep_recent_count=0", r"echomemory_import_summary\.json"])
-    qa_contract_text = text_contains(qa_script, [r"sdk\.find", r"sdk\.search", r"context_item_to_dict", r"relevant_memory", r"answer_total_tokens"])
+    qa_contract_text = text_contains(
+        qa_script,
+        [r"sdk\.search", r"context_item_to_dict", r"relevant_memory", r"answer_total_tokens"],
+    )
     common_contract_text = text_contains(common_script, [r"source_uri", r"memory_type", r"confidence", r"evidence_uri", r"trace"])
     add_contract_check(
         checks,
@@ -4817,7 +4916,7 @@ def echomem_contract(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         "retrieval_flow",
         "检索问答链路",
         all(qa_contract_text.values()),
-        "QA 阶段必须调用 find/search，输出 relevant_memory 和 token 用量。",
+        "QA 阶段必须调用 sdk.search，输出 relevant_memory 和 token 用量。",
         "required",
         qa_contract_text,
     )
@@ -4981,23 +5080,24 @@ def prepare_connection_files(payload: dict[str, Any], run_dir: Path, config_path
 
 
 def probe_openviking(host: str, port: str, api_key: str = "") -> dict[str, Any]:
-    return get_adapter("openviking").probe(host, port, api_key)
+    return plugin_service.probe("openviking", host, port, api_key)
 
 
 def discover_openviking_ports(host: str = "127.0.0.1", ports: list[str] | None = None, api_key: str = "") -> dict[str, Any]:
-    return get_adapter("openviking").discover_ports(host, ports, api_key)
+    return plugin_service.discover_ports("openviking", host, ports, api_key)
 
 
 def openviking_workspace_for_run(payload: dict[str, Any], run_dir: Path) -> Path | None:
-    return get_adapter("openviking").workspace_for_run(payload, run_dir, safe_path)
+    return plugin_service.workspace_for_run("openviking", payload, run_dir, safe_path)
 
 
 def make_openviking_runtime_config(payload: dict[str, Any], run_dir: Path, base_config: Path) -> Path:
-    return get_adapter("openviking").make_runtime_config(payload, run_dir, base_config, DEFAULT_LOCOMO_MEMORY_TEMPLATES)
+    return plugin_service.make_runtime_config("openviking", payload, run_dir, base_config, DEFAULT_LOCOMO_MEMORY_TEMPLATES)
 
 
 def restart_openviking_for_workspace(payload: dict[str, Any], run_dir: Path, config_path: Path) -> dict[str, Any]:
-    return get_adapter("openviking").restart_for_workspace(
+    return plugin_service.restart_for_workspace(
+        "openviking",
         payload,
         run_dir,
         config_path,
@@ -5008,23 +5108,23 @@ def restart_openviking_for_workspace(payload: dict[str, Any], run_dir: Path, con
 
 
 def list_openviking_imported_memories(workspace: Path, account: str, limit: int = 80, sample: str = "") -> dict[str, Any]:
-    return get_adapter("openviking").list_imported_memories(workspace, account, DEFAULT_OUTPUT_DIR, limit, sample)
+    return plugin_service.list_imported_memories("openviking", workspace, account, DEFAULT_OUTPUT_DIR, limit, sample)
 
 
 def openviking_import_integrity(workspace: Path, account: str, sample: str = "", summary_path: Path | None = None) -> dict[str, Any]:
-    return get_adapter("openviking").import_integrity(workspace, account, DEFAULT_OUTPUT_DIR, DEFAULT_DATA, sample, summary_path, "default")
+    return plugin_service.import_integrity("openviking", workspace, account, DEFAULT_OUTPUT_DIR, DEFAULT_DATA, sample, summary_path, "default")
 
 
 def openviking_session_browser(workspace: Path, account: str, sample: str = "", limit: int = 120) -> dict[str, Any]:
-    return get_adapter("openviking").session_browser(workspace, account, sample, limit)
+    return plugin_service.session_browser("openviking", workspace, account, sample, limit)
 
 
 def memory_timeline(workspace: Path, account: str, query: str = "", limit: int = 200) -> dict[str, Any]:
-    return get_adapter("openviking").memory_timeline(workspace, account, "default", query, limit)
+    return plugin_service.memory_timeline("openviking", workspace, account, "default", query, limit)
 
 
 def read_memory_file(path: Path, backend: str = "openviking") -> dict[str, Any]:
-    return get_adapter(normalize_memory_backend(backend)).read_memory_file(path)
+    return plugin_service.read_memory_file(normalize_memory_backend(backend), path)
 
 
 def question_result_detail(csv_path: Path, question_id: str = "", index: int | None = None) -> dict[str, Any]:
@@ -5078,7 +5178,7 @@ def question_result_detail(csv_path: Path, question_id: str = "", index: int | N
             "model_error_kind": row.get("model_error_kind") or "",
             "retrieval_error": compact_text(retrieval_error, 900),
             "model_error": compact_text(model_error, 900),
-            "retrieval_tokens_est": row.get("retrieval_tokens_est") or "",
+            "retrieval_tokens_est": "",
             "answer_prompt_tokens": row.get("answer_prompt_tokens") or "",
             "answer_completion_tokens": row.get("answer_completion_tokens") or "",
             "answer_total_tokens": row.get("answer_total_tokens") or "",
@@ -5094,12 +5194,18 @@ def agent_type_for(kind: str, payload: dict[str, Any] | None = None) -> str:
     return run_service.agent_type_for(kind, payload)
 
 
-def run_record(run_dir: Path) -> dict[str, Any] | None:
-    return run_service.run_record(run_dir)
+def run_record(run_dir: Path, compact: bool = False) -> dict[str, Any] | None:
+    return run_service.run_record(run_dir, active_run_ids(), compact=compact)
 
 
-def list_runs(output_dir: Path = DEFAULT_OUTPUT_DIR, limit: int = 40, query: str = "", status: str = "all") -> list[dict[str, Any]]:
-    return run_service.list_runs(output_dir, limit, query, status, active_run_ids())
+def list_runs(
+    output_dir: Path = DEFAULT_OUTPUT_DIR,
+    limit: int = 40,
+    query: str = "",
+    status: str = "all",
+    compact: bool = False,
+) -> list[dict[str, Any]]:
+    return run_service.list_runs(output_dir, limit, query, status, active_run_ids(), compact=compact)
 
 
 def run_scope_text(record: dict[str, Any], include_summary: bool = False) -> str:
@@ -5197,7 +5303,7 @@ def list_current_scope_runs(
     backend: str = "",
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     scan_limit = max(limit * 8, limit + 160)
-    raw_runs = list_runs(output_dir, scan_limit, query, status)
+    raw_runs = list_runs(output_dir, scan_limit, query, status, compact=True)
     scoped = [record for record in raw_runs if current_scope_run(record, backend)]
     runs = scoped[:limit]
     return runs, {
@@ -5354,7 +5460,43 @@ def task_thread(task: Task) -> None:
             with TASK_LOCK:
                 task.process = proc
                 task.pid = proc.pid
+                if task.status == "stopping":
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                    except Exception:
+                        try:
+                            proc.terminate()
+                        except Exception:
+                            pass
                 write_manifest(task, payload, Path(task.run_dir))
+            if task.kind in {"openviking_generic_qa", "echomemory_generic_qa"} and task.output_file:
+                try:
+                    watch_script = ROOT / "scripts" / "watch_generic_benchmark_live_report.py"
+                    if watch_script.exists():
+                        watch_cmd = [
+                            sys.executable,
+                            str(watch_script),
+                            "--run-dir",
+                            str(task.run_dir),
+                            "--csv",
+                            str(task.output_file),
+                            "--title",
+                            str(task.name or "Generic Benchmark Live Report"),
+                        ]
+                        subprocess.Popen(
+                            watch_cmd,
+                            cwd=str(ROOT),
+                            env=env,
+                            stdout=log,
+                            stderr=subprocess.STDOUT,
+                            text=True,
+                            start_new_session=True,
+                        )
+                        log.write(f"[live-report-watch] started {' '.join(watch_cmd)}\n")
+                        log.flush()
+                except Exception as exc:
+                    log.write(f"[live-report-watch] failed to start: {exc}\n")
+                    log.flush()
             assert proc.stdout is not None
             for line in proc.stdout:
                 log.write(line)
@@ -5367,7 +5509,12 @@ def task_thread(task: Task) -> None:
                 log.flush()
         with TASK_LOCK:
             task.returncode = rc
-            task.status = "succeeded" if rc == 0 else "failed"
+            if rc == 0:
+                task.status = "succeeded"
+            elif getattr(task, "status", "") == "stopping" and rc in {-15, -2, 143, 130}:
+                task.status = "interrupted"
+            else:
+                task.status = "failed"
             task.ended_at = time.time()
             preserve_error = bool(task.error and rc != 0)
             if task.output_file:
@@ -5383,13 +5530,15 @@ def task_thread(task: Task) -> None:
                         analysis_path = output.with_suffix(".wrong_analysis.json")
                         task.summary["wrong_analysis"] = analyze_wrong_answers(output, analysis_path)
                         task.summary["wrong_analysis_path"] = str(analysis_path)
-                elif rc != 0 and not preserve_error:
+                elif rc != 0 and task.status != "interrupted" and not preserve_error:
                     diagnostics = task_log_diagnostics(task)
                     hits = diagnostics.get("model_issue_hits") or diagnostics.get("generic_failure_hits") or []
                     if hits:
                         task.error = str(hits[-1])
                     else:
                         task.error = f"任务失败且未生成输出文件：{output}"
+            if task.status == "interrupted" and not task.error:
+                task.error = "任务已由用户停止。"
             write_manifest(task, payload, Path(task.run_dir))
     except Exception as exc:
         with TASK_LOCK:
@@ -5458,7 +5607,7 @@ def resolve_vlm_config(payload: dict[str, Any], config: Path) -> dict[str, str]:
         resolved["model"] = resolved["model"] or str(vlm.get("model") or "").strip()
         resolved["provider"] = resolved["provider"] or str(vlm.get("provider") or "").strip()
 
-    for path in (config, Path.home() / ".openviking" / "ov.conf"):
+    for path in openviking_config_candidates(config):
         if resolved["api_key"] and resolved["api_base"] and resolved["model"]:
             break
         try:
@@ -5473,10 +5622,13 @@ def resolve_vlm_config(payload: dict[str, Any], config: Path) -> dict[str, str]:
 
 def resolve_openviking_embedding_config() -> dict[str, str]:
     """Read local OpenViking embedding config as EchoMemory embedding defaults."""
-    try:
-        raw = read_json(Path.home() / ".openviking" / "ov.conf")
-    except Exception:
-        raw = {}
+    raw = {}
+    for path in openviking_config_candidates():
+        try:
+            raw = read_json(path)
+            break
+        except Exception:
+            continue
     dense = ((raw.get("embedding") or {}).get("dense") or {}) if isinstance(raw, dict) else {}
     return {
         "api_key": str(dense.get("api_key") or "").strip(),
@@ -5488,10 +5640,13 @@ def resolve_openviking_embedding_config() -> dict[str, str]:
 
 def resolve_openviking_vlm_config() -> dict[str, str]:
     """Read local OpenViking VLM config as EchoMemory chat defaults."""
-    try:
-        raw = read_json(Path.home() / ".openviking" / "ov.conf")
-    except Exception:
-        raw = {}
+    raw = {}
+    for path in openviking_config_candidates():
+        try:
+            raw = read_json(path)
+            break
+        except Exception:
+            continue
     vlm = (raw.get("vlm") or {}) if isinstance(raw, dict) else {}
     return {
         "api_key": str(vlm.get("api_key") or "").strip(),
@@ -5509,8 +5664,11 @@ def resolve_echomemory_runtime_env(payload: dict[str, Any], config: Path, judge_
     dashscope_base = str(
         payload.get("dashscope_base_url")
         or payload.get("embedding_base_url")
+        or payload.get("memory_base_url")
+        or payload.get("vlm_base_url")
         or os.environ.get("DASHSCOPE_BASE_URL")
         or embedding_config.get("api_base")
+        or openviking_vlm.get("api_base")
         or "https://dashscope.aliyuncs.com/compatible-mode/v1"
     ).strip()
     explicit_chat_base = (
@@ -5525,17 +5683,34 @@ def resolve_echomemory_runtime_env(payload: dict[str, Any], config: Path, judge_
     token = str(
         payload.get("dashscope_api_key")
         or payload.get("echomem_api_key")
+        or payload.get("echomemEmbeddingApiKey")
+        or payload.get("embedding_api_key")
+        or payload.get("memory_token")
+        or payload.get("vlm_api_key")
+        or payload.get("answer_token")
+        or payload.get("judge_token")
+        or judge_token
         or os.environ.get("DASHSCOPE_API_KEY")
         or embedding_config.get("api_key")
+        or openviking_vlm.get("api_key")
         or ""
     ).strip()
     chat_token = str(
         payload.get("echomem_chat_api_key")
+        or payload.get("echomemChatApiKey")
         or payload.get("vlm_api_key")
+        or payload.get("answer_token")
+        or payload.get("judge_token")
+        or payload.get("memory_token")
+        or judge_token
         or os.environ.get("ECHOMEM_CHAT_API_KEY")
         or openviking_vlm.get("api_key")
         or token
     ).strip()
+    if not token and chat_token:
+        token = chat_token
+    if not chat_token and token:
+        chat_token = token
     chat_model = str(
         payload.get("echomem_chat_model")
         or payload.get("memory_inject_model")
@@ -5675,10 +5850,18 @@ def task_model_preflight_payload(
 ) -> dict[str, Any] | None:
     if kind == "judge":
         return {**payload, "role": "judge"}
-    if kind not in {"openviking_qa", "openviking_generic_qa", "openviking_qa_retry_failed", "openviking_qa_retry_missing", "echomemory_qa"}:
+    if kind not in {
+        "openviking_qa",
+        "openviking_generic_qa",
+        "openviking_qa_retry_failed",
+        "openviking_qa_retry_missing",
+        "echomemory_qa",
+        "echomemory_generic_qa",
+        "echomemory_qa_retry_failed",
+    }:
         return None
     preflight_payload = {**payload, "role": "agent"}
-    if kind == "echomemory_qa":
+    if kind in {"echomemory_qa", "echomemory_generic_qa", "echomemory_qa_retry_failed"}:
         explicit_answer_token = str(payload.get("answer_token") or payload.get("judge_token") or "").strip()
         if not explicit_answer_token:
             fallback_token = str((echomemory_env or {}).get("chat_token") or (echomemory_env or {}).get("token") or "").strip()
@@ -5710,105 +5893,21 @@ def ensure_task_model_preflight(
 
 
 def build_single_command(kind: str, payload: dict[str, Any], run_dir: Path, config: Path) -> tuple[list[str], str, str]:
-    if kind == "adapter":
-        task_spec = task_spec_service.build_adapter_task(payload, run_dir, ROOT, DEFAULT_DATA, safe_path, infer_dataset_format)
-        return task_spec.command, task_spec.output_file, task_spec.name
-
-    if kind == "local_agent":
-        task_spec = task_spec_service.build_local_agent_task(payload, run_dir, ROOT, DEFAULT_DATA, safe_path, infer_dataset_format)
-        return task_spec.command, task_spec.output_file, task_spec.name
-
-    if kind == "openviking_qa":
-        defaults = load_ov_defaults(config)
-        task_spec = get_adapter("openviking").build_locomo_qa_task(
-            payload,
-            run_dir,
-            config,
-            ROOT,
-            DEFAULT_DATA,
-            defaults,
-            safe_path,
-            resolve_judge_token,
-        )
-        return task_spec.command, task_spec.output_file, task_spec.name
-
-    if kind == "openviking_import":
-        task_spec = get_adapter("openviking").build_locomo_import_task(payload, run_dir, ROOT, DEFAULT_DATA, safe_path)
-        return task_spec.command, task_spec.output_file, task_spec.name
-
-    if kind == "openviking_generic_qa":
-        defaults = load_ov_defaults(config)
-        task_spec = get_adapter("openviking").build_generic_qa_task(
-            payload,
-            run_dir,
-            config,
-            ROOT,
-            DEFAULT_DATA,
-            defaults,
-            safe_path,
-            resolve_judge_token,
-        )
-        return task_spec.command, task_spec.output_file, task_spec.name
-
-    if kind == "echomemory_qa":
-        defaults = load_ov_defaults(config)
-        task_spec = get_adapter("echomemory").build_locomo_qa_task(
-            payload,
-            run_dir,
-            config,
-            ROOT,
-            DEFAULT_DATA,
-            defaults,
-            safe_path,
-            resolve_judge_token,
-        )
-        return task_spec.command, task_spec.output_file, task_spec.name
-
-    if kind == "echomemory_import":
-        task_spec = get_adapter("echomemory").build_locomo_import_task(payload, run_dir, ROOT, DEFAULT_DATA, safe_path)
-        return task_spec.command, task_spec.output_file, task_spec.name
-
-    if kind == "openviking_qa_retry_failed":
-        task_spec = task_spec_service.build_openviking_qa_retry_failed_task(
-            payload,
-            run_dir,
-            ROOT,
-            DEFAULT_DATA,
-            safe_path,
-            config,
-            resolve_judge_token,
-        )
-        return task_spec.command, task_spec.output_file, task_spec.name
-
-    if kind == "openviking_qa_retry_missing":
-        task_spec = task_spec_service.build_openviking_qa_retry_missing_task(
-            payload,
-            run_dir,
-            ROOT,
-            DEFAULT_DATA,
-            safe_path,
-            config,
-            resolve_judge_token,
-        )
-        return task_spec.command, task_spec.output_file, task_spec.name
-
-    if kind == "judge":
-        task_spec = task_spec_service.build_judge_task(
-            payload,
-            config,
-            ROOT,
-            safe_path,
-            load_ov_defaults,
-            resolve_judge_token,
-            ensure_judge_columns,
-        )
-        return task_spec.command, task_spec.output_file, task_spec.name
-
-    if kind == "stats":
-        task_spec = task_spec_service.build_stats_task(payload, ROOT, safe_path)
-        return task_spec.command, task_spec.output_file, task_spec.name
-
-    raise ValueError(f"unsupported command kind: {kind}")
+    return build_backend_command(
+        kind,
+        payload,
+        run_dir,
+        config,
+        context=TaskFactoryContext(
+            root=ROOT,
+            default_data=DEFAULT_DATA,
+            safe_path=safe_path,
+            infer_dataset_format=infer_dataset_format,
+            load_ov_defaults=load_ov_defaults,
+            resolve_judge_token=resolve_judge_token,
+            ensure_judge_columns=ensure_judge_columns,
+        ),
+    )
 
 
 def build_pipeline_script(payload: dict[str, Any], run_dir: Path, config: Path) -> tuple[list[str], str, str]:
@@ -5859,10 +5958,27 @@ def script_arg(text: str) -> str:
 def normalize_task_payload(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(payload)
     dataset_format = str(normalized.get("dataset_format") or normalized.get("format") or "").strip().lower()
-    if kind == "openviking_generic_qa":
+    if kind in {"openviking_generic_qa", "echomemory_generic_qa"}:
         normalized["dataset_format"] = dataset_format or "generic"
     elif dataset_format:
         normalized["dataset_format"] = dataset_format
+    if kind in {"echomemory_generic_qa", "echomemory_import"}:
+        wait_mode = str(normalized.get("import_wait_mode") or "").strip().lower()
+        fast_mode = wait_mode == "fast" or bool(normalized.get("defer_artifact_wait"))
+        try:
+            commit_timeout = float(normalized.get("commit_call_timeout_s") or 0)
+        except Exception:
+            commit_timeout = 0.0
+        minimum_commit_timeout = 900.0 if kind == "echomemory_generic_qa" else 300.0
+        if fast_mode and commit_timeout < minimum_commit_timeout:
+            normalized["commit_call_timeout_s"] = int(minimum_commit_timeout)
+        if kind == "echomemory_generic_qa":
+            try:
+                import_timeout = float(normalized.get("import_timeout_s") or 0)
+            except Exception:
+                import_timeout = 0.0
+            if import_timeout < minimum_commit_timeout:
+                normalized["import_timeout_s"] = int(minimum_commit_timeout)
     return normalized
 
 
@@ -5882,7 +5998,7 @@ def create_task(kind: str, payload: dict[str, Any]) -> Task:
         cli_config = safe_path(payload.get("cli_config") or str(DEFAULT_CLI_CONFIG))
         judge_token = resolve_judge_token(payload, config)
         echomemory_env: dict[str, str] = {}
-        if kind in {"echomemory_qa", "echomemory_import"}:
+        if kind in {"echomemory_qa", "echomemory_generic_qa", "echomemory_import", "echomemory_qa_retry_failed"}:
             echomemory_env = resolve_echomemory_runtime_env(payload, config, judge_token)
             embedding_token = str(echomemory_env.get("token") or "").strip()
             chat_token = str(echomemory_env.get("chat_token") or "").strip()
@@ -5918,7 +6034,7 @@ def create_task(kind: str, payload: dict[str, Any]) -> Task:
         meta: dict[str, Any] = {}
         if kind == "openviking_import":
             meta["openviking"] = restart_openviking_for_workspace(payload, run_dir, config)
-        needs_openviking_connection_files = kind not in {"echomemory_qa", "echomemory_import"} and (
+        needs_openviking_connection_files = kind not in {"echomemory_qa", "echomemory_generic_qa", "echomemory_import", "echomemory_qa_retry_failed"} and (
             payload.get("port")
             or payload.get("server_url")
             or payload.get("host")
@@ -5935,21 +6051,25 @@ def create_task(kind: str, payload: dict[str, Any]) -> Task:
         }
         if judge_token:
             env["LOCOMO_JUDGE_TOKEN"] = judge_token
-        if kind in {"echomemory_qa", "echomemory_import"}:
+        if kind in {"echomemory_qa", "echomemory_generic_qa", "echomemory_import", "echomemory_qa_retry_failed"}:
             embedding_token = str(echomemory_env.get("token") or "").strip()
             chat_token = str(echomemory_env.get("chat_token") or "").strip()
+            if not embedding_token and chat_token:
+                embedding_token = chat_token
+            if not chat_token and embedding_token:
+                chat_token = embedding_token
             if embedding_token and chat_token:
                 env["DASHSCOPE_API_KEY"] = embedding_token
                 env["ECHOMEM_CHAT_API_KEY"] = chat_token
                 explicit_answer_token = payload.get("answer_token") or payload.get("judge_token")
-                if kind == "echomemory_qa" and not explicit_answer_token:
+                if kind in {"echomemory_qa", "echomemory_generic_qa", "echomemory_qa_retry_failed"} and not explicit_answer_token:
                     env["LOCOMO_JUDGE_TOKEN"] = chat_token
                 env["ECHOMEM_CHAT_PROVIDER"] = str(echomemory_env.get("chat_provider") or "deepseek")
                 env["ECHOMEM_CHAT_MODEL"] = str(echomemory_env.get("chat_model") or "deepseek-v4-flash")
                 env["ECHOMEM_CHAT_BASE_URL"] = str(echomemory_env.get("chat_base") or "https://dashscope.aliyuncs.com/compatible-mode/v1")
                 env["DASHSCOPE_BASE_URL"] = str(echomemory_env.get("dashscope_base") or "https://dashscope.aliyuncs.com/compatible-mode/v1")
 
-        if kind in {"adapter", "local_agent", "openviking_qa", "openviking_import", "openviking_generic_qa", "echomemory_qa", "echomemory_import", "openviking_qa_retry_failed", "openviking_qa_retry_missing", "judge", "stats"}:
+        if kind in {"adapter", "local_agent", "openviking_qa", "openviking_import", "openviking_generic_qa", "echomemory_qa", "echomemory_generic_qa", "echomemory_import", "echomemory_qa_retry_failed", "openviking_qa_retry_failed", "openviking_qa_retry_missing", "judge", "stats"}:
             command, output_file, name = build_single_command(kind, payload, run_dir, config)
         elif kind == "pipeline":
             command, output_file, name = build_pipeline_script(payload, run_dir, config)
@@ -5983,10 +6103,20 @@ def create_task(kind: str, payload: dict[str, Any]) -> Task:
 
 def stop_task(task: Task) -> dict[str, Any]:
     stopped = False
-    if task.process and task.status == "running":
+    if task.status in {"queued", "running", "stopping"} and not task.process:
+        task.status = "failed"
+        task.ended_at = task.ended_at or time.time()
+        task.error = task.error or "任务无活跃进程，已标记为失败。"
+        stopped = True
+    elif task.process and task.status in {"running", "stopping"}:
         try:
             os.killpg(os.getpgid(task.process.pid), signal.SIGTERM)
             task.status = "stopping"
+            stopped = True
+        except ProcessLookupError:
+            task.status = "failed"
+            task.ended_at = task.ended_at or time.time()
+            task.error = "进程已不存在，标记为失败。"
             stopped = True
         except Exception as exc:
             task.error = str(exc)
@@ -6023,9 +6153,30 @@ def stop_orphan_run_processes() -> list[int]:
     return sorted(set(stopped))
 
 
+def stop_all_tasks_response() -> dict[str, Any]:
+    with TASK_LOCK:
+        tasks = [t for t in TASKS.values() if t.status in {"queued", "running", "stopping"}]
+        results = [stop_task(t) for t in tasks]
+    orphan_pids = stop_orphan_run_processes()
+    return {
+        "stopped": sum(1 for r in results if r["stopped"]) + len(orphan_pids),
+        "orphan_pids": orphan_pids,
+        "tasks": [r["task"] for r in results],
+    }
+
+
+def stop_task_by_id_response(task_id: str) -> tuple[dict[str, Any], int]:
+    with TASK_LOCK:
+        task = TASKS.get(task_id)
+    if not task:
+        return {"error": "task not found"}, 404
+    with TASK_LOCK:
+        stop_task(task)
+    return task.public(), 200
+
+
 def normalize_memory_backend(value: Any) -> str:
-    text = str(value or "").strip().lower()
-    return "echomemory" if text in {"echomem", "echomemory"} else "openviking"
+    return account_service.normalize_backend(str(value or ""))
 
 
 def memory_backend_label(value: Any) -> str:
@@ -6058,15 +6209,22 @@ def unsupported_agent_backend(backend: str, method: str) -> dict[str, Any]:
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "LoCoMoEvalWeb/1.0"
+    protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt: str, *args: Any) -> None:
         return
 
+    def _send_length_headers(self, content_type: str, content_length: int, *, no_store: bool = False) -> None:
+        self.send_header("Content-Type", content_type)
+        if no_store:
+            self.send_header("Cache-Control", "no-store, max-age=0")
+        self.send_header("Content-Length", str(content_length))
+        self.send_header("Connection", "close")
+
     def send_json(self, obj: Any, status: int = 200, write_body: bool = True) -> None:
         data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(data)))
+        self._send_length_headers("application/json; charset=utf-8", len(data))
         self.end_headers()
         if write_body:
             self.wfile.write(data)
@@ -6100,10 +6258,7 @@ class Handler(BaseHTTPRequestHandler):
             ctype = "image/svg+xml"
         data = target.read_bytes()
         self.send_response(200)
-        self.send_header("Content-Type", ctype)
-        if target.suffix in {".html", ".js", ".css"}:
-            self.send_header("Cache-Control", "no-store, max-age=0")
-        self.send_header("Content-Length", str(len(data)))
+        self._send_length_headers(ctype, len(data), no_store=target.suffix in {".html", ".js", ".css"})
         self.end_headers()
         if write_body:
             self.wfile.write(data)
@@ -6132,10 +6287,45 @@ class Handler(BaseHTTPRequestHandler):
             return True
         data = target.read_bytes()
         self.send_response(200)
-        self.send_header("Content-Type", allowed_suffixes[target.suffix.lower()])
-        if target.suffix.lower() == ".html":
-            self.send_header("Cache-Control", "no-store, max-age=0")
-        self.send_header("Content-Length", str(len(data)))
+        self._send_length_headers(
+            allowed_suffixes[target.suffix.lower()],
+            len(data),
+            no_store=target.suffix.lower() == ".html",
+        )
+        self.end_headers()
+        if write_body:
+            self.wfile.write(data)
+        return True
+
+    def serve_generated_report_artifact(self, path: str, write_body: bool = True) -> bool:
+        if not path.startswith("/generated-reports/"):
+            return False
+        rel = path.removeprefix("/generated-reports/").lstrip("/")
+        target = (GENERATED_REPORTS_DIR / rel).resolve()
+        reports_root = GENERATED_REPORTS_DIR.resolve()
+        allowed_suffixes = {
+            ".html": "text/html; charset=utf-8",
+            ".md": "text/markdown; charset=utf-8",
+            ".csv": "text/csv; charset=utf-8",
+            ".json": "application/json; charset=utf-8",
+            ".txt": "text/plain; charset=utf-8",
+        }
+        if (
+            not str(target).startswith(str(reports_root))
+            or not target.exists()
+            or not target.is_file()
+            or target.name.startswith(".")
+            or target.suffix.lower() not in allowed_suffixes
+        ):
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return True
+        data = target.read_bytes()
+        self.send_response(200)
+        self._send_length_headers(
+            allowed_suffixes[target.suffix.lower()],
+            len(data),
+            no_store=target.suffix.lower() == ".html",
+        )
         self.end_headers()
         if write_body:
             self.wfile.write(data)
@@ -6148,6 +6338,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.serve_run_artifact(parsed.path, write_body=False):
             return
+        if self.serve_generated_report_artifact(parsed.path, write_body=False):
+            return
         self.serve_static(parsed.path, write_body=False)
 
     def do_GET(self) -> None:
@@ -6157,8 +6349,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.serve_run_artifact(parsed.path):
             return
+        if self.serve_generated_report_artifact(parsed.path):
+            return
         if parsed.path == "/api/config":
-            self.send_json(load_ov_defaults())
+            self.send_json(ui_boot_config())
             return
         if parsed.path == "/api/ui-contract":
             self.send_json(load_ui_contract())
@@ -6169,9 +6363,9 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/account-config":
             qs = parse_qs(parsed.query)
             account = qs.get("account", ["default"])[0] or "default"
-            data = account_service.public_state(ACCOUNT_STATE_FILE, load_ov_defaults())
-            record = next((item for item in data.get("accounts", []) if item.get("id") == account), None)
-            if not record:
+            try:
+                record = account_service.private_account_state(ACCOUNT_STATE_FILE, load_ov_defaults(), account)
+            except KeyError:
                 self.send_json({"error": "account not found"}, 404)
                 return
             self.send_json(record)
@@ -6412,105 +6606,17 @@ class Handler(BaseHTTPRequestHandler):
                 "config": config,
             }))
             return
-        if parsed.path == "/api/probe":
-            qs = parse_qs(parsed.query)
-            backend = normalize_memory_backend(qs.get("backend", ["openviking"])[0])
-            host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
-            port = qs.get("port", ["19080"])[0] or "19080"
-            api_key = qs.get("root_api_key", [""])[0]
-            if backend == "openviking":
-                data = get_adapter("openviking").probe(host, port, api_key)
-                data["backend"] = "openviking"
-                self.send_json(data)
-                return
-            defaults = load_ov_defaults()
-            runtime = backend_runtime_status("echomemory", {
-                "memoryBackend": "echomemory",
-                "ovWorkspace": qs.get("workspace", [""])[0],
-                "account": qs.get("account", ["default"])[0] or "default",
-            }, defaults)
-            self.send_json({
-                "ok": runtime.get("status") == "ok",
-                "backend": "echomemory",
-                "status": runtime.get("status") or "fail",
-                "kind": runtime.get("kind") or "local-sdk",
-                "url": runtime.get("root") or runtime.get("label") or "EchoMemory local SDK",
-                "root": runtime.get("root") or "",
-                "message": runtime.get("message") or "",
-                "next_action": runtime.get("next_action") or "",
-            })
-            return
-        if parsed.path == "/api/discover-openviking":
-            qs = parse_qs(parsed.query)
-            host = qs.get("host", ["127.0.0.1"])[0] or "127.0.0.1"
-            api_key = qs.get("root_api_key", [""])[0]
-            raw_ports = qs.get("ports", [""])[0]
-            ports = [p for p in re.split(r"[,\s]+", raw_ports) if p] if raw_ports else None
-            self.send_json(get_adapter("openviking").discover_ports(host, ports, api_key))
-            return
-        if parsed.path in {"/api/memory-imported", "/api/openviking-imported"}:
-            qs = parse_qs(parsed.query)
-            defaults = load_ov_defaults()
-            workspace = safe_path(qs.get("workspace", [defaults.get("openviking_workspace") or defaults.get("workspace") or ""])[0])
-            account = qs.get("account", [defaults.get("account") or "default"])[0] or "default"
-            sample = qs.get("sample", [""])[0]
-            limit = int(qs.get("limit", ["80"])[0] or 80)
-            backend = "openviking" if parsed.path == "/api/openviking-imported" else normalize_memory_backend(qs.get("backend", ["openviking"])[0])
-            try:
-                self.send_json(get_adapter(backend).list_imported_memories(workspace, account, DEFAULT_OUTPUT_DIR, limit, sample))
-            except Exception as exc:
-                self.send_json({"error": str(exc)}, 400)
-            return
-        if parsed.path in {"/api/memory-import-integrity", "/api/openviking-import-integrity"}:
-            qs = parse_qs(parsed.query)
-            defaults = load_ov_defaults()
-            workspace = safe_path(qs.get("workspace", [defaults.get("openviking_workspace") or defaults.get("workspace") or ""])[0])
-            account = qs.get("account", [defaults.get("account") or "default"])[0] or "default"
-            user_id = qs.get("user", [defaults.get("ov_user_id") or "default"])[0] or "default"
-            sample = qs.get("sample", [""])[0]
-            summary_text = qs.get("summary", [""])[0]
-            summary_path = safe_path(summary_text) if summary_text else None
-            backend = "openviking" if parsed.path == "/api/openviking-import-integrity" else normalize_memory_backend(qs.get("backend", ["openviking"])[0])
-            try:
-                self.send_json(get_adapter(backend).import_integrity(workspace, account, DEFAULT_OUTPUT_DIR, DEFAULT_DATA, sample, summary_path, user_id))
-            except Exception as exc:
-                self.send_json({"error": str(exc)}, 400)
-            return
-        if parsed.path in {"/api/memory-sessions", "/api/openviking-sessions"}:
-            qs = parse_qs(parsed.query)
-            defaults = load_ov_defaults()
-            workspace = safe_path(qs.get("workspace", [defaults.get("openviking_workspace") or defaults.get("workspace") or ""])[0])
-            account = qs.get("account", [defaults.get("account") or "default"])[0] or "default"
-            sample = qs.get("sample", [""])[0]
-            limit = int(qs.get("limit", ["120"])[0] or 120)
-            backend = "openviking" if parsed.path == "/api/openviking-sessions" else normalize_memory_backend(qs.get("backend", ["openviking"])[0])
-            try:
-                self.send_json(get_adapter(backend).session_browser(workspace, account, sample, limit))
-            except Exception as exc:
-                self.send_json({"error": str(exc)}, 400)
-            return
-        if parsed.path == "/api/memory-timeline":
-            qs = parse_qs(parsed.query)
-            defaults = load_ov_defaults()
-            workspace = safe_path(qs.get("workspace", [defaults.get("openviking_workspace") or defaults.get("workspace") or ""])[0])
-            account = qs.get("account", [defaults.get("account") or "default"])[0] or "default"
-            user_id = qs.get("user", [defaults.get("ov_user_id") or "default"])[0] or "default"
-            query = qs.get("q", [""])[0]
-            limit = int(qs.get("limit", ["200"])[0] or 200)
-            backend = normalize_memory_backend(qs.get("backend", ["openviking"])[0])
-            try:
-                self.send_json(get_adapter(backend).memory_timeline(workspace, account, user_id, query, limit))
-            except Exception as exc:
-                self.send_json({"error": str(exc)}, 400)
-            return
-        if parsed.path == "/api/memory-file":
-            qs = parse_qs(parsed.query)
-            path = safe_path(qs.get("path", [""])[0])
-            backend = normalize_memory_backend(qs.get("backend", ["openviking"])[0])
-            try:
-                self.send_json(get_adapter(backend).read_memory_file(path))
-            except Exception as exc:
-                self.send_json({"error": str(exc)}, 404)
+        if handle_memory_backend_get(
+            parsed,
+            send_json=self.send_json,
+            safe_path=safe_path,
+            load_defaults=load_ov_defaults,
+            normalize_memory_backend=normalize_memory_backend,
+            plugin_service=plugin_service,
+            backend_runtime_status=backend_runtime_status,
+            default_output_dir=DEFAULT_OUTPUT_DIR,
+            default_data=DEFAULT_DATA,
+        ):
             return
         if parsed.path == "/api/dataset":
             qs = parse_qs(parsed.query)
@@ -6574,9 +6680,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": str(exc)}, 400)
             return
         if parsed.path == "/api/tasks":
+            qs = parse_qs(parsed.query)
+            include_inactive = str(qs.get("include_inactive", ["0"])[0] or "").strip().lower() in {"1", "true", "yes", "on"}
+            recover = str(qs.get("recover", ["0"])[0] or "").strip().lower() in {"1", "true", "yes", "on"}
+            if include_inactive or recover:
+                recover_tasks_from_disk()
             with TASK_LOCK:
-                tasks = [t.public() for t in sorted(TASKS.values(), key=lambda x: x.created_at, reverse=True)]
-            self.send_json({"tasks": tasks})
+                source_tasks = TASKS.values() if include_inactive else [task for task in TASKS.values() if task.status in ACTIVE_TASK_STATUSES]
+                tasks = [t.public() for t in sorted(source_tasks, key=lambda x: x.created_at, reverse=True)]
+            self.send_json({"tasks": tasks, "scope": "all" if include_inactive else "active"})
             return
         if parsed.path == "/api/runs":
             qs = parse_qs(parsed.query)
@@ -6586,7 +6698,7 @@ class Handler(BaseHTTPRequestHandler):
             status = qs.get("status", ["all"])[0]
             include_history = str(qs.get("include_history", ["0"])[0] or "").strip().lower() in {"1", "true", "yes", "on"}
             if include_history:
-                runs = list_runs(output_dir, limit, query, status)
+                runs = list_runs(output_dir, limit, query, status, compact=True)
                 scope_meta = {
                     "scope": "all local history",
                     "include_history": True,
@@ -6926,91 +7038,36 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self.send_json({"error": str(exc)}, status=400)
             return
-        if parsed.path == "/api/agent/chat":
-            try:
-                payload = self.read_body()
-                backend = agent_backend_from_payload(payload)
-                adapter = get_adapter(backend)
-                method = getattr(adapter, "agent_chat", None)
-                if not callable(method):
-                    self.send_json(unsupported_agent_backend(backend, "agent_chat"), status=501)
-                    return
-                defaults = load_ov_defaults()
-                result = method(payload, defaults, DEFAULT_CONFIG)
-                if "error" in result:
-                    self.send_json(result, status=500)
-                else:
-                    self.send_json(result)
-            except Exception as exc:
-                self.send_json({"error": str(exc)}, status=500)
-            return
-        if parsed.path == "/api/agent/context":
-            try:
-                payload = self.read_body()
-                backend = agent_backend_from_payload(payload)
-                adapter = get_adapter(backend)
-                method = getattr(adapter, "agent_context", None)
-                if not callable(method):
-                    self.send_json(unsupported_agent_backend(backend, "agent_context"), status=501)
-                    return
-                self.send_json(method(payload, load_ov_defaults()))
-            except Exception as exc:
-                self.send_json({"error": str(exc)}, status=500)
-            return
-        if parsed.path == "/api/agent/archive":
-            try:
-                payload = self.read_body()
-                backend = agent_backend_from_payload(payload)
-                adapter = get_adapter(backend)
-                method = getattr(adapter, "archive_chat", None)
-                if not callable(method):
-                    self.send_json(unsupported_agent_backend(backend, "archive_chat"), status=501)
-                    return
-                self.send_json(method(payload, load_ov_defaults(), DEFAULT_OUTPUT_DIR))
-            except Exception as exc:
-                self.send_json({"error": str(exc)}, status=500)
-            return
-        if parsed.path == "/api/tasks":
-            try:
-                payload = self.read_body()
-                task = create_task(payload.get("kind", "local_agent"), payload)
-                self.send_json(task.public(), 201)
-            except (DuplicateActiveTaskError, ActiveLocomoQaConflictError) as exc:
-                self.send_json({"error": str(exc), "task": exc.task.public()}, 409)
-            except Exception as exc:
-                self.send_json({"error": str(exc)}, 400)
-            return
-        if parsed.path == "/api/validate":
-            try:
-                payload = self.read_body()
-                self.send_json(validate_payload(payload))
-            except Exception as exc:
-                self.send_json({"error": str(exc)}, 400)
-            return
-        if parsed.path == "/api/tasks/stop-all":
-            with TASK_LOCK:
-                tasks = [t for t in TASKS.values() if t.status in {"queued", "running", "stopping"}]
-                results = [stop_task(t) for t in tasks]
-            orphan_pids = stop_orphan_run_processes()
-            self.send_json(
-                {
-                    "stopped": sum(1 for r in results if r["stopped"]) + len(orphan_pids),
-                    "orphan_pids": orphan_pids,
-                    "tasks": [r["task"] for r in results],
-                }
-            )
-            return
-        if parsed.path.startswith("/api/tasks/") and parsed.path.endswith("/stop"):
-            task_id = parsed.path.strip("/").split("/")[2]
-            with TASK_LOCK:
-                task = TASKS.get(task_id)
-            if not task:
-                self.send_json({"error": "task not found"}, 404)
+        if parsed.path in {"/api/agent/chat", "/api/agent/context", "/api/agent/archive"}:
+            payload = self.read_body()
+            if handle_agent_backend_post(
+                parsed.path,
+                payload,
+                send_json=self.send_json,
+                load_defaults=load_ov_defaults,
+                default_config=DEFAULT_CONFIG,
+                default_output_dir=DEFAULT_OUTPUT_DIR,
+                plugin_service=plugin_service,
+                agent_backend_from_payload=agent_backend_from_payload,
+                unsupported_agent_backend=unsupported_agent_backend,
+            ):
                 return
-            with TASK_LOCK:
-                stop_task(task)
-            self.send_json(task.public())
-            return
+        if parsed.path in {"/api/tasks", "/api/validate", "/api/tasks/stop-all"} or (
+            parsed.path.startswith("/api/tasks/") and parsed.path.endswith("/stop")
+        ):
+            payload = self.read_body()
+            if handle_task_post(
+                parsed.path,
+                payload,
+                send_json=self.send_json,
+                create_task=create_task,
+                validate_payload=validate_payload,
+                stop_all_tasks=stop_all_tasks_response,
+                stop_task_by_id=stop_task_by_id_response,
+                duplicate_error_cls=DuplicateActiveTaskError,
+                conflict_error_cls=ActiveLocomoQaConflictError,
+            ):
+                return
         if parsed.path == "/api/analyze":
             try:
                 payload = self.read_body()

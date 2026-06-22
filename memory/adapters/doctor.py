@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .registry import available_adapters
+from memory.plugins.service import available_backends
 
 
 EXPECTED_BACKENDS = ("echomemory", "openviking")
@@ -30,7 +30,7 @@ def summarize_backend(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_report() -> dict[str, Any]:
-    backends = available_adapters()
+    backends = available_backends()
     rows = [summarize_backend(item) for item in backends]
     ids = {str(item.get("id") or "") for item in rows}
     expected = set(EXPECTED_BACKENDS)

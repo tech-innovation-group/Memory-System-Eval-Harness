@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import time
 from dataclasses import dataclass
@@ -427,17 +428,26 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Probe LoCoMo OpenViking memory storage and retrieval health.")
-    dataset_root = Path(__file__).resolve().parents[1] / "dataset"
+    repo_root = Path(__file__).resolve().parents[1]
+    dataset_root = repo_root / "dataset"
     dataset_candidates = [
         dataset_root / "full" / "locomo.json",
         dataset_root / "locomo.json",
         dataset_root / "locomo10.json",
     ]
     dataset_default = next((path for path in dataset_candidates if path.exists()), dataset_candidates[-1])
+    workspace_candidates = [
+        os.environ.get("LOCOMO_EVAL_WORKSPACE", ""),
+        os.environ.get("OPENVIKING_WORKSPACE", ""),
+        str(Path.cwd() / "workspace"),
+        str(repo_root / "workspace"),
+        str(Path.home() / "openviking_workspace_locomo"),
+    ]
+    workspace_default = next((item for item in workspace_candidates if str(item).strip()), str(repo_root / "workspace"))
     parser.add_argument("--dataset", default=str(dataset_default))
     parser.add_argument("--sample", default="conv-30")
-    parser.add_argument("--workspace", default=os.environ.get("LOCOMO_EVAL_WORKSPACE") or str(Path.home() / "openviking_workspace_locomo"))
-    parser.add_argument("--runs-dir", default=os.environ.get("LOCOMO_EVAL_RUNS_DIR") or str(Path(__file__).resolve().parents[1] / "runs"))
+    parser.add_argument("--workspace", default=workspace_default)
+    parser.add_argument("--runs-dir", default=os.environ.get("LOCOMO_EVAL_RUNS_DIR") or str(repo_root / "runs"))
     parser.add_argument("--import-summary", default="")
     parser.add_argument("--openviking-url", default="http://127.0.0.1:1933")
     parser.add_argument("--account", default="default")

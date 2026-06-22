@@ -1,0 +1,667 @@
+{
+  "cases": [
+    {
+      "case_id": "temporal_story_time",
+      "family": "temporal",
+      "query": "When did the consulate request one more financial statement?",
+      "query_time": "2026-04-10",
+      "expected_keywords": [
+        "2026-04-08"
+      ],
+      "note": "Relative-time mention should resolve to story time rather than write time."
+    },
+    {
+      "case_id": "longitudinal_latest_state",
+      "family": "longitudinal",
+      "query": "What is Maya's latest preference now?",
+      "query_time": "2026-04-10",
+      "expected_keywords": [
+        "2026-04-10",
+        "coffee"
+      ],
+      "note": "Latest-state query should benefit from the topic-centered middle layer."
+    },
+    {
+      "case_id": "longitudinal_process_evolution",
+      "family": "longitudinal",
+      "query": "How did the visa process change over time?",
+      "query_time": "2026-04-10",
+      "expected_keywords": [
+        "2026-03-02",
+        "2026-04-08"
+      ],
+      "note": "Cross-session process evolution should surface early and late updates together."
+    },
+    {
+      "case_id": "relational_intro_path",
+      "family": "relational",
+      "query": "Who introduced Jon to Lena?",
+      "query_time": "2026-04-13",
+      "expected_keywords": [
+        "Maya"
+      ],
+      "note": "Relation-heavy question should prefer path-grounded graph evidence over nearby co-occurrence."
+    },
+    {
+      "case_id": "answerability_type_mismatch",
+      "family": "relational",
+      "query": "Which company helped Maya with the visa checklist?",
+      "query_time": "2026-03-20",
+      "expected_keywords": [
+        "unknown"
+      ],
+      "note": "Without answerability discipline, the system may answer with a person even when the query requires a company."
+    },
+    {
+      "case_id": "state_conflict",
+      "family": "state",
+      "query": "What is Kai's badge number?",
+      "query_time": "2026-04-14",
+      "expected_keywords": [
+        "unknown_conflict"
+      ],
+      "note": "Without answerability discipline, the system may over-answer conflicted state."
+    }
+  ],
+  "variants": [
+    {
+      "variant": "legacy_v17",
+      "correct": 5,
+      "total": 6,
+      "rows": [
+        {
+          "case_id": "temporal_story_time",
+          "family": "temporal",
+          "query": "When did the consulate request one more financial statement?",
+          "answer": "2026-04-08",
+          "passed": true,
+          "contract_ok": true,
+          "present_layers": [
+            "event",
+            "event_time",
+            "fact",
+            "graph",
+            "temporal_tree"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "graph",
+            "atom"
+          ],
+          "note": "Relative-time mention should resolve to story time rather than write time."
+        },
+        {
+          "case_id": "longitudinal_latest_state",
+          "family": "longitudinal",
+          "query": "What is Maya's latest preference now?",
+          "answer": "2026-04-10: Maya prefers coffee. [active]",
+          "passed": true,
+          "contract_ok": true,
+          "present_layers": [
+            "event_time",
+            "fact",
+            "topic_dossier"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "atom"
+          ],
+          "note": "Latest-state query should benefit from the topic-centered middle layer."
+        },
+        {
+          "case_id": "longitudinal_process_evolution",
+          "family": "longitudinal",
+          "query": "How did the visa process change over time?",
+          "answer": "2026-03-02: Maya started the visa paperwork on 2026-03-02 [active]\n2026-03-03: Nora helped Maya with the visa checklist on 2026-03-03. [active]\n2026-04-08: Yesterday the consulate requested one more financial statement. [active]",
+          "passed": true,
+          "contract_ok": true,
+          "present_layers": [
+            "event_time",
+            "fact",
+            "topic_dossier"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "atom"
+          ],
+          "note": "Cross-session process evolution should surface early and late updates together."
+        },
+        {
+          "case_id": "relational_intro_path",
+          "family": "relational",
+          "query": "Who introduced Jon to Lena?",
+          "answer": "Maya introduced Jon to Lena that evening.",
+          "passed": true,
+          "contract_ok": true,
+          "present_layers": [
+            "event",
+            "event_time",
+            "fact",
+            "graph",
+            "path_grounding"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "atom"
+          ],
+          "note": "Relation-heavy question should prefer path-grounded graph evidence over nearby co-occurrence."
+        },
+        {
+          "case_id": "answerability_type_mismatch",
+          "family": "relational",
+          "query": "Which company helped Maya with the visa checklist?",
+          "answer": "Nora helped Maya with the visa checklist on 2026-03-03.",
+          "passed": false,
+          "contract_ok": true,
+          "present_layers": [
+            "event",
+            "event_time",
+            "fact",
+            "graph",
+            "path_grounding"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "atom"
+          ],
+          "note": "Without answerability discipline, the system may answer with a person even when the query requires a company."
+        },
+        {
+          "case_id": "state_conflict",
+          "family": "state",
+          "query": "What is Kai's badge number?",
+          "answer": "unknown_conflict",
+          "passed": true,
+          "contract_ok": true,
+          "present_layers": [
+            "event_time",
+            "fact"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [],
+          "note": "Without answerability discipline, the system may over-answer conflicted state."
+        }
+      ],
+      "qa_ready": true,
+      "dossier_count": 5
+    },
+    {
+      "variant": "typed_answerability_gate",
+      "correct": 6,
+      "total": 6,
+      "rows": [
+        {
+          "case_id": "temporal_story_time",
+          "family": "temporal",
+          "query": "When did the consulate request one more financial statement?",
+          "answer": "2026-04-08",
+          "passed": true,
+          "contract_ok": true,
+          "present_layers": [
+            "event",
+            "event_time",
+            "fact",
+            "graph",
+            "temporal_tree"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "graph",
+            "atom"
+          ],
+          "note": "Relative-time mention should resolve to story time rather than write time."
+        },
+        {
+          "case_id": "longitudinal_latest_state",
+          "family": "longitudinal",
+          "query": "What is Maya's latest preference now?",
+          "answer": "2026-04-10: Maya prefers coffee. [active]",
+          "passed": true,
+          "contract_ok": true,
+          "present_layers": [
+            "event_time",
+            "fact",
+            "topic_dossier"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "atom"
+          ],
+          "note": "Latest-state query should benefit from the topic-centered middle layer."
+        },
+        {
+          "case_id": "longitudinal_process_evolution",
+          "family": "longitudinal",
+          "query": "How did the visa process change over time?",
+          "answer": "2026-03-02: Maya started the visa paperwork on 2026-03-02 [active]\n2026-03-03: Nora helped Maya with the visa checklist on 2026-03-03. [active]\n2026-04-08: Yesterday the consulate requested one more financial statement. [active]",
+          "passed": true,
+          "contract_ok": true,
+          "present_layers": [
+            "event_time",
+            "fact",
+            "topic_dossier"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "atom"
+          ],
+          "note": "Cross-session process evolution should surface early and late updates together."
+        },
+        {
+          "case_id": "relational_intro_path",
+          "family": "relational",
+          "query": "Who introduced Jon to Lena?",
+          "answer": "Maya introduced Jon to Lena that evening.",
+          "passed": true,
+          "contract_ok": true,
+          "present_layers": [
+            "event",
+            "event_time",
+            "fact",
+            "graph",
+            "path_grounding"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "atom"
+          ],
+          "note": "Relation-heavy question should prefer path-grounded graph evidence over nearby co-occurrence."
+        },
+        {
+          "case_id": "answerability_type_mismatch",
+          "family": "relational",
+          "query": "Which company helped Maya with the visa checklist?",
+          "answer": "unknown",
+          "passed": true,
+          "contract_ok": true,
+          "present_layers": [
+            "event",
+            "event_time",
+            "fact",
+            "graph",
+            "path_grounding"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "atom"
+          ],
+          "note": "Without answerability discipline, the system may answer with a person even when the query requires a company."
+        },
+        {
+          "case_id": "state_conflict",
+          "family": "state",
+          "query": "What is Kai's badge number?",
+          "answer": "unknown_conflict",
+          "passed": true,
+          "contract_ok": true,
+          "present_layers": [
+            "event_time",
+            "fact"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [],
+          "note": "Without answerability discipline, the system may over-answer conflicted state."
+        }
+      ],
+      "qa_ready": true,
+      "dossier_count": 5
+    },
+    {
+      "variant": "write_time_collapse",
+      "correct": 3,
+      "total": 6,
+      "rows": [
+        {
+          "case_id": "temporal_story_time",
+          "family": "temporal",
+          "query": "When did the consulate request one more financial statement?",
+          "answer": "2026-04-09",
+          "passed": false,
+          "contract_ok": true,
+          "present_layers": [
+            "event",
+            "event_time",
+            "fact",
+            "graph",
+            "temporal_tree"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "graph",
+            "atom"
+          ],
+          "note": "Relative-time mention should resolve to story time rather than write time."
+        },
+        {
+          "case_id": "longitudinal_latest_state",
+          "family": "longitudinal",
+          "query": "What is Maya's latest preference now?",
+          "answer": "2026-04-10: Maya prefers coffee. [active]",
+          "passed": true,
+          "contract_ok": true,
+          "present_layers": [
+            "event_time",
+            "fact",
+            "topic_dossier"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "atom"
+          ],
+          "note": "Latest-state query should benefit from the topic-centered middle layer."
+        },
+        {
+          "case_id": "longitudinal_process_evolution",
+          "family": "longitudinal",
+          "query": "How did the visa process change over time?",
+          "answer": "2026-03-03: Maya started the visa paperwork on 2026-03-02 [active]\n2026-03-03: Nora helped Maya with the visa checklist on 2026-03-03. [active]\n2026-04-09: Yesterday the consulate requested one more financial statement. [active]",
+          "passed": false,
+          "contract_ok": true,
+          "present_layers": [
+            "event_time",
+            "fact",
+            "topic_dossier"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "atom"
+          ],
+          "note": "Cross-session process evolution should surface early and late updates together."
+        },
+        {
+          "case_id": "relational_intro_path",
+          "family": "relational",
+          "query": "Who introduced Jon to Lena?",
+          "answer": "Maya introduced Jon to Lena that evening.",
+          "passed": true,
+          "contract_ok": true,
+          "present_layers": [
+            "event",
+            "event_time",
+            "fact",
+            "graph",
+            "path_grounding"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "atom"
+          ],
+          "note": "Relation-heavy question should prefer path-grounded graph evidence over nearby co-occurrence."
+        },
+        {
+          "case_id": "answerability_type_mismatch",
+          "family": "relational",
+          "query": "Which company helped Maya with the visa checklist?",
+          "answer": "Nora helped Maya with the visa checklist on 2026-03-03.",
+          "passed": false,
+          "contract_ok": true,
+          "present_layers": [
+            "event",
+            "event_time",
+            "fact",
+            "graph",
+            "path_grounding"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "atom"
+          ],
+          "note": "Without answerability discipline, the system may answer with a person even when the query requires a company."
+        },
+        {
+          "case_id": "state_conflict",
+          "family": "state",
+          "query": "What is Kai's badge number?",
+          "answer": "unknown_conflict",
+          "passed": true,
+          "contract_ok": true,
+          "present_layers": [
+            "event_time",
+            "fact"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [],
+          "note": "Without answerability discipline, the system may over-answer conflicted state."
+        }
+      ],
+      "qa_ready": true,
+      "dossier_count": 5
+    },
+    {
+      "variant": "no_topic_dossier",
+      "correct": 3,
+      "total": 6,
+      "rows": [
+        {
+          "case_id": "temporal_story_time",
+          "family": "temporal",
+          "query": "When did the consulate request one more financial statement?",
+          "answer": "2026-04-08",
+          "passed": true,
+          "contract_ok": true,
+          "present_layers": [
+            "event",
+            "event_time",
+            "fact",
+            "graph",
+            "temporal_tree"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "graph",
+            "atom"
+          ],
+          "note": "Relative-time mention should resolve to story time rather than write time."
+        },
+        {
+          "case_id": "longitudinal_latest_state",
+          "family": "longitudinal",
+          "query": "What is Maya's latest preference now?",
+          "answer": "Maya started the visa paperwork on 2026-03-02",
+          "passed": false,
+          "contract_ok": true,
+          "present_layers": [
+            "event_time",
+            "fact"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [],
+          "note": "Latest-state query should benefit from the topic-centered middle layer."
+        },
+        {
+          "case_id": "longitudinal_process_evolution",
+          "family": "longitudinal",
+          "query": "How did the visa process change over time?",
+          "answer": "Maya started the visa paperwork on 2026-03-02",
+          "passed": false,
+          "contract_ok": true,
+          "present_layers": [
+            "event_time",
+            "fact"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [],
+          "note": "Cross-session process evolution should surface early and late updates together."
+        },
+        {
+          "case_id": "relational_intro_path",
+          "family": "relational",
+          "query": "Who introduced Jon to Lena?",
+          "answer": "Maya introduced Jon to Lena that evening.",
+          "passed": true,
+          "contract_ok": true,
+          "present_layers": [
+            "event",
+            "event_time",
+            "fact",
+            "graph",
+            "path_grounding"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "atom"
+          ],
+          "note": "Relation-heavy question should prefer path-grounded graph evidence over nearby co-occurrence."
+        },
+        {
+          "case_id": "answerability_type_mismatch",
+          "family": "relational",
+          "query": "Which company helped Maya with the visa checklist?",
+          "answer": "Nora helped Maya with the visa checklist on 2026-03-03.",
+          "passed": false,
+          "contract_ok": true,
+          "present_layers": [
+            "event",
+            "event_time",
+            "fact",
+            "graph",
+            "path_grounding"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "atom"
+          ],
+          "note": "Without answerability discipline, the system may answer with a person even when the query requires a company."
+        },
+        {
+          "case_id": "state_conflict",
+          "family": "state",
+          "query": "What is Kai's badge number?",
+          "answer": "unknown_conflict",
+          "passed": true,
+          "contract_ok": true,
+          "present_layers": [
+            "event_time",
+            "fact"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [],
+          "note": "Without answerability discipline, the system may over-answer conflicted state."
+        }
+      ],
+      "qa_ready": true,
+      "dossier_count": 0
+    },
+    {
+      "variant": "no_answerability_gate",
+      "correct": 5,
+      "total": 6,
+      "rows": [
+        {
+          "case_id": "temporal_story_time",
+          "family": "temporal",
+          "query": "When did the consulate request one more financial statement?",
+          "answer": "2026-04-08",
+          "passed": true,
+          "contract_ok": true,
+          "present_layers": [
+            "event",
+            "event_time",
+            "fact",
+            "graph",
+            "temporal_tree"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "graph",
+            "atom"
+          ],
+          "note": "Relative-time mention should resolve to story time rather than write time."
+        },
+        {
+          "case_id": "longitudinal_latest_state",
+          "family": "longitudinal",
+          "query": "What is Maya's latest preference now?",
+          "answer": "2026-04-10: Maya prefers coffee. [active]",
+          "passed": true,
+          "contract_ok": true,
+          "present_layers": [
+            "event_time",
+            "fact",
+            "topic_dossier"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "atom"
+          ],
+          "note": "Latest-state query should benefit from the topic-centered middle layer."
+        },
+        {
+          "case_id": "longitudinal_process_evolution",
+          "family": "longitudinal",
+          "query": "How did the visa process change over time?",
+          "answer": "2026-03-02: Maya started the visa paperwork on 2026-03-02 [active]\n2026-03-03: Nora helped Maya with the visa checklist on 2026-03-03. [active]\n2026-04-08: Yesterday the consulate requested one more financial statement. [active]",
+          "passed": true,
+          "contract_ok": true,
+          "present_layers": [
+            "event_time",
+            "fact",
+            "topic_dossier"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "atom"
+          ],
+          "note": "Cross-session process evolution should surface early and late updates together."
+        },
+        {
+          "case_id": "relational_intro_path",
+          "family": "relational",
+          "query": "Who introduced Jon to Lena?",
+          "answer": "Maya introduced Jon to Lena that evening.",
+          "passed": true,
+          "contract_ok": true,
+          "present_layers": [
+            "event",
+            "event_time",
+            "fact",
+            "graph",
+            "path_grounding"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "atom"
+          ],
+          "note": "Relation-heavy question should prefer path-grounded graph evidence over nearby co-occurrence."
+        },
+        {
+          "case_id": "answerability_type_mismatch",
+          "family": "relational",
+          "query": "Which company helped Maya with the visa checklist?",
+          "answer": "Nora helped Maya with the visa checklist on 2026-03-03.",
+          "passed": false,
+          "contract_ok": true,
+          "present_layers": [
+            "event",
+            "event_time",
+            "fact",
+            "graph",
+            "path_grounding"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [
+            "atom"
+          ],
+          "note": "Without answerability discipline, the system may answer with a person even when the query requires a company."
+        },
+        {
+          "case_id": "state_conflict",
+          "family": "state",
+          "query": "What is Kai's badge number?",
+          "answer": "unknown_conflict",
+          "passed": true,
+          "contract_ok": true,
+          "present_layers": [
+            "event_time",
+            "fact"
+          ],
+          "missing_layers": [],
+          "second_pass_sources": [],
+          "note": "Without answerability discipline, the system may over-answer conflicted state."
+        }
+      ],
+      "qa_ready": true,
+      "dossier_count": 5
+    }
+  ]
+}

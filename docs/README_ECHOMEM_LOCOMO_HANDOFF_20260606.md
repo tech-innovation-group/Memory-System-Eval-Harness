@@ -140,7 +140,7 @@ source .env.local
 浏览器打开：
 
 ```text
-http://127.0.0.1:19181/
+<WEB_BASE_URL>/
 ```
 
 如果端口被占用：

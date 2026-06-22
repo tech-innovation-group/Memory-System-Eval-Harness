@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EchoMemory Dual-Backbone Ablation</title>
+  <style>
+    :root {
+      --bg:#f6f8fc; --panel:#fff; --text:#18212f; --muted:#5f6b7a; --line:#dde4ee;
+      --blue:#2563eb; --blue-soft:#eaf2ff; --green:#0f9f6e; --green-soft:#eafaf4; --amber:#c77b00; --amber-soft:#fff7e8;
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font:14px/1.65 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif; }
+    .wrap { max-width:1120px; margin:0 auto; padding:28px 20px 48px; }
+    .hero,.section { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:20px 22px; margin-bottom:16px; }
+    h1,h2 { margin:0 0 10px; }
+    p { margin:0 0 10px; }
+    .kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-top:14px; }
+    .kpi { border:1px solid var(--line); border-radius:10px; padding:12px 14px; background:#fbfcff; }
+    .label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
+    .value { font-size:22px; font-weight:700; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th,td { border-top:1px solid var(--line); text-align:left; vertical-align:top; padding:10px 8px; }
+    th { background:#fbfcfe; color:var(--muted); font-size:12px; text-transform:uppercase; }
+    .grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+    .card { border:1px solid var(--line); border-radius:10px; padding:14px 16px; background:#fff; }
+    code, pre { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    pre { background:#f8fafc; border:1px solid var(--line); border-radius:8px; padding:12px; overflow:auto; font-size:12px; }
+    @media (max-width:980px) { .grid,.kpis { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1>EchoMemory Dual-Backbone Ablation</h1>
+      <p>
+        This ablation tests the exact research claim behind the new CVPR-shaped method line:
+        <b>a temporal tree and a relation graph solve different failure modes, and the combined backbone is more stable than either alone.</b>
+      </p>
+      <div class="kpis">
+        <div class="kpi"><span class="label">Cases</span><span class="value">4</span></div>
+        <div class="kpi"><span class="label">Tree-only</span><span class="value">1</span></div>
+        <div class="kpi"><span class="label">Graph-only</span><span class="value">3</span></div>
+        <div class="kpi"><span class="label">Dual</span><span class="value">4</span></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Interpretation</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Tree-only</h3>
+          <p>Usually strongest on chronology-heavy queries, but weaker on relation and visual grounding.</p>
+        </div>
+        <div class="card">
+          <h3>Graph-only</h3>
+          <p>Usually strongest on entity/event/image traversal, but weaker on chronology organization.</p>
+        </div>
+        <div class="card">
+          <h3>Dual-backbone</h3>
+          <p>Uses the planner to choose a primary backbone and supplements with the other one.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Results</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Case</th>
+            <th>Query</th>
+            <th>Expected Top</th>
+            <th>Tree-only</th>
+            <th>Graph-only</th>
+            <th>Dual-backbone</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody>
+            <tr>
+              <td>temporal_join</td>
+              <td>When did Gina join Figma?</td>
+              <td>tree</td>
+              <td>tree / yes</td>
+              <td>event / no</td>
+              <td>tree / yes</td>
+              <td>Temporal query should prefer chronology blocks.</td>
+            </tr>
+            
+            <tr>
+              <td>relation_spouse</td>
+              <td>Who is Gina married to?</td>
+              <td>entity, event</td>
+              <td>tree / no</td>
+              <td>event / yes</td>
+              <td>event / yes</td>
+              <td>Relational query should enter via graph entities/events.</td>
+            </tr>
+            
+            <tr>
+              <td>plan_after_event</td>
+              <td>What did Gina plan after leaving Figma?</td>
+              <td>event</td>
+              <td>tree / no</td>
+              <td>event / yes</td>
+              <td>event / yes</td>
+              <td>Needs event grounding plus temporal support.</td>
+            </tr>
+            
+            <tr>
+              <td>visual_arrival</td>
+              <td>What was visible in Gina&#x27;s arrival screenshot?</td>
+              <td>image_evidence</td>
+              <td>tree / no</td>
+              <td>image_evidence / yes</td>
+              <td>image_evidence / yes</td>
+              <td>Visual query should use image evidence as first-class memory.</td>
+            </tr>
+            </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>Example Case</h2>
+      <pre>{
+  &quot;case_id&quot;: &quot;temporal_join&quot;,
+  &quot;query&quot;: &quot;When did Gina join Figma?&quot;,
+  &quot;expected_keywords&quot;: [
+    &quot;2023-01-12&quot;,
+    &quot;joined Figma&quot;
+  ],
+  &quot;expected_top_layers&quot;: [
+    &quot;tree&quot;
+  ],
+  &quot;note&quot;: &quot;Temporal query should prefer chronology blocks.&quot;,
+  &quot;tree_only&quot;: {
+    &quot;mode&quot;: &quot;tree_only&quot;,
+    &quot;plan&quot;: {
+      &quot;family&quot;: &quot;temporal&quot;,
+      &quot;primary_backbone&quot;: &quot;tree&quot;,
+      &quot;supporting_backbones&quot;: [],
+      &quot;notes&quot;: &quot;Chronology-first retrieval without graph support.&quot;
+    },
+    &quot;hits&quot;: [
+      {
+        &quot;item_id&quot;: &quot;tree:day:2023-01-12&quot;,
+        &quot;layer&quot;: &quot;tree&quot;,
+        &quot;score&quot;: 4.0,
+        &quot;content&quot;: &quot;Day 2023-01-12\n- 2023-01-12: Gina joined Figma on 2023-01-12.&quot;,
+        &quot;provenance&quot;: &quot;temporal_day&quot;
+      },
+      {
+        &quot;item_id&quot;: &quot;tree:month:2023-01&quot;,
+        &quot;layer&quot;: &quot;tree&quot;,
+        &quot;score&quot;: 3.25,
+        &quot;content&quot;: &quot;Month 2023-01\n- 2023-01-12: Gina joined Figma on 2023-01-12.&quot;,
+        &quot;provenance&quot;: &quot;temporal_month&quot;
+      },
+      {
+        &quot;item_id&quot;: &quot;tree:day:2023-03-04&quot;,
+        &quot;layer&quot;: &quot;tree&quot;,
+        &quot;score&quot;: 3.0,
+        &quot;content&quot;: &quot;Day 2023-03-04\n- 2023-03-04: Gina left Figma on 2023-03-04.&quot;,
+        &quot;provenance&quot;: &quot;temporal_day&quot;
+      },
+      {
+        &quot;item_id&quot;: &quot;tree:day:2023-03-10&quot;,
+        &quot;layer&quot;: &quot;tree&quot;,
+        &quot;score&quot;: 3.0,
+        &quot;content&quot;: &quot;Day 2023-03-10\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.&quot;,
+        &quot;provenance&quot;: &quot;temporal_day&quot;
+      },
+      {
+        &quot;item_id&quot;: &quot;tree:year:2023&quot;,
+        &quot;layer&quot;: &quot;tree&quot;,
+        &quot;score&quot;: 3.0,
+        &quot;content&quot;: &quot;Year 2023\n- 2023-01-12: Gina joined Figma on 2023-01-12.\n- 2023-02-18: Gina married Alex on 2023-02-18.\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.&quot;,
+        &quot;provenance&quot;: &quot;temporal_year&quot;
+      },
+      {
+        &quot;item_id&quot;: &quot;tree:month:2023-03&quot;,
+        &quot;layer&quot;: &quot;tree&quot;,
+        &quot;score&quot;: 2.25,
+        &quot;content&quot;: &quot;Month 2023-03\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.&quot;,
+        &quot;provenance&quot;: &quot;temporal_month&quot;
+      }
+    ]
+  },
+  &quot;tree_only_judge&quot;: {
+    &quot;top_layer&quot;: &quot;tree&quot;,
+    &quot;keyword_ok&quot;: true,
+    &quot;top_layer_ok&quot;: true,
+    &quot;overall_ok&quot;: true
+  },
+  &quot;graph_only&quot;: {
+    &quot;mode&quot;: &quot;graph_only&quot;,
+    &quot;plan&quot;: {
+      &quot;family&quot;: &quot;temporal&quot;,
+      &quot;primary_backbone&quot;: &quot;graph&quot;,
+      &quot;supporting_backbones&quot;: [],
+      &quot;notes&quot;: &quot;Relation-first retrieval without temporal tree support.&quot;
+    },
+    &quot;hits&quot;: [
+      {
+        &quot;item_id&quot;: &quot;event:atom-000&quot;,
+        &quot;layer&quot;: &quot;event&quot;,
+        &quot;score&quot;: 3.8,
+        &quot;content&quot;: &quot;Gina joined Figma&quot;,
+        &quot;provenance&quot;: &quot;graph_node&quot;
+      },
+      {
+        &quot;item_id&quot;: &quot;fact:atom-000&quot;,
+        &quot;layer&quot;: &quot;fact&quot;,
+        &quot;score&quot;: 3.0,
+        &quot;content&quot;: &quot;Gina joined Figma on 2023-01-12.&quot;,
+        &quot;provenance&quot;: &quot;graph_node&quot;
+      },
+      {
+        &quot;item_id&quot;: &quot;event:atom-002&quot;,
+        &quot;layer&quot;: &quot;event&quot;,
+        &quot;score&quot;: 2.8,
+        &quot;content&quot;: &quot;Gina left Figma&quot;,
+        &quot;provenance&quot;: &quot;graph_node&quot;
+      },
+      {
+        &quot;item_id&quot;: &quot;event:atom-003&quot;,
+        &quot;layer&quot;: &quot;event&quot;,
+        &quot;score&quot;: 2.8,
+        &quot;content&quot;: &quot;Gina plans move to Lisbon after leaving Figma.&quot;,
+        &quot;provenance&quot;: &quot;graph_node&quot;
+      },
+      {
+        &quot;item_id&quot;: &quot;fact:atom-002&quot;,
+        &quot;layer&quot;: &quot;fact&quot;,
+        &quot;score&quot;: 2.0,
+        &quot;content&quot;: &quot;Gina left Figma on 2023-03-04.&quot;,
+        &quot;provenance&quot;: &quot;graph_node&quot;
+      },
+      {
+        &quot;item_id&quot;: &quot;fact:atom-003&quot;,
+        &quot;layer&quot;: &quot;fact&quot;,
+        &quot;score&quot;: 2.0,
+        &quot;content&quot;: &quot;Gina plans to move to Lisbon after leaving Figma.&quot;,
+        &quot;provenance&quot;: &quot;graph_node&quot;
+      }
+    ]
+  },
+  &quot;graph_only_judge&quot;: {
+    &quot;top_layer&quot;: &quot;event&quot;,
+    &quot;keyword_ok&quot;: true,
+    &quot;top_layer_ok&quot;: false,
+    &quot;overall_ok&quot;: false
+  },
+  &quot;dual_backbone&quot;: {
+    &quot;mode&quot;: &quot;dual_backbone&quot;,
+    &quot;plan&quot;: {
+      &quot;family&quot;: &quot;temporal&quot;,
+      &quot;primary_backbone&quot;: &quot;tree&quot;,
+      &quot;supporting_backbones&quot;: [
+        &quot;graph&quot;
+      ],
+      &quot;notes&quot;: &quot;Use temporal hierarchy first, then attach graph evidence.&quot;
+    },
+    &quot;hits&quot;: [
+      {
+        &quot;item_id&quot;: &quot;tree:day:2023-01-12&quot;,
+        &quot;layer&quot;: &quot;tree&quot;,
+        &quot;score&quot;: 4.0,
+        &quot;content&quot;: &quot;Day 2023-01-12\n- 2023-01-12: Gina joined Figma on 2023-01-12.&quot;,
+        &quot;provenance&quot;: &quot;temporal_day&quot;
+      },
+      {
+        &quot;item_id&quot;: &quot;event:atom-000&quot;,
+        &quot;layer&quot;: &quot;event&quot;,
+        &quot;score&quot;: 3.88,
+        &quot;content&quot;: &quot;Gina joined Figma&quot;,
+        &quot;provenance&quot;: &quot;graph_node&quot;
+      },
+      {
+        &quot;item_id&quot;: &quot;tree:month:2023-01&quot;,
+        &quot;layer&quot;: &quot;tree&quot;,
+        &quot;score&quot;: 3.25,
+        &quot;content&quot;: &quot;Month 2023-01\n- 2023-01-12: Gina joined Figma on 2023-01-12.&quot;,
+        &quot;provenance&quot;: &quot;temporal_month&quot;
+      },
+      {
+        &quot;item_id&quot;: &quot;fact:atom-000&quot;,
+        &quot;layer&quot;: &quot;fact&quot;,
+        &quot;score&quot;: 3.08,
+        &quot;content&quot;: &quot;Gina joined Figma on 2023-01-12.&quot;,
+        &quot;provenance&quot;: &quot;graph_node&quot;
+      },
+      {
+        &quot;item_id&quot;: &quot;tree:day:2023-03-04&quot;,
+        &quot;layer&quot;: &quot;tree&quot;,
+        &quot;score&quot;: 3.0,
+        &quot;content&quot;: &quot;Day 2023-03-04\n- 2023-03-04: Gina left Figma on 2023-03-04.&quot;,
+        &quot;provenance&quot;: &quot;temporal_day&quot;
+      },
+      {
+        &quot;item_id&quot;: &quot;tree:day:2023-03-10&quot;,
+        &quot;layer&quot;: &quot;tree&quot;,
+        &quot;score&quot;: 3.0,
+        &quot;content&quot;: &quot;Day 2023-03-10\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.&quot;,
+        &quot;provenance&quot;: &quot;temporal_day&quot;
+      }
+    ]
+  },
+  &quot;dual_backbone_judge&quot;: {
+    &quot;top_layer&quot;: &quot;tree&quot;,
+    &quot;keyword_ok&quot;: true,
+    &quot;top_layer_ok&quot;: true,
+    &quot;overall_ok&quot;: true
+  }
+}</pre>
+    </div>
+  </div>
+</body>
+</html>

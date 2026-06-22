@@ -1,0 +1,129 @@
+{
+  "policies": {
+    "generic_fact_only": {
+      "required": [
+        "fact"
+      ],
+      "used_readers": [
+        "atom"
+      ],
+      "final_coverage": {
+        "required": [
+          "fact"
+        ],
+        "matched": [
+          "fact"
+        ],
+        "missing": [],
+        "contract_ok": true,
+        "coverage_ratio": 1.0
+      },
+      "hits": [
+        {
+          "source": "atom://lease_fact",
+          "layer": "fact",
+          "content": "Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+          "why": "Fact-level text grounding."
+        }
+      ],
+      "snapshots": [
+        {
+          "after_reader": "atom",
+          "coverage": {
+            "required": [
+              "fact"
+            ],
+            "matched": [
+              "fact"
+            ],
+            "missing": [],
+            "contract_ok": true,
+            "coverage_ratio": 1.0
+          },
+          "present_layers": [
+            "fact"
+          ]
+        }
+      ]
+    },
+    "visual_contract": {
+      "required": [
+        "image_evidence",
+        "fact"
+      ],
+      "used_readers": [
+        "graph",
+        "atom"
+      ],
+      "final_coverage": {
+        "required": [
+          "image_evidence",
+          "fact"
+        ],
+        "matched": [
+          "image_evidence",
+          "fact"
+        ],
+        "missing": [],
+        "contract_ok": true,
+        "coverage_ratio": 1.0
+      },
+      "hits": [
+        {
+          "source": "graph://image_evidence/lease",
+          "layer": "image_evidence",
+          "content": "Lease screenshot Rua Augusta 14 Lisbon",
+          "why": "First-class visual evidence node."
+        },
+        {
+          "source": "atom://lease_fact",
+          "layer": "fact",
+          "content": "Lease document screenshot Rua Augusta 14 Lisbon Lease Agreement",
+          "why": "Fact-level text grounding."
+        }
+      ],
+      "snapshots": [
+        {
+          "after_reader": "graph",
+          "coverage": {
+            "required": [
+              "image_evidence",
+              "fact"
+            ],
+            "matched": [
+              "image_evidence"
+            ],
+            "missing": [
+              "fact"
+            ],
+            "contract_ok": false,
+            "coverage_ratio": 0.5
+          },
+          "present_layers": [
+            "image_evidence"
+          ]
+        },
+        {
+          "after_reader": "atom",
+          "coverage": {
+            "required": [
+              "image_evidence",
+              "fact"
+            ],
+            "matched": [
+              "image_evidence",
+              "fact"
+            ],
+            "missing": [],
+            "contract_ok": true,
+            "coverage_ratio": 1.0
+          },
+          "present_layers": [
+            "fact",
+            "image_evidence"
+          ]
+        }
+      ]
+    }
+  }
+}

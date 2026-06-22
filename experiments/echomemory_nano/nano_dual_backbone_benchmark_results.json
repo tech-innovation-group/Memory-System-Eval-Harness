@@ -1,0 +1,2347 @@
+{
+  "summary": {
+    "cases": 12,
+    "tree_only_passed": 3,
+    "graph_only_passed": 5,
+    "dual_passed": 8,
+    "per_family": [
+      {
+        "family": "relational",
+        "cases": 3,
+        "tree_only_passed": 0,
+        "graph_only_passed": 1,
+        "dual_passed": 1
+      },
+      {
+        "family": "temporal",
+        "cases": 3,
+        "tree_only_passed": 3,
+        "graph_only_passed": 0,
+        "dual_passed": 3
+      },
+      {
+        "family": "temporal_relational",
+        "cases": 3,
+        "tree_only_passed": 0,
+        "graph_only_passed": 1,
+        "dual_passed": 1
+      },
+      {
+        "family": "visual",
+        "cases": 3,
+        "tree_only_passed": 0,
+        "graph_only_passed": 3,
+        "dual_passed": 3
+      }
+    ]
+  },
+  "cases": [
+    {
+      "case_id": "t1_join_date",
+      "family": "temporal",
+      "query": "When did Gina join Figma?",
+      "expected_keywords": [
+        "2023-01-12",
+        "joined Figma"
+      ],
+      "expected_top_layers": [
+        "tree"
+      ],
+      "note": "Pure date lookup should enter via temporal hierarchy.",
+      "tree_only": {
+        "mode": "tree_only",
+        "plan": {
+          "family": "temporal",
+          "primary_backbone": "tree",
+          "supporting_backbones": [],
+          "notes": "Chronology-first retrieval without graph support."
+        },
+        "hits": [
+          {
+            "item_id": "tree:day:2023-01-12",
+            "layer": "tree",
+            "score": 4.0,
+            "content": "Day 2023-01-12\n- 2023-01-12: Gina joined Figma on 2023-01-12.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "tree:month:2023-01",
+            "layer": "tree",
+            "score": 3.25,
+            "content": "Month 2023-01\n- 2023-01-12: Gina joined Figma on 2023-01-12.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:day:2023-03-04",
+            "layer": "tree",
+            "score": 3.0,
+            "content": "Day 2023-03-04\n- 2023-03-04: Gina left Figma on 2023-03-04.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "tree:day:2023-03-10",
+            "layer": "tree",
+            "score": 3.0,
+            "content": "Day 2023-03-10\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "tree:year:2023",
+            "layer": "tree",
+            "score": 3.0,
+            "content": "Year 2023\n- 2023-01-12: Gina joined Figma on 2023-01-12.\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_year"
+          },
+          {
+            "item_id": "tree:month:2023-03",
+            "layer": "tree",
+            "score": 2.25,
+            "content": "Month 2023-03\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_month"
+          }
+        ]
+      },
+      "tree_only_judge": {
+        "top_layer": "tree",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      },
+      "graph_only": {
+        "mode": "graph_only",
+        "plan": {
+          "family": "temporal",
+          "primary_backbone": "graph",
+          "supporting_backbones": [],
+          "notes": "Graph-first retrieval without temporal hierarchy support."
+        },
+        "hits": [
+          {
+            "item_id": "event:atom-000",
+            "layer": "event",
+            "score": 3.8,
+            "content": "Gina joined Figma",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "fact:atom-000",
+            "layer": "fact",
+            "score": 3.0,
+            "content": "Gina joined Figma on 2023-01-12.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-003",
+            "layer": "event",
+            "score": 2.8,
+            "content": "Gina left Figma",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-004",
+            "layer": "event",
+            "score": 2.8,
+            "content": "Gina plans move to Lisbon after leaving Figma.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "fact:atom-003",
+            "layer": "fact",
+            "score": 2.0,
+            "content": "Gina left Figma on 2023-03-04.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "fact:atom-004",
+            "layer": "fact",
+            "score": 2.0,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "provenance": "graph_node"
+          }
+        ]
+      },
+      "graph_only_judge": {
+        "top_layer": "event",
+        "keyword_ok": true,
+        "top_layer_ok": false,
+        "overall_ok": false
+      },
+      "dual_backbone": {
+        "mode": "dual_backbone",
+        "plan": {
+          "family": "temporal",
+          "primary_backbone": "tree",
+          "supporting_backbones": [
+            "graph"
+          ],
+          "notes": "Use temporal hierarchy first, then attach graph evidence."
+        },
+        "hits": [
+          {
+            "item_id": "tree:day:2023-01-12",
+            "layer": "tree",
+            "score": 4.0,
+            "content": "Day 2023-01-12\n- 2023-01-12: Gina joined Figma on 2023-01-12.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "event:atom-000",
+            "layer": "event",
+            "score": 3.88,
+            "content": "Gina joined Figma",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "tree:month:2023-01",
+            "layer": "tree",
+            "score": 3.25,
+            "content": "Month 2023-01\n- 2023-01-12: Gina joined Figma on 2023-01-12.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "fact:atom-000",
+            "layer": "fact",
+            "score": 3.08,
+            "content": "Gina joined Figma on 2023-01-12.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "tree:day:2023-03-04",
+            "layer": "tree",
+            "score": 3.0,
+            "content": "Day 2023-03-04\n- 2023-03-04: Gina left Figma on 2023-03-04.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "tree:day:2023-03-10",
+            "layer": "tree",
+            "score": 3.0,
+            "content": "Day 2023-03-10\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.",
+            "provenance": "temporal_day"
+          }
+        ]
+      },
+      "dual_backbone_judge": {
+        "top_layer": "tree",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      }
+    },
+    {
+      "case_id": "t2_lease_date",
+      "family": "temporal",
+      "query": "When did Gina sign the Lisbon lease?",
+      "expected_keywords": [
+        "2023-04-03",
+        "signed a Lisbon lease"
+      ],
+      "expected_top_layers": [
+        "tree"
+      ],
+      "note": "Specific event date should rank a day block first.",
+      "tree_only": {
+        "mode": "tree_only",
+        "plan": {
+          "family": "temporal",
+          "primary_backbone": "tree",
+          "supporting_backbones": [],
+          "notes": "Chronology-first retrieval without graph support."
+        },
+        "hits": [
+          {
+            "item_id": "tree:day:2023-04-03",
+            "layer": "tree",
+            "score": 5.0,
+            "content": "Day 2023-04-03\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "tree:month:2023-04",
+            "layer": "tree",
+            "score": 4.25,
+            "content": "Month 2023-04\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:year:2023",
+            "layer": "tree",
+            "score": 4.0,
+            "content": "Year 2023\n- 2023-01-12: Gina joined Figma on 2023-01-12.\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_year"
+          },
+          {
+            "item_id": "tree:day:2023-03-10",
+            "layer": "tree",
+            "score": 3.0,
+            "content": "Day 2023-03-10\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "tree:day:2023-03-21",
+            "layer": "tree",
+            "score": 3.0,
+            "content": "Day 2023-03-21\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "tree:day:2023-03-23",
+            "layer": "tree",
+            "score": 3.0,
+            "content": "Day 2023-03-23\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.",
+            "provenance": "temporal_day"
+          }
+        ]
+      },
+      "tree_only_judge": {
+        "top_layer": "tree",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      },
+      "graph_only": {
+        "mode": "graph_only",
+        "plan": {
+          "family": "temporal",
+          "primary_backbone": "graph",
+          "supporting_backbones": [],
+          "notes": "Graph-first retrieval without temporal hierarchy support."
+        },
+        "hits": [
+          {
+            "item_id": "event:atom-006",
+            "layer": "event",
+            "score": 4.8,
+            "content": "Gina signed a Lisbon lease",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "fact:atom-006",
+            "layer": "fact",
+            "score": 4.0,
+            "content": "Gina signed a Lisbon lease on 2023-04-03.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-004",
+            "layer": "event",
+            "score": 2.8,
+            "content": "Gina plans move to Lisbon after leaving Figma.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-007",
+            "layer": "event",
+            "score": 2.8,
+            "content": "Gina planned start a small design studio in May 2023.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-008",
+            "layer": "event",
+            "score": 2.8,
+            "content": "Gina visited Lisbon",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "fact:atom-004",
+            "layer": "fact",
+            "score": 2.0,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "provenance": "graph_node"
+          }
+        ]
+      },
+      "graph_only_judge": {
+        "top_layer": "event",
+        "keyword_ok": true,
+        "top_layer_ok": false,
+        "overall_ok": false
+      },
+      "dual_backbone": {
+        "mode": "dual_backbone",
+        "plan": {
+          "family": "temporal",
+          "primary_backbone": "tree",
+          "supporting_backbones": [
+            "graph"
+          ],
+          "notes": "Use temporal hierarchy first, then attach graph evidence."
+        },
+        "hits": [
+          {
+            "item_id": "tree:day:2023-04-03",
+            "layer": "tree",
+            "score": 5.0,
+            "content": "Day 2023-04-03\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "event:atom-006",
+            "layer": "event",
+            "score": 4.88,
+            "content": "Gina signed a Lisbon lease",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "tree:month:2023-04",
+            "layer": "tree",
+            "score": 4.25,
+            "content": "Month 2023-04\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "fact:atom-006",
+            "layer": "fact",
+            "score": 4.08,
+            "content": "Gina signed a Lisbon lease on 2023-04-03.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "tree:year:2023",
+            "layer": "tree",
+            "score": 4.0,
+            "content": "Year 2023\n- 2023-01-12: Gina joined Figma on 2023-01-12.\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_year"
+          },
+          {
+            "item_id": "tree:day:2023-03-10",
+            "layer": "tree",
+            "score": 3.0,
+            "content": "Day 2023-03-10\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.",
+            "provenance": "temporal_day"
+          }
+        ]
+      },
+      "dual_backbone_judge": {
+        "top_layer": "tree",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      }
+    },
+    {
+      "case_id": "t3_april_activity",
+      "family": "temporal",
+      "query": "What did Gina do in April 2023?",
+      "expected_keywords": [
+        "signed a Lisbon lease",
+        "design studio"
+      ],
+      "expected_top_layers": [
+        "tree"
+      ],
+      "note": "Month-level temporal summary should come from the tree.",
+      "tree_only": {
+        "mode": "tree_only",
+        "plan": {
+          "family": "general",
+          "primary_backbone": "tree",
+          "supporting_backbones": [],
+          "notes": "Chronology-first retrieval without graph support."
+        },
+        "hits": [
+          {
+            "item_id": "tree:month:2023-01",
+            "layer": "tree",
+            "score": 2.25,
+            "content": "Month 2023-01\n- 2023-01-12: Gina joined Figma on 2023-01-12.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-02",
+            "layer": "tree",
+            "score": 2.25,
+            "content": "Month 2023-02\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-03",
+            "layer": "tree",
+            "score": 2.25,
+            "content": "Month 2023-03\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-04",
+            "layer": "tree",
+            "score": 2.25,
+            "content": "Month 2023-04\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:day:2023-01-12",
+            "layer": "tree",
+            "score": 2.0,
+            "content": "Day 2023-01-12\n- 2023-01-12: Gina joined Figma on 2023-01-12.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "tree:day:2023-02-10",
+            "layer": "tree",
+            "score": 2.0,
+            "content": "Day 2023-02-10\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.",
+            "provenance": "temporal_day"
+          }
+        ]
+      },
+      "tree_only_judge": {
+        "top_layer": "tree",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      },
+      "graph_only": {
+        "mode": "graph_only",
+        "plan": {
+          "family": "general",
+          "primary_backbone": "graph",
+          "supporting_backbones": [],
+          "notes": "Graph-first retrieval without temporal hierarchy support."
+        },
+        "hits": [
+          {
+            "item_id": "entity:Gina",
+            "layer": "entity",
+            "score": 2.0,
+            "content": "name=Gina",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-000",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina joined Figma",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-001",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina met Nora",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-002",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina married Alex",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-003",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina left Figma",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-004",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina plans move to Lisbon after leaving Figma.",
+            "provenance": "graph_node"
+          }
+        ]
+      },
+      "graph_only_judge": {
+        "top_layer": "entity",
+        "keyword_ok": false,
+        "top_layer_ok": false,
+        "overall_ok": false
+      },
+      "dual_backbone": {
+        "mode": "dual_backbone",
+        "plan": {
+          "family": "general",
+          "primary_backbone": "tree",
+          "supporting_backbones": [
+            "graph"
+          ],
+          "notes": "Default to summary blocks and supplement with graph evidence."
+        },
+        "hits": [
+          {
+            "item_id": "tree:month:2023-01",
+            "layer": "tree",
+            "score": 2.25,
+            "content": "Month 2023-01\n- 2023-01-12: Gina joined Figma on 2023-01-12.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-02",
+            "layer": "tree",
+            "score": 2.25,
+            "content": "Month 2023-02\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-03",
+            "layer": "tree",
+            "score": 2.25,
+            "content": "Month 2023-03\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-04",
+            "layer": "tree",
+            "score": 2.25,
+            "content": "Month 2023-04\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "entity:Gina",
+            "layer": "entity",
+            "score": 2.08,
+            "content": "name=Gina",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-000",
+            "layer": "event",
+            "score": 2.08,
+            "content": "Gina joined Figma",
+            "provenance": "graph_node"
+          }
+        ]
+      },
+      "dual_backbone_judge": {
+        "top_layer": "tree",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      }
+    },
+    {
+      "case_id": "r1_spouse",
+      "family": "relational",
+      "query": "Who is Gina married to?",
+      "expected_keywords": [
+        "Alex",
+        "married"
+      ],
+      "expected_top_layers": [
+        "entity",
+        "event"
+      ],
+      "note": "Entity relationship should prefer graph entry points.",
+      "tree_only": {
+        "mode": "tree_only",
+        "plan": {
+          "family": "relational",
+          "primary_backbone": "tree",
+          "supporting_backbones": [],
+          "notes": "Chronology-first retrieval without graph support."
+        },
+        "hits": [
+          {
+            "item_id": "tree:year:2023",
+            "layer": "tree",
+            "score": 3.2,
+            "content": "Year 2023\n- 2023-01-12: Gina joined Figma on 2023-01-12.\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_year"
+          },
+          {
+            "item_id": "tree:month:2023-03",
+            "layer": "tree",
+            "score": 2.45,
+            "content": "Month 2023-03\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-04",
+            "layer": "tree",
+            "score": 2.45,
+            "content": "Month 2023-04\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:day:2023-03-10",
+            "layer": "tree",
+            "score": 2.2,
+            "content": "Day 2023-03-10\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "tree:month:2023-02",
+            "layer": "tree",
+            "score": 1.45,
+            "content": "Month 2023-02\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:day:2023-02-18",
+            "layer": "tree",
+            "score": 1.2,
+            "content": "Day 2023-02-18\n- 2023-02-18: Gina married Alex on 2023-02-18.",
+            "provenance": "temporal_day"
+          }
+        ]
+      },
+      "tree_only_judge": {
+        "top_layer": "tree",
+        "keyword_ok": true,
+        "top_layer_ok": false,
+        "overall_ok": false
+      },
+      "graph_only": {
+        "mode": "graph_only",
+        "plan": {
+          "family": "relational",
+          "primary_backbone": "graph",
+          "supporting_backbones": [],
+          "notes": "Graph-first retrieval without temporal hierarchy support."
+        },
+        "hits": [
+          {
+            "item_id": "event:atom-002",
+            "layer": "event",
+            "score": 4.0,
+            "content": "Gina married Alex",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-004",
+            "layer": "event",
+            "score": 4.0,
+            "content": "Gina plans move to Lisbon after leaving Figma.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-006",
+            "layer": "event",
+            "score": 4.0,
+            "content": "Gina signed a Lisbon lease",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-008",
+            "layer": "event",
+            "score": 4.0,
+            "content": "Gina visited Lisbon",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "fact:atom-002",
+            "layer": "fact",
+            "score": 3.2,
+            "content": "Gina married Alex on 2023-02-18.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "fact:atom-004",
+            "layer": "fact",
+            "score": 3.2,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "provenance": "graph_node"
+          }
+        ]
+      },
+      "graph_only_judge": {
+        "top_layer": "event",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      },
+      "dual_backbone": {
+        "mode": "dual_backbone",
+        "plan": {
+          "family": "relational",
+          "primary_backbone": "graph",
+          "supporting_backbones": [
+            "tree"
+          ],
+          "notes": "Use entity/event graph first, then attach timeline support."
+        },
+        "hits": [
+          {
+            "item_id": "event:atom-002",
+            "layer": "event",
+            "score": 4.0,
+            "content": "Gina married Alex",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-004",
+            "layer": "event",
+            "score": 4.0,
+            "content": "Gina plans move to Lisbon after leaving Figma.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-006",
+            "layer": "event",
+            "score": 4.0,
+            "content": "Gina signed a Lisbon lease",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-008",
+            "layer": "event",
+            "score": 4.0,
+            "content": "Gina visited Lisbon",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "tree:year:2023",
+            "layer": "tree",
+            "score": 3.25,
+            "content": "Year 2023\n- 2023-01-12: Gina joined Figma on 2023-01-12.\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_year"
+          },
+          {
+            "item_id": "fact:atom-002",
+            "layer": "fact",
+            "score": 3.2,
+            "content": "Gina married Alex on 2023-02-18.",
+            "provenance": "graph_node"
+          }
+        ]
+      },
+      "dual_backbone_judge": {
+        "top_layer": "event",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      }
+    },
+    {
+      "case_id": "r2_helper",
+      "family": "relational",
+      "query": "Who helped Gina with the visa checklist?",
+      "expected_keywords": [
+        "Nora",
+        "visa checklist"
+      ],
+      "expected_top_layers": [
+        "entity",
+        "event"
+      ],
+      "note": "Support person should be recovered from relation/event links.",
+      "tree_only": {
+        "mode": "tree_only",
+        "plan": {
+          "family": "relational",
+          "primary_backbone": "tree",
+          "supporting_backbones": [],
+          "notes": "Chronology-first retrieval without graph support."
+        },
+        "hits": [
+          {
+            "item_id": "tree:month:2023-03",
+            "layer": "tree",
+            "score": 3.45,
+            "content": "Month 2023-03\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:day:2023-03-23",
+            "layer": "tree",
+            "score": 3.2,
+            "content": "Day 2023-03-23\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "tree:year:2023",
+            "layer": "tree",
+            "score": 3.2,
+            "content": "Year 2023\n- 2023-01-12: Gina joined Figma on 2023-01-12.\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_year"
+          },
+          {
+            "item_id": "tree:month:2023-01",
+            "layer": "tree",
+            "score": 0.45,
+            "content": "Month 2023-01\n- 2023-01-12: Gina joined Figma on 2023-01-12.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-02",
+            "layer": "tree",
+            "score": 0.45,
+            "content": "Month 2023-02\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-04",
+            "layer": "tree",
+            "score": 0.45,
+            "content": "Month 2023-04\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.",
+            "provenance": "temporal_month"
+          }
+        ]
+      },
+      "tree_only_judge": {
+        "top_layer": "tree",
+        "keyword_ok": true,
+        "top_layer_ok": false,
+        "overall_ok": false
+      },
+      "graph_only": {
+        "mode": "graph_only",
+        "plan": {
+          "family": "relational",
+          "primary_backbone": "graph",
+          "supporting_backbones": [],
+          "notes": "Graph-first retrieval without temporal hierarchy support."
+        },
+        "hits": [
+          {
+            "item_id": "fact:atom-005",
+            "layer": "fact",
+            "score": 4.2,
+            "content": "Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-005",
+            "layer": "event",
+            "score": 3.0,
+            "content": "Nora helped Gina",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "entity:Gina",
+            "layer": "entity",
+            "score": 2.6,
+            "content": "name=Gina",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-000",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina joined Figma",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-001",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina met Nora",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-002",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina married Alex",
+            "provenance": "graph_node"
+          }
+        ]
+      },
+      "graph_only_judge": {
+        "top_layer": "fact",
+        "keyword_ok": true,
+        "top_layer_ok": false,
+        "overall_ok": false
+      },
+      "dual_backbone": {
+        "mode": "dual_backbone",
+        "plan": {
+          "family": "relational",
+          "primary_backbone": "graph",
+          "supporting_backbones": [
+            "tree"
+          ],
+          "notes": "Use entity/event graph first, then attach timeline support."
+        },
+        "hits": [
+          {
+            "item_id": "fact:atom-005",
+            "layer": "fact",
+            "score": 4.2,
+            "content": "Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "tree:month:2023-03",
+            "layer": "tree",
+            "score": 3.5,
+            "content": "Month 2023-03\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:day:2023-03-23",
+            "layer": "tree",
+            "score": 3.25,
+            "content": "Day 2023-03-23\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "tree:year:2023",
+            "layer": "tree",
+            "score": 3.25,
+            "content": "Year 2023\n- 2023-01-12: Gina joined Figma on 2023-01-12.\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_year"
+          },
+          {
+            "item_id": "event:atom-005",
+            "layer": "event",
+            "score": 3.0,
+            "content": "Nora helped Gina",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "entity:Gina",
+            "layer": "entity",
+            "score": 2.6,
+            "content": "name=Gina",
+            "provenance": "graph_node"
+          }
+        ]
+      },
+      "dual_backbone_judge": {
+        "top_layer": "fact",
+        "keyword_ok": true,
+        "top_layer_ok": false,
+        "overall_ok": false
+      }
+    },
+    {
+      "case_id": "r3_company_left",
+      "family": "relational",
+      "query": "Which company did Gina leave?",
+      "expected_keywords": [
+        "Figma",
+        "left Figma"
+      ],
+      "expected_top_layers": [
+        "entity",
+        "event"
+      ],
+      "note": "Company-object relation should prefer graph nodes over summaries.",
+      "tree_only": {
+        "mode": "tree_only",
+        "plan": {
+          "family": "relational",
+          "primary_backbone": "tree",
+          "supporting_backbones": [],
+          "notes": "Chronology-first retrieval without graph support."
+        },
+        "hits": [
+          {
+            "item_id": "tree:month:2023-01",
+            "layer": "tree",
+            "score": 0.45,
+            "content": "Month 2023-01\n- 2023-01-12: Gina joined Figma on 2023-01-12.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-02",
+            "layer": "tree",
+            "score": 0.45,
+            "content": "Month 2023-02\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-03",
+            "layer": "tree",
+            "score": 0.45,
+            "content": "Month 2023-03\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-04",
+            "layer": "tree",
+            "score": 0.45,
+            "content": "Month 2023-04\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:day:2023-01-12",
+            "layer": "tree",
+            "score": 0.2,
+            "content": "Day 2023-01-12\n- 2023-01-12: Gina joined Figma on 2023-01-12.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "tree:day:2023-02-10",
+            "layer": "tree",
+            "score": 0.2,
+            "content": "Day 2023-02-10\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.",
+            "provenance": "temporal_day"
+          }
+        ]
+      },
+      "tree_only_judge": {
+        "top_layer": "tree",
+        "keyword_ok": true,
+        "top_layer_ok": false,
+        "overall_ok": false
+      },
+      "graph_only": {
+        "mode": "graph_only",
+        "plan": {
+          "family": "relational",
+          "primary_backbone": "graph",
+          "supporting_backbones": [],
+          "notes": "Graph-first retrieval without temporal hierarchy support."
+        },
+        "hits": [
+          {
+            "item_id": "entity:Gina",
+            "layer": "entity",
+            "score": 2.6,
+            "content": "name=Gina",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-000",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina joined Figma",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-001",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina met Nora",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-002",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina married Alex",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-003",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina left Figma",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-004",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina plans move to Lisbon after leaving Figma.",
+            "provenance": "graph_node"
+          }
+        ]
+      },
+      "graph_only_judge": {
+        "top_layer": "entity",
+        "keyword_ok": false,
+        "top_layer_ok": true,
+        "overall_ok": false
+      },
+      "dual_backbone": {
+        "mode": "dual_backbone",
+        "plan": {
+          "family": "relational",
+          "primary_backbone": "graph",
+          "supporting_backbones": [
+            "tree"
+          ],
+          "notes": "Use entity/event graph first, then attach timeline support."
+        },
+        "hits": [
+          {
+            "item_id": "entity:Gina",
+            "layer": "entity",
+            "score": 2.6,
+            "content": "name=Gina",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-000",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina joined Figma",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-001",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina met Nora",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-002",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina married Alex",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-003",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina left Figma",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-004",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina plans move to Lisbon after leaving Figma.",
+            "provenance": "graph_node"
+          }
+        ]
+      },
+      "dual_backbone_judge": {
+        "top_layer": "entity",
+        "keyword_ok": false,
+        "top_layer_ok": true,
+        "overall_ok": false
+      }
+    },
+    {
+      "case_id": "tr1_plan_after_leave",
+      "family": "temporal_relational",
+      "query": "What did Gina plan after leaving Figma?",
+      "expected_keywords": [
+        "move to Lisbon",
+        "left Figma"
+      ],
+      "expected_top_layers": [
+        "event"
+      ],
+      "note": "Needs event grounding and temporal order together.",
+      "tree_only": {
+        "mode": "tree_only",
+        "plan": {
+          "family": "temporal_relational",
+          "primary_backbone": "tree",
+          "supporting_backbones": [],
+          "notes": "Chronology-first retrieval without graph support."
+        },
+        "hits": [
+          {
+            "item_id": "tree:month:2023-03",
+            "layer": "tree",
+            "score": 5.25,
+            "content": "Month 2023-03\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:day:2023-03-10",
+            "layer": "tree",
+            "score": 5.0,
+            "content": "Day 2023-03-10\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "tree:year:2023",
+            "layer": "tree",
+            "score": 5.0,
+            "content": "Year 2023\n- 2023-01-12: Gina joined Figma on 2023-01-12.\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_year"
+          },
+          {
+            "item_id": "tree:month:2023-01",
+            "layer": "tree",
+            "score": 2.25,
+            "content": "Month 2023-01\n- 2023-01-12: Gina joined Figma on 2023-01-12.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-04",
+            "layer": "tree",
+            "score": 2.25,
+            "content": "Month 2023-04\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:day:2023-01-12",
+            "layer": "tree",
+            "score": 2.0,
+            "content": "Day 2023-01-12\n- 2023-01-12: Gina joined Figma on 2023-01-12.",
+            "provenance": "temporal_day"
+          }
+        ]
+      },
+      "tree_only_judge": {
+        "top_layer": "tree",
+        "keyword_ok": true,
+        "top_layer_ok": false,
+        "overall_ok": false
+      },
+      "graph_only": {
+        "mode": "graph_only",
+        "plan": {
+          "family": "temporal_relational",
+          "primary_backbone": "graph",
+          "supporting_backbones": [],
+          "notes": "Graph-first retrieval without temporal hierarchy support."
+        },
+        "hits": [
+          {
+            "item_id": "event:atom-004",
+            "layer": "event",
+            "score": 5.7,
+            "content": "Gina plans move to Lisbon after leaving Figma.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "fact:atom-004",
+            "layer": "fact",
+            "score": 5.0,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-000",
+            "layer": "event",
+            "score": 2.7,
+            "content": "Gina joined Figma",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-003",
+            "layer": "event",
+            "score": 2.7,
+            "content": "Gina left Figma",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-007",
+            "layer": "event",
+            "score": 2.7,
+            "content": "Gina planned start a small design studio in May 2023.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "fact:atom-000",
+            "layer": "fact",
+            "score": 2.0,
+            "content": "Gina joined Figma on 2023-01-12.",
+            "provenance": "graph_node"
+          }
+        ]
+      },
+      "graph_only_judge": {
+        "top_layer": "event",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      },
+      "dual_backbone": {
+        "mode": "dual_backbone",
+        "plan": {
+          "family": "temporal_relational",
+          "primary_backbone": "graph",
+          "supporting_backbones": [
+            "tree"
+          ],
+          "notes": "Use event path plus timeline ordering to connect plan after event."
+        },
+        "hits": [
+          {
+            "item_id": "event:atom-004",
+            "layer": "event",
+            "score": 5.7,
+            "content": "Gina plans move to Lisbon after leaving Figma.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "tree:month:2023-03",
+            "layer": "tree",
+            "score": 5.3,
+            "content": "Month 2023-03\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:day:2023-03-10",
+            "layer": "tree",
+            "score": 5.05,
+            "content": "Day 2023-03-10\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "tree:year:2023",
+            "layer": "tree",
+            "score": 5.05,
+            "content": "Year 2023\n- 2023-01-12: Gina joined Figma on 2023-01-12.\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_year"
+          },
+          {
+            "item_id": "fact:atom-004",
+            "layer": "fact",
+            "score": 5.0,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-000",
+            "layer": "event",
+            "score": 2.7,
+            "content": "Gina joined Figma",
+            "provenance": "graph_node"
+          }
+        ]
+      },
+      "dual_backbone_judge": {
+        "top_layer": "event",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      }
+    },
+    {
+      "case_id": "tr2_after_workshop",
+      "family": "temporal_relational",
+      "query": "What happened after Gina met Nora at the relocation workshop?",
+      "expected_keywords": [
+        "married Alex",
+        "2023-02-18"
+      ],
+      "expected_top_layers": [
+        "event"
+      ],
+      "note": "Temporal follow-up around a relational event should favor graph event nodes.",
+      "tree_only": {
+        "mode": "tree_only",
+        "plan": {
+          "family": "temporal_relational",
+          "primary_backbone": "tree",
+          "supporting_backbones": [],
+          "notes": "Chronology-first retrieval without graph support."
+        },
+        "hits": [
+          {
+            "item_id": "tree:year:2023",
+            "layer": "tree",
+            "score": 7.0,
+            "content": "Year 2023\n- 2023-01-12: Gina joined Figma on 2023-01-12.\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_year"
+          },
+          {
+            "item_id": "tree:month:2023-02",
+            "layer": "tree",
+            "score": 6.25,
+            "content": "Month 2023-02\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:day:2023-02-10",
+            "layer": "tree",
+            "score": 6.0,
+            "content": "Day 2023-02-10\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "tree:month:2023-03",
+            "layer": "tree",
+            "score": 3.25,
+            "content": "Month 2023-03\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:day:2023-03-10",
+            "layer": "tree",
+            "score": 2.0,
+            "content": "Day 2023-03-10\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "tree:day:2023-03-23",
+            "layer": "tree",
+            "score": 2.0,
+            "content": "Day 2023-03-23\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.",
+            "provenance": "temporal_day"
+          }
+        ]
+      },
+      "tree_only_judge": {
+        "top_layer": "tree",
+        "keyword_ok": true,
+        "top_layer_ok": false,
+        "overall_ok": false
+      },
+      "graph_only": {
+        "mode": "graph_only",
+        "plan": {
+          "family": "temporal_relational",
+          "primary_backbone": "graph",
+          "supporting_backbones": [],
+          "notes": "Graph-first retrieval without temporal hierarchy support."
+        },
+        "hits": [
+          {
+            "item_id": "fact:atom-001",
+            "layer": "fact",
+            "score": 6.0,
+            "content": "Gina met Nora at a relocation workshop on 2023-02-10.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-001",
+            "layer": "event",
+            "score": 4.7,
+            "content": "Gina met Nora",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-004",
+            "layer": "event",
+            "score": 3.7,
+            "content": "Gina plans move to Lisbon after leaving Figma.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-005",
+            "layer": "event",
+            "score": 3.7,
+            "content": "Nora helped Gina",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "fact:atom-004",
+            "layer": "fact",
+            "score": 3.0,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "fact:atom-005",
+            "layer": "fact",
+            "score": 3.0,
+            "content": "Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.",
+            "provenance": "graph_node"
+          }
+        ]
+      },
+      "graph_only_judge": {
+        "top_layer": "fact",
+        "keyword_ok": false,
+        "top_layer_ok": false,
+        "overall_ok": false
+      },
+      "dual_backbone": {
+        "mode": "dual_backbone",
+        "plan": {
+          "family": "temporal_relational",
+          "primary_backbone": "graph",
+          "supporting_backbones": [
+            "tree"
+          ],
+          "notes": "Use event path plus timeline ordering to connect plan after event."
+        },
+        "hits": [
+          {
+            "item_id": "tree:year:2023",
+            "layer": "tree",
+            "score": 7.05,
+            "content": "Year 2023\n- 2023-01-12: Gina joined Figma on 2023-01-12.\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_year"
+          },
+          {
+            "item_id": "tree:month:2023-02",
+            "layer": "tree",
+            "score": 6.3,
+            "content": "Month 2023-02\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:day:2023-02-10",
+            "layer": "tree",
+            "score": 6.05,
+            "content": "Day 2023-02-10\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "fact:atom-001",
+            "layer": "fact",
+            "score": 6.0,
+            "content": "Gina met Nora at a relocation workshop on 2023-02-10.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-001",
+            "layer": "event",
+            "score": 4.7,
+            "content": "Gina met Nora",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-004",
+            "layer": "event",
+            "score": 3.7,
+            "content": "Gina plans move to Lisbon after leaving Figma.",
+            "provenance": "graph_node"
+          }
+        ]
+      },
+      "dual_backbone_judge": {
+        "top_layer": "tree",
+        "keyword_ok": true,
+        "top_layer_ok": false,
+        "overall_ok": false
+      }
+    },
+    {
+      "case_id": "tr3_may_plan_source",
+      "family": "temporal_relational",
+      "query": "What plan did Gina form after signing the Lisbon lease?",
+      "expected_keywords": [
+        "design studio",
+        "signed a Lisbon lease"
+      ],
+      "expected_top_layers": [
+        "event"
+      ],
+      "note": "This is the most direct dual-backbone case in the toy benchmark.",
+      "tree_only": {
+        "mode": "tree_only",
+        "plan": {
+          "family": "temporal_relational",
+          "primary_backbone": "tree",
+          "supporting_backbones": [],
+          "notes": "Chronology-first retrieval without graph support."
+        },
+        "hits": [
+          {
+            "item_id": "tree:year:2023",
+            "layer": "tree",
+            "score": 5.0,
+            "content": "Year 2023\n- 2023-01-12: Gina joined Figma on 2023-01-12.\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_year"
+          },
+          {
+            "item_id": "tree:month:2023-03",
+            "layer": "tree",
+            "score": 4.25,
+            "content": "Month 2023-03\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-04",
+            "layer": "tree",
+            "score": 4.25,
+            "content": "Month 2023-04\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:day:2023-03-10",
+            "layer": "tree",
+            "score": 4.0,
+            "content": "Day 2023-03-10\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "tree:day:2023-04-03",
+            "layer": "tree",
+            "score": 3.0,
+            "content": "Day 2023-04-03\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "tree:day:2023-03-21",
+            "layer": "tree",
+            "score": 2.0,
+            "content": "Day 2023-03-21\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_day"
+          }
+        ]
+      },
+      "tree_only_judge": {
+        "top_layer": "tree",
+        "keyword_ok": true,
+        "top_layer_ok": false,
+        "overall_ok": false
+      },
+      "graph_only": {
+        "mode": "graph_only",
+        "plan": {
+          "family": "temporal_relational",
+          "primary_backbone": "graph",
+          "supporting_backbones": [],
+          "notes": "Graph-first retrieval without temporal hierarchy support."
+        },
+        "hits": [
+          {
+            "item_id": "event:atom-004",
+            "layer": "event",
+            "score": 4.7,
+            "content": "Gina plans move to Lisbon after leaving Figma.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "fact:atom-004",
+            "layer": "fact",
+            "score": 4.0,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-006",
+            "layer": "event",
+            "score": 3.7,
+            "content": "Gina signed a Lisbon lease",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "fact:atom-006",
+            "layer": "fact",
+            "score": 3.0,
+            "content": "Gina signed a Lisbon lease on 2023-04-03.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-007",
+            "layer": "event",
+            "score": 2.7,
+            "content": "Gina planned start a small design studio in May 2023.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-008",
+            "layer": "event",
+            "score": 2.7,
+            "content": "Gina visited Lisbon",
+            "provenance": "graph_node"
+          }
+        ]
+      },
+      "graph_only_judge": {
+        "top_layer": "event",
+        "keyword_ok": false,
+        "top_layer_ok": true,
+        "overall_ok": false
+      },
+      "dual_backbone": {
+        "mode": "dual_backbone",
+        "plan": {
+          "family": "temporal_relational",
+          "primary_backbone": "graph",
+          "supporting_backbones": [
+            "tree"
+          ],
+          "notes": "Use event path plus timeline ordering to connect plan after event."
+        },
+        "hits": [
+          {
+            "item_id": "tree:year:2023",
+            "layer": "tree",
+            "score": 5.05,
+            "content": "Year 2023\n- 2023-01-12: Gina joined Figma on 2023-01-12.\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_year"
+          },
+          {
+            "item_id": "event:atom-004",
+            "layer": "event",
+            "score": 4.7,
+            "content": "Gina plans move to Lisbon after leaving Figma.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "tree:month:2023-03",
+            "layer": "tree",
+            "score": 4.3,
+            "content": "Month 2023-03\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-04",
+            "layer": "tree",
+            "score": 4.3,
+            "content": "Month 2023-04\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:day:2023-03-10",
+            "layer": "tree",
+            "score": 4.05,
+            "content": "Day 2023-03-10\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "fact:atom-004",
+            "layer": "fact",
+            "score": 4.0,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "provenance": "graph_node"
+          }
+        ]
+      },
+      "dual_backbone_judge": {
+        "top_layer": "tree",
+        "keyword_ok": true,
+        "top_layer_ok": false,
+        "overall_ok": false
+      }
+    },
+    {
+      "case_id": "v1_station_time",
+      "family": "visual",
+      "query": "What time was visible in Gina's arrival screenshot?",
+      "expected_keywords": [
+        "08:42",
+        "Lisbon Santa Apolonia"
+      ],
+      "expected_top_layers": [
+        "image_evidence"
+      ],
+      "note": "Visual grounding should treat OCR evidence as first-class memory.",
+      "tree_only": {
+        "mode": "tree_only",
+        "plan": {
+          "family": "visual",
+          "primary_backbone": "tree",
+          "supporting_backbones": [],
+          "notes": "Chronology-first retrieval without graph support."
+        },
+        "hits": [
+          {
+            "item_id": "tree:month:2023-01",
+            "layer": "tree",
+            "score": 2.25,
+            "content": "Month 2023-01\n- 2023-01-12: Gina joined Figma on 2023-01-12.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-02",
+            "layer": "tree",
+            "score": 2.25,
+            "content": "Month 2023-02\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-03",
+            "layer": "tree",
+            "score": 2.25,
+            "content": "Month 2023-03\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-04",
+            "layer": "tree",
+            "score": 2.25,
+            "content": "Month 2023-04\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:day:2023-01-12",
+            "layer": "tree",
+            "score": 2.0,
+            "content": "Day 2023-01-12\n- 2023-01-12: Gina joined Figma on 2023-01-12.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "tree:day:2023-02-10",
+            "layer": "tree",
+            "score": 2.0,
+            "content": "Day 2023-02-10\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.",
+            "provenance": "temporal_day"
+          }
+        ]
+      },
+      "tree_only_judge": {
+        "top_layer": "tree",
+        "keyword_ok": false,
+        "top_layer_ok": false,
+        "overall_ok": false
+      },
+      "graph_only": {
+        "mode": "graph_only",
+        "plan": {
+          "family": "visual",
+          "primary_backbone": "graph",
+          "supporting_backbones": [],
+          "notes": "Graph-first retrieval without temporal hierarchy support."
+        },
+        "hits": [
+          {
+            "item_id": "image:obs-009",
+            "layer": "image_evidence",
+            "score": 3.1,
+            "content": "caption=Phone screenshot from Lisbon arrival day.\nocr=Lisbon Santa Apolonia Platform 4 08:42",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "entity:Gina",
+            "layer": "entity",
+            "score": 2.0,
+            "content": "name=Gina",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-000",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina joined Figma",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-001",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina met Nora",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-002",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina married Alex",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-003",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina left Figma",
+            "provenance": "graph_node"
+          }
+        ]
+      },
+      "graph_only_judge": {
+        "top_layer": "image_evidence",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      },
+      "dual_backbone": {
+        "mode": "dual_backbone",
+        "plan": {
+          "family": "visual",
+          "primary_backbone": "graph",
+          "supporting_backbones": [
+            "tree"
+          ],
+          "notes": "Image evidence is a first-class graph node."
+        },
+        "hits": [
+          {
+            "item_id": "image:obs-009",
+            "layer": "image_evidence",
+            "score": 3.1,
+            "content": "caption=Phone screenshot from Lisbon arrival day.\nocr=Lisbon Santa Apolonia Platform 4 08:42",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "tree:month:2023-01",
+            "layer": "tree",
+            "score": 2.3,
+            "content": "Month 2023-01\n- 2023-01-12: Gina joined Figma on 2023-01-12.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-02",
+            "layer": "tree",
+            "score": 2.3,
+            "content": "Month 2023-02\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-03",
+            "layer": "tree",
+            "score": 2.3,
+            "content": "Month 2023-03\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-04",
+            "layer": "tree",
+            "score": 2.3,
+            "content": "Month 2023-04\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:day:2023-01-12",
+            "layer": "tree",
+            "score": 2.05,
+            "content": "Day 2023-01-12\n- 2023-01-12: Gina joined Figma on 2023-01-12.",
+            "provenance": "temporal_day"
+          }
+        ]
+      },
+      "dual_backbone_judge": {
+        "top_layer": "image_evidence",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      }
+    },
+    {
+      "case_id": "v2_station_place",
+      "family": "visual",
+      "query": "Which place appeared in Gina's arrival screenshot?",
+      "expected_keywords": [
+        "Lisbon Santa Apolonia",
+        "Platform 4"
+      ],
+      "expected_top_layers": [
+        "image_evidence"
+      ],
+      "note": "Visual place lookup should not rely on flat text facts only.",
+      "tree_only": {
+        "mode": "tree_only",
+        "plan": {
+          "family": "visual",
+          "primary_backbone": "tree",
+          "supporting_backbones": [],
+          "notes": "Chronology-first retrieval without graph support."
+        },
+        "hits": [
+          {
+            "item_id": "tree:month:2023-01",
+            "layer": "tree",
+            "score": 2.25,
+            "content": "Month 2023-01\n- 2023-01-12: Gina joined Figma on 2023-01-12.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-02",
+            "layer": "tree",
+            "score": 2.25,
+            "content": "Month 2023-02\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-03",
+            "layer": "tree",
+            "score": 2.25,
+            "content": "Month 2023-03\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-04",
+            "layer": "tree",
+            "score": 2.25,
+            "content": "Month 2023-04\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:day:2023-01-12",
+            "layer": "tree",
+            "score": 2.0,
+            "content": "Day 2023-01-12\n- 2023-01-12: Gina joined Figma on 2023-01-12.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "tree:day:2023-02-10",
+            "layer": "tree",
+            "score": 2.0,
+            "content": "Day 2023-02-10\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.",
+            "provenance": "temporal_day"
+          }
+        ]
+      },
+      "tree_only_judge": {
+        "top_layer": "tree",
+        "keyword_ok": false,
+        "top_layer_ok": false,
+        "overall_ok": false
+      },
+      "graph_only": {
+        "mode": "graph_only",
+        "plan": {
+          "family": "visual",
+          "primary_backbone": "graph",
+          "supporting_backbones": [],
+          "notes": "Graph-first retrieval without temporal hierarchy support."
+        },
+        "hits": [
+          {
+            "item_id": "image:obs-009",
+            "layer": "image_evidence",
+            "score": 3.1,
+            "content": "caption=Phone screenshot from Lisbon arrival day.\nocr=Lisbon Santa Apolonia Platform 4 08:42",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "entity:Gina",
+            "layer": "entity",
+            "score": 2.0,
+            "content": "name=Gina",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-000",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina joined Figma",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-001",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina met Nora",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-002",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina married Alex",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-003",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina left Figma",
+            "provenance": "graph_node"
+          }
+        ]
+      },
+      "graph_only_judge": {
+        "top_layer": "image_evidence",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      },
+      "dual_backbone": {
+        "mode": "dual_backbone",
+        "plan": {
+          "family": "visual",
+          "primary_backbone": "graph",
+          "supporting_backbones": [
+            "tree"
+          ],
+          "notes": "Image evidence is a first-class graph node."
+        },
+        "hits": [
+          {
+            "item_id": "image:obs-009",
+            "layer": "image_evidence",
+            "score": 3.1,
+            "content": "caption=Phone screenshot from Lisbon arrival day.\nocr=Lisbon Santa Apolonia Platform 4 08:42",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "tree:month:2023-01",
+            "layer": "tree",
+            "score": 2.3,
+            "content": "Month 2023-01\n- 2023-01-12: Gina joined Figma on 2023-01-12.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-02",
+            "layer": "tree",
+            "score": 2.3,
+            "content": "Month 2023-02\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-03",
+            "layer": "tree",
+            "score": 2.3,
+            "content": "Month 2023-03\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-04",
+            "layer": "tree",
+            "score": 2.3,
+            "content": "Month 2023-04\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:day:2023-01-12",
+            "layer": "tree",
+            "score": 2.05,
+            "content": "Day 2023-01-12\n- 2023-01-12: Gina joined Figma on 2023-01-12.",
+            "provenance": "temporal_day"
+          }
+        ]
+      },
+      "dual_backbone_judge": {
+        "top_layer": "image_evidence",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      }
+    },
+    {
+      "case_id": "v3_lease_street",
+      "family": "visual",
+      "query": "What street name was shown in the lease contract photo?",
+      "expected_keywords": [
+        "Rua Augusta 14",
+        "Lease Agreement"
+      ],
+      "expected_top_layers": [
+        "image_evidence"
+      ],
+      "note": "A second image case avoids overfitting to one screenshot.",
+      "tree_only": {
+        "mode": "tree_only",
+        "plan": {
+          "family": "visual",
+          "primary_backbone": "tree",
+          "supporting_backbones": [],
+          "notes": "Chronology-first retrieval without graph support."
+        },
+        "hits": [
+          {
+            "item_id": "tree:month:2023-04",
+            "layer": "tree",
+            "score": 2.25,
+            "content": "Month 2023-04\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:day:2023-04-03",
+            "layer": "tree",
+            "score": 2.0,
+            "content": "Day 2023-04-03\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "tree:year:2023",
+            "layer": "tree",
+            "score": 2.0,
+            "content": "Year 2023\n- 2023-01-12: Gina joined Figma on 2023-01-12.\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_year"
+          },
+          {
+            "item_id": "tree:month:2023-01",
+            "layer": "tree",
+            "score": 1.25,
+            "content": "Month 2023-01\n- 2023-01-12: Gina joined Figma on 2023-01-12.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-02",
+            "layer": "tree",
+            "score": 1.25,
+            "content": "Month 2023-02\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:month:2023-03",
+            "layer": "tree",
+            "score": 1.25,
+            "content": "Month 2023-03\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_month"
+          }
+        ]
+      },
+      "tree_only_judge": {
+        "top_layer": "tree",
+        "keyword_ok": false,
+        "top_layer_ok": false,
+        "overall_ok": false
+      },
+      "graph_only": {
+        "mode": "graph_only",
+        "plan": {
+          "family": "visual",
+          "primary_backbone": "graph",
+          "supporting_backbones": [],
+          "notes": "Graph-first retrieval without temporal hierarchy support."
+        },
+        "hits": [
+          {
+            "item_id": "image:obs-010",
+            "layer": "image_evidence",
+            "score": 4.1,
+            "content": "caption=Photo of lease contract page.\nocr=Rua Augusta 14 Lisbon Lease Agreement",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "entity:Gina",
+            "layer": "entity",
+            "score": 2.0,
+            "content": "name=Gina",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-006",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina signed a Lisbon lease",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "fact:atom-006",
+            "layer": "fact",
+            "score": 2.0,
+            "content": "Gina signed a Lisbon lease on 2023-04-03.",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "image:obs-009",
+            "layer": "image_evidence",
+            "score": 1.1,
+            "content": "caption=Phone screenshot from Lisbon arrival day.\nocr=Lisbon Santa Apolonia Platform 4 08:42",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "entity:Alex",
+            "layer": "entity",
+            "score": 1.0,
+            "content": "name=Alex",
+            "provenance": "graph_node"
+          }
+        ]
+      },
+      "graph_only_judge": {
+        "top_layer": "image_evidence",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      },
+      "dual_backbone": {
+        "mode": "dual_backbone",
+        "plan": {
+          "family": "visual",
+          "primary_backbone": "graph",
+          "supporting_backbones": [
+            "tree"
+          ],
+          "notes": "Image evidence is a first-class graph node."
+        },
+        "hits": [
+          {
+            "item_id": "image:obs-010",
+            "layer": "image_evidence",
+            "score": 4.1,
+            "content": "caption=Photo of lease contract page.\nocr=Rua Augusta 14 Lisbon Lease Agreement",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "tree:month:2023-04",
+            "layer": "tree",
+            "score": 2.3,
+            "content": "Month 2023-04\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.",
+            "provenance": "temporal_month"
+          },
+          {
+            "item_id": "tree:day:2023-04-03",
+            "layer": "tree",
+            "score": 2.05,
+            "content": "Day 2023-04-03\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.",
+            "provenance": "temporal_day"
+          },
+          {
+            "item_id": "tree:year:2023",
+            "layer": "tree",
+            "score": 2.05,
+            "content": "Year 2023\n- 2023-01-12: Gina joined Figma on 2023-01-12.\n- 2023-02-10: Gina met Nora at a relocation workshop on 2023-02-10.\n- 2023-02-18: Gina married Alex on 2023-02-18.\n- 2023-03-04: Gina left Figma on 2023-03-04.\n- 2023-03-10: Gina plans to move to Lisbon after leaving Figma.\n- 2023-03-23: Nora helped Gina prepare a Lisbon visa checklist on 2023-03-23.\n- 2023-04-03: Gina signed a Lisbon lease on 2023-04-03.\n- 2023-04-07: Gina planned to start a small design studio in May 2023.\n- 2023-03-21: Gina visited Lisbon on 2023-03-21.",
+            "provenance": "temporal_year"
+          },
+          {
+            "item_id": "entity:Gina",
+            "layer": "entity",
+            "score": 2.0,
+            "content": "name=Gina",
+            "provenance": "graph_node"
+          },
+          {
+            "item_id": "event:atom-006",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Gina signed a Lisbon lease",
+            "provenance": "graph_node"
+          }
+        ]
+      },
+      "dual_backbone_judge": {
+        "top_layer": "image_evidence",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      }
+    }
+  ]
+}

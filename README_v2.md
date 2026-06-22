@@ -61,14 +61,14 @@ python3 scripts/adapter_doctor.py --format markdown --strict
 ## Quick Start
 
 ```bash
-cd /Users/chx/locomo-eval-web
+cd <repo-root>
 ./start.sh
 ```
 
 Open:
 
 ```text
-http://127.0.0.1:19181/
+<WEB_BASE_URL>/
 ```
 
 Then use the UI:

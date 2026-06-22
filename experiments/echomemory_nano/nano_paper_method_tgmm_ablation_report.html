@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EchoMemory Nano Paper Method Ablation</title>
+  <style>
+    body { margin: 0; background: #f5f7fb; color: #172033; font: 14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif; }
+    .page { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    .hero, .card { background: #fff; border: 1px solid #d9e2ef; border-radius: 12px; box-shadow: 0 10px 28px rgba(15,23,42,0.08); }
+    .hero { padding: 28px 30px; margin-bottom: 18px; }
+    .card { padding: 20px 22px; margin-bottom: 18px; }
+    h1, h2 { margin: 0 0 10px; }
+    p { color: #5b6679; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; vertical-align: top; padding: 10px; border-top: 1px solid #d9e2ef; }
+    th { font-size: 12px; color: #5b6679; background: #fbfcff; }
+    pre { white-space: pre-wrap; word-break: break-word; margin: 0; font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    .ok, .bad { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:700; }
+    .ok { background:#e9faf6; color:#0f766e; }
+    .bad { background:#fff0ef; color:#b42318; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <h1>Nano Paper Method Ablation</h1>
+      <p>这个小实验不追求 benchmark 分数，只验证论文方法节里的核心结构差异：<b>flat facts</b>、<b>typed blocks</b>、<b>full temporal-graph + multimodal</b>。</p>
+      <p>四道 toy query 分别覆盖：时间、偏好、计划、截图证据。</p>
+    </section>
+    
+            <section class="card">
+              <h2>Flat facts only · 3/4</h2>
+              <p>只看 fact nodes，模拟最朴素的扁平检索。</p>
+              <table>
+                <thead><tr><th>ID</th><th>Query</th><th>Result</th><th>Top hit</th></tr></thead>
+                <tbody>
+                <tr>
+                  <td>q1_temporal</td>
+                  <td>When did Jon lose his job?</td>
+                  <td><span class="ok">pass</span></td>
+                  <td><pre>statement=Jon lost his job on 2023-01-19 and decided to open a dance studio.
+subject=Jon
+predicate=lost_job
+object=job</pre></td>
+                </tr>
+                
+                <tr>
+                  <td>q2_profile</td>
+                  <td>What does Gina like?</td>
+                  <td><span class="ok">pass</span></td>
+                  <td><pre>statement=Gina likes jazz and museums.
+subject=Gina
+predicate=likes
+object=jazz and museums.</pre></td>
+                </tr>
+                
+                <tr>
+                  <td>q3_plan</td>
+                  <td>What does Jon plan to do?</td>
+                  <td><span class="ok">pass</span></td>
+                  <td><pre>statement=Jon plans to call three investors next week.
+subject=Jon
+predicate=plans
+object=call three investors next week.</pre></td>
+                </tr>
+                
+                <tr>
+                  <td>q4_visual</td>
+                  <td>What does the screenshot say?</td>
+                  <td><span class="bad">fail</span></td>
+                  <td><pre>no hit</pre></td>
+                </tr>
+                </tbody>
+              </table>
+            </section>
+            
+            <section class="card">
+              <h2>Typed blocks only · 3/4</h2>
+              <p>只看 profile/timeline/plan blocks，模拟只做聚合视图。</p>
+              <table>
+                <thead><tr><th>ID</th><th>Query</th><th>Result</th><th>Top hit</th></tr></thead>
+                <tbody>
+                <tr>
+                  <td>q1_temporal</td>
+                  <td>When did Jon lose his job?</td>
+                  <td><span class="ok">pass</span></td>
+                  <td><pre>- 2023-01-19: Jon lost his job on 2023-01-19 and decided to open a dance studio.
+- 2023-01-30: Gina visited Rome on 2023-01-30 after her interview.</pre></td>
+                </tr>
+                
+                <tr>
+                  <td>q2_profile</td>
+                  <td>What does Gina like?</td>
+                  <td><span class="ok">pass</span></td>
+                  <td><pre>- Gina likes jazz and museums.</pre></td>
+                </tr>
+                
+                <tr>
+                  <td>q3_plan</td>
+                  <td>What does Jon plan to do?</td>
+                  <td><span class="ok">pass</span></td>
+                  <td><pre>- Jon plans to call three investors next week.</pre></td>
+                </tr>
+                
+                <tr>
+                  <td>q4_visual</td>
+                  <td>What does the screenshot say?</td>
+                  <td><span class="bad">fail</span></td>
+                  <td><pre>no hit</pre></td>
+                </tr>
+                </tbody>
+              </table>
+            </section>
+            
+            <section class="card">
+              <h2>Full TG+MM · 4/4</h2>
+              <p>走完整 temporal graph + typed blocks + image_evidence 路径。</p>
+              <table>
+                <thead><tr><th>ID</th><th>Query</th><th>Result</th><th>Top hit</th></tr></thead>
+                <tbody>
+                <tr>
+                  <td>q1_temporal</td>
+                  <td>When did Jon lose his job?</td>
+                  <td><span class="ok">pass</span></td>
+                  <td><pre>- 2023-01-19: Jon lost his job on 2023-01-19 and decided to open a dance studio.
+- 2023-01-30: Gina visited Rome on 2023-01-30 after her interview.</pre></td>
+                </tr>
+                
+                <tr>
+                  <td>q2_profile</td>
+                  <td>What does Gina like?</td>
+                  <td><span class="ok">pass</span></td>
+                  <td><pre>- Gina likes jazz and museums.</pre></td>
+                </tr>
+                
+                <tr>
+                  <td>q3_plan</td>
+                  <td>What does Jon plan to do?</td>
+                  <td><span class="ok">pass</span></td>
+                  <td><pre>- Jon plans to call three investors next week.</pre></td>
+                </tr>
+                
+                <tr>
+                  <td>q4_visual</td>
+                  <td>What does the screenshot say?</td>
+                  <td><span class="ok">pass</span></td>
+                  <td><pre>caption=Finance dashboard screenshot
+ocr=Revenue 123; Margin 18%
+tags=finance,dashboard</pre></td>
+                </tr>
+                </tbody>
+              </table>
+            </section>
+            
+  </div>
+</body>
+</html>

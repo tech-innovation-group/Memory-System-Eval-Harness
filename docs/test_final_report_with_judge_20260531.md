@@ -309,13 +309,13 @@ VikingBot + GPT-5.5:
 #### 选项 A: 完整 conv-30 (199 题)
 
 ```bash
-/Users/chx/jiuwenclaw/bin/python3.12 scripts/run_vikingbot_eval.py \
+<python-bin> scripts/run_vikingbot_eval.py \
   --dataset dataset/locomo10.json \
-  --out-dir /Users/chx/locomo-eval-web/runs/echomem_gpt55_conv30_full \
+  --out-dir <repo-root>/runs/echomem_gpt55_conv30_full \
   --sample conv-30 \
   --engine openviking_memory \
-  --openviking-url http://localhost:1933 \
-  --workspace /Users/chx/openviking_workspace \
+  --openviking-url <OPENVIKING_BASE_URL> \
+  --workspace <openviking-workspace> \
   --answer-base-url https://codexcs.ysaikeji.cn/v1 \
   --answer-model gpt-5.5 \
   --answer-token sk-REDACTED \
@@ -371,7 +371,7 @@ VikingBot + GPT-5.5:
 ## 📁 所有文件
 
 ```
-/Users/chx/locomo-eval-web/
+<repo-root>/
 ├── docs/
 │   ├── test_final_report_with_judge_20260531.md  # 本报告
 │   ├── openviking_gpt55_setup_guide.md           # 配置指南

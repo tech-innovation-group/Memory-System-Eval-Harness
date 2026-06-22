@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+from datetime import datetime
 import json
 import os
 import subprocess
@@ -58,6 +59,31 @@ def question_key(row: dict[str, str]) -> str:
     return row.get("question_id") or "|".join(
         [row.get("sample_id", ""), row.get("question", ""), row.get("answer", "")]
     )
+
+
+def retry_history_path(input_path: Path) -> Path:
+    return Path(f"{input_path}.retry_failed_history.json")
+
+
+def write_retry_history(input_path: Path, attempt: dict[str, Any]) -> None:
+    path = retry_history_path(input_path)
+    data: dict[str, Any] = {}
+    if path.exists():
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                data = loaded
+        except Exception:
+            data = {}
+    attempts = data.get("attempts") if isinstance(data.get("attempts"), list) else []
+    attempts.append(attempt)
+    payload = {
+        "input": str(input_path),
+        "attempt_count": len(attempts),
+        "latest": attempt,
+        "attempts": attempts[-20:],
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def build_retry_command(args: argparse.Namespace, question_ids: list[str], round_dir: Path) -> list[str]:
@@ -195,6 +221,9 @@ def main() -> None:
     retry_by_key = {question_key(row): row for row in retry_rows}
     replaced = 0
     still_failed = 0
+    recovered_question_ids: list[str] = []
+    still_failed_question_ids: list[str] = []
+    missing_retry_result_question_ids: list[str] = []
     merged_rows = []
     for row in rows:
         key = question_key(row)
@@ -202,10 +231,20 @@ def main() -> None:
         if retry_row and is_recovered(retry_row):
             merged_rows.append(retry_row)
             replaced += 1
+            qid = str(retry_row.get("question_id") or row.get("question_id") or "").strip()
+            if qid and qid not in recovered_question_ids:
+                recovered_question_ids.append(qid)
         else:
             merged_rows.append(row)
             if retry_row and is_failed(retry_row):
                 still_failed += 1
+                qid = str(retry_row.get("question_id") or row.get("question_id") or "").strip()
+                if qid and qid not in still_failed_question_ids:
+                    still_failed_question_ids.append(qid)
+            elif not retry_row:
+                qid = str(row.get("question_id") or "").strip()
+                if qid and qid not in missing_retry_result_question_ids:
+                    missing_retry_result_question_ids.append(qid)
     backup = input_path.with_suffix(input_path.suffix + ".before_failed_retry.bak")
     backup.write_text(input_path.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
     write_csv(input_path, merged_rows)
@@ -216,9 +255,29 @@ def main() -> None:
             "retried_rows": len(retry_rows),
             "replaced_rows": replaced,
             "still_failed_after_retry": still_failed,
+            "recovered_question_ids": recovered_question_ids,
+            "still_failed_question_ids": still_failed_question_ids,
+            "missing_retry_result_question_ids": missing_retry_result_question_ids,
         }
     )
     (out_dir / "retry_failed_summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_retry_history(
+        input_path,
+        {
+            "recorded_at": datetime.now().isoformat(timespec="seconds"),
+            "backend": "openviking",
+            "retry_csv": str(retry_csv),
+            "retry_summary": str(out_dir / "retry_failed_summary.json"),
+            "failed_questions_before": len(question_ids),
+            "retried_rows": len(retry_rows),
+            "recovered_questions": len(recovered_question_ids),
+            "still_failed_questions": len(still_failed_question_ids),
+            "missing_retry_result_questions": len(missing_retry_result_question_ids),
+            "recovered_question_ids": recovered_question_ids,
+            "still_failed_question_ids": still_failed_question_ids,
+            "missing_retry_result_question_ids": missing_retry_result_question_ids,
+        },
+    )
     print(json.dumps(summary, ensure_ascii=False, indent=2), flush=True)
 
 

@@ -77,7 +77,7 @@
 最小示例：
 
 ```bash
-cd /Users/chx/locomo-eval-web
+cd <repo-root>
 cp env.echomem.example .env.local
 ```
 
@@ -110,7 +110,7 @@ export JUDGE_TOKEN=<judge-api-key>
 ## 4. 启动平台
 
 ```bash
-cd /Users/chx/locomo-eval-web
+cd <repo-root>
 source .env.local
 ./preflight.sh
 ./start.sh
@@ -119,14 +119,14 @@ source .env.local
 浏览器打开：
 
 ```text
-http://127.0.0.1:19181/
+<WEB_BASE_URL>/
 ```
 
 如果只是先看契约检查，也可以直接跑：
 
 ```bash
 python3 scripts/adapter_doctor.py --format markdown --strict
-curl -s http://127.0.0.1:19181/api/echomem-contract | python3 -m json.tool | head -160
+curl -s <WEB_BASE_URL>/api/echomem-contract | python3 -m json.tool | head -160
 ```
 
 ## 5. 第一步：系统配置里切到 EchoMemory

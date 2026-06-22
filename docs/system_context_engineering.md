@@ -250,7 +250,7 @@ POST /api/agent/chat
 ```python
 # 调用 OpenViking API
 retrieval = ranked_memory_search(
-    "http://127.0.0.1:19080",
+    "<OPENVIKING_BASE_URL>",
     "How do Jon and Gina both like to destress?",
     account="default",
     user_id="default",

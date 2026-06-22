@@ -20,12 +20,12 @@ This hour focused on turning the harness from a set of working endpoints into a 
   - Request: `/api/questions-page?path=dataset/longmemeval.sample.json&offset=0&limit=3`
   - Result: 3 questions returned in ~0.01s.
 - LoCoMo smoke Judge result:
-  - CSV: `/Users/chx/locomo-eval-web/runs/manual_locomo_smoke_5/local_agent/local_agent_results.csv`
-  - Judge task: `/Users/chx/locomo-eval-web/runs/judge_20260531_025258_33ea3f`
+  - CSV: `<repo-root>/runs/manual_locomo_smoke_5/local_agent/local_agent_results.csv`
+  - Judge task: `<repo-root>/runs/judge_20260531_025258_33ea3f`
   - Accuracy: 1/5 = 20.0%
   - Wrong clustering file generated in the CSV directory.
 - Exported report:
-  - `/Users/chx/locomo-eval-web/runs/judge_20260531_025258_33ea3f/report.md`
+  - `<repo-root>/runs/judge_20260531_025258_33ea3f/report.md`
 - UI text now present in served HTML:
   - `LongMemEval 100 题`
   - `加载前 100 题预览`

@@ -1,0 +1,3440 @@
+{
+  "summary": {
+    "cases": 5,
+    "one_pass_contract_ok": 1,
+    "graph_only_contract_ok": 3,
+    "type_aware_contract_ok": 5,
+    "one_pass_keyword_ok": 5,
+    "graph_only_keyword_ok": 5,
+    "type_aware_keyword_ok": 5,
+    "type_aware_improved_over_graph_only": [
+      "temporal_relational_plan",
+      "temporal_relational_after"
+    ],
+    "graph_only_improved_over_one_pass": [
+      "temporal_join_date",
+      "temporal_leave_date"
+    ]
+  },
+  "results": [
+    {
+      "case_id": "temporal_join_date",
+      "query": "When did Gina join Figma?",
+      "note": "Temporal query starts tree-first and should add event support if contract is incomplete.",
+      "one_pass": {
+        "mode": "one_pass",
+        "intent": {
+          "label": "temporal",
+          "rationale": "Temporal words detected."
+        },
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "must_have_layers": [
+            "temporal_tree",
+            "event"
+          ],
+          "answer_rule": "Prefer chronology blocks; use event/fact as support."
+        },
+        "hits": [
+          {
+            "source": "day:2024-01-05",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "month:2024-01",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01"
+          },
+          {
+            "source": "year:2024",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.\n- 2024-03-10: Gina married Alex on 2024-03-10.\n- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.\n- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.\n- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024"
+          },
+          {
+            "source": "day:2024-06-01",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "day:2024-06-03",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "month:2024-06",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.\n- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.\n- 2024-06-10: Arrival photo showed Santa Apolonia Platform 4.",
+            "story_time": "2024-06"
+          },
+          {
+            "source": "day:2024-03-10",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-03-10: Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "day:2024-04-02",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04-02"
+          }
+        ],
+        "all_hits": [
+          {
+            "source": "day:2024-01-05",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "month:2024-01",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01"
+          },
+          {
+            "source": "year:2024",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.\n- 2024-03-10: Gina married Alex on 2024-03-10.\n- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.\n- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.\n- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024"
+          },
+          {
+            "source": "day:2024-06-01",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "day:2024-06-03",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "month:2024-06",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.\n- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.\n- 2024-06-10: Arrival photo showed Santa Apolonia Platform 4.",
+            "story_time": "2024-06"
+          },
+          {
+            "source": "day:2024-03-10",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-03-10: Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "day:2024-04-02",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "day:2024-05-08",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.",
+            "story_time": "2024-05-08"
+          },
+          {
+            "source": "month:2024-03",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-03-10: Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03"
+          },
+          {
+            "source": "month:2024-04",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04"
+          },
+          {
+            "source": "month:2024-05",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.",
+            "story_time": "2024-05"
+          }
+        ],
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "self_check": {
+          "need_expand": true,
+          "confidence": 0.5,
+          "note": "Evidence contract incomplete; supporting evidence should expand.",
+          "second_pass_sources": []
+        },
+        "decision": {
+          "answer": "Likely time evidence: 2024-01-05",
+          "confidence": 0.5,
+          "note": "Primary reader only."
+        }
+      },
+      "one_pass_eval": {
+        "required_layers": [
+          "temporal_tree",
+          "event"
+        ],
+        "present_layers": [
+          "temporal_tree"
+        ],
+        "matched_layers": [
+          "temporal_tree"
+        ],
+        "missing_layers": [
+          "event"
+        ],
+        "coverage_ratio": 0.5,
+        "contract_ok": false,
+        "keyword_ok": true
+      },
+      "graph_only_second_pass": {
+        "mode": "graph_only_second_pass",
+        "intent": {
+          "label": "temporal",
+          "rationale": "Temporal words detected."
+        },
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "must_have_layers": [
+            "temporal_tree",
+            "event"
+          ],
+          "answer_rule": "Prefer chronology blocks; use event/fact as support."
+        },
+        "hits": [
+          {
+            "source": "event:atom-000",
+            "layer": "event",
+            "score": 0.88,
+            "content": "Gina joined Figma",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "fact:atom-000",
+            "layer": "fact",
+            "score": 0.78,
+            "content": "Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "day:2024-01-05",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "month:2024-01",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01"
+          },
+          {
+            "source": "year:2024",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.\n- 2024-03-10: Gina married Alex on 2024-03-10.\n- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.\n- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.\n- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024"
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.5,
+            "content": "Gina left Figma",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 0.5,
+            "content": "Gina plans_after leave Figma",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "day:2024-06-01",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          }
+        ],
+        "all_hits": [
+          {
+            "source": "event:atom-000",
+            "layer": "event",
+            "score": 0.88,
+            "content": "Gina joined Figma",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "fact:atom-000",
+            "layer": "fact",
+            "score": 0.78,
+            "content": "Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "day:2024-01-05",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "month:2024-01",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01"
+          },
+          {
+            "source": "year:2024",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.\n- 2024-03-10: Gina married Alex on 2024-03-10.\n- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.\n- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.\n- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024"
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.5,
+            "content": "Gina left Figma",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 0.5,
+            "content": "Gina plans_after leave Figma",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "day:2024-06-01",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "day:2024-06-03",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "month:2024-06",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.\n- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.\n- 2024-06-10: Arrival photo showed Santa Apolonia Platform 4.",
+            "story_time": "2024-06"
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 0.4,
+            "content": "Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "fact:atom-005",
+            "layer": "fact",
+            "score": 0.4,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "event:atom-001",
+            "layer": "event",
+            "score": 0.30000000000000004,
+            "content": "Gina married_to Alex",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "event:atom-002",
+            "layer": "event",
+            "score": 0.30000000000000004,
+            "content": "Nora helped Gina",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "event:atom-003",
+            "layer": "event",
+            "score": 0.30000000000000004,
+            "content": "Gina signed Lisbon lease",
+            "story_time": "2024-05-08"
+          },
+          {
+            "source": "day:2024-03-10",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-03-10: Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "day:2024-04-02",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "day:2024-05-08",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.",
+            "story_time": "2024-05-08"
+          },
+          {
+            "source": "month:2024-03",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-03-10: Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03"
+          },
+          {
+            "source": "month:2024-04",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04"
+          },
+          {
+            "source": "month:2024-05",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.",
+            "story_time": "2024-05"
+          },
+          {
+            "source": "entity:Gina",
+            "layer": "entity",
+            "score": 0.2,
+            "content": "name=Gina",
+            "story_time": ""
+          },
+          {
+            "source": "entity:Figma",
+            "layer": "entity",
+            "score": 0.2,
+            "content": "name=Figma",
+            "story_time": ""
+          },
+          {
+            "source": "fact:atom-001",
+            "layer": "fact",
+            "score": 0.2,
+            "content": "Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "fact:atom-002",
+            "layer": "fact",
+            "score": 0.2,
+            "content": "Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "fact:atom-003",
+            "layer": "fact",
+            "score": 0.2,
+            "content": "Gina signed a Lisbon lease on 2024-05-08.",
+            "story_time": "2024-05-08"
+          }
+        ],
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "self_check": {
+          "need_expand": false,
+          "confidence": 1.0,
+          "note": "Evidence contract already complete.",
+          "second_pass_sources": [
+            "graph"
+          ]
+        },
+        "decision": {
+          "answer": "Likely time evidence: 2024-01-05",
+          "confidence": 1.0,
+          "note": "Only graph can be added in second pass."
+        }
+      },
+      "graph_only_second_pass_eval": {
+        "required_layers": [
+          "temporal_tree",
+          "event"
+        ],
+        "present_layers": [
+          "event",
+          "fact",
+          "temporal_tree",
+          "entity"
+        ],
+        "matched_layers": [
+          "temporal_tree",
+          "event"
+        ],
+        "missing_layers": [],
+        "coverage_ratio": 1.0,
+        "contract_ok": true,
+        "keyword_ok": true
+      },
+      "type_aware_second_pass": {
+        "mode": "type_aware_second_pass",
+        "intent": {
+          "label": "temporal",
+          "rationale": "Temporal words detected."
+        },
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "must_have_layers": [
+            "temporal_tree",
+            "event"
+          ],
+          "answer_rule": "Prefer chronology blocks; use event/fact as support."
+        },
+        "hits": [
+          {
+            "source": "event:atom-000",
+            "layer": "event",
+            "score": 0.88,
+            "content": "Gina joined Figma",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "fact:atom-000",
+            "layer": "fact",
+            "score": 0.78,
+            "content": "Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "day:2024-01-05",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "month:2024-01",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01"
+          },
+          {
+            "source": "year:2024",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.\n- 2024-03-10: Gina married Alex on 2024-03-10.\n- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.\n- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.\n- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024"
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.5,
+            "content": "Gina left Figma",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 0.5,
+            "content": "Gina plans_after leave Figma",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "day:2024-06-01",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          }
+        ],
+        "all_hits": [
+          {
+            "source": "event:atom-000",
+            "layer": "event",
+            "score": 0.88,
+            "content": "Gina joined Figma",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "fact:atom-000",
+            "layer": "fact",
+            "score": 0.78,
+            "content": "Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "day:2024-01-05",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "month:2024-01",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01"
+          },
+          {
+            "source": "year:2024",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.\n- 2024-03-10: Gina married Alex on 2024-03-10.\n- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.\n- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.\n- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024"
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.5,
+            "content": "Gina left Figma",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 0.5,
+            "content": "Gina plans_after leave Figma",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "day:2024-06-01",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "day:2024-06-03",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "month:2024-06",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.\n- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.\n- 2024-06-10: Arrival photo showed Santa Apolonia Platform 4.",
+            "story_time": "2024-06"
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 0.4,
+            "content": "Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "fact:atom-005",
+            "layer": "fact",
+            "score": 0.4,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "event:atom-001",
+            "layer": "event",
+            "score": 0.30000000000000004,
+            "content": "Gina married_to Alex",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "event:atom-002",
+            "layer": "event",
+            "score": 0.30000000000000004,
+            "content": "Nora helped Gina",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "event:atom-003",
+            "layer": "event",
+            "score": 0.30000000000000004,
+            "content": "Gina signed Lisbon lease",
+            "story_time": "2024-05-08"
+          },
+          {
+            "source": "day:2024-03-10",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-03-10: Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "day:2024-04-02",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "day:2024-05-08",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.",
+            "story_time": "2024-05-08"
+          },
+          {
+            "source": "month:2024-03",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-03-10: Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03"
+          },
+          {
+            "source": "month:2024-04",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04"
+          },
+          {
+            "source": "month:2024-05",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.",
+            "story_time": "2024-05"
+          },
+          {
+            "source": "entity:Gina",
+            "layer": "entity",
+            "score": 0.2,
+            "content": "name=Gina",
+            "story_time": ""
+          },
+          {
+            "source": "entity:Figma",
+            "layer": "entity",
+            "score": 0.2,
+            "content": "name=Figma",
+            "story_time": ""
+          },
+          {
+            "source": "fact:atom-001",
+            "layer": "fact",
+            "score": 0.2,
+            "content": "Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "fact:atom-002",
+            "layer": "fact",
+            "score": 0.2,
+            "content": "Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "fact:atom-003",
+            "layer": "fact",
+            "score": 0.2,
+            "content": "Gina signed a Lisbon lease on 2024-05-08.",
+            "story_time": "2024-05-08"
+          }
+        ],
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "self_check": {
+          "need_expand": false,
+          "confidence": 1.0,
+          "note": "Evidence contract already complete.",
+          "second_pass_sources": [
+            "graph"
+          ]
+        },
+        "decision": {
+          "answer": "Likely time evidence: 2024-01-05",
+          "confidence": 1.0,
+          "note": "Second pass probes readers based on missing evidence types."
+        }
+      },
+      "type_aware_second_pass_eval": {
+        "required_layers": [
+          "temporal_tree",
+          "event"
+        ],
+        "present_layers": [
+          "event",
+          "fact",
+          "temporal_tree",
+          "entity"
+        ],
+        "matched_layers": [
+          "temporal_tree",
+          "event"
+        ],
+        "missing_layers": [],
+        "coverage_ratio": 1.0,
+        "contract_ok": true,
+        "keyword_ok": true
+      }
+    },
+    {
+      "case_id": "temporal_leave_date",
+      "query": "When did Gina leave Figma?",
+      "note": "Another chronology-first question where event support matters.",
+      "one_pass": {
+        "mode": "one_pass",
+        "intent": {
+          "label": "temporal",
+          "rationale": "Temporal words detected."
+        },
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "must_have_layers": [
+            "temporal_tree",
+            "event"
+          ],
+          "answer_rule": "Prefer chronology blocks; use event/fact as support."
+        },
+        "hits": [
+          {
+            "source": "day:2024-06-01",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "day:2024-06-03",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "month:2024-06",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.\n- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.\n- 2024-06-10: Arrival photo showed Santa Apolonia Platform 4.",
+            "story_time": "2024-06"
+          },
+          {
+            "source": "year:2024",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.\n- 2024-03-10: Gina married Alex on 2024-03-10.\n- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.\n- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.\n- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024"
+          },
+          {
+            "source": "day:2024-01-05",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "month:2024-01",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01"
+          },
+          {
+            "source": "day:2024-03-10",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-03-10: Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "day:2024-04-02",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04-02"
+          }
+        ],
+        "all_hits": [
+          {
+            "source": "day:2024-06-01",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "day:2024-06-03",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "month:2024-06",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.\n- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.\n- 2024-06-10: Arrival photo showed Santa Apolonia Platform 4.",
+            "story_time": "2024-06"
+          },
+          {
+            "source": "year:2024",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.\n- 2024-03-10: Gina married Alex on 2024-03-10.\n- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.\n- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.\n- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024"
+          },
+          {
+            "source": "day:2024-01-05",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "month:2024-01",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01"
+          },
+          {
+            "source": "day:2024-03-10",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-03-10: Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "day:2024-04-02",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "day:2024-05-08",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.",
+            "story_time": "2024-05-08"
+          },
+          {
+            "source": "month:2024-03",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-03-10: Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03"
+          },
+          {
+            "source": "month:2024-04",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04"
+          },
+          {
+            "source": "month:2024-05",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.",
+            "story_time": "2024-05"
+          }
+        ],
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "self_check": {
+          "need_expand": true,
+          "confidence": 0.5,
+          "note": "Evidence contract incomplete; supporting evidence should expand.",
+          "second_pass_sources": []
+        },
+        "decision": {
+          "answer": "Likely time evidence: 2024-06-01",
+          "confidence": 0.5,
+          "note": "Primary reader only."
+        }
+      },
+      "one_pass_eval": {
+        "required_layers": [
+          "temporal_tree",
+          "event"
+        ],
+        "present_layers": [
+          "temporal_tree"
+        ],
+        "matched_layers": [
+          "temporal_tree"
+        ],
+        "missing_layers": [
+          "event"
+        ],
+        "coverage_ratio": 0.5,
+        "contract_ok": false,
+        "keyword_ok": true
+      },
+      "graph_only_second_pass": {
+        "mode": "graph_only_second_pass",
+        "intent": {
+          "label": "temporal",
+          "rationale": "Temporal words detected."
+        },
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "must_have_layers": [
+            "temporal_tree",
+            "event"
+          ],
+          "answer_rule": "Prefer chronology blocks; use event/fact as support."
+        },
+        "hits": [
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.88,
+            "content": "Gina left Figma",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 0.88,
+            "content": "Gina plans_after leave Figma",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 0.78,
+            "content": "Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "fact:atom-005",
+            "layer": "fact",
+            "score": 0.78,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "day:2024-06-01",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "day:2024-06-03",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "month:2024-06",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.\n- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.\n- 2024-06-10: Arrival photo showed Santa Apolonia Platform 4.",
+            "story_time": "2024-06"
+          },
+          {
+            "source": "year:2024",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.\n- 2024-03-10: Gina married Alex on 2024-03-10.\n- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.\n- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.\n- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024"
+          }
+        ],
+        "all_hits": [
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.88,
+            "content": "Gina left Figma",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 0.88,
+            "content": "Gina plans_after leave Figma",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 0.78,
+            "content": "Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "fact:atom-005",
+            "layer": "fact",
+            "score": 0.78,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "day:2024-06-01",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "day:2024-06-03",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "month:2024-06",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.\n- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.\n- 2024-06-10: Arrival photo showed Santa Apolonia Platform 4.",
+            "story_time": "2024-06"
+          },
+          {
+            "source": "year:2024",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.\n- 2024-03-10: Gina married Alex on 2024-03-10.\n- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.\n- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.\n- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024"
+          },
+          {
+            "source": "event:atom-000",
+            "layer": "event",
+            "score": 0.5,
+            "content": "Gina joined Figma",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "day:2024-01-05",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "month:2024-01",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01"
+          },
+          {
+            "source": "fact:atom-000",
+            "layer": "fact",
+            "score": 0.4,
+            "content": "Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "event:atom-001",
+            "layer": "event",
+            "score": 0.30000000000000004,
+            "content": "Gina married_to Alex",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "event:atom-002",
+            "layer": "event",
+            "score": 0.30000000000000004,
+            "content": "Nora helped Gina",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "event:atom-003",
+            "layer": "event",
+            "score": 0.30000000000000004,
+            "content": "Gina signed Lisbon lease",
+            "story_time": "2024-05-08"
+          },
+          {
+            "source": "day:2024-03-10",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-03-10: Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "day:2024-04-02",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "day:2024-05-08",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.",
+            "story_time": "2024-05-08"
+          },
+          {
+            "source": "month:2024-03",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-03-10: Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03"
+          },
+          {
+            "source": "month:2024-04",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04"
+          },
+          {
+            "source": "month:2024-05",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.",
+            "story_time": "2024-05"
+          },
+          {
+            "source": "entity:Gina",
+            "layer": "entity",
+            "score": 0.2,
+            "content": "name=Gina",
+            "story_time": ""
+          },
+          {
+            "source": "entity:Figma",
+            "layer": "entity",
+            "score": 0.2,
+            "content": "name=Figma",
+            "story_time": ""
+          },
+          {
+            "source": "fact:atom-001",
+            "layer": "fact",
+            "score": 0.2,
+            "content": "Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "fact:atom-002",
+            "layer": "fact",
+            "score": 0.2,
+            "content": "Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "fact:atom-003",
+            "layer": "fact",
+            "score": 0.2,
+            "content": "Gina signed a Lisbon lease on 2024-05-08.",
+            "story_time": "2024-05-08"
+          }
+        ],
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "self_check": {
+          "need_expand": false,
+          "confidence": 1.0,
+          "note": "Evidence contract already complete.",
+          "second_pass_sources": [
+            "graph"
+          ]
+        },
+        "decision": {
+          "answer": "Likely time evidence: 2024-06-01",
+          "confidence": 1.0,
+          "note": "Only graph can be added in second pass."
+        }
+      },
+      "graph_only_second_pass_eval": {
+        "required_layers": [
+          "temporal_tree",
+          "event"
+        ],
+        "present_layers": [
+          "event",
+          "fact",
+          "temporal_tree",
+          "entity"
+        ],
+        "matched_layers": [
+          "temporal_tree",
+          "event"
+        ],
+        "missing_layers": [],
+        "coverage_ratio": 1.0,
+        "contract_ok": true,
+        "keyword_ok": true
+      },
+      "type_aware_second_pass": {
+        "mode": "type_aware_second_pass",
+        "intent": {
+          "label": "temporal",
+          "rationale": "Temporal words detected."
+        },
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "must_have_layers": [
+            "temporal_tree",
+            "event"
+          ],
+          "answer_rule": "Prefer chronology blocks; use event/fact as support."
+        },
+        "hits": [
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.88,
+            "content": "Gina left Figma",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 0.88,
+            "content": "Gina plans_after leave Figma",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 0.78,
+            "content": "Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "fact:atom-005",
+            "layer": "fact",
+            "score": 0.78,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "day:2024-06-01",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "day:2024-06-03",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "month:2024-06",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.\n- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.\n- 2024-06-10: Arrival photo showed Santa Apolonia Platform 4.",
+            "story_time": "2024-06"
+          },
+          {
+            "source": "year:2024",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.\n- 2024-03-10: Gina married Alex on 2024-03-10.\n- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.\n- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.\n- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024"
+          }
+        ],
+        "all_hits": [
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.88,
+            "content": "Gina left Figma",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 0.88,
+            "content": "Gina plans_after leave Figma",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 0.78,
+            "content": "Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "fact:atom-005",
+            "layer": "fact",
+            "score": 0.78,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "day:2024-06-01",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "day:2024-06-03",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "month:2024-06",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.\n- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.\n- 2024-06-10: Arrival photo showed Santa Apolonia Platform 4.",
+            "story_time": "2024-06"
+          },
+          {
+            "source": "year:2024",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.\n- 2024-03-10: Gina married Alex on 2024-03-10.\n- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.\n- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.\n- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024"
+          },
+          {
+            "source": "event:atom-000",
+            "layer": "event",
+            "score": 0.5,
+            "content": "Gina joined Figma",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "day:2024-01-05",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "month:2024-01",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01"
+          },
+          {
+            "source": "fact:atom-000",
+            "layer": "fact",
+            "score": 0.4,
+            "content": "Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "event:atom-001",
+            "layer": "event",
+            "score": 0.30000000000000004,
+            "content": "Gina married_to Alex",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "event:atom-002",
+            "layer": "event",
+            "score": 0.30000000000000004,
+            "content": "Nora helped Gina",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "event:atom-003",
+            "layer": "event",
+            "score": 0.30000000000000004,
+            "content": "Gina signed Lisbon lease",
+            "story_time": "2024-05-08"
+          },
+          {
+            "source": "day:2024-03-10",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-03-10: Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "day:2024-04-02",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "day:2024-05-08",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.",
+            "story_time": "2024-05-08"
+          },
+          {
+            "source": "month:2024-03",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-03-10: Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03"
+          },
+          {
+            "source": "month:2024-04",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04"
+          },
+          {
+            "source": "month:2024-05",
+            "layer": "temporal_tree",
+            "score": 0.2,
+            "content": "- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.",
+            "story_time": "2024-05"
+          },
+          {
+            "source": "entity:Gina",
+            "layer": "entity",
+            "score": 0.2,
+            "content": "name=Gina",
+            "story_time": ""
+          },
+          {
+            "source": "entity:Figma",
+            "layer": "entity",
+            "score": 0.2,
+            "content": "name=Figma",
+            "story_time": ""
+          },
+          {
+            "source": "fact:atom-001",
+            "layer": "fact",
+            "score": 0.2,
+            "content": "Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "fact:atom-002",
+            "layer": "fact",
+            "score": 0.2,
+            "content": "Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "fact:atom-003",
+            "layer": "fact",
+            "score": 0.2,
+            "content": "Gina signed a Lisbon lease on 2024-05-08.",
+            "story_time": "2024-05-08"
+          }
+        ],
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "self_check": {
+          "need_expand": false,
+          "confidence": 1.0,
+          "note": "Evidence contract already complete.",
+          "second_pass_sources": [
+            "graph"
+          ]
+        },
+        "decision": {
+          "answer": "Likely time evidence: 2024-06-01",
+          "confidence": 1.0,
+          "note": "Second pass probes readers based on missing evidence types."
+        }
+      },
+      "type_aware_second_pass_eval": {
+        "required_layers": [
+          "temporal_tree",
+          "event"
+        ],
+        "present_layers": [
+          "event",
+          "fact",
+          "temporal_tree",
+          "entity"
+        ],
+        "matched_layers": [
+          "temporal_tree",
+          "event"
+        ],
+        "missing_layers": [],
+        "coverage_ratio": 1.0,
+        "contract_ok": true,
+        "keyword_ok": true
+      }
+    },
+    {
+      "case_id": "temporal_relational_plan",
+      "query": "What did Gina plan to do after leaving Figma?",
+      "note": "Ordered relation query should not stop at graph-only support; it should also expose chronology support.",
+      "one_pass": {
+        "mode": "one_pass",
+        "intent": {
+          "label": "temporal_relational",
+          "rationale": "Ordering / plan words detected."
+        },
+        "plan": {
+          "family": "temporal_relational",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "tree",
+            "atom"
+          ],
+          "must_have_layers": [
+            "event",
+            "fact"
+          ],
+          "answer_rule": "Need ordering or plan relation, then add chronology support."
+        },
+        "hits": [
+          {
+            "source": "fact:atom-005",
+            "layer": "fact",
+            "score": 0.7355555555555555,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 0.7244444444444443,
+            "content": "Gina plans_after leave Figma",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.6133333333333333,
+            "content": "Gina left Figma",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 0.5133333333333333,
+            "content": "Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "event:atom-000",
+            "layer": "event",
+            "score": 0.3222222222222222,
+            "content": "Gina joined Figma",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "fact:atom-000",
+            "layer": "fact",
+            "score": 0.2222222222222222,
+            "content": "Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "event:atom-001",
+            "layer": "event",
+            "score": 0.2111111111111111,
+            "content": "Gina married_to Alex",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "event:atom-002",
+            "layer": "event",
+            "score": 0.2111111111111111,
+            "content": "Nora helped Gina",
+            "story_time": "2024-04-02"
+          }
+        ],
+        "all_hits": [
+          {
+            "source": "fact:atom-005",
+            "layer": "fact",
+            "score": 0.7355555555555555,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 0.7244444444444443,
+            "content": "Gina plans_after leave Figma",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.6133333333333333,
+            "content": "Gina left Figma",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 0.5133333333333333,
+            "content": "Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "event:atom-000",
+            "layer": "event",
+            "score": 0.3222222222222222,
+            "content": "Gina joined Figma",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "fact:atom-000",
+            "layer": "fact",
+            "score": 0.2222222222222222,
+            "content": "Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "event:atom-001",
+            "layer": "event",
+            "score": 0.2111111111111111,
+            "content": "Gina married_to Alex",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "event:atom-002",
+            "layer": "event",
+            "score": 0.2111111111111111,
+            "content": "Nora helped Gina",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "event:atom-003",
+            "layer": "event",
+            "score": 0.2111111111111111,
+            "content": "Gina signed Lisbon lease",
+            "story_time": "2024-05-08"
+          },
+          {
+            "source": "entity:Gina",
+            "layer": "entity",
+            "score": 0.1111111111111111,
+            "content": "name=Gina",
+            "story_time": ""
+          },
+          {
+            "source": "entity:Figma",
+            "layer": "entity",
+            "score": 0.1111111111111111,
+            "content": "name=Figma",
+            "story_time": ""
+          },
+          {
+            "source": "fact:atom-001",
+            "layer": "fact",
+            "score": 0.1111111111111111,
+            "content": "Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "fact:atom-002",
+            "layer": "fact",
+            "score": 0.1111111111111111,
+            "content": "Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "fact:atom-003",
+            "layer": "fact",
+            "score": 0.1111111111111111,
+            "content": "Gina signed a Lisbon lease on 2024-05-08.",
+            "story_time": "2024-05-08"
+          }
+        ],
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "self_check": {
+          "need_expand": true,
+          "confidence": 0.667,
+          "note": "Evidence contract incomplete; supporting evidence should expand.",
+          "second_pass_sources": []
+        },
+        "decision": {
+          "answer": "Likely ordered relation evidence: Gina plans to move to Lisbon after leaving Figma.",
+          "confidence": 0.667,
+          "note": "Primary reader only."
+        }
+      },
+      "one_pass_eval": {
+        "required_layers": [
+          "event",
+          "fact",
+          "temporal_tree"
+        ],
+        "present_layers": [
+          "fact",
+          "event",
+          "entity"
+        ],
+        "matched_layers": [
+          "event",
+          "fact"
+        ],
+        "missing_layers": [
+          "temporal_tree"
+        ],
+        "coverage_ratio": 0.667,
+        "contract_ok": false,
+        "keyword_ok": true
+      },
+      "graph_only_second_pass": {
+        "mode": "graph_only_second_pass",
+        "intent": {
+          "label": "temporal_relational",
+          "rationale": "Ordering / plan words detected."
+        },
+        "plan": {
+          "family": "temporal_relational",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "tree",
+            "atom"
+          ],
+          "must_have_layers": [
+            "event",
+            "fact"
+          ],
+          "answer_rule": "Need ordering or plan relation, then add chronology support."
+        },
+        "hits": [
+          {
+            "source": "fact:atom-005",
+            "layer": "fact",
+            "score": 0.7355555555555555,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 0.7244444444444443,
+            "content": "Gina plans_after leave Figma",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.6133333333333333,
+            "content": "Gina left Figma",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 0.5133333333333333,
+            "content": "Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "event:atom-000",
+            "layer": "event",
+            "score": 0.3222222222222222,
+            "content": "Gina joined Figma",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "fact:atom-000",
+            "layer": "fact",
+            "score": 0.2222222222222222,
+            "content": "Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "event:atom-001",
+            "layer": "event",
+            "score": 0.2111111111111111,
+            "content": "Gina married_to Alex",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "event:atom-002",
+            "layer": "event",
+            "score": 0.2111111111111111,
+            "content": "Nora helped Gina",
+            "story_time": "2024-04-02"
+          }
+        ],
+        "all_hits": [
+          {
+            "source": "fact:atom-005",
+            "layer": "fact",
+            "score": 0.7355555555555555,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 0.7244444444444443,
+            "content": "Gina plans_after leave Figma",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.6133333333333333,
+            "content": "Gina left Figma",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 0.5133333333333333,
+            "content": "Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "event:atom-000",
+            "layer": "event",
+            "score": 0.3222222222222222,
+            "content": "Gina joined Figma",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "fact:atom-000",
+            "layer": "fact",
+            "score": 0.2222222222222222,
+            "content": "Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "event:atom-001",
+            "layer": "event",
+            "score": 0.2111111111111111,
+            "content": "Gina married_to Alex",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "event:atom-002",
+            "layer": "event",
+            "score": 0.2111111111111111,
+            "content": "Nora helped Gina",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "event:atom-003",
+            "layer": "event",
+            "score": 0.2111111111111111,
+            "content": "Gina signed Lisbon lease",
+            "story_time": "2024-05-08"
+          },
+          {
+            "source": "entity:Gina",
+            "layer": "entity",
+            "score": 0.1111111111111111,
+            "content": "name=Gina",
+            "story_time": ""
+          },
+          {
+            "source": "entity:Figma",
+            "layer": "entity",
+            "score": 0.1111111111111111,
+            "content": "name=Figma",
+            "story_time": ""
+          },
+          {
+            "source": "fact:atom-001",
+            "layer": "fact",
+            "score": 0.1111111111111111,
+            "content": "Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "fact:atom-002",
+            "layer": "fact",
+            "score": 0.1111111111111111,
+            "content": "Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "fact:atom-003",
+            "layer": "fact",
+            "score": 0.1111111111111111,
+            "content": "Gina signed a Lisbon lease on 2024-05-08.",
+            "story_time": "2024-05-08"
+          }
+        ],
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "self_check": {
+          "need_expand": true,
+          "confidence": 0.667,
+          "note": "Evidence contract incomplete; supporting evidence should expand.",
+          "second_pass_sources": []
+        },
+        "decision": {
+          "answer": "Likely ordered relation evidence: Gina plans to move to Lisbon after leaving Figma.",
+          "confidence": 0.667,
+          "note": "Only graph can be added in second pass."
+        }
+      },
+      "graph_only_second_pass_eval": {
+        "required_layers": [
+          "event",
+          "fact",
+          "temporal_tree"
+        ],
+        "present_layers": [
+          "fact",
+          "event",
+          "entity"
+        ],
+        "matched_layers": [
+          "event",
+          "fact"
+        ],
+        "missing_layers": [
+          "temporal_tree"
+        ],
+        "coverage_ratio": 0.667,
+        "contract_ok": false,
+        "keyword_ok": true
+      },
+      "type_aware_second_pass": {
+        "mode": "type_aware_second_pass",
+        "intent": {
+          "label": "temporal_relational",
+          "rationale": "Ordering / plan words detected."
+        },
+        "plan": {
+          "family": "temporal_relational",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "tree",
+            "atom"
+          ],
+          "must_have_layers": [
+            "event",
+            "fact"
+          ],
+          "answer_rule": "Need ordering or plan relation, then add chronology support."
+        },
+        "hits": [
+          {
+            "source": "fact:atom-005",
+            "layer": "fact",
+            "score": 0.7355555555555555,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 0.7244444444444443,
+            "content": "Gina plans_after leave Figma",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.6133333333333333,
+            "content": "Gina left Figma",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "day:2024-06-03",
+            "layer": "temporal_tree",
+            "score": 0.5555555555555556,
+            "content": "- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "month:2024-06",
+            "layer": "temporal_tree",
+            "score": 0.5555555555555556,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.\n- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.\n- 2024-06-10: Arrival photo showed Santa Apolonia Platform 4.",
+            "story_time": "2024-06"
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 0.5133333333333333,
+            "content": "Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "day:2024-06-01",
+            "layer": "temporal_tree",
+            "score": 0.3333333333333333,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "year:2024",
+            "layer": "temporal_tree",
+            "score": 0.3333333333333333,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.\n- 2024-03-10: Gina married Alex on 2024-03-10.\n- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.\n- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.\n- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024"
+          }
+        ],
+        "all_hits": [
+          {
+            "source": "fact:atom-005",
+            "layer": "fact",
+            "score": 0.7355555555555555,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 0.7244444444444443,
+            "content": "Gina plans_after leave Figma",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.6133333333333333,
+            "content": "Gina left Figma",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "day:2024-06-03",
+            "layer": "temporal_tree",
+            "score": 0.5555555555555556,
+            "content": "- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "month:2024-06",
+            "layer": "temporal_tree",
+            "score": 0.5555555555555556,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.\n- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.\n- 2024-06-10: Arrival photo showed Santa Apolonia Platform 4.",
+            "story_time": "2024-06"
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 0.5133333333333333,
+            "content": "Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "day:2024-06-01",
+            "layer": "temporal_tree",
+            "score": 0.3333333333333333,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "year:2024",
+            "layer": "temporal_tree",
+            "score": 0.3333333333333333,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.\n- 2024-03-10: Gina married Alex on 2024-03-10.\n- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.\n- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.\n- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024"
+          },
+          {
+            "source": "event:atom-000",
+            "layer": "event",
+            "score": 0.3222222222222222,
+            "content": "Gina joined Figma",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "fact:atom-000",
+            "layer": "fact",
+            "score": 0.2222222222222222,
+            "content": "Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "day:2024-01-05",
+            "layer": "temporal_tree",
+            "score": 0.2222222222222222,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "month:2024-01",
+            "layer": "temporal_tree",
+            "score": 0.2222222222222222,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01"
+          },
+          {
+            "source": "event:atom-001",
+            "layer": "event",
+            "score": 0.2111111111111111,
+            "content": "Gina married_to Alex",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "event:atom-002",
+            "layer": "event",
+            "score": 0.2111111111111111,
+            "content": "Nora helped Gina",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "event:atom-003",
+            "layer": "event",
+            "score": 0.2111111111111111,
+            "content": "Gina signed Lisbon lease",
+            "story_time": "2024-05-08"
+          },
+          {
+            "source": "entity:Gina",
+            "layer": "entity",
+            "score": 0.1111111111111111,
+            "content": "name=Gina",
+            "story_time": ""
+          },
+          {
+            "source": "entity:Figma",
+            "layer": "entity",
+            "score": 0.1111111111111111,
+            "content": "name=Figma",
+            "story_time": ""
+          },
+          {
+            "source": "fact:atom-001",
+            "layer": "fact",
+            "score": 0.1111111111111111,
+            "content": "Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "fact:atom-002",
+            "layer": "fact",
+            "score": 0.1111111111111111,
+            "content": "Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "fact:atom-003",
+            "layer": "fact",
+            "score": 0.1111111111111111,
+            "content": "Gina signed a Lisbon lease on 2024-05-08.",
+            "story_time": "2024-05-08"
+          },
+          {
+            "source": "day:2024-03-10",
+            "layer": "temporal_tree",
+            "score": 0.1111111111111111,
+            "content": "- 2024-03-10: Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "day:2024-04-02",
+            "layer": "temporal_tree",
+            "score": 0.1111111111111111,
+            "content": "- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "day:2024-05-08",
+            "layer": "temporal_tree",
+            "score": 0.1111111111111111,
+            "content": "- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.",
+            "story_time": "2024-05-08"
+          },
+          {
+            "source": "month:2024-03",
+            "layer": "temporal_tree",
+            "score": 0.1111111111111111,
+            "content": "- 2024-03-10: Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03"
+          },
+          {
+            "source": "month:2024-04",
+            "layer": "temporal_tree",
+            "score": 0.1111111111111111,
+            "content": "- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04"
+          },
+          {
+            "source": "month:2024-05",
+            "layer": "temporal_tree",
+            "score": 0.1111111111111111,
+            "content": "- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.",
+            "story_time": "2024-05"
+          }
+        ],
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "self_check": {
+          "need_expand": false,
+          "confidence": 1.0,
+          "note": "Evidence contract already complete.",
+          "second_pass_sources": [
+            "tree"
+          ]
+        },
+        "decision": {
+          "answer": "Likely ordered relation evidence: Gina plans to move to Lisbon after leaving Figma.",
+          "confidence": 1.0,
+          "note": "Second pass probes readers based on missing evidence types."
+        }
+      },
+      "type_aware_second_pass_eval": {
+        "required_layers": [
+          "event",
+          "fact",
+          "temporal_tree"
+        ],
+        "present_layers": [
+          "fact",
+          "event",
+          "temporal_tree",
+          "entity"
+        ],
+        "matched_layers": [
+          "event",
+          "fact",
+          "temporal_tree"
+        ],
+        "missing_layers": [],
+        "coverage_ratio": 1.0,
+        "contract_ok": true,
+        "keyword_ok": true
+      }
+    },
+    {
+      "case_id": "temporal_relational_after",
+      "query": "What happened after Gina left Figma?",
+      "note": "Another temporal-relational case where missing temporal_tree should trigger tree support.",
+      "one_pass": {
+        "mode": "one_pass",
+        "intent": {
+          "label": "temporal_relational",
+          "rationale": "Ordering / plan words detected."
+        },
+        "plan": {
+          "family": "temporal_relational",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "tree",
+            "atom"
+          ],
+          "must_have_layers": [
+            "event",
+            "fact"
+          ],
+          "answer_rule": "Need ordering or plan relation, then add chronology support."
+        },
+        "hits": [
+          {
+            "source": "fact:atom-005",
+            "layer": "fact",
+            "score": 0.8466666666666667,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.7799999999999999,
+            "content": "Gina left Figma",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 0.7799999999999999,
+            "content": "Gina plans_after leave Figma",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 0.6799999999999999,
+            "content": "Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "event:atom-000",
+            "layer": "event",
+            "score": 0.43333333333333335,
+            "content": "Gina joined Figma",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "fact:atom-000",
+            "layer": "fact",
+            "score": 0.3333333333333333,
+            "content": "Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "event:atom-001",
+            "layer": "event",
+            "score": 0.26666666666666666,
+            "content": "Gina married_to Alex",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "event:atom-002",
+            "layer": "event",
+            "score": 0.26666666666666666,
+            "content": "Nora helped Gina",
+            "story_time": "2024-04-02"
+          }
+        ],
+        "all_hits": [
+          {
+            "source": "fact:atom-005",
+            "layer": "fact",
+            "score": 0.8466666666666667,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.7799999999999999,
+            "content": "Gina left Figma",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 0.7799999999999999,
+            "content": "Gina plans_after leave Figma",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 0.6799999999999999,
+            "content": "Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "event:atom-000",
+            "layer": "event",
+            "score": 0.43333333333333335,
+            "content": "Gina joined Figma",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "fact:atom-000",
+            "layer": "fact",
+            "score": 0.3333333333333333,
+            "content": "Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "event:atom-001",
+            "layer": "event",
+            "score": 0.26666666666666666,
+            "content": "Gina married_to Alex",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "event:atom-002",
+            "layer": "event",
+            "score": 0.26666666666666666,
+            "content": "Nora helped Gina",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "event:atom-003",
+            "layer": "event",
+            "score": 0.26666666666666666,
+            "content": "Gina signed Lisbon lease",
+            "story_time": "2024-05-08"
+          },
+          {
+            "source": "entity:Gina",
+            "layer": "entity",
+            "score": 0.16666666666666666,
+            "content": "name=Gina",
+            "story_time": ""
+          },
+          {
+            "source": "entity:Figma",
+            "layer": "entity",
+            "score": 0.16666666666666666,
+            "content": "name=Figma",
+            "story_time": ""
+          },
+          {
+            "source": "fact:atom-001",
+            "layer": "fact",
+            "score": 0.16666666666666666,
+            "content": "Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "fact:atom-002",
+            "layer": "fact",
+            "score": 0.16666666666666666,
+            "content": "Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "fact:atom-003",
+            "layer": "fact",
+            "score": 0.16666666666666666,
+            "content": "Gina signed a Lisbon lease on 2024-05-08.",
+            "story_time": "2024-05-08"
+          }
+        ],
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "self_check": {
+          "need_expand": true,
+          "confidence": 0.667,
+          "note": "Evidence contract incomplete; supporting evidence should expand.",
+          "second_pass_sources": []
+        },
+        "decision": {
+          "answer": "Likely ordered relation evidence: Gina plans to move to Lisbon after leaving Figma.",
+          "confidence": 0.667,
+          "note": "Primary reader only."
+        }
+      },
+      "one_pass_eval": {
+        "required_layers": [
+          "event",
+          "fact",
+          "temporal_tree"
+        ],
+        "present_layers": [
+          "fact",
+          "event",
+          "entity"
+        ],
+        "matched_layers": [
+          "event",
+          "fact"
+        ],
+        "missing_layers": [
+          "temporal_tree"
+        ],
+        "coverage_ratio": 0.667,
+        "contract_ok": false,
+        "keyword_ok": true
+      },
+      "graph_only_second_pass": {
+        "mode": "graph_only_second_pass",
+        "intent": {
+          "label": "temporal_relational",
+          "rationale": "Ordering / plan words detected."
+        },
+        "plan": {
+          "family": "temporal_relational",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "tree",
+            "atom"
+          ],
+          "must_have_layers": [
+            "event",
+            "fact"
+          ],
+          "answer_rule": "Need ordering or plan relation, then add chronology support."
+        },
+        "hits": [
+          {
+            "source": "fact:atom-005",
+            "layer": "fact",
+            "score": 0.8466666666666667,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.7799999999999999,
+            "content": "Gina left Figma",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 0.7799999999999999,
+            "content": "Gina plans_after leave Figma",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 0.6799999999999999,
+            "content": "Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "event:atom-000",
+            "layer": "event",
+            "score": 0.43333333333333335,
+            "content": "Gina joined Figma",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "fact:atom-000",
+            "layer": "fact",
+            "score": 0.3333333333333333,
+            "content": "Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "event:atom-001",
+            "layer": "event",
+            "score": 0.26666666666666666,
+            "content": "Gina married_to Alex",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "event:atom-002",
+            "layer": "event",
+            "score": 0.26666666666666666,
+            "content": "Nora helped Gina",
+            "story_time": "2024-04-02"
+          }
+        ],
+        "all_hits": [
+          {
+            "source": "fact:atom-005",
+            "layer": "fact",
+            "score": 0.8466666666666667,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.7799999999999999,
+            "content": "Gina left Figma",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 0.7799999999999999,
+            "content": "Gina plans_after leave Figma",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 0.6799999999999999,
+            "content": "Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "event:atom-000",
+            "layer": "event",
+            "score": 0.43333333333333335,
+            "content": "Gina joined Figma",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "fact:atom-000",
+            "layer": "fact",
+            "score": 0.3333333333333333,
+            "content": "Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "event:atom-001",
+            "layer": "event",
+            "score": 0.26666666666666666,
+            "content": "Gina married_to Alex",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "event:atom-002",
+            "layer": "event",
+            "score": 0.26666666666666666,
+            "content": "Nora helped Gina",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "event:atom-003",
+            "layer": "event",
+            "score": 0.26666666666666666,
+            "content": "Gina signed Lisbon lease",
+            "story_time": "2024-05-08"
+          },
+          {
+            "source": "entity:Gina",
+            "layer": "entity",
+            "score": 0.16666666666666666,
+            "content": "name=Gina",
+            "story_time": ""
+          },
+          {
+            "source": "entity:Figma",
+            "layer": "entity",
+            "score": 0.16666666666666666,
+            "content": "name=Figma",
+            "story_time": ""
+          },
+          {
+            "source": "fact:atom-001",
+            "layer": "fact",
+            "score": 0.16666666666666666,
+            "content": "Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "fact:atom-002",
+            "layer": "fact",
+            "score": 0.16666666666666666,
+            "content": "Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "fact:atom-003",
+            "layer": "fact",
+            "score": 0.16666666666666666,
+            "content": "Gina signed a Lisbon lease on 2024-05-08.",
+            "story_time": "2024-05-08"
+          }
+        ],
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "self_check": {
+          "need_expand": true,
+          "confidence": 0.667,
+          "note": "Evidence contract incomplete; supporting evidence should expand.",
+          "second_pass_sources": []
+        },
+        "decision": {
+          "answer": "Likely ordered relation evidence: Gina plans to move to Lisbon after leaving Figma.",
+          "confidence": 0.667,
+          "note": "Only graph can be added in second pass."
+        }
+      },
+      "graph_only_second_pass_eval": {
+        "required_layers": [
+          "event",
+          "fact",
+          "temporal_tree"
+        ],
+        "present_layers": [
+          "fact",
+          "event",
+          "entity"
+        ],
+        "matched_layers": [
+          "event",
+          "fact"
+        ],
+        "missing_layers": [
+          "temporal_tree"
+        ],
+        "coverage_ratio": 0.667,
+        "contract_ok": false,
+        "keyword_ok": true
+      },
+      "type_aware_second_pass": {
+        "mode": "type_aware_second_pass",
+        "intent": {
+          "label": "temporal_relational",
+          "rationale": "Ordering / plan words detected."
+        },
+        "plan": {
+          "family": "temporal_relational",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "tree",
+            "atom"
+          ],
+          "must_have_layers": [
+            "event",
+            "fact"
+          ],
+          "answer_rule": "Need ordering or plan relation, then add chronology support."
+        },
+        "hits": [
+          {
+            "source": "fact:atom-005",
+            "layer": "fact",
+            "score": 0.8466666666666667,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.7799999999999999,
+            "content": "Gina left Figma",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 0.7799999999999999,
+            "content": "Gina plans_after leave Figma",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 0.6799999999999999,
+            "content": "Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "day:2024-06-03",
+            "layer": "temporal_tree",
+            "score": 0.6666666666666666,
+            "content": "- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "month:2024-06",
+            "layer": "temporal_tree",
+            "score": 0.6666666666666666,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.\n- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.\n- 2024-06-10: Arrival photo showed Santa Apolonia Platform 4.",
+            "story_time": "2024-06"
+          },
+          {
+            "source": "day:2024-06-01",
+            "layer": "temporal_tree",
+            "score": 0.5,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "year:2024",
+            "layer": "temporal_tree",
+            "score": 0.5,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.\n- 2024-03-10: Gina married Alex on 2024-03-10.\n- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.\n- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.\n- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024"
+          }
+        ],
+        "all_hits": [
+          {
+            "source": "fact:atom-005",
+            "layer": "fact",
+            "score": 0.8466666666666667,
+            "content": "Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.7799999999999999,
+            "content": "Gina left Figma",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 0.7799999999999999,
+            "content": "Gina plans_after leave Figma",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 0.6799999999999999,
+            "content": "Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "day:2024-06-03",
+            "layer": "temporal_tree",
+            "score": 0.6666666666666666,
+            "content": "- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.",
+            "story_time": "2024-06-03"
+          },
+          {
+            "source": "month:2024-06",
+            "layer": "temporal_tree",
+            "score": 0.6666666666666666,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.\n- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.\n- 2024-06-10: Arrival photo showed Santa Apolonia Platform 4.",
+            "story_time": "2024-06"
+          },
+          {
+            "source": "day:2024-06-01",
+            "layer": "temporal_tree",
+            "score": 0.5,
+            "content": "- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024-06-01"
+          },
+          {
+            "source": "year:2024",
+            "layer": "temporal_tree",
+            "score": 0.5,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.\n- 2024-03-10: Gina married Alex on 2024-03-10.\n- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.\n- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.\n- 2024-06-01: Gina left Figma on 2024-06-01.",
+            "story_time": "2024"
+          },
+          {
+            "source": "event:atom-000",
+            "layer": "event",
+            "score": 0.43333333333333335,
+            "content": "Gina joined Figma",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "fact:atom-000",
+            "layer": "fact",
+            "score": 0.3333333333333333,
+            "content": "Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "day:2024-01-05",
+            "layer": "temporal_tree",
+            "score": 0.3333333333333333,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01-05"
+          },
+          {
+            "source": "month:2024-01",
+            "layer": "temporal_tree",
+            "score": 0.3333333333333333,
+            "content": "- 2024-01-05: Gina joined Figma on 2024-01-05.",
+            "story_time": "2024-01"
+          },
+          {
+            "source": "event:atom-001",
+            "layer": "event",
+            "score": 0.26666666666666666,
+            "content": "Gina married_to Alex",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "event:atom-002",
+            "layer": "event",
+            "score": 0.26666666666666666,
+            "content": "Nora helped Gina",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "event:atom-003",
+            "layer": "event",
+            "score": 0.26666666666666666,
+            "content": "Gina signed Lisbon lease",
+            "story_time": "2024-05-08"
+          },
+          {
+            "source": "entity:Gina",
+            "layer": "entity",
+            "score": 0.16666666666666666,
+            "content": "name=Gina",
+            "story_time": ""
+          },
+          {
+            "source": "entity:Figma",
+            "layer": "entity",
+            "score": 0.16666666666666666,
+            "content": "name=Figma",
+            "story_time": ""
+          },
+          {
+            "source": "fact:atom-001",
+            "layer": "fact",
+            "score": 0.16666666666666666,
+            "content": "Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "fact:atom-002",
+            "layer": "fact",
+            "score": 0.16666666666666666,
+            "content": "Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "fact:atom-003",
+            "layer": "fact",
+            "score": 0.16666666666666666,
+            "content": "Gina signed a Lisbon lease on 2024-05-08.",
+            "story_time": "2024-05-08"
+          },
+          {
+            "source": "day:2024-03-10",
+            "layer": "temporal_tree",
+            "score": 0.16666666666666666,
+            "content": "- 2024-03-10: Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03-10"
+          },
+          {
+            "source": "day:2024-04-02",
+            "layer": "temporal_tree",
+            "score": 0.16666666666666666,
+            "content": "- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04-02"
+          },
+          {
+            "source": "day:2024-05-08",
+            "layer": "temporal_tree",
+            "score": 0.16666666666666666,
+            "content": "- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.",
+            "story_time": "2024-05-08"
+          },
+          {
+            "source": "month:2024-03",
+            "layer": "temporal_tree",
+            "score": 0.16666666666666666,
+            "content": "- 2024-03-10: Gina married Alex on 2024-03-10.",
+            "story_time": "2024-03"
+          },
+          {
+            "source": "month:2024-04",
+            "layer": "temporal_tree",
+            "score": 0.16666666666666666,
+            "content": "- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.",
+            "story_time": "2024-04"
+          },
+          {
+            "source": "month:2024-05",
+            "layer": "temporal_tree",
+            "score": 0.16666666666666666,
+            "content": "- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.",
+            "story_time": "2024-05"
+          }
+        ],
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "self_check": {
+          "need_expand": false,
+          "confidence": 1.0,
+          "note": "Evidence contract already complete.",
+          "second_pass_sources": [
+            "tree"
+          ]
+        },
+        "decision": {
+          "answer": "Likely ordered relation evidence: Gina plans to move to Lisbon after leaving Figma.",
+          "confidence": 1.0,
+          "note": "Second pass probes readers based on missing evidence types."
+        }
+      },
+      "type_aware_second_pass_eval": {
+        "required_layers": [
+          "event",
+          "fact",
+          "temporal_tree"
+        ],
+        "present_layers": [
+          "fact",
+          "event",
+          "temporal_tree",
+          "entity"
+        ],
+        "matched_layers": [
+          "event",
+          "fact",
+          "temporal_tree"
+        ],
+        "missing_layers": [],
+        "coverage_ratio": 1.0,
+        "contract_ok": true,
+        "keyword_ok": true
+      }
+    },
+    {
+      "case_id": "visual_lease_control",
+      "query": "What did lease_screenshot show?",
+      "note": "Control case: visual primary evidence should already satisfy image+fact contract.",
+      "one_pass": {
+        "mode": "one_pass",
+        "intent": {
+          "label": "visual",
+          "rationale": "Visual terms detected."
+        },
+        "plan": {
+          "family": "visual",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "tree",
+            "atom"
+          ],
+          "must_have_layers": [
+            "image_evidence",
+            "fact"
+          ],
+          "answer_rule": "Prefer image evidence anchored by fact support."
+        },
+        "hits": [
+          {
+            "source": "image_evidence:atom-006",
+            "layer": "image_evidence",
+            "score": 0.45,
+            "content": "lease_screenshot shows Rua Augusta 14",
+            "story_time": "2024-05-09"
+          },
+          {
+            "source": "fact:atom-006",
+            "layer": "fact",
+            "score": 0.43,
+            "content": "Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.",
+            "story_time": "2024-05-09"
+          },
+          {
+            "source": "fact:atom-007",
+            "layer": "fact",
+            "score": 0.43,
+            "content": "Arrival photo showed Santa Apolonia Platform 4.",
+            "story_time": "2024-06-10"
+          }
+        ],
+        "all_hits": [
+          {
+            "source": "image_evidence:atom-006",
+            "layer": "image_evidence",
+            "score": 0.45,
+            "content": "lease_screenshot shows Rua Augusta 14",
+            "story_time": "2024-05-09"
+          },
+          {
+            "source": "fact:atom-006",
+            "layer": "fact",
+            "score": 0.43,
+            "content": "Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.",
+            "story_time": "2024-05-09"
+          },
+          {
+            "source": "fact:atom-007",
+            "layer": "fact",
+            "score": 0.43,
+            "content": "Arrival photo showed Santa Apolonia Platform 4.",
+            "story_time": "2024-06-10"
+          }
+        ],
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "self_check": {
+          "need_expand": false,
+          "confidence": 1.0,
+          "note": "Evidence contract already complete.",
+          "second_pass_sources": []
+        },
+        "decision": {
+          "answer": "Likely visual evidence: lease_screenshot shows Rua Augusta 14",
+          "confidence": 1.0,
+          "note": "Primary reader only."
+        }
+      },
+      "one_pass_eval": {
+        "required_layers": [
+          "image_evidence",
+          "fact"
+        ],
+        "present_layers": [
+          "image_evidence",
+          "fact"
+        ],
+        "matched_layers": [
+          "image_evidence",
+          "fact"
+        ],
+        "missing_layers": [],
+        "coverage_ratio": 1.0,
+        "contract_ok": true,
+        "keyword_ok": true
+      },
+      "graph_only_second_pass": {
+        "mode": "graph_only_second_pass",
+        "intent": {
+          "label": "visual",
+          "rationale": "Visual terms detected."
+        },
+        "plan": {
+          "family": "visual",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "tree",
+            "atom"
+          ],
+          "must_have_layers": [
+            "image_evidence",
+            "fact"
+          ],
+          "answer_rule": "Prefer image evidence anchored by fact support."
+        },
+        "hits": [
+          {
+            "source": "image_evidence:atom-006",
+            "layer": "image_evidence",
+            "score": 0.45,
+            "content": "lease_screenshot shows Rua Augusta 14",
+            "story_time": "2024-05-09"
+          },
+          {
+            "source": "fact:atom-006",
+            "layer": "fact",
+            "score": 0.43,
+            "content": "Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.",
+            "story_time": "2024-05-09"
+          },
+          {
+            "source": "fact:atom-007",
+            "layer": "fact",
+            "score": 0.43,
+            "content": "Arrival photo showed Santa Apolonia Platform 4.",
+            "story_time": "2024-06-10"
+          }
+        ],
+        "all_hits": [
+          {
+            "source": "image_evidence:atom-006",
+            "layer": "image_evidence",
+            "score": 0.45,
+            "content": "lease_screenshot shows Rua Augusta 14",
+            "story_time": "2024-05-09"
+          },
+          {
+            "source": "fact:atom-006",
+            "layer": "fact",
+            "score": 0.43,
+            "content": "Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.",
+            "story_time": "2024-05-09"
+          },
+          {
+            "source": "fact:atom-007",
+            "layer": "fact",
+            "score": 0.43,
+            "content": "Arrival photo showed Santa Apolonia Platform 4.",
+            "story_time": "2024-06-10"
+          }
+        ],
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "self_check": {
+          "need_expand": false,
+          "confidence": 1.0,
+          "note": "Evidence contract already complete.",
+          "second_pass_sources": []
+        },
+        "decision": {
+          "answer": "Likely visual evidence: lease_screenshot shows Rua Augusta 14",
+          "confidence": 1.0,
+          "note": "Only graph can be added in second pass."
+        }
+      },
+      "graph_only_second_pass_eval": {
+        "required_layers": [
+          "image_evidence",
+          "fact"
+        ],
+        "present_layers": [
+          "image_evidence",
+          "fact"
+        ],
+        "matched_layers": [
+          "image_evidence",
+          "fact"
+        ],
+        "missing_layers": [],
+        "coverage_ratio": 1.0,
+        "contract_ok": true,
+        "keyword_ok": true
+      },
+      "type_aware_second_pass": {
+        "mode": "type_aware_second_pass",
+        "intent": {
+          "label": "visual",
+          "rationale": "Visual terms detected."
+        },
+        "plan": {
+          "family": "visual",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "tree",
+            "atom"
+          ],
+          "must_have_layers": [
+            "image_evidence",
+            "fact"
+          ],
+          "answer_rule": "Prefer image evidence anchored by fact support."
+        },
+        "hits": [
+          {
+            "source": "image_evidence:atom-006",
+            "layer": "image_evidence",
+            "score": 0.45,
+            "content": "lease_screenshot shows Rua Augusta 14",
+            "story_time": "2024-05-09"
+          },
+          {
+            "source": "fact:atom-006",
+            "layer": "fact",
+            "score": 0.43,
+            "content": "Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.",
+            "story_time": "2024-05-09"
+          },
+          {
+            "source": "fact:atom-007",
+            "layer": "fact",
+            "score": 0.43,
+            "content": "Arrival photo showed Santa Apolonia Platform 4.",
+            "story_time": "2024-06-10"
+          }
+        ],
+        "all_hits": [
+          {
+            "source": "image_evidence:atom-006",
+            "layer": "image_evidence",
+            "score": 0.45,
+            "content": "lease_screenshot shows Rua Augusta 14",
+            "story_time": "2024-05-09"
+          },
+          {
+            "source": "fact:atom-006",
+            "layer": "fact",
+            "score": 0.43,
+            "content": "Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.",
+            "story_time": "2024-05-09"
+          },
+          {
+            "source": "fact:atom-007",
+            "layer": "fact",
+            "score": 0.43,
+            "content": "Arrival photo showed Santa Apolonia Platform 4.",
+            "story_time": "2024-06-10"
+          }
+        ],
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "self_check": {
+          "need_expand": false,
+          "confidence": 1.0,
+          "note": "Evidence contract already complete.",
+          "second_pass_sources": []
+        },
+        "decision": {
+          "answer": "Likely visual evidence: lease_screenshot shows Rua Augusta 14",
+          "confidence": 1.0,
+          "note": "Second pass probes readers based on missing evidence types."
+        }
+      },
+      "type_aware_second_pass_eval": {
+        "required_layers": [
+          "image_evidence",
+          "fact"
+        ],
+        "present_layers": [
+          "image_evidence",
+          "fact"
+        ],
+        "matched_layers": [
+          "image_evidence",
+          "fact"
+        ],
+        "missing_layers": [],
+        "coverage_ratio": 1.0,
+        "contract_ok": true,
+        "keyword_ok": true
+      }
+    }
+  ]
+}

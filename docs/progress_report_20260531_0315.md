@@ -26,8 +26,8 @@ This segment improved usability during long-running evaluations. The harness now
   - `Total injection tokens est`
   - `Reasoning:`
 - Recent task list verified by launching `ui task strip smoke`:
-  - Task: `/Users/chx/locomo-eval-web/runs/local_agent_20260531_031143_6b2d0a`
-  - Output CSV: `/Users/chx/locomo-eval-web/runs/local_agent_20260531_031143_6b2d0a/local_agent/local_agent_results.csv`
+  - Task: `<repo-root>/runs/local_agent_20260531_031143_6b2d0a`
+  - Output CSV: `<repo-root>/runs/local_agent_20260531_031143_6b2d0a/local_agent/local_agent_results.csv`
   - Status: succeeded
 - Preflight passed and recognized LoCoMo, LongMemEval-S, LongMemEval-M.
 

@@ -1,0 +1,149 @@
+{
+  "protocol_name": "echomemory_mm_benchmark_protocol_freeze",
+  "protocol_version": "2026-06-14",
+  "paper_track": "EchoMemory-MM",
+  "status": "frozen_for_paper_facing_runs",
+  "authoritative_entrypoints": {
+    "import": "/Users/chx/locomo-eval-web/scripts/echomemory_locomo_import.py",
+    "orchestration": "/Users/chx/locomo-eval-web/scripts/echomemory_wait_and_eval.py",
+    "qa": "/Users/chx/locomo-eval-web/scripts/echomemory_memory_qa.py",
+    "adapter": "/Users/chx/locomo-eval-web/scripts/benchmark_adapter.py"
+  },
+  "datasets": {
+    "primary": [
+      "LoCoMo",
+      "LongMemEval"
+    ],
+    "multimodal_track": "not_frozen_yet"
+  },
+  "import": {
+    "session_mode": "locomo",
+    "import_wait_mode": "full",
+    "commit_wait_s": 300,
+    "commit_call_timeout_s": 300,
+    "flush_call_timeout_s": 600,
+    "flush_attempts": 3,
+    "defer_artifact_wait": false,
+    "skip_session_commit": false,
+    "continue_on_session_error": false,
+    "fallback_to_mock": false
+  },
+  "stabilization": {
+    "settle_seconds": 180,
+    "stabilize_timeout_seconds": 300,
+    "stability_polls": 3,
+    "poll_seconds": 30,
+    "repair_before_qa": true,
+    "repair_flush_call_timeout_s": 600,
+    "repair_flush_attempts": 2,
+    "repair_commit_wait_s": 300
+  },
+  "qa": {
+    "answer_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "answer_model": "deepseek-v4-flash",
+    "judge_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "judge_model": "deepseek-v4-flash",
+    "prompt_mode": "vikingboat_lite",
+    "retrieval_mode": "search",
+    "retrieval_ranker": "score",
+    "top_k": 30,
+    "score_threshold": 0.1,
+    "memory_budget_chars": 6000,
+    "user_memory_budget_chars": 4000,
+    "agent_memory_budget_chars": 2000,
+    "tool_set": "search_read",
+    "tool_search_limit": 20,
+    "tool_min_score": 0.35,
+    "tool_log_chars": 1200,
+    "prefetch_read_count": 4,
+    "prefetch_context_chars": 5000,
+    "max_iterations": 8,
+    "vikingboat_tool_loop": true,
+    "vikingboat_compat": false,
+    "initial_tool_prefetch": true,
+    "fallback_to_one_shot": true,
+    "model_retries": 5,
+    "timeout_s": 180,
+    "question_timeout_s": 300
+  },
+  "alignment_reference": {
+    "file": "/Users/chx/locomo-eval-web/memory/vikingboat_alignment.py",
+    "profile": "vikingboat_context_v1",
+    "initial_search_limit": 30,
+    "initial_score_threshold": 0.1,
+    "user_memory_budget_chars": 4000,
+    "agent_memory_budget_chars": 2000,
+    "tool_search_limit": 20,
+    "tool_min_score": 0.35,
+    "max_iterations": 50,
+    "note": "alignment constants must be recorded alongside executed settings because executed max_iterations currently differs from the alignment reference"
+  },
+  "readiness_gate": {
+    "required_before_qa": true,
+    "signals": [
+      "session_count complete",
+      "abstract_count complete",
+      "overview_count complete",
+      "atom_count > 0",
+      "graph_count > 0",
+      "vector_count > 0"
+    ],
+    "implementation": "/Users/chx/locomo-eval-web/scripts/echomemory_wait_and_eval.py"
+  },
+  "reporting_fields": {
+    "import": [
+      "dataset",
+      "sample",
+      "session_mode",
+      "session_start",
+      "session_end",
+      "max_sessions",
+      "import_wait_mode",
+      "commit_wait_s",
+      "commit_call_timeout_s",
+      "flush_call_timeout_s",
+      "flush_attempts",
+      "settle_seconds",
+      "stabilize_timeout_seconds",
+      "stability_polls",
+      "repair_before_qa",
+      "repair_flush_call_timeout_s",
+      "repair_flush_attempts",
+      "repair_commit_wait_s"
+    ],
+    "qa": [
+      "answer_base_url",
+      "answer_model",
+      "judge_base_url",
+      "judge_model",
+      "prompt_mode",
+      "top_k",
+      "score_threshold",
+      "retrieval_mode",
+      "retrieval_ranker",
+      "tool_set",
+      "tool_search_limit",
+      "tool_min_score",
+      "prefetch_read_count",
+      "prefetch_context_chars",
+      "max_iterations",
+      "timeout_s",
+      "question_timeout_s",
+      "model_retries"
+    ],
+    "memory": [
+      "memory_budget_chars",
+      "user_memory_budget_chars",
+      "agent_memory_budget_chars",
+      "vikingboat_alignment_profile",
+      "backend_route",
+      "readiness_result",
+      "repair_status"
+    ]
+  },
+  "notes": [
+    "This protocol freeze is paper-facing and should be cited by future LoCoMo and LongMemEval subset runs.",
+    "Fast import and deferred artifact wait are useful engineering modes but are not part of the frozen benchmark protocol.",
+    "Direct echomemory_memory_qa.py defaults alone do not define the canonical paper protocol."
+  ]
+}

@@ -23,7 +23,7 @@
    - Judge Reasoning 保持显眼展示，用于定位每道题为什么正确或错误。
 
 4. 运行状态
-   - 服务地址仍为 `http://127.0.0.1:19181/`。
+   - 服务地址仍为 `<WEB_BASE_URL>/`。
    - `/health` 返回正常。
 
 ## Dataset / Evaluation Status
@@ -41,7 +41,7 @@
 
 ## Validation
 
-- `curl http://127.0.0.1:19181/health` 正常。
+- `curl <WEB_BASE_URL>/health` 正常。
 - 下一步继续跑 `node --check static/app.js` 和 Python 编译检查，确认本轮 UI 改动没有脚本错误。
 
 ## Next Steps

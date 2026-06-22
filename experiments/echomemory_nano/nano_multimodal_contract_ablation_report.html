@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EchoMemory Multimodal Contract Ablation</title>
+  <style>
+    :root {
+      --bg:#f6f7fb;--panel:#fff;--text:#172033;--muted:#667085;--line:#dde4ee;
+      --green:#067647;--green-soft:#ecfdf3;--red:#b42318;--red-soft:#fff1f3;--blue:#2457c5;--blue-soft:#eef4ff;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font:14px/1.68 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+    .wrap{max-width:1200px;margin:0 auto;padding:28px 20px 70px}
+    .hero,.panel,.card{background:var(--panel);border:1px solid var(--line);border-radius:12px}
+    .hero{padding:28px 30px 24px}
+    .panel{padding:20px 22px;margin-top:18px}
+    .grid{display:grid;gap:16px}
+    .grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .card{padding:14px 16px}
+    h1,h2,h3{margin:0 0 10px}
+    h1{font-size:28px}
+    p{margin:8px 0}
+    ul{margin:8px 0 0 18px;padding:0}
+    li{margin:6px 0}
+    code{background:#f8fafc;border:1px solid var(--line);border-radius:6px;padding:1px 5px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .muted{color:var(--muted)}
+    .badge{display:inline-block;border-radius:999px;padding:3px 9px;font-size:12px;font-weight:700}
+    .ok{background:var(--green-soft);color:var(--green)}
+    .bad{background:var(--red-soft);color:var(--red)}
+    .tag{display:inline-block;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700;background:var(--blue-soft);color:var(--blue);margin-right:8px}
+    .kpi{display:grid;gap:12px;grid-template-columns:repeat(5,minmax(0,1fr));margin-top:14px}
+    .kpi .item{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+    .kpi .num{font-size:24px;font-weight:800}
+    .case{padding-top:14px;border-top:1px solid var(--line);margin-top:14px}
+    @media (max-width:960px){.grid.two,.kpi{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <div class="tag">multimodal</div>
+      <div class="tag">contract ablation</div>
+      <div class="tag">nano</div>
+      <h1>EchoMemory Multimodal Contract Ablation</h1>
+      <p class="muted">
+        This experiment asks a narrower question than the older visual demos: for image-grounded memory questions, is keyword relevance enough, or does the system also need the
+        right evidence family combination such as <code>image_evidence + entity</code>, <code>image_evidence + fact</code>, or <code>image_evidence + event</code>?
+      </p>
+      <div class="kpi">
+        <div class="item"><div class="num">2/5</div><div class="muted">one-pass contract-complete</div></div>
+        <div class="item"><div class="num">5/5</div><div class="muted">contract-aware contract-complete</div></div>
+        <div class="item"><div class="num">5/5</div><div class="muted">one-pass keyword ok</div></div>
+        <div class="item"><div class="num">5/5</div><div class="muted">contract-aware keyword ok</div></div>
+        <div class="item"><div class="num">3</div><div class="muted">improved cases</div></div>
+      </div>
+      <p class="muted">
+        Improved cases: <code>dashboard_owner, studio_style_reference, dashboard_metrics</code>
+      </p>
+    </section>
+    <section class="panel">
+      <h2>Main takeaway</h2>
+      <p>
+        The important distinction here is the same one now appearing in the real EchoMemory stack: a multimodal system can already look relevant while still being structurally incomplete.
+        A screenshot hit without owner/entity grounding, or a style answer without the moodboard evidence, is still a weaker memory behavior than a contract-complete answer path.
+      </p>
+    </section>
+    <section class="panel">
+      <h2>Per-case results</h2>
+      <div class='case'><h3>arrival_timestamp</h3><p><b>Query:</b> What time was visible in Gina&#x27;s screenshot when she arrived?</p><p class='muted'>A visual-temporal query should keep image evidence while also anchoring to the linked event.</p><div class='grid two'><div class='card'><div class='badge ok'>one-pass contract ok</div><p class='muted'>required=image_evidence, event · present=image_evidence, event · coverage=1.0 · contract_ok=True</p><ul><li><code>image:obs-001</code> · image_evidence · score=8.0<br>caption=Phone screenshot from Gina&#x27;s arrival day showing Roma Termini station board.
+ocr=Roma Termini 08:42 Platform 7
+tags=rome, station, arrival, travel
+linked_subject=Gina
+event_time=2023-01-30
+created_at=2023-02-01</li><li><code>image:obs-003</code> · image_evidence · score=7.0<br>caption=Moodboard screenshot for Jon&#x27;s dream studio with sunlit windows and a waterfront interior.
+ocr=waterfront loft natural light Marley floor
+tags=studio, moodboard, design, waterfront
+linked_subject=Jon
+event_time=2</li><li><code>event:atom-000</code> · event · score=6.0<br>statement=Gina arrived in Rome on 2023-01-30 for a design interview.
+participants=Gina, Rome
+event_time=2023-01-30</li></ul></div><div class='card'><div class='badge ok'>contract-aware contract ok</div><p class='muted'>required=image_evidence, event · present=image_evidence, event · coverage=1.0 · contract_ok=True</p><p class='muted'>second_pass_sources=-</p><ul><li><code>image:obs-001</code> · image_evidence · score=8.0<br>caption=Phone screenshot from Gina&#x27;s arrival day showing Roma Termini station board.
+ocr=Roma Termini 08:42 Platform 7
+tags=rome, station, arrival, travel
+linked_subject=Gina
+event_time=2023-01-30
+created_at=2023-02-01</li><li><code>image:obs-003</code> · image_evidence · score=7.0<br>caption=Moodboard screenshot for Jon&#x27;s dream studio with sunlit windows and a waterfront interior.
+ocr=waterfront loft natural light Marley floor
+tags=studio, moodboard, design, waterfront
+linked_subject=Jon
+event_time=2</li><li><code>event:atom-000</code> · event · score=6.0<br>statement=Gina arrived in Rome on 2023-01-30 for a design interview.
+participants=Gina, Rome
+event_time=2023-01-30</li></ul></div></div></div><div class='case'><h3>dashboard_owner</h3><p><b>Query:</b> Whose screenshot showed Revenue 123 and Margin 18%?</p><p class='muted'>A visual-identification query should not stop at OCR-bearing image hits; it should also recover the owner entity.</p><div class='grid two'><div class='card'><div class='badge bad'>one-pass contract incomplete</div><p class='muted'>required=image_evidence, entity · present=image_evidence · coverage=0.5 · contract_ok=False</p><ul><li><code>image:obs-005</code> · image_evidence · score=9.0<br>caption=Finance dashboard screenshot
+ocr=Revenue 123; Margin 18%
+tags=finance, dashboard, metrics
+linked_subject=Alice
+event_time=2023-02-04
+created_at=2023-02-04</li><li><code>image:obs-003</code> · image_evidence · score=6.0<br>caption=Moodboard screenshot for Jon&#x27;s dream studio with sunlit windows and a waterfront interior.
+ocr=waterfront loft natural light Marley floor
+tags=studio, moodboard, design, waterfront
+linked_subject=Jon
+event_time=2</li><li><code>image:obs-001</code> · image_evidence · score=5.0<br>caption=Phone screenshot from Gina&#x27;s arrival day showing Roma Termini station board.
+ocr=Roma Termini 08:42 Platform 7
+tags=rome, station, arrival, travel
+linked_subject=Gina
+event_time=2023-01-30
+created_at=2023-02-01</li></ul></div><div class='card'><div class='badge ok'>contract-aware contract ok</div><p class='muted'>required=image_evidence, entity · present=image_evidence, entity · coverage=1.0 · contract_ok=True</p><p class='muted'>second_pass_sources=image_to_entity</p><ul><li><code>image:obs-005</code> · image_evidence · score=9.0<br>caption=Finance dashboard screenshot
+ocr=Revenue 123; Margin 18%
+tags=finance, dashboard, metrics
+linked_subject=Alice
+event_time=2023-02-04
+created_at=2023-02-04</li><li><code>image:obs-003</code> · image_evidence · score=6.0<br>caption=Moodboard screenshot for Jon&#x27;s dream studio with sunlit windows and a waterfront interior.
+ocr=waterfront loft natural light Marley floor
+tags=studio, moodboard, design, waterfront
+linked_subject=Jon
+event_time=2</li><li><code>image:obs-001</code> · image_evidence · score=5.0<br>caption=Phone screenshot from Gina&#x27;s arrival day showing Roma Termini station board.
+ocr=Roma Termini 08:42 Platform 7
+tags=rome, station, arrival, travel
+linked_subject=Gina
+event_time=2023-01-30
+created_at=2023-02-01</li><li><code>entity:Alice</code> · entity · score=0.75 · second-pass<br>name=Alice
+first_seen_in=Finance dashboard screenshot</li><li><code>entity:Jon</code> · entity · score=0.75 · second-pass<br>name=Jon
+first_seen_in=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.</li></ul></div></div></div><div class='case'><h3>studio_style_reference</h3><p><b>Query:</b> What kind of studio look did Jon want?</p><p class='muted'>A style question is answerable from text, but a multimodal memory system should surface the moodboard as supporting evidence.</p><div class='grid two'><div class='card'><div class='badge bad'>one-pass contract incomplete</div><p class='muted'>required=fact, image_evidence · present=fact, event, entity · coverage=0.5 · contract_ok=False</p><ul><li><code>fact:atom-001</code> · fact · score=5.0<br>statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.
+subject=Jon
+predicate=wanted_style
+object=a waterfront loft with natural light and Marley flooring.
+event_time=</li><li><code>event:atom-001</code> · event · score=5.0<br>statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.
+participants=Jon, a waterfront loft with natural light and Marley flooring.
+event_time=2023-02-03</li><li><code>entity:Jon</code> · entity · score=5.0<br>name=Jon
+first_seen_in=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.</li></ul></div><div class='card'><div class='badge ok'>contract-aware contract ok</div><p class='muted'>required=fact, image_evidence · present=fact, event, entity, image_evidence · coverage=1.0 · contract_ok=True</p><p class='muted'>second_pass_sources=reverse_image_link</p><ul><li><code>fact:atom-001</code> · fact · score=5.0<br>statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.
+subject=Jon
+predicate=wanted_style
+object=a waterfront loft with natural light and Marley flooring.
+event_time=</li><li><code>event:atom-001</code> · event · score=5.0<br>statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.
+participants=Jon, a waterfront loft with natural light and Marley flooring.
+event_time=2023-02-03</li><li><code>entity:Jon</code> · entity · score=5.0<br>name=Jon
+first_seen_in=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.</li><li><code>image:obs-003</code> · image_evidence · score=0.75 · second-pass<br>caption=Moodboard screenshot for Jon&#x27;s dream studio with sunlit windows and a waterfront interior.
+ocr=waterfront loft natural light Marley floor
+tags=studio, moodboard, design, waterfront
+linked_subject=Jon
+event_time=2</li></ul></div></div></div><div class='case'><h3>arrival_day_evidence</h3><p><b>Query:</b> What evidence do we have from Gina&#x27;s arrival day?</p><p class='muted'>Evidence-oriented questions should recover both the screenshot node and the linked event/fact context.</p><div class='grid two'><div class='card'><div class='badge ok'>one-pass contract ok</div><p class='muted'>required=image_evidence, fact, event · present=image_evidence, fact, event · coverage=1.0 · contract_ok=True</p><ul><li><code>image:obs-001</code> · image_evidence · score=7.0<br>caption=Phone screenshot from Gina&#x27;s arrival day showing Roma Termini station board.
+ocr=Roma Termini 08:42 Platform 7
+tags=rome, station, arrival, travel
+linked_subject=Gina
+event_time=2023-01-30
+created_at=2023-02-01</li><li><code>fact:atom-000</code> · fact · score=3.0<br>statement=Gina arrived in Rome on 2023-01-30 for a design interview.
+subject=Gina
+predicate=arrived_in
+object=Rome
+event_time=2023-01-30
+created_at=2023-02-01</li><li><code>event:atom-000</code> · event · score=3.0<br>statement=Gina arrived in Rome on 2023-01-30 for a design interview.
+participants=Gina, Rome
+event_time=2023-01-30</li></ul></div><div class='card'><div class='badge ok'>contract-aware contract ok</div><p class='muted'>required=image_evidence, fact, event · present=image_evidence, fact, event · coverage=1.0 · contract_ok=True</p><p class='muted'>second_pass_sources=-</p><ul><li><code>image:obs-001</code> · image_evidence · score=7.0<br>caption=Phone screenshot from Gina&#x27;s arrival day showing Roma Termini station board.
+ocr=Roma Termini 08:42 Platform 7
+tags=rome, station, arrival, travel
+linked_subject=Gina
+event_time=2023-01-30
+created_at=2023-02-01</li><li><code>fact:atom-000</code> · fact · score=3.0<br>statement=Gina arrived in Rome on 2023-01-30 for a design interview.
+subject=Gina
+predicate=arrived_in
+object=Rome
+event_time=2023-01-30
+created_at=2023-02-01</li><li><code>event:atom-000</code> · event · score=3.0<br>statement=Gina arrived in Rome on 2023-01-30 for a design interview.
+participants=Gina, Rome
+event_time=2023-01-30</li></ul></div></div></div><div class='case'><h3>dashboard_metrics</h3><p><b>Query:</b> What metrics were visible in Alice&#x27;s dashboard screenshot?</p><p class='muted'>An OCR-bearing dashboard query should still retain fact-like grounding instead of returning an isolated image hit only.</p><div class='grid two'><div class='card'><div class='badge bad'>one-pass contract incomplete</div><p class='muted'>required=image_evidence, fact · present=image_evidence · coverage=0.5 · contract_ok=False</p><ul><li><code>image:obs-005</code> · image_evidence · score=8.0<br>caption=Finance dashboard screenshot
+ocr=Revenue 123; Margin 18%
+tags=finance, dashboard, metrics
+linked_subject=Alice
+event_time=2023-02-04
+created_at=2023-02-04</li><li><code>image:obs-001</code> · image_evidence · score=6.0<br>caption=Phone screenshot from Gina&#x27;s arrival day showing Roma Termini station board.
+ocr=Roma Termini 08:42 Platform 7
+tags=rome, station, arrival, travel
+linked_subject=Gina
+event_time=2023-01-30
+created_at=2023-02-01</li><li><code>image:obs-003</code> · image_evidence · score=6.0<br>caption=Moodboard screenshot for Jon&#x27;s dream studio with sunlit windows and a waterfront interior.
+ocr=waterfront loft natural light Marley floor
+tags=studio, moodboard, design, waterfront
+linked_subject=Jon
+event_time=2</li></ul></div><div class='card'><div class='badge ok'>contract-aware contract ok</div><p class='muted'>required=image_evidence, fact · present=image_evidence, fact · coverage=1.0 · contract_ok=True</p><p class='muted'>second_pass_sources=linked_fact</p><ul><li><code>image:obs-005</code> · image_evidence · score=8.0<br>caption=Finance dashboard screenshot
+ocr=Revenue 123; Margin 18%
+tags=finance, dashboard, metrics
+linked_subject=Alice
+event_time=2023-02-04
+created_at=2023-02-04</li><li><code>image:obs-001</code> · image_evidence · score=6.0<br>caption=Phone screenshot from Gina&#x27;s arrival day showing Roma Termini station board.
+ocr=Roma Termini 08:42 Platform 7
+tags=rome, station, arrival, travel
+linked_subject=Gina
+event_time=2023-01-30
+created_at=2023-02-01</li><li><code>image:obs-003</code> · image_evidence · score=6.0<br>caption=Moodboard screenshot for Jon&#x27;s dream studio with sunlit windows and a waterfront interior.
+ocr=waterfront loft natural light Marley floor
+tags=studio, moodboard, design, waterfront
+linked_subject=Jon
+event_time=2</li><li><code>fact:atom-000</code> · fact · score=0.75 · second-pass<br>statement=Gina arrived in Rome on 2023-01-30 for a design interview.
+subject=Gina
+predicate=arrived_in
+object=Rome
+event_time=2023-01-30
+created_at=2023-02-01</li><li><code>fact:atom-001</code> · fact · score=0.75 · second-pass<br>statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.
+subject=Jon
+predicate=wanted_style
+object=a waterfront loft with natural light and Marley flooring.
+event_time=</li></ul></div></div></div>
+    </section>
+  </div>
+</body>
+</html>

@@ -1,0 +1,2713 @@
+{
+  "observations": [
+    {
+      "obs_id": "obs-000",
+      "modality": "text",
+      "content": "Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+      "mention_time": "2026-03-10T09:00:00Z",
+      "write_time": "2026-03-10T09:00:00Z",
+      "event_time": "2026-03-03",
+      "caption": "",
+      "ocr": "",
+      "tags": []
+    },
+    {
+      "obs_id": "obs-001",
+      "modality": "text",
+      "content": "Leo joined Orchard Labs on 2026-02-14.",
+      "mention_time": "2026-02-15T11:00:00Z",
+      "write_time": "2026-02-15T11:00:00Z",
+      "event_time": "2026-02-14",
+      "caption": "",
+      "ocr": "",
+      "tags": []
+    },
+    {
+      "obs_id": "obs-002",
+      "modality": "text",
+      "content": "Leo left Northlight Studio on 2026-01-20.",
+      "mention_time": "2026-01-21T12:00:00Z",
+      "write_time": "2026-01-21T12:00:00Z",
+      "event_time": "2026-01-20",
+      "caption": "",
+      "ocr": "",
+      "tags": []
+    },
+    {
+      "obs_id": "obs-003",
+      "modality": "text",
+      "content": "Nora helped Maya prepare the visa checklist on 2026-04-02.",
+      "mention_time": "2026-04-03T09:00:00Z",
+      "write_time": "2026-04-03T09:00:00Z",
+      "event_time": "2026-04-02",
+      "caption": "",
+      "ocr": "",
+      "tags": []
+    },
+    {
+      "obs_id": "obs-004",
+      "modality": "text",
+      "content": "Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+      "mention_time": "2026-04-04T09:00:00Z",
+      "write_time": "2026-04-04T09:00:00Z",
+      "event_time": "2026-04-04",
+      "caption": "",
+      "ocr": "",
+      "tags": []
+    },
+    {
+      "obs_id": "obs-005",
+      "modality": "text",
+      "content": "Maya presented the keynote deck yesterday.",
+      "mention_time": "2026-05-10T08:00:00Z",
+      "write_time": "2026-05-10T08:00:00Z",
+      "event_time": "2026-05-09",
+      "caption": "",
+      "ocr": "",
+      "tags": []
+    },
+    {
+      "obs_id": "obs-006",
+      "modality": "text",
+      "content": "Maya had the investor board review last week.",
+      "mention_time": "2026-05-18T09:00:00Z",
+      "write_time": "2026-05-18T09:00:00Z",
+      "event_time": "2026-05-11",
+      "caption": "",
+      "ocr": "",
+      "tags": []
+    },
+    {
+      "obs_id": "obs-007",
+      "modality": "image",
+      "content": "Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon",
+      "mention_time": "2026-03-10T09:05:00Z",
+      "write_time": "2026-03-10T09:05:00Z",
+      "event_time": "2026-03-10",
+      "caption": "Lease document screenshot",
+      "ocr": "Riverside Lease Agreement Rua Augusta 14 Lisbon",
+      "tags": [
+        "lease",
+        "address",
+        "lisbon"
+      ]
+    }
+  ],
+  "atoms": [
+    {
+      "atom_id": "atom-000",
+      "atom_type": "event",
+      "subject": "Maya",
+      "predicate": "signed",
+      "obj": "Riverside lease",
+      "statement": "Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+      "event_time": "2026-03-03",
+      "mention_time": "2026-03-10T09:00:00Z",
+      "write_time": "2026-03-10T09:00:00Z",
+      "source_obs_id": "obs-000"
+    },
+    {
+      "atom_id": "atom-001",
+      "atom_type": "event",
+      "subject": "Leo",
+      "predicate": "joined",
+      "obj": "Orchard Labs",
+      "statement": "Leo joined Orchard Labs on 2026-02-14.",
+      "event_time": "2026-02-14",
+      "mention_time": "2026-02-15T11:00:00Z",
+      "write_time": "2026-02-15T11:00:00Z",
+      "source_obs_id": "obs-001"
+    },
+    {
+      "atom_id": "atom-002",
+      "atom_type": "event",
+      "subject": "Leo",
+      "predicate": "left",
+      "obj": "Northlight Studio",
+      "statement": "Leo left Northlight Studio on 2026-01-20.",
+      "event_time": "2026-01-20",
+      "mention_time": "2026-01-21T12:00:00Z",
+      "write_time": "2026-01-21T12:00:00Z",
+      "source_obs_id": "obs-002"
+    },
+    {
+      "atom_id": "atom-003",
+      "atom_type": "relation",
+      "subject": "Nora",
+      "predicate": "helped",
+      "obj": "Maya",
+      "statement": "Nora helped Maya prepare the visa checklist on 2026-04-02.",
+      "event_time": "2026-04-02",
+      "mention_time": "2026-04-03T09:00:00Z",
+      "write_time": "2026-04-03T09:00:00Z",
+      "source_obs_id": "obs-003"
+    },
+    {
+      "atom_id": "atom-004",
+      "atom_type": "plan",
+      "subject": "Maya",
+      "predicate": "planned_after_leaving",
+      "obj": "relocate to Lisbon",
+      "statement": "Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+      "event_time": "2026-04-04",
+      "mention_time": "2026-04-04T09:00:00Z",
+      "write_time": "2026-04-04T09:00:00Z",
+      "source_obs_id": "obs-004"
+    },
+    {
+      "atom_id": "atom-005",
+      "atom_type": "event",
+      "subject": "Maya",
+      "predicate": "presented",
+      "obj": "keynote deck",
+      "statement": "Maya presented the keynote deck yesterday.",
+      "event_time": "2026-05-09",
+      "mention_time": "2026-05-10T08:00:00Z",
+      "write_time": "2026-05-10T08:00:00Z",
+      "source_obs_id": "obs-005"
+    },
+    {
+      "atom_id": "atom-006",
+      "atom_type": "event",
+      "subject": "Maya",
+      "predicate": "had",
+      "obj": "investor board review",
+      "statement": "Maya had the investor board review last week.",
+      "event_time": "2026-05-11",
+      "mention_time": "2026-05-18T09:00:00Z",
+      "write_time": "2026-05-18T09:00:00Z",
+      "source_obs_id": "obs-006"
+    },
+    {
+      "atom_id": "atom-007",
+      "atom_type": "image_evidence",
+      "subject": "lease_screenshot",
+      "predicate": "shows",
+      "obj": "Riverside Lease Agreement Rua Augusta 14 Lisbon",
+      "statement": "Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon",
+      "event_time": "2026-03-10",
+      "mention_time": "2026-03-10T09:05:00Z",
+      "write_time": "2026-03-10T09:05:00Z",
+      "source_obs_id": "obs-007"
+    }
+  ],
+  "blocks": [
+    {
+      "block_id": "day:2026-01-20",
+      "level": "day",
+      "key": "2026-01-20",
+      "content": "- 2026-01-20: Leo left Northlight Studio on 2026-01-20.",
+      "source_refs": [
+        "atom-002"
+      ]
+    },
+    {
+      "block_id": "day:2026-02-14",
+      "level": "day",
+      "key": "2026-02-14",
+      "content": "- 2026-02-14: Leo joined Orchard Labs on 2026-02-14.",
+      "source_refs": [
+        "atom-001"
+      ]
+    },
+    {
+      "block_id": "day:2026-03-03",
+      "level": "day",
+      "key": "2026-03-03",
+      "content": "- 2026-03-03: Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+      "source_refs": [
+        "atom-000"
+      ]
+    },
+    {
+      "block_id": "day:2026-03-10",
+      "level": "day",
+      "key": "2026-03-10",
+      "content": "- 2026-03-10: Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon",
+      "source_refs": [
+        "atom-007"
+      ]
+    },
+    {
+      "block_id": "day:2026-04-02",
+      "level": "day",
+      "key": "2026-04-02",
+      "content": "- 2026-04-02: Nora helped Maya prepare the visa checklist on 2026-04-02.",
+      "source_refs": [
+        "atom-003"
+      ]
+    },
+    {
+      "block_id": "day:2026-04-04",
+      "level": "day",
+      "key": "2026-04-04",
+      "content": "- 2026-04-04: Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+      "source_refs": [
+        "atom-004"
+      ]
+    },
+    {
+      "block_id": "day:2026-05-09",
+      "level": "day",
+      "key": "2026-05-09",
+      "content": "- 2026-05-09: Maya presented the keynote deck yesterday.",
+      "source_refs": [
+        "atom-005"
+      ]
+    },
+    {
+      "block_id": "day:2026-05-11",
+      "level": "day",
+      "key": "2026-05-11",
+      "content": "- 2026-05-11: Maya had the investor board review last week.",
+      "source_refs": [
+        "atom-006"
+      ]
+    },
+    {
+      "block_id": "month:2026-01",
+      "level": "month",
+      "key": "2026-01",
+      "content": "- 2026-01-20: Leo left Northlight Studio on 2026-01-20.",
+      "source_refs": [
+        "atom-002"
+      ]
+    },
+    {
+      "block_id": "month:2026-02",
+      "level": "month",
+      "key": "2026-02",
+      "content": "- 2026-02-14: Leo joined Orchard Labs on 2026-02-14.",
+      "source_refs": [
+        "atom-001"
+      ]
+    },
+    {
+      "block_id": "month:2026-03",
+      "level": "month",
+      "key": "2026-03",
+      "content": "- 2026-03-03: Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.\n- 2026-03-10: Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon",
+      "source_refs": [
+        "atom-000",
+        "atom-007"
+      ]
+    },
+    {
+      "block_id": "month:2026-04",
+      "level": "month",
+      "key": "2026-04",
+      "content": "- 2026-04-02: Nora helped Maya prepare the visa checklist on 2026-04-02.\n- 2026-04-04: Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+      "source_refs": [
+        "atom-003",
+        "atom-004"
+      ]
+    },
+    {
+      "block_id": "month:2026-05",
+      "level": "month",
+      "key": "2026-05",
+      "content": "- 2026-05-09: Maya presented the keynote deck yesterday.\n- 2026-05-11: Maya had the investor board review last week.",
+      "source_refs": [
+        "atom-005",
+        "atom-006"
+      ]
+    },
+    {
+      "block_id": "year:2026",
+      "level": "year",
+      "key": "2026",
+      "content": "- 2026-01-20: Leo left Northlight Studio on 2026-01-20.\n- 2026-02-14: Leo joined Orchard Labs on 2026-02-14.\n- 2026-03-03: Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.\n- 2026-03-10: Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon\n- 2026-04-02: Nora helped Maya prepare the visa checklist on 2026-04-02.\n- 2026-04-04: Maya planned to relocate to Lisbon after leaving Northlight Studio.\n- 2026-05-09: Maya presented the keynote deck yesterday.\n- 2026-05-11: Maya had the investor board review last week.",
+      "source_refs": [
+        "atom-002",
+        "atom-001",
+        "atom-000",
+        "atom-007",
+        "atom-003",
+        "atom-004",
+        "atom-005",
+        "atom-006"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "node_id": "fact:atom-000",
+      "node_type": "fact",
+      "content": "Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+      "event_time": "2026-03-03",
+      "source_ref": "obs-000"
+    },
+    {
+      "node_id": "event:atom-000",
+      "node_type": "event",
+      "content": "Maya signed Riverside lease",
+      "event_time": "2026-03-03",
+      "source_ref": "obs-000"
+    },
+    {
+      "node_id": "entity:Maya",
+      "node_type": "entity",
+      "content": "name=Maya",
+      "event_time": "",
+      "source_ref": "obs-000"
+    },
+    {
+      "node_id": "entity:Riverside lease",
+      "node_type": "entity",
+      "content": "name=Riverside lease",
+      "event_time": "",
+      "source_ref": "obs-000"
+    },
+    {
+      "node_id": "fact:atom-001",
+      "node_type": "fact",
+      "content": "Leo joined Orchard Labs on 2026-02-14.",
+      "event_time": "2026-02-14",
+      "source_ref": "obs-001"
+    },
+    {
+      "node_id": "event:atom-001",
+      "node_type": "event",
+      "content": "Leo joined Orchard Labs",
+      "event_time": "2026-02-14",
+      "source_ref": "obs-001"
+    },
+    {
+      "node_id": "entity:Leo",
+      "node_type": "entity",
+      "content": "name=Leo",
+      "event_time": "",
+      "source_ref": "obs-001"
+    },
+    {
+      "node_id": "entity:Orchard Labs",
+      "node_type": "entity",
+      "content": "name=Orchard Labs",
+      "event_time": "",
+      "source_ref": "obs-001"
+    },
+    {
+      "node_id": "fact:atom-002",
+      "node_type": "fact",
+      "content": "Leo left Northlight Studio on 2026-01-20.",
+      "event_time": "2026-01-20",
+      "source_ref": "obs-002"
+    },
+    {
+      "node_id": "event:atom-002",
+      "node_type": "event",
+      "content": "Leo left Northlight Studio",
+      "event_time": "2026-01-20",
+      "source_ref": "obs-002"
+    },
+    {
+      "node_id": "entity:Northlight Studio",
+      "node_type": "entity",
+      "content": "name=Northlight Studio",
+      "event_time": "",
+      "source_ref": "obs-002"
+    },
+    {
+      "node_id": "fact:atom-003",
+      "node_type": "fact",
+      "content": "Nora helped Maya prepare the visa checklist on 2026-04-02.",
+      "event_time": "2026-04-02",
+      "source_ref": "obs-003"
+    },
+    {
+      "node_id": "event:atom-003",
+      "node_type": "event",
+      "content": "Nora helped Maya",
+      "event_time": "2026-04-02",
+      "source_ref": "obs-003"
+    },
+    {
+      "node_id": "entity:Nora",
+      "node_type": "entity",
+      "content": "name=Nora",
+      "event_time": "",
+      "source_ref": "obs-003"
+    },
+    {
+      "node_id": "fact:atom-004",
+      "node_type": "fact",
+      "content": "Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+      "event_time": "2026-04-04",
+      "source_ref": "obs-004"
+    },
+    {
+      "node_id": "event:atom-004",
+      "node_type": "event",
+      "content": "Maya planned_after_leaving relocate to Lisbon",
+      "event_time": "2026-04-04",
+      "source_ref": "obs-004"
+    },
+    {
+      "node_id": "entity:relocate to Lisbon",
+      "node_type": "entity",
+      "content": "name=relocate to Lisbon",
+      "event_time": "",
+      "source_ref": "obs-004"
+    },
+    {
+      "node_id": "fact:atom-005",
+      "node_type": "fact",
+      "content": "Maya presented the keynote deck yesterday.",
+      "event_time": "2026-05-09",
+      "source_ref": "obs-005"
+    },
+    {
+      "node_id": "event:atom-005",
+      "node_type": "event",
+      "content": "Maya presented keynote deck",
+      "event_time": "2026-05-09",
+      "source_ref": "obs-005"
+    },
+    {
+      "node_id": "entity:keynote deck",
+      "node_type": "entity",
+      "content": "name=keynote deck",
+      "event_time": "",
+      "source_ref": "obs-005"
+    },
+    {
+      "node_id": "fact:atom-006",
+      "node_type": "fact",
+      "content": "Maya had the investor board review last week.",
+      "event_time": "2026-05-11",
+      "source_ref": "obs-006"
+    },
+    {
+      "node_id": "event:atom-006",
+      "node_type": "event",
+      "content": "Maya had investor board review",
+      "event_time": "2026-05-11",
+      "source_ref": "obs-006"
+    },
+    {
+      "node_id": "entity:investor board review",
+      "node_type": "entity",
+      "content": "name=investor board review",
+      "event_time": "",
+      "source_ref": "obs-006"
+    },
+    {
+      "node_id": "fact:atom-007",
+      "node_type": "fact",
+      "content": "Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon",
+      "event_time": "2026-03-10",
+      "source_ref": "obs-007"
+    },
+    {
+      "node_id": "image_evidence:atom-007",
+      "node_type": "image_evidence",
+      "content": "lease_screenshot shows Riverside Lease Agreement Rua Augusta 14 Lisbon",
+      "event_time": "2026-03-10",
+      "source_ref": "obs-007"
+    },
+    {
+      "node_id": "entity:lease_screenshot",
+      "node_type": "entity",
+      "content": "name=lease_screenshot",
+      "event_time": "",
+      "source_ref": "obs-007"
+    },
+    {
+      "node_id": "entity:Riverside Lease Agreement Rua Augusta 14 Lisbon",
+      "node_type": "entity",
+      "content": "name=Riverside Lease Agreement Rua Augusta 14 Lisbon",
+      "event_time": "",
+      "source_ref": "obs-007"
+    }
+  ],
+  "edges": [
+    {
+      "edge_id": "event:atom-000:evidence_of:fact:atom-000",
+      "source_id": "event:atom-000",
+      "target_id": "fact:atom-000",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "entity:Maya:has_fact:atom-000",
+      "source_id": "entity:Maya",
+      "target_id": "fact:atom-000",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-000:involves:Maya",
+      "source_id": "event:atom-000",
+      "target_id": "entity:Maya",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "entity:Riverside lease:has_fact:atom-000",
+      "source_id": "entity:Riverside lease",
+      "target_id": "fact:atom-000",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-000:involves:Riverside lease",
+      "source_id": "event:atom-000",
+      "target_id": "entity:Riverside lease",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "event:atom-001:evidence_of:fact:atom-001",
+      "source_id": "event:atom-001",
+      "target_id": "fact:atom-001",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "entity:Leo:has_fact:atom-001",
+      "source_id": "entity:Leo",
+      "target_id": "fact:atom-001",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-001:involves:Leo",
+      "source_id": "event:atom-001",
+      "target_id": "entity:Leo",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "entity:Orchard Labs:has_fact:atom-001",
+      "source_id": "entity:Orchard Labs",
+      "target_id": "fact:atom-001",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-001:involves:Orchard Labs",
+      "source_id": "event:atom-001",
+      "target_id": "entity:Orchard Labs",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "event:atom-002:evidence_of:fact:atom-002",
+      "source_id": "event:atom-002",
+      "target_id": "fact:atom-002",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "entity:Leo:has_fact:atom-002",
+      "source_id": "entity:Leo",
+      "target_id": "fact:atom-002",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-002:involves:Leo",
+      "source_id": "event:atom-002",
+      "target_id": "entity:Leo",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "entity:Northlight Studio:has_fact:atom-002",
+      "source_id": "entity:Northlight Studio",
+      "target_id": "fact:atom-002",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-002:involves:Northlight Studio",
+      "source_id": "event:atom-002",
+      "target_id": "entity:Northlight Studio",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "event:atom-003:evidence_of:fact:atom-003",
+      "source_id": "event:atom-003",
+      "target_id": "fact:atom-003",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "entity:Nora:has_fact:atom-003",
+      "source_id": "entity:Nora",
+      "target_id": "fact:atom-003",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-003:involves:Nora",
+      "source_id": "event:atom-003",
+      "target_id": "entity:Nora",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "entity:Maya:has_fact:atom-003",
+      "source_id": "entity:Maya",
+      "target_id": "fact:atom-003",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-003:involves:Maya",
+      "source_id": "event:atom-003",
+      "target_id": "entity:Maya",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "event:atom-004:evidence_of:fact:atom-004",
+      "source_id": "event:atom-004",
+      "target_id": "fact:atom-004",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "entity:Maya:has_fact:atom-004",
+      "source_id": "entity:Maya",
+      "target_id": "fact:atom-004",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-004:involves:Maya",
+      "source_id": "event:atom-004",
+      "target_id": "entity:Maya",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "entity:relocate to Lisbon:has_fact:atom-004",
+      "source_id": "entity:relocate to Lisbon",
+      "target_id": "fact:atom-004",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-004:involves:relocate to Lisbon",
+      "source_id": "event:atom-004",
+      "target_id": "entity:relocate to Lisbon",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "event:atom-005:evidence_of:fact:atom-005",
+      "source_id": "event:atom-005",
+      "target_id": "fact:atom-005",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "entity:Maya:has_fact:atom-005",
+      "source_id": "entity:Maya",
+      "target_id": "fact:atom-005",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-005:involves:Maya",
+      "source_id": "event:atom-005",
+      "target_id": "entity:Maya",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "entity:keynote deck:has_fact:atom-005",
+      "source_id": "entity:keynote deck",
+      "target_id": "fact:atom-005",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-005:involves:keynote deck",
+      "source_id": "event:atom-005",
+      "target_id": "entity:keynote deck",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "event:atom-006:evidence_of:fact:atom-006",
+      "source_id": "event:atom-006",
+      "target_id": "fact:atom-006",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "entity:Maya:has_fact:atom-006",
+      "source_id": "entity:Maya",
+      "target_id": "fact:atom-006",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-006:involves:Maya",
+      "source_id": "event:atom-006",
+      "target_id": "entity:Maya",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "entity:investor board review:has_fact:atom-006",
+      "source_id": "entity:investor board review",
+      "target_id": "fact:atom-006",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-006:involves:investor board review",
+      "source_id": "event:atom-006",
+      "target_id": "entity:investor board review",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "image_evidence:atom-007:evidence_of:fact:atom-007",
+      "source_id": "image_evidence:atom-007",
+      "target_id": "fact:atom-007",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "entity:lease_screenshot:has_fact:atom-007",
+      "source_id": "entity:lease_screenshot",
+      "target_id": "fact:atom-007",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "image_evidence:atom-007:visual_evidence_of:lease_screenshot",
+      "source_id": "image_evidence:atom-007",
+      "target_id": "entity:lease_screenshot",
+      "relation_type": "visual_evidence_of"
+    },
+    {
+      "edge_id": "entity:Riverside Lease Agreement Rua Augusta 14 Lisbon:has_fact:atom-007",
+      "source_id": "entity:Riverside Lease Agreement Rua Augusta 14 Lisbon",
+      "target_id": "fact:atom-007",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "image_evidence:atom-007:visual_evidence_of:Riverside Lease Agreement Rua Augusta 14 Lisbon",
+      "source_id": "image_evidence:atom-007",
+      "target_id": "entity:Riverside Lease Agreement Rua Augusta 14 Lisbon",
+      "relation_type": "visual_evidence_of"
+    },
+    {
+      "edge_id": "event:atom-002:temporal_next:event:atom-001",
+      "source_id": "event:atom-002",
+      "target_id": "event:atom-001",
+      "relation_type": "temporal_next"
+    },
+    {
+      "edge_id": "event:atom-001:temporal_next:event:atom-000",
+      "source_id": "event:atom-001",
+      "target_id": "event:atom-000",
+      "relation_type": "temporal_next"
+    },
+    {
+      "edge_id": "event:atom-000:temporal_next:image_evidence:atom-007",
+      "source_id": "event:atom-000",
+      "target_id": "image_evidence:atom-007",
+      "relation_type": "temporal_next"
+    },
+    {
+      "edge_id": "image_evidence:atom-007:temporal_next:event:atom-003",
+      "source_id": "image_evidence:atom-007",
+      "target_id": "event:atom-003",
+      "relation_type": "temporal_next"
+    },
+    {
+      "edge_id": "event:atom-003:temporal_next:event:atom-004",
+      "source_id": "event:atom-003",
+      "target_id": "event:atom-004",
+      "relation_type": "temporal_next"
+    },
+    {
+      "edge_id": "event:atom-004:temporal_next:event:atom-005",
+      "source_id": "event:atom-004",
+      "target_id": "event:atom-005",
+      "relation_type": "temporal_next"
+    },
+    {
+      "edge_id": "event:atom-005:temporal_next:event:atom-006",
+      "source_id": "event:atom-005",
+      "target_id": "event:atom-006",
+      "relation_type": "temporal_next"
+    }
+  ],
+  "summary": {
+    "cases": 6,
+    "flat_text_ok": 4,
+    "primary_only_ok": 2,
+    "contract_aware_ok": 6,
+    "contract_improves_over_primary": [
+      "retrospective_sign_date",
+      "plan_after_leaving",
+      "yesterday_keynote",
+      "last_week_board"
+    ],
+    "primary_improves_over_flat": []
+  },
+  "results": [
+    {
+      "case_id": "retrospective_sign_date",
+      "query": "When did Maya sign the Riverside lease?",
+      "query_time": "2026-03-10T10:00:00Z",
+      "expected_keywords": [
+        "2026-03-03",
+        "signed the Riverside lease"
+      ],
+      "note": "Retrospective mention should preserve true event time instead of collapsing to write time.",
+      "flat_text": {
+        "mode": "flat_text",
+        "query": "When did Maya sign the Riverside lease?",
+        "hits": [
+          {
+            "source": "obs-000",
+            "layer": "flat_text",
+            "score": 4.6,
+            "content": "Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+            "event_time": "2026-03-03",
+            "trace": {}
+          },
+          {
+            "source": "obs-007",
+            "layer": "flat_text",
+            "score": 2.0,
+            "content": "Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon",
+            "event_time": "2026-03-10",
+            "trace": {}
+          },
+          {
+            "source": "obs-003",
+            "layer": "flat_text",
+            "score": 1.6,
+            "content": "Nora helped Maya prepare the visa checklist on 2026-04-02.",
+            "event_time": "2026-04-02",
+            "trace": {}
+          },
+          {
+            "source": "obs-006",
+            "layer": "flat_text",
+            "score": 1.0,
+            "content": "Maya had the investor board review last week.",
+            "event_time": "2026-05-11",
+            "trace": {}
+          },
+          {
+            "source": "obs-005",
+            "layer": "flat_text",
+            "score": 1.0,
+            "content": "Maya presented the keynote deck yesterday.",
+            "event_time": "2026-05-09",
+            "trace": {}
+          },
+          {
+            "source": "obs-004",
+            "layer": "flat_text",
+            "score": 1.0,
+            "content": "Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+            "event_time": "2026-04-04",
+            "trace": {}
+          },
+          {
+            "source": "obs-001",
+            "layer": "flat_text",
+            "score": 0.6,
+            "content": "Leo joined Orchard Labs on 2026-02-14.",
+            "event_time": "2026-02-14",
+            "trace": {}
+          },
+          {
+            "source": "obs-002",
+            "layer": "flat_text",
+            "score": 0.6,
+            "content": "Leo left Northlight Studio on 2026-01-20.",
+            "event_time": "2026-01-20",
+            "trace": {}
+          }
+        ],
+        "ok": true
+      },
+      "primary_only": {
+        "mode": "primary_only",
+        "query": "When did Maya sign the Riverside lease?",
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "must_have_layers": [
+            "temporal_tree",
+            "event"
+          ],
+          "reason": "Chronology questions should enter via time blocks, then add event support."
+        },
+        "coverage": {
+          "required_layers": [
+            "temporal_tree",
+            "event"
+          ],
+          "present_layers": [
+            "temporal_tree"
+          ],
+          "matched_layers": [
+            "temporal_tree"
+          ],
+          "missing_layers": [
+            "event"
+          ],
+          "coverage_ratio": 0.5,
+          "contract_ok": false,
+          "has_path_grounding": false
+        },
+        "second_pass_sources": [],
+        "hits": [
+          {
+            "source": "day:2026-03-03",
+            "layer": "temporal_tree",
+            "score": 5.2,
+            "content": "- 2026-03-03: Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+            "event_time": "2026-03-03",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "month:2026-03",
+            "layer": "temporal_tree",
+            "score": 4.6,
+            "content": "- 2026-03-03: Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.\n- 2026-03-10: Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon",
+            "event_time": "2026-03",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "year:2026",
+            "layer": "temporal_tree",
+            "score": 4.6,
+            "content": "- 2026-01-20: Leo left Northlight Studio on 2026-01-20.\n- 2026-02-14: Leo joined Orchard Labs on 2026-02-14.\n- 2026-03-03: Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.\n- 2026-03-10: Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon\n- 2026-04-02: Nora helped Maya prepare the visa checklist on 2026-04-02.\n- 2026-04-04: Maya planned to relocate to Lisbon after leaving Northlight Studio.\n- 2026-05-09: Maya presented the keynote deck yesterday.\n- 2026-05-11: Maya had the investor board review last week.",
+            "event_time": "2026",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "day:2026-03-10",
+            "layer": "temporal_tree",
+            "score": 3.2,
+            "content": "- 2026-03-10: Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon",
+            "event_time": "2026-03-10",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "day:2026-05-11",
+            "layer": "temporal_tree",
+            "score": 2.2,
+            "content": "- 2026-05-11: Maya had the investor board review last week.",
+            "event_time": "2026-05-11",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "day:2026-05-09",
+            "layer": "temporal_tree",
+            "score": 2.2,
+            "content": "- 2026-05-09: Maya presented the keynote deck yesterday.",
+            "event_time": "2026-05-09",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "day:2026-04-04",
+            "layer": "temporal_tree",
+            "score": 2.2,
+            "content": "- 2026-04-04: Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+            "event_time": "2026-04-04",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "day:2026-04-02",
+            "layer": "temporal_tree",
+            "score": 2.2,
+            "content": "- 2026-04-02: Nora helped Maya prepare the visa checklist on 2026-04-02.",
+            "event_time": "2026-04-02",
+            "trace": {
+              "reader": "tree"
+            }
+          }
+        ],
+        "ok": false
+      },
+      "contract_aware": {
+        "mode": "contract_aware",
+        "query": "When did Maya sign the Riverside lease?",
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "must_have_layers": [
+            "temporal_tree",
+            "event"
+          ],
+          "reason": "Chronology questions should enter via time blocks, then add event support."
+        },
+        "coverage": {
+          "required_layers": [
+            "temporal_tree",
+            "event"
+          ],
+          "present_layers": [
+            "temporal_tree",
+            "event",
+            "fact"
+          ],
+          "matched_layers": [
+            "temporal_tree",
+            "event"
+          ],
+          "missing_layers": [],
+          "coverage_ratio": 1.0,
+          "contract_ok": true,
+          "has_path_grounding": false
+        },
+        "second_pass_sources": [
+          "graph"
+        ],
+        "hits": [
+          {
+            "source": "day:2026-03-03",
+            "layer": "temporal_tree",
+            "score": 5.2,
+            "content": "- 2026-03-03: Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+            "event_time": "2026-03-03",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "event:atom-000",
+            "layer": "event",
+            "score": 5.0,
+            "content": "Maya signed Riverside lease",
+            "event_time": "2026-03-03",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "fact:atom-000",
+            "layer": "fact",
+            "score": 4.6,
+            "content": "Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+            "event_time": "2026-03-03",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "month:2026-03",
+            "layer": "temporal_tree",
+            "score": 4.6,
+            "content": "- 2026-03-03: Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.\n- 2026-03-10: Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon",
+            "event_time": "2026-03",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "year:2026",
+            "layer": "temporal_tree",
+            "score": 4.6,
+            "content": "- 2026-01-20: Leo left Northlight Studio on 2026-01-20.\n- 2026-02-14: Leo joined Orchard Labs on 2026-02-14.\n- 2026-03-03: Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.\n- 2026-03-10: Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon\n- 2026-04-02: Nora helped Maya prepare the visa checklist on 2026-04-02.\n- 2026-04-04: Maya planned to relocate to Lisbon after leaving Northlight Studio.\n- 2026-05-09: Maya presented the keynote deck yesterday.\n- 2026-05-11: Maya had the investor board review last week.",
+            "event_time": "2026",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "day:2026-03-10",
+            "layer": "temporal_tree",
+            "score": 3.2,
+            "content": "- 2026-03-10: Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon",
+            "event_time": "2026-03-10",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "day:2026-05-11",
+            "layer": "temporal_tree",
+            "score": 2.2,
+            "content": "- 2026-05-11: Maya had the investor board review last week.",
+            "event_time": "2026-05-11",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "day:2026-05-09",
+            "layer": "temporal_tree",
+            "score": 2.2,
+            "content": "- 2026-05-09: Maya presented the keynote deck yesterday.",
+            "event_time": "2026-05-09",
+            "trace": {
+              "reader": "tree"
+            }
+          }
+        ],
+        "ok": true
+      }
+    },
+    {
+      "case_id": "relation_helper",
+      "query": "Who helped Maya prepare the visa checklist?",
+      "query_time": "2026-04-05T09:00:00Z",
+      "expected_keywords": [
+        "Nora",
+        "visa checklist"
+      ],
+      "note": "Relation question should prefer graph/entity evidence over flat lexical scanning.",
+      "flat_text": {
+        "mode": "flat_text",
+        "query": "Who helped Maya prepare the visa checklist?",
+        "hits": [
+          {
+            "source": "obs-003",
+            "layer": "flat_text",
+            "score": 5.0,
+            "content": "Nora helped Maya prepare the visa checklist on 2026-04-02.",
+            "event_time": "2026-04-02",
+            "trace": {}
+          },
+          {
+            "source": "obs-006",
+            "layer": "flat_text",
+            "score": 1.0,
+            "content": "Maya had the investor board review last week.",
+            "event_time": "2026-05-11",
+            "trace": {}
+          },
+          {
+            "source": "obs-005",
+            "layer": "flat_text",
+            "score": 1.0,
+            "content": "Maya presented the keynote deck yesterday.",
+            "event_time": "2026-05-09",
+            "trace": {}
+          },
+          {
+            "source": "obs-004",
+            "layer": "flat_text",
+            "score": 1.0,
+            "content": "Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+            "event_time": "2026-04-04",
+            "trace": {}
+          },
+          {
+            "source": "obs-000",
+            "layer": "flat_text",
+            "score": 1.0,
+            "content": "Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+            "event_time": "2026-03-03",
+            "trace": {}
+          }
+        ],
+        "ok": true
+      },
+      "primary_only": {
+        "mode": "primary_only",
+        "query": "Who helped Maya prepare the visa checklist?",
+        "plan": {
+          "family": "relational",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "atom",
+            "tree"
+          ],
+          "must_have_layers": [
+            "entity",
+            "fact",
+            "path_grounding"
+          ],
+          "reason": "Relation questions need entity/event traversal, fact grounding, and explicit graph-path support."
+        },
+        "coverage": {
+          "required_layers": [
+            "entity",
+            "fact",
+            "path_grounding"
+          ],
+          "present_layers": [
+            "fact",
+            "event",
+            "entity"
+          ],
+          "matched_layers": [
+            "entity",
+            "fact",
+            "path_grounding"
+          ],
+          "missing_layers": [],
+          "coverage_ratio": 1.0,
+          "contract_ok": true,
+          "has_path_grounding": true
+        },
+        "second_pass_sources": [],
+        "hits": [
+          {
+            "source": "fact:atom-003",
+            "layer": "fact",
+            "score": 5.0,
+            "content": "Nora helped Maya prepare the visa checklist on 2026-04-02.",
+            "event_time": "2026-04-02",
+            "trace": {
+              "reader": "graph",
+              "path_edge_ids": [
+                "event:atom-003:evidence_of:fact:atom-003",
+                "entity:Nora:has_fact:atom-003",
+                "entity:Maya:has_fact:atom-003"
+              ]
+            }
+          },
+          {
+            "source": "event:atom-003",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Nora helped Maya",
+            "event_time": "2026-04-02",
+            "trace": {
+              "reader": "graph",
+              "path_edge_ids": [
+                "event:atom-003:evidence_of:fact:atom-003",
+                "event:atom-003:involves:Nora",
+                "event:atom-003:involves:Maya",
+                "image_evidence:atom-007:temporal_next:event:atom-003"
+              ]
+            }
+          },
+          {
+            "source": "entity:Maya",
+            "layer": "entity",
+            "score": 2.0,
+            "content": "name=Maya",
+            "event_time": "",
+            "trace": {
+              "reader": "graph",
+              "path_edge_ids": [
+                "entity:Maya:has_fact:atom-000",
+                "event:atom-000:involves:Maya",
+                "entity:Maya:has_fact:atom-003",
+                "event:atom-003:involves:Maya"
+              ]
+            }
+          },
+          {
+            "source": "fact:atom-006",
+            "layer": "fact",
+            "score": 1.0,
+            "content": "Maya had the investor board review last week.",
+            "event_time": "2026-05-11",
+            "trace": {
+              "reader": "graph",
+              "path_edge_ids": [
+                "event:atom-006:evidence_of:fact:atom-006",
+                "entity:Maya:has_fact:atom-006",
+                "entity:investor board review:has_fact:atom-006"
+              ]
+            }
+          },
+          {
+            "source": "event:atom-006",
+            "layer": "event",
+            "score": 1.0,
+            "content": "Maya had investor board review",
+            "event_time": "2026-05-11",
+            "trace": {
+              "reader": "graph",
+              "path_edge_ids": [
+                "event:atom-006:evidence_of:fact:atom-006",
+                "event:atom-006:involves:Maya",
+                "event:atom-006:involves:investor board review",
+                "event:atom-005:temporal_next:event:atom-006"
+              ]
+            }
+          },
+          {
+            "source": "fact:atom-005",
+            "layer": "fact",
+            "score": 1.0,
+            "content": "Maya presented the keynote deck yesterday.",
+            "event_time": "2026-05-09",
+            "trace": {
+              "reader": "graph",
+              "path_edge_ids": [
+                "event:atom-005:evidence_of:fact:atom-005",
+                "entity:Maya:has_fact:atom-005",
+                "entity:keynote deck:has_fact:atom-005"
+              ]
+            }
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 1.0,
+            "content": "Maya presented keynote deck",
+            "event_time": "2026-05-09",
+            "trace": {
+              "reader": "graph",
+              "path_edge_ids": [
+                "event:atom-005:evidence_of:fact:atom-005",
+                "event:atom-005:involves:Maya",
+                "event:atom-005:involves:keynote deck",
+                "event:atom-004:temporal_next:event:atom-005"
+              ]
+            }
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 1.0,
+            "content": "Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+            "event_time": "2026-04-04",
+            "trace": {
+              "reader": "graph",
+              "path_edge_ids": [
+                "event:atom-004:evidence_of:fact:atom-004",
+                "entity:Maya:has_fact:atom-004",
+                "entity:relocate to Lisbon:has_fact:atom-004"
+              ]
+            }
+          }
+        ],
+        "ok": true
+      },
+      "contract_aware": {
+        "mode": "contract_aware",
+        "query": "Who helped Maya prepare the visa checklist?",
+        "plan": {
+          "family": "relational",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "atom",
+            "tree"
+          ],
+          "must_have_layers": [
+            "entity",
+            "fact",
+            "path_grounding"
+          ],
+          "reason": "Relation questions need entity/event traversal, fact grounding, and explicit graph-path support."
+        },
+        "coverage": {
+          "required_layers": [
+            "entity",
+            "fact",
+            "path_grounding"
+          ],
+          "present_layers": [
+            "fact",
+            "event",
+            "entity"
+          ],
+          "matched_layers": [
+            "entity",
+            "fact",
+            "path_grounding"
+          ],
+          "missing_layers": [],
+          "coverage_ratio": 1.0,
+          "contract_ok": true,
+          "has_path_grounding": true
+        },
+        "second_pass_sources": [],
+        "hits": [
+          {
+            "source": "fact:atom-003",
+            "layer": "fact",
+            "score": 5.0,
+            "content": "Nora helped Maya prepare the visa checklist on 2026-04-02.",
+            "event_time": "2026-04-02",
+            "trace": {
+              "reader": "graph",
+              "path_edge_ids": [
+                "event:atom-003:evidence_of:fact:atom-003",
+                "entity:Nora:has_fact:atom-003",
+                "entity:Maya:has_fact:atom-003"
+              ]
+            }
+          },
+          {
+            "source": "event:atom-003",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Nora helped Maya",
+            "event_time": "2026-04-02",
+            "trace": {
+              "reader": "graph",
+              "path_edge_ids": [
+                "event:atom-003:evidence_of:fact:atom-003",
+                "event:atom-003:involves:Nora",
+                "event:atom-003:involves:Maya",
+                "image_evidence:atom-007:temporal_next:event:atom-003"
+              ]
+            }
+          },
+          {
+            "source": "entity:Maya",
+            "layer": "entity",
+            "score": 2.0,
+            "content": "name=Maya",
+            "event_time": "",
+            "trace": {
+              "reader": "graph",
+              "path_edge_ids": [
+                "entity:Maya:has_fact:atom-000",
+                "event:atom-000:involves:Maya",
+                "entity:Maya:has_fact:atom-003",
+                "event:atom-003:involves:Maya"
+              ]
+            }
+          },
+          {
+            "source": "fact:atom-006",
+            "layer": "fact",
+            "score": 1.0,
+            "content": "Maya had the investor board review last week.",
+            "event_time": "2026-05-11",
+            "trace": {
+              "reader": "graph",
+              "path_edge_ids": [
+                "event:atom-006:evidence_of:fact:atom-006",
+                "entity:Maya:has_fact:atom-006",
+                "entity:investor board review:has_fact:atom-006"
+              ]
+            }
+          },
+          {
+            "source": "event:atom-006",
+            "layer": "event",
+            "score": 1.0,
+            "content": "Maya had investor board review",
+            "event_time": "2026-05-11",
+            "trace": {
+              "reader": "graph",
+              "path_edge_ids": [
+                "event:atom-006:evidence_of:fact:atom-006",
+                "event:atom-006:involves:Maya",
+                "event:atom-006:involves:investor board review",
+                "event:atom-005:temporal_next:event:atom-006"
+              ]
+            }
+          },
+          {
+            "source": "fact:atom-005",
+            "layer": "fact",
+            "score": 1.0,
+            "content": "Maya presented the keynote deck yesterday.",
+            "event_time": "2026-05-09",
+            "trace": {
+              "reader": "graph",
+              "path_edge_ids": [
+                "event:atom-005:evidence_of:fact:atom-005",
+                "entity:Maya:has_fact:atom-005",
+                "entity:keynote deck:has_fact:atom-005"
+              ]
+            }
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 1.0,
+            "content": "Maya presented keynote deck",
+            "event_time": "2026-05-09",
+            "trace": {
+              "reader": "graph",
+              "path_edge_ids": [
+                "event:atom-005:evidence_of:fact:atom-005",
+                "event:atom-005:involves:Maya",
+                "event:atom-005:involves:keynote deck",
+                "event:atom-004:temporal_next:event:atom-005"
+              ]
+            }
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 1.0,
+            "content": "Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+            "event_time": "2026-04-04",
+            "trace": {
+              "reader": "graph",
+              "path_edge_ids": [
+                "event:atom-004:evidence_of:fact:atom-004",
+                "entity:Maya:has_fact:atom-004",
+                "entity:relocate to Lisbon:has_fact:atom-004"
+              ]
+            }
+          }
+        ],
+        "ok": true
+      }
+    },
+    {
+      "case_id": "plan_after_leaving",
+      "query": "What did Maya plan to do after leaving Northlight Studio?",
+      "query_time": "2026-04-05T09:00:00Z",
+      "expected_keywords": [
+        "planned",
+        "relocate to Lisbon"
+      ],
+      "note": "Temporal-relational question should expose both event/plan and chronology support.",
+      "flat_text": {
+        "mode": "flat_text",
+        "query": "What did Maya plan to do after leaving Northlight Studio?",
+        "hits": [
+          {
+            "source": "obs-004",
+            "layer": "flat_text",
+            "score": 6.0,
+            "content": "Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+            "event_time": "2026-04-04",
+            "trace": {}
+          },
+          {
+            "source": "obs-006",
+            "layer": "flat_text",
+            "score": 2.0,
+            "content": "Maya had the investor board review last week.",
+            "event_time": "2026-05-11",
+            "trace": {}
+          },
+          {
+            "source": "obs-002",
+            "layer": "flat_text",
+            "score": 2.0,
+            "content": "Leo left Northlight Studio on 2026-01-20.",
+            "event_time": "2026-01-20",
+            "trace": {}
+          },
+          {
+            "source": "obs-005",
+            "layer": "flat_text",
+            "score": 1.0,
+            "content": "Maya presented the keynote deck yesterday.",
+            "event_time": "2026-05-09",
+            "trace": {}
+          },
+          {
+            "source": "obs-003",
+            "layer": "flat_text",
+            "score": 1.0,
+            "content": "Nora helped Maya prepare the visa checklist on 2026-04-02.",
+            "event_time": "2026-04-02",
+            "trace": {}
+          },
+          {
+            "source": "obs-007",
+            "layer": "flat_text",
+            "score": 1.0,
+            "content": "Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon",
+            "event_time": "2026-03-10",
+            "trace": {}
+          },
+          {
+            "source": "obs-000",
+            "layer": "flat_text",
+            "score": 1.0,
+            "content": "Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+            "event_time": "2026-03-03",
+            "trace": {}
+          }
+        ],
+        "ok": true
+      },
+      "primary_only": {
+        "mode": "primary_only",
+        "query": "What did Maya plan to do after leaving Northlight Studio?",
+        "plan": {
+          "family": "temporal_relational",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "tree",
+            "atom"
+          ],
+          "must_have_layers": [
+            "event",
+            "fact",
+            "temporal_tree"
+          ],
+          "reason": "Order-sensitive questions need relation/event structure plus chronology support."
+        },
+        "coverage": {
+          "required_layers": [
+            "event",
+            "fact",
+            "temporal_tree"
+          ],
+          "present_layers": [
+            "fact",
+            "event"
+          ],
+          "matched_layers": [
+            "event",
+            "fact"
+          ],
+          "missing_layers": [
+            "temporal_tree"
+          ],
+          "coverage_ratio": 0.667,
+          "contract_ok": false,
+          "has_path_grounding": false
+        },
+        "second_pass_sources": [],
+        "hits": [
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 6.0,
+            "content": "Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+            "event_time": "2026-04-04",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 5.0,
+            "content": "Maya planned_after_leaving relocate to Lisbon",
+            "event_time": "2026-04-04",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "event:atom-006",
+            "layer": "event",
+            "score": 3.0,
+            "content": "Maya had investor board review",
+            "event_time": "2026-05-11",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "event:atom-002",
+            "layer": "event",
+            "score": 3.0,
+            "content": "Leo left Northlight Studio",
+            "event_time": "2026-01-20",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "fact:atom-006",
+            "layer": "fact",
+            "score": 2.0,
+            "content": "Maya had the investor board review last week.",
+            "event_time": "2026-05-11",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Maya presented keynote deck",
+            "event_time": "2026-05-09",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "event:atom-003",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Nora helped Maya",
+            "event_time": "2026-04-02",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "event:atom-000",
+            "layer": "event",
+            "score": 2.0,
+            "content": "Maya signed Riverside lease",
+            "event_time": "2026-03-03",
+            "trace": {
+              "reader": "graph"
+            }
+          }
+        ],
+        "ok": false
+      },
+      "contract_aware": {
+        "mode": "contract_aware",
+        "query": "What did Maya plan to do after leaving Northlight Studio?",
+        "plan": {
+          "family": "temporal_relational",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "tree",
+            "atom"
+          ],
+          "must_have_layers": [
+            "event",
+            "fact",
+            "temporal_tree"
+          ],
+          "reason": "Order-sensitive questions need relation/event structure plus chronology support."
+        },
+        "coverage": {
+          "required_layers": [
+            "event",
+            "fact",
+            "temporal_tree"
+          ],
+          "present_layers": [
+            "temporal_tree",
+            "fact",
+            "event"
+          ],
+          "matched_layers": [
+            "event",
+            "fact",
+            "temporal_tree"
+          ],
+          "missing_layers": [],
+          "coverage_ratio": 1.0,
+          "contract_ok": true,
+          "has_path_grounding": false
+        },
+        "second_pass_sources": [
+          "tree"
+        ],
+        "hits": [
+          {
+            "source": "year:2026",
+            "layer": "temporal_tree",
+            "score": 7.0,
+            "content": "- 2026-01-20: Leo left Northlight Studio on 2026-01-20.\n- 2026-02-14: Leo joined Orchard Labs on 2026-02-14.\n- 2026-03-03: Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.\n- 2026-03-10: Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon\n- 2026-04-02: Nora helped Maya prepare the visa checklist on 2026-04-02.\n- 2026-04-04: Maya planned to relocate to Lisbon after leaving Northlight Studio.\n- 2026-05-09: Maya presented the keynote deck yesterday.\n- 2026-05-11: Maya had the investor board review last week.",
+            "event_time": "2026",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 6.0,
+            "content": "Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+            "event_time": "2026-04-04",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "day:2026-04-04",
+            "layer": "temporal_tree",
+            "score": 6.0,
+            "content": "- 2026-04-04: Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+            "event_time": "2026-04-04",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "month:2026-04",
+            "layer": "temporal_tree",
+            "score": 6.0,
+            "content": "- 2026-04-02: Nora helped Maya prepare the visa checklist on 2026-04-02.\n- 2026-04-04: Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+            "event_time": "2026-04",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 5.0,
+            "content": "Maya planned_after_leaving relocate to Lisbon",
+            "event_time": "2026-04-04",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "event:atom-006",
+            "layer": "event",
+            "score": 3.0,
+            "content": "Maya had investor board review",
+            "event_time": "2026-05-11",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "event:atom-002",
+            "layer": "event",
+            "score": 3.0,
+            "content": "Leo left Northlight Studio",
+            "event_time": "2026-01-20",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "fact:atom-006",
+            "layer": "fact",
+            "score": 2.0,
+            "content": "Maya had the investor board review last week.",
+            "event_time": "2026-05-11",
+            "trace": {
+              "reader": "graph"
+            }
+          }
+        ],
+        "ok": true
+      }
+    },
+    {
+      "case_id": "yesterday_keynote",
+      "query": "What happened yesterday about the keynote?",
+      "query_time": "2026-05-11T08:30:00Z",
+      "expected_keywords": [
+        "2026-05-09",
+        "keynote"
+      ],
+      "note": "Relative-time query should resolve against query anchor, not only mention time.",
+      "flat_text": {
+        "mode": "flat_text",
+        "query": "What happened yesterday about the keynote?",
+        "hits": [
+          {
+            "source": "obs-005",
+            "layer": "flat_text",
+            "score": 2.0,
+            "content": "Maya presented the keynote deck yesterday.",
+            "event_time": "2026-05-09",
+            "trace": {}
+          }
+        ],
+        "ok": false
+      },
+      "primary_only": {
+        "mode": "primary_only",
+        "query": "What happened yesterday about the keynote?",
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "must_have_layers": [
+            "temporal_tree",
+            "event"
+          ],
+          "reason": "Chronology questions should enter via time blocks, then add event support."
+        },
+        "coverage": {
+          "required_layers": [
+            "temporal_tree",
+            "event"
+          ],
+          "present_layers": [
+            "temporal_tree"
+          ],
+          "matched_layers": [
+            "temporal_tree"
+          ],
+          "missing_layers": [
+            "event"
+          ],
+          "coverage_ratio": 0.5,
+          "contract_ok": false,
+          "has_path_grounding": false
+        },
+        "second_pass_sources": [],
+        "hits": [
+          {
+            "source": "day:2026-05-09",
+            "layer": "temporal_tree",
+            "score": 2.6,
+            "content": "- 2026-05-09: Maya presented the keynote deck yesterday.",
+            "event_time": "2026-05-09",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "month:2026-05",
+            "layer": "temporal_tree",
+            "score": 2.0,
+            "content": "- 2026-05-09: Maya presented the keynote deck yesterday.\n- 2026-05-11: Maya had the investor board review last week.",
+            "event_time": "2026-05",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "year:2026",
+            "layer": "temporal_tree",
+            "score": 2.0,
+            "content": "- 2026-01-20: Leo left Northlight Studio on 2026-01-20.\n- 2026-02-14: Leo joined Orchard Labs on 2026-02-14.\n- 2026-03-03: Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.\n- 2026-03-10: Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon\n- 2026-04-02: Nora helped Maya prepare the visa checklist on 2026-04-02.\n- 2026-04-04: Maya planned to relocate to Lisbon after leaving Northlight Studio.\n- 2026-05-09: Maya presented the keynote deck yesterday.\n- 2026-05-11: Maya had the investor board review last week.",
+            "event_time": "2026",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "day:2026-05-11",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2026-05-11: Maya had the investor board review last week.",
+            "event_time": "2026-05-11",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "day:2026-04-04",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2026-04-04: Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+            "event_time": "2026-04-04",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "day:2026-04-02",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2026-04-02: Nora helped Maya prepare the visa checklist on 2026-04-02.",
+            "event_time": "2026-04-02",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "day:2026-03-10",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2026-03-10: Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon",
+            "event_time": "2026-03-10",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "day:2026-03-03",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2026-03-03: Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+            "event_time": "2026-03-03",
+            "trace": {
+              "reader": "tree"
+            }
+          }
+        ],
+        "ok": false
+      },
+      "contract_aware": {
+        "mode": "contract_aware",
+        "query": "What happened yesterday about the keynote?",
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "must_have_layers": [
+            "temporal_tree",
+            "event"
+          ],
+          "reason": "Chronology questions should enter via time blocks, then add event support."
+        },
+        "coverage": {
+          "required_layers": [
+            "temporal_tree",
+            "event"
+          ],
+          "present_layers": [
+            "temporal_tree",
+            "fact",
+            "event",
+            "entity"
+          ],
+          "matched_layers": [
+            "temporal_tree",
+            "event"
+          ],
+          "missing_layers": [],
+          "coverage_ratio": 1.0,
+          "contract_ok": true,
+          "has_path_grounding": false
+        },
+        "second_pass_sources": [
+          "graph"
+        ],
+        "hits": [
+          {
+            "source": "day:2026-05-09",
+            "layer": "temporal_tree",
+            "score": 2.6,
+            "content": "- 2026-05-09: Maya presented the keynote deck yesterday.",
+            "event_time": "2026-05-09",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "fact:atom-005",
+            "layer": "fact",
+            "score": 2.0,
+            "content": "Maya presented the keynote deck yesterday.",
+            "event_time": "2026-05-09",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "month:2026-05",
+            "layer": "temporal_tree",
+            "score": 2.0,
+            "content": "- 2026-05-09: Maya presented the keynote deck yesterday.\n- 2026-05-11: Maya had the investor board review last week.",
+            "event_time": "2026-05",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "year:2026",
+            "layer": "temporal_tree",
+            "score": 2.0,
+            "content": "- 2026-01-20: Leo left Northlight Studio on 2026-01-20.\n- 2026-02-14: Leo joined Orchard Labs on 2026-02-14.\n- 2026-03-03: Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.\n- 2026-03-10: Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon\n- 2026-04-02: Nora helped Maya prepare the visa checklist on 2026-04-02.\n- 2026-04-04: Maya planned to relocate to Lisbon after leaving Northlight Studio.\n- 2026-05-09: Maya presented the keynote deck yesterday.\n- 2026-05-11: Maya had the investor board review last week.",
+            "event_time": "2026",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "event:atom-005",
+            "layer": "event",
+            "score": 1.0,
+            "content": "Maya presented keynote deck",
+            "event_time": "2026-05-09",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "entity:keynote deck",
+            "layer": "entity",
+            "score": 1.0,
+            "content": "name=keynote deck",
+            "event_time": "",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "day:2026-05-11",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2026-05-11: Maya had the investor board review last week.",
+            "event_time": "2026-05-11",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "day:2026-04-04",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "- 2026-04-04: Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+            "event_time": "2026-04-04",
+            "trace": {
+              "reader": "tree"
+            }
+          }
+        ],
+        "ok": true
+      }
+    },
+    {
+      "case_id": "last_week_board",
+      "query": "What happened last week in the board review?",
+      "query_time": "2026-05-18T20:00:00Z",
+      "expected_keywords": [
+        "2026-05-11",
+        "board review"
+      ],
+      "note": "Week-scale chronology retrieval should hit temporal tree support.",
+      "flat_text": {
+        "mode": "flat_text",
+        "query": "What happened last week in the board review?",
+        "hits": [
+          {
+            "source": "obs-006",
+            "layer": "flat_text",
+            "score": 5.0,
+            "content": "Maya had the investor board review last week.",
+            "event_time": "2026-05-11",
+            "trace": {}
+          },
+          {
+            "source": "obs-004",
+            "layer": "flat_text",
+            "score": 1.0,
+            "content": "Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+            "event_time": "2026-04-04",
+            "trace": {}
+          },
+          {
+            "source": "obs-000",
+            "layer": "flat_text",
+            "score": 1.0,
+            "content": "Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+            "event_time": "2026-03-03",
+            "trace": {}
+          },
+          {
+            "source": "obs-001",
+            "layer": "flat_text",
+            "score": 1.0,
+            "content": "Leo joined Orchard Labs on 2026-02-14.",
+            "event_time": "2026-02-14",
+            "trace": {}
+          }
+        ],
+        "ok": false
+      },
+      "primary_only": {
+        "mode": "primary_only",
+        "query": "What happened last week in the board review?",
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "must_have_layers": [
+            "temporal_tree",
+            "event"
+          ],
+          "reason": "Chronology questions should enter via time blocks, then add event support."
+        },
+        "coverage": {
+          "required_layers": [
+            "temporal_tree",
+            "event"
+          ],
+          "present_layers": [
+            "temporal_tree"
+          ],
+          "matched_layers": [
+            "temporal_tree"
+          ],
+          "missing_layers": [
+            "event"
+          ],
+          "coverage_ratio": 0.5,
+          "contract_ok": false,
+          "has_path_grounding": false
+        },
+        "second_pass_sources": [],
+        "hits": [
+          {
+            "source": "day:2026-05-11",
+            "layer": "temporal_tree",
+            "score": 5.6,
+            "content": "- 2026-05-11: Maya had the investor board review last week.",
+            "event_time": "2026-05-11",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "month:2026-05",
+            "layer": "temporal_tree",
+            "score": 5.0,
+            "content": "- 2026-05-09: Maya presented the keynote deck yesterday.\n- 2026-05-11: Maya had the investor board review last week.",
+            "event_time": "2026-05",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "year:2026",
+            "layer": "temporal_tree",
+            "score": 5.0,
+            "content": "- 2026-01-20: Leo left Northlight Studio on 2026-01-20.\n- 2026-02-14: Leo joined Orchard Labs on 2026-02-14.\n- 2026-03-03: Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.\n- 2026-03-10: Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon\n- 2026-04-02: Nora helped Maya prepare the visa checklist on 2026-04-02.\n- 2026-04-04: Maya planned to relocate to Lisbon after leaving Northlight Studio.\n- 2026-05-09: Maya presented the keynote deck yesterday.\n- 2026-05-11: Maya had the investor board review last week.",
+            "event_time": "2026",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "day:2026-04-04",
+            "layer": "temporal_tree",
+            "score": 1.6,
+            "content": "- 2026-04-04: Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+            "event_time": "2026-04-04",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "day:2026-03-03",
+            "layer": "temporal_tree",
+            "score": 1.6,
+            "content": "- 2026-03-03: Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+            "event_time": "2026-03-03",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "day:2026-02-14",
+            "layer": "temporal_tree",
+            "score": 1.6,
+            "content": "- 2026-02-14: Leo joined Orchard Labs on 2026-02-14.",
+            "event_time": "2026-02-14",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "month:2026-04",
+            "layer": "temporal_tree",
+            "score": 1.0,
+            "content": "- 2026-04-02: Nora helped Maya prepare the visa checklist on 2026-04-02.\n- 2026-04-04: Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+            "event_time": "2026-04",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "month:2026-03",
+            "layer": "temporal_tree",
+            "score": 1.0,
+            "content": "- 2026-03-03: Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.\n- 2026-03-10: Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon",
+            "event_time": "2026-03",
+            "trace": {
+              "reader": "tree"
+            }
+          }
+        ],
+        "ok": false
+      },
+      "contract_aware": {
+        "mode": "contract_aware",
+        "query": "What happened last week in the board review?",
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "must_have_layers": [
+            "temporal_tree",
+            "event"
+          ],
+          "reason": "Chronology questions should enter via time blocks, then add event support."
+        },
+        "coverage": {
+          "required_layers": [
+            "temporal_tree",
+            "event"
+          ],
+          "present_layers": [
+            "temporal_tree",
+            "fact",
+            "event",
+            "entity"
+          ],
+          "matched_layers": [
+            "temporal_tree",
+            "event"
+          ],
+          "missing_layers": [],
+          "coverage_ratio": 1.0,
+          "contract_ok": true,
+          "has_path_grounding": false
+        },
+        "second_pass_sources": [
+          "graph"
+        ],
+        "hits": [
+          {
+            "source": "day:2026-05-11",
+            "layer": "temporal_tree",
+            "score": 7.1,
+            "content": "- 2026-05-11: Maya had the investor board review last week.",
+            "event_time": "2026-05-11",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "fact:atom-006",
+            "layer": "fact",
+            "score": 5.0,
+            "content": "Maya had the investor board review last week.",
+            "event_time": "2026-05-11",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "month:2026-05",
+            "layer": "temporal_tree",
+            "score": 5.0,
+            "content": "- 2026-05-09: Maya presented the keynote deck yesterday.\n- 2026-05-11: Maya had the investor board review last week.",
+            "event_time": "2026-05",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "year:2026",
+            "layer": "temporal_tree",
+            "score": 5.0,
+            "content": "- 2026-01-20: Leo left Northlight Studio on 2026-01-20.\n- 2026-02-14: Leo joined Orchard Labs on 2026-02-14.\n- 2026-03-03: Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.\n- 2026-03-10: Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon\n- 2026-04-02: Nora helped Maya prepare the visa checklist on 2026-04-02.\n- 2026-04-04: Maya planned to relocate to Lisbon after leaving Northlight Studio.\n- 2026-05-09: Maya presented the keynote deck yesterday.\n- 2026-05-11: Maya had the investor board review last week.",
+            "event_time": "2026",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "event:atom-006",
+            "layer": "event",
+            "score": 3.0,
+            "content": "Maya had investor board review",
+            "event_time": "2026-05-11",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "entity:investor board review",
+            "layer": "entity",
+            "score": 3.0,
+            "content": "name=investor board review",
+            "event_time": "",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "day:2026-04-04",
+            "layer": "temporal_tree",
+            "score": 1.6,
+            "content": "- 2026-04-04: Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+            "event_time": "2026-04-04",
+            "trace": {
+              "reader": "tree"
+            }
+          },
+          {
+            "source": "day:2026-03-03",
+            "layer": "temporal_tree",
+            "score": 1.6,
+            "content": "- 2026-03-03: Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+            "event_time": "2026-03-03",
+            "trace": {
+              "reader": "tree"
+            }
+          }
+        ],
+        "ok": true
+      }
+    },
+    {
+      "case_id": "visual_address",
+      "query": "What address was shown in the lease screenshot?",
+      "query_time": "2026-03-10T10:00:00Z",
+      "expected_keywords": [
+        "Rua Augusta 14",
+        "Lease Agreement"
+      ],
+      "note": "Visual query should use image evidence as a first-class memory object.",
+      "flat_text": {
+        "mode": "flat_text",
+        "query": "What address was shown in the lease screenshot?",
+        "hits": [
+          {
+            "source": "obs-007",
+            "layer": "flat_text",
+            "score": 2.0,
+            "content": "Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon",
+            "event_time": "2026-03-10",
+            "trace": {}
+          },
+          {
+            "source": "obs-000",
+            "layer": "flat_text",
+            "score": 2.0,
+            "content": "Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+            "event_time": "2026-03-03",
+            "trace": {}
+          },
+          {
+            "source": "obs-006",
+            "layer": "flat_text",
+            "score": 1.0,
+            "content": "Maya had the investor board review last week.",
+            "event_time": "2026-05-11",
+            "trace": {}
+          },
+          {
+            "source": "obs-004",
+            "layer": "flat_text",
+            "score": 1.0,
+            "content": "Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+            "event_time": "2026-04-04",
+            "trace": {}
+          },
+          {
+            "source": "obs-001",
+            "layer": "flat_text",
+            "score": 1.0,
+            "content": "Leo joined Orchard Labs on 2026-02-14.",
+            "event_time": "2026-02-14",
+            "trace": {}
+          }
+        ],
+        "ok": true
+      },
+      "primary_only": {
+        "mode": "primary_only",
+        "query": "What address was shown in the lease screenshot?",
+        "plan": {
+          "family": "visual",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "atom",
+            "tree"
+          ],
+          "must_have_layers": [
+            "image_evidence",
+            "fact"
+          ],
+          "reason": "Visual questions need image evidence grounded by linked facts."
+        },
+        "coverage": {
+          "required_layers": [
+            "image_evidence",
+            "fact"
+          ],
+          "present_layers": [
+            "image_evidence",
+            "fact",
+            "entity",
+            "event"
+          ],
+          "matched_layers": [
+            "image_evidence",
+            "fact"
+          ],
+          "missing_layers": [],
+          "coverage_ratio": 1.0,
+          "contract_ok": true,
+          "has_path_grounding": false
+        },
+        "second_pass_sources": [],
+        "hits": [
+          {
+            "source": "image_evidence:atom-007",
+            "layer": "image_evidence",
+            "score": 4.0,
+            "content": "lease_screenshot shows Riverside Lease Agreement Rua Augusta 14 Lisbon",
+            "event_time": "2026-03-10",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "fact:atom-007",
+            "layer": "fact",
+            "score": 2.0,
+            "content": "Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon",
+            "event_time": "2026-03-10",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "fact:atom-000",
+            "layer": "fact",
+            "score": 2.0,
+            "content": "Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+            "event_time": "2026-03-03",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "entity:lease_screenshot",
+            "layer": "entity",
+            "score": 2.0,
+            "content": "name=lease_screenshot",
+            "event_time": "",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "fact:atom-006",
+            "layer": "fact",
+            "score": 1.0,
+            "content": "Maya had the investor board review last week.",
+            "event_time": "2026-05-11",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "event:atom-006",
+            "layer": "event",
+            "score": 1.0,
+            "content": "Maya had investor board review",
+            "event_time": "2026-05-11",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 1.0,
+            "content": "Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+            "event_time": "2026-04-04",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 1.0,
+            "content": "Maya planned_after_leaving relocate to Lisbon",
+            "event_time": "2026-04-04",
+            "trace": {
+              "reader": "graph"
+            }
+          }
+        ],
+        "ok": true
+      },
+      "contract_aware": {
+        "mode": "contract_aware",
+        "query": "What address was shown in the lease screenshot?",
+        "plan": {
+          "family": "visual",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "atom",
+            "tree"
+          ],
+          "must_have_layers": [
+            "image_evidence",
+            "fact"
+          ],
+          "reason": "Visual questions need image evidence grounded by linked facts."
+        },
+        "coverage": {
+          "required_layers": [
+            "image_evidence",
+            "fact"
+          ],
+          "present_layers": [
+            "image_evidence",
+            "fact",
+            "entity",
+            "event"
+          ],
+          "matched_layers": [
+            "image_evidence",
+            "fact"
+          ],
+          "missing_layers": [],
+          "coverage_ratio": 1.0,
+          "contract_ok": true,
+          "has_path_grounding": false
+        },
+        "second_pass_sources": [],
+        "hits": [
+          {
+            "source": "image_evidence:atom-007",
+            "layer": "image_evidence",
+            "score": 4.0,
+            "content": "lease_screenshot shows Riverside Lease Agreement Rua Augusta 14 Lisbon",
+            "event_time": "2026-03-10",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "fact:atom-007",
+            "layer": "fact",
+            "score": 2.0,
+            "content": "Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon",
+            "event_time": "2026-03-10",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "fact:atom-000",
+            "layer": "fact",
+            "score": 2.0,
+            "content": "Maya signed the Riverside lease on 2026-03-03, and I am only mentioning it now after travel.",
+            "event_time": "2026-03-03",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "entity:lease_screenshot",
+            "layer": "entity",
+            "score": 2.0,
+            "content": "name=lease_screenshot",
+            "event_time": "",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "fact:atom-006",
+            "layer": "fact",
+            "score": 1.0,
+            "content": "Maya had the investor board review last week.",
+            "event_time": "2026-05-11",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "event:atom-006",
+            "layer": "event",
+            "score": 1.0,
+            "content": "Maya had investor board review",
+            "event_time": "2026-05-11",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "fact:atom-004",
+            "layer": "fact",
+            "score": 1.0,
+            "content": "Maya planned to relocate to Lisbon after leaving Northlight Studio.",
+            "event_time": "2026-04-04",
+            "trace": {
+              "reader": "graph"
+            }
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 1.0,
+            "content": "Maya planned_after_leaving relocate to Lisbon",
+            "event_time": "2026-04-04",
+            "trace": {
+              "reader": "graph"
+            }
+          }
+        ],
+        "ok": true
+      }
+    }
+  ]
+}

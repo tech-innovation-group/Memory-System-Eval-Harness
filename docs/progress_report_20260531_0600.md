@@ -17,12 +17,12 @@ This segment made exported reports more useful for pending-Judge workflows. Repo
 - `node --check static/app.js`: passed.
 - `python3 -m py_compile server.py`: passed.
 - LongMemEval report:
-  - path: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_100_check_v2/report.md`
+  - path: `<repo-root>/runs/manual_longmemeval_100_check_v2/report.md`
   - pending rows: 100
-  - pending CSV: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_100_check_v2/local_agent/local_agent_results.pending_judge.csv`
+  - pending CSV: `<repo-root>/runs/manual_longmemeval_100_check_v2/local_agent/local_agent_results.pending_judge.csv`
   - includes examples such as `e47becba`, `118b2229`, `51a45a95`
 - LoCoMo smoke report:
-  - path: `/Users/chx/locomo-eval-web/runs/manual_locomo_smoke_5/report.md`
+  - path: `<repo-root>/runs/manual_locomo_smoke_5/report.md`
   - pending rows: 0
   - pending CSV: `-`
 - Pending CSV line counts:

@@ -1,0 +1,515 @@
+{
+  "memory_dump": {
+    "observations": [
+      {
+        "obs_id": "obs-000",
+        "obs_type": "text",
+        "content": "Gina arrived in Rome on 2023-01-30 for a design interview.",
+        "created_at": "2023-02-01",
+        "event_time": "2023-01-30",
+        "speaker": "user",
+        "caption": "",
+        "ocr": "",
+        "tags": null,
+        "linked_subject": ""
+      },
+      {
+        "obs_id": "obs-001",
+        "obs_type": "image",
+        "content": "Phone screenshot from Gina's arrival day showing Roma Termini station board.\nRoma Termini 08:42 Platform 7\nrome, station, arrival, travel",
+        "created_at": "2023-02-01",
+        "event_time": "2023-01-30",
+        "speaker": "",
+        "caption": "Phone screenshot from Gina's arrival day showing Roma Termini station board.",
+        "ocr": "Roma Termini 08:42 Platform 7",
+        "tags": [
+          "rome",
+          "station",
+          "arrival",
+          "travel"
+        ],
+        "linked_subject": "Gina"
+      },
+      {
+        "obs_id": "obs-002",
+        "obs_type": "text",
+        "content": "Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.",
+        "created_at": "2023-02-03",
+        "event_time": "2023-02-03",
+        "speaker": "user",
+        "caption": "",
+        "ocr": "",
+        "tags": null,
+        "linked_subject": ""
+      },
+      {
+        "obs_id": "obs-003",
+        "obs_type": "image",
+        "content": "Moodboard screenshot for Jon's dream studio with sunlit windows and a waterfront interior.\nwaterfront loft natural light Marley floor\nstudio, moodboard, design, waterfront",
+        "created_at": "2023-02-03",
+        "event_time": "2023-02-03",
+        "speaker": "",
+        "caption": "Moodboard screenshot for Jon's dream studio with sunlit windows and a waterfront interior.",
+        "ocr": "waterfront loft natural light Marley floor",
+        "tags": [
+          "studio",
+          "moodboard",
+          "design",
+          "waterfront"
+        ],
+        "linked_subject": "Jon"
+      }
+    ],
+    "atoms": [
+      {
+        "atom_id": "atom-000",
+        "atom_type": "event",
+        "subject": "Gina",
+        "predicate": "arrived_in",
+        "object": "Rome",
+        "statement": "Gina arrived in Rome on 2023-01-30 for a design interview.",
+        "event_time": "2023-01-30",
+        "created_at": "2023-02-01",
+        "source_obs_id": "obs-000"
+      },
+      {
+        "atom_id": "atom-001",
+        "atom_type": "fact",
+        "subject": "Jon",
+        "predicate": "wanted_style",
+        "object": "a waterfront loft with natural light and Marley flooring.",
+        "statement": "Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.",
+        "event_time": "2023-02-03",
+        "created_at": "2023-02-03",
+        "source_obs_id": "obs-002"
+      }
+    ],
+    "nodes": [
+      {
+        "node_id": "fact:atom-000",
+        "node_type": "fact",
+        "content": "statement=Gina arrived in Rome on 2023-01-30 for a design interview.\nsubject=Gina\npredicate=arrived_in\nobject=Rome\nevent_time=2023-01-30\ncreated_at=2023-02-01",
+        "event_time": "2023-01-30",
+        "source_ref": "obs-000"
+      },
+      {
+        "node_id": "event:atom-000",
+        "node_type": "event",
+        "content": "statement=Gina arrived in Rome on 2023-01-30 for a design interview.\nparticipants=Gina, Rome\nevent_time=2023-01-30",
+        "event_time": "2023-01-30",
+        "source_ref": "obs-000"
+      },
+      {
+        "node_id": "entity:Gina",
+        "node_type": "entity",
+        "content": "name=Gina\nfirst_seen_in=Gina arrived in Rome on 2023-01-30 for a design interview.",
+        "event_time": "",
+        "source_ref": "obs-000"
+      },
+      {
+        "node_id": "entity:Rome",
+        "node_type": "entity",
+        "content": "name=Rome\nfirst_seen_in=Gina arrived in Rome on 2023-01-30 for a design interview.",
+        "event_time": "",
+        "source_ref": "obs-000"
+      },
+      {
+        "node_id": "fact:atom-001",
+        "node_type": "fact",
+        "content": "statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.\nsubject=Jon\npredicate=wanted_style\nobject=a waterfront loft with natural light and Marley flooring.\nevent_time=2023-02-03\ncreated_at=2023-02-03",
+        "event_time": "2023-02-03",
+        "source_ref": "obs-002"
+      },
+      {
+        "node_id": "event:atom-001",
+        "node_type": "event",
+        "content": "statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.\nparticipants=Jon, a waterfront loft with natural light and Marley flooring.\nevent_time=2023-02-03",
+        "event_time": "2023-02-03",
+        "source_ref": "obs-002"
+      },
+      {
+        "node_id": "entity:Jon",
+        "node_type": "entity",
+        "content": "name=Jon\nfirst_seen_in=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.",
+        "event_time": "",
+        "source_ref": "obs-002"
+      },
+      {
+        "node_id": "entity:a waterfront loft with natural light and Marley flooring.",
+        "node_type": "entity",
+        "content": "name=a waterfront loft with natural light and Marley flooring.\nfirst_seen_in=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.",
+        "event_time": "",
+        "source_ref": "obs-002"
+      },
+      {
+        "node_id": "image:obs-001",
+        "node_type": "image_evidence",
+        "content": "caption=Phone screenshot from Gina's arrival day showing Roma Termini station board.\nocr=Roma Termini 08:42 Platform 7\ntags=rome, station, arrival, travel\nlinked_subject=Gina\nevent_time=2023-01-30\ncreated_at=2023-02-01",
+        "event_time": "2023-01-30",
+        "source_ref": "obs-001"
+      },
+      {
+        "node_id": "image:obs-003",
+        "node_type": "image_evidence",
+        "content": "caption=Moodboard screenshot for Jon's dream studio with sunlit windows and a waterfront interior.\nocr=waterfront loft natural light Marley floor\ntags=studio, moodboard, design, waterfront\nlinked_subject=Jon\nevent_time=2023-02-03\ncreated_at=2023-02-03",
+        "event_time": "2023-02-03",
+        "source_ref": "obs-003"
+      }
+    ],
+    "edges": [
+      {
+        "edge_id": "event:atom-000:evidence_of:fact:atom-000",
+        "source_id": "event:atom-000",
+        "target_id": "fact:atom-000",
+        "relation_type": "evidence_of"
+      },
+      {
+        "edge_id": "entity:Gina:has_fact:atom-000",
+        "source_id": "entity:Gina",
+        "target_id": "fact:atom-000",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-000:involves:Gina",
+        "source_id": "event:atom-000",
+        "target_id": "entity:Gina",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "entity:Rome:has_fact:atom-000",
+        "source_id": "entity:Rome",
+        "target_id": "fact:atom-000",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-000:involves:Rome",
+        "source_id": "event:atom-000",
+        "target_id": "entity:Rome",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "event:atom-001:evidence_of:fact:atom-001",
+        "source_id": "event:atom-001",
+        "target_id": "fact:atom-001",
+        "relation_type": "evidence_of"
+      },
+      {
+        "edge_id": "entity:Jon:has_fact:atom-001",
+        "source_id": "entity:Jon",
+        "target_id": "fact:atom-001",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-001:involves:Jon",
+        "source_id": "event:atom-001",
+        "target_id": "entity:Jon",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "entity:a waterfront loft with natural light and Marley flooring.:has_fact:atom-001",
+        "source_id": "entity:a waterfront loft with natural light and Marley flooring.",
+        "target_id": "fact:atom-001",
+        "relation_type": "has_fact"
+      },
+      {
+        "edge_id": "event:atom-001:involves:a waterfront loft with natural light and Marley flooring.",
+        "source_id": "event:atom-001",
+        "target_id": "entity:a waterfront loft with natural light and Marley flooring.",
+        "relation_type": "involves"
+      },
+      {
+        "edge_id": "image:obs-001:shows:Gina",
+        "source_id": "image:obs-001",
+        "target_id": "entity:Gina",
+        "relation_type": "shows"
+      },
+      {
+        "edge_id": "image:obs-001:supports:event:atom-000",
+        "source_id": "image:obs-001",
+        "target_id": "event:atom-000",
+        "relation_type": "supports_event"
+      },
+      {
+        "edge_id": "image:obs-001:evidence_of:fact:atom-000",
+        "source_id": "image:obs-001",
+        "target_id": "fact:atom-000",
+        "relation_type": "visual_evidence_of"
+      },
+      {
+        "edge_id": "image:obs-003:shows:Jon",
+        "source_id": "image:obs-003",
+        "target_id": "entity:Jon",
+        "relation_type": "shows"
+      },
+      {
+        "edge_id": "image:obs-003:supports:event:atom-001",
+        "source_id": "image:obs-003",
+        "target_id": "event:atom-001",
+        "relation_type": "supports_event"
+      },
+      {
+        "edge_id": "image:obs-003:evidence_of:fact:atom-001",
+        "source_id": "image:obs-003",
+        "target_id": "fact:atom-001",
+        "relation_type": "visual_evidence_of"
+      }
+    ]
+  },
+  "queries": {
+    "visual_city_text_only": {
+      "query": "Which city appears in Gina's screenshot from her trip?",
+      "text_only": true,
+      "plan": {
+        "intent": "visual",
+        "target_layers": [
+          "image_evidence",
+          "event",
+          "entity"
+        ],
+        "notes": "Visual query should prioritize image evidence nodes and OCR-bearing content."
+      },
+      "hits": [
+        {
+          "score": 4.0,
+          "node_id": "event:atom-000",
+          "node_type": "event",
+          "event_time": "2023-01-30",
+          "content": "statement=Gina arrived in Rome on 2023-01-30 for a design interview.\nparticipants=Gina, Rome\nevent_time=2023-01-30"
+        },
+        {
+          "score": 4.0,
+          "node_id": "entity:Gina",
+          "node_type": "entity",
+          "event_time": "",
+          "content": "name=Gina\nfirst_seen_in=Gina arrived in Rome on 2023-01-30 for a design interview."
+        },
+        {
+          "score": 4.0,
+          "node_id": "entity:Rome",
+          "node_type": "entity",
+          "event_time": "",
+          "content": "name=Rome\nfirst_seen_in=Gina arrived in Rome on 2023-01-30 for a design interview."
+        },
+        {
+          "score": 3.0,
+          "node_id": "entity:Jon",
+          "node_type": "entity",
+          "event_time": "",
+          "content": "name=Jon\nfirst_seen_in=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring."
+        },
+        {
+          "score": 3.0,
+          "node_id": "entity:a waterfront loft with natural light and Marley flooring.",
+          "node_type": "entity",
+          "event_time": "",
+          "content": "name=a waterfront loft with natural light and Marley flooring.\nfirst_seen_in=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring."
+        }
+      ]
+    },
+    "visual_city_multimodal": {
+      "query": "Which city appears in Gina's screenshot from her trip?",
+      "text_only": false,
+      "plan": {
+        "intent": "visual",
+        "target_layers": [
+          "image_evidence",
+          "event",
+          "entity"
+        ],
+        "notes": "Visual query should prioritize image evidence nodes and OCR-bearing content."
+      },
+      "hits": [
+        {
+          "score": 8.0,
+          "node_id": "image:obs-001",
+          "node_type": "image_evidence",
+          "event_time": "2023-01-30",
+          "content": "caption=Phone screenshot from Gina's arrival day showing Roma Termini station board.\nocr=Roma Termini 08:42 Platform 7\ntags=rome, station, arrival, travel\nlinked_subject=Gina\nevent_time=2023-01-30\ncreated_at=2023-02-01"
+        },
+        {
+          "score": 6.0,
+          "node_id": "image:obs-003",
+          "node_type": "image_evidence",
+          "event_time": "2023-02-03",
+          "content": "caption=Moodboard screenshot for Jon's dream studio with sunlit windows and a waterfront interior.\nocr=waterfront loft natural light Marley floor\ntags=studio, moodboard, design, waterfront\nlinked_subject=Jon\nevent_time=2023-02-03\ncreated_at=2023-02-03"
+        },
+        {
+          "score": 4.0,
+          "node_id": "event:atom-000",
+          "node_type": "event",
+          "event_time": "2023-01-30",
+          "content": "statement=Gina arrived in Rome on 2023-01-30 for a design interview.\nparticipants=Gina, Rome\nevent_time=2023-01-30"
+        },
+        {
+          "score": 4.0,
+          "node_id": "entity:Gina",
+          "node_type": "entity",
+          "event_time": "",
+          "content": "name=Gina\nfirst_seen_in=Gina arrived in Rome on 2023-01-30 for a design interview."
+        },
+        {
+          "score": 4.0,
+          "node_id": "entity:Rome",
+          "node_type": "entity",
+          "event_time": "",
+          "content": "name=Rome\nfirst_seen_in=Gina arrived in Rome on 2023-01-30 for a design interview."
+        }
+      ]
+    },
+    "visual_time_text_only": {
+      "query": "What time was visible in Gina's screenshot when she arrived?",
+      "text_only": true,
+      "plan": {
+        "intent": "visual",
+        "target_layers": [
+          "image_evidence",
+          "event",
+          "entity"
+        ],
+        "notes": "Visual query should prioritize image evidence nodes and OCR-bearing content."
+      },
+      "hits": [
+        {
+          "score": 6.0,
+          "node_id": "event:atom-000",
+          "node_type": "event",
+          "event_time": "2023-01-30",
+          "content": "statement=Gina arrived in Rome on 2023-01-30 for a design interview.\nparticipants=Gina, Rome\nevent_time=2023-01-30"
+        },
+        {
+          "score": 5.0,
+          "node_id": "entity:Gina",
+          "node_type": "entity",
+          "event_time": "",
+          "content": "name=Gina\nfirst_seen_in=Gina arrived in Rome on 2023-01-30 for a design interview."
+        },
+        {
+          "score": 5.0,
+          "node_id": "entity:Rome",
+          "node_type": "entity",
+          "event_time": "",
+          "content": "name=Rome\nfirst_seen_in=Gina arrived in Rome on 2023-01-30 for a design interview."
+        },
+        {
+          "score": 4.0,
+          "node_id": "fact:atom-000",
+          "node_type": "fact",
+          "event_time": "2023-01-30",
+          "content": "statement=Gina arrived in Rome on 2023-01-30 for a design interview.\nsubject=Gina\npredicate=arrived_in\nobject=Rome\nevent_time=2023-01-30\ncreated_at=2023-02-01"
+        },
+        {
+          "score": 3.0,
+          "node_id": "event:atom-001",
+          "node_type": "event",
+          "event_time": "2023-02-03",
+          "content": "statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.\nparticipants=Jon, a waterfront loft with natural light and Marley flooring.\nevent_time=2023-02-03"
+        }
+      ]
+    },
+    "visual_time_multimodal": {
+      "query": "What time was visible in Gina's screenshot when she arrived?",
+      "text_only": false,
+      "plan": {
+        "intent": "visual",
+        "target_layers": [
+          "image_evidence",
+          "event",
+          "entity"
+        ],
+        "notes": "Visual query should prioritize image evidence nodes and OCR-bearing content."
+      },
+      "hits": [
+        {
+          "score": 8.0,
+          "node_id": "image:obs-001",
+          "node_type": "image_evidence",
+          "event_time": "2023-01-30",
+          "content": "caption=Phone screenshot from Gina's arrival day showing Roma Termini station board.\nocr=Roma Termini 08:42 Platform 7\ntags=rome, station, arrival, travel\nlinked_subject=Gina\nevent_time=2023-01-30\ncreated_at=2023-02-01"
+        },
+        {
+          "score": 7.0,
+          "node_id": "image:obs-003",
+          "node_type": "image_evidence",
+          "event_time": "2023-02-03",
+          "content": "caption=Moodboard screenshot for Jon's dream studio with sunlit windows and a waterfront interior.\nocr=waterfront loft natural light Marley floor\ntags=studio, moodboard, design, waterfront\nlinked_subject=Jon\nevent_time=2023-02-03\ncreated_at=2023-02-03"
+        },
+        {
+          "score": 6.0,
+          "node_id": "event:atom-000",
+          "node_type": "event",
+          "event_time": "2023-01-30",
+          "content": "statement=Gina arrived in Rome on 2023-01-30 for a design interview.\nparticipants=Gina, Rome\nevent_time=2023-01-30"
+        },
+        {
+          "score": 5.0,
+          "node_id": "entity:Gina",
+          "node_type": "entity",
+          "event_time": "",
+          "content": "name=Gina\nfirst_seen_in=Gina arrived in Rome on 2023-01-30 for a design interview."
+        },
+        {
+          "score": 5.0,
+          "node_id": "entity:Rome",
+          "node_type": "entity",
+          "event_time": "",
+          "content": "name=Rome\nfirst_seen_in=Gina arrived in Rome on 2023-01-30 for a design interview."
+        }
+      ]
+    },
+    "style_multimodal": {
+      "query": "What did Jon want the studio to look like?",
+      "text_only": false,
+      "plan": {
+        "intent": "profile",
+        "target_layers": [
+          "fact",
+          "image_evidence"
+        ],
+        "notes": "Preference or style queries can use both textual fact nodes and visual moodboard evidence."
+      },
+      "hits": [
+        {
+          "score": 8.0,
+          "node_id": "fact:atom-001",
+          "node_type": "fact",
+          "event_time": "2023-02-03",
+          "content": "statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.\nsubject=Jon\npredicate=wanted_style\nobject=a waterfront loft with natural light and Marley flooring.\nevent_time=2023-02-03\ncreated_at=2023-02-03"
+        },
+        {
+          "score": 6.0,
+          "node_id": "event:atom-001",
+          "node_type": "event",
+          "event_time": "2023-02-03",
+          "content": "statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.\nparticipants=Jon, a waterfront loft with natural light and Marley flooring.\nevent_time=2023-02-03"
+        },
+        {
+          "score": 6.0,
+          "node_id": "entity:Jon",
+          "node_type": "entity",
+          "event_time": "",
+          "content": "name=Jon\nfirst_seen_in=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring."
+        },
+        {
+          "score": 6.0,
+          "node_id": "entity:a waterfront loft with natural light and Marley flooring.",
+          "node_type": "entity",
+          "event_time": "",
+          "content": "name=a waterfront loft with natural light and Marley flooring.\nfirst_seen_in=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring."
+        },
+        {
+          "score": 4.0,
+          "node_id": "image:obs-003",
+          "node_type": "image_evidence",
+          "event_time": "2023-02-03",
+          "content": "caption=Moodboard screenshot for Jon's dream studio with sunlit windows and a waterfront interior.\nocr=waterfront loft natural light Marley floor\ntags=studio, moodboard, design, waterfront\nlinked_subject=Jon\nevent_time=2023-02-03\ncreated_at=2023-02-03"
+        }
+      ]
+    }
+  },
+  "summary": {
+    "visual_city_query_text_only_top1_type": "event",
+    "visual_city_query_multimodal_top1_type": "image_evidence",
+    "visual_time_query_text_only_has_ocr": false,
+    "visual_time_query_multimodal_has_ocr": true
+  }
+}

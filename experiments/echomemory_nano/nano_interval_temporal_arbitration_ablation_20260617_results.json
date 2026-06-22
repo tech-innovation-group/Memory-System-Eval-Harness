@@ -1,0 +1,153 @@
+{
+  "cases": [
+    {
+      "case_id": "mentioned_on_vs_happened_on",
+      "query": "When did the deal close?",
+      "expected_answer": "2026-05-13",
+      "note": "The message was written on 2026-05-20, but the true event happened on 2026-05-13."
+    },
+    {
+      "case_id": "interval_between_two_anchors",
+      "query": "Between the lease signing and partner approval, what happened?",
+      "expected_answer": "The board requested one more budget revision on 2026-05-06.",
+      "note": "The answer should come from the event inside the interval, not from one of the anchor events or the most recent write."
+    },
+    {
+      "case_id": "before_anchor_day",
+      "query": "What happened before the keynote day?",
+      "expected_answer": "The keynote rehearsal happened on 2026-06-09.",
+      "note": "The system should select the latest event before the anchor day, not just any related event."
+    }
+  ],
+  "variants": [
+    {
+      "variant": "write_time_only",
+      "correct": 0,
+      "total": 3,
+      "rows": [
+        {
+          "case_id": "mentioned_on_vs_happened_on",
+          "query": "When did the deal close?",
+          "expected_answer": "2026-05-13",
+          "answer": "2026-05-20",
+          "passed": false,
+          "evidence_ids": [
+            "deal_close_retro"
+          ],
+          "rationale": "uses write_time as the effective answer clock",
+          "note": "The message was written on 2026-05-20, but the true event happened on 2026-05-13."
+        },
+        {
+          "case_id": "interval_between_two_anchors",
+          "query": "Between the lease signing and partner approval, what happened?",
+          "expected_answer": "The board requested one more budget revision on 2026-05-06.",
+          "answer": "Partner approval happened on 2026-05-10.",
+          "passed": false,
+          "evidence_ids": [
+            "partner_approval"
+          ],
+          "rationale": "uses write_time as the effective answer clock",
+          "note": "The answer should come from the event inside the interval, not from one of the anchor events or the most recent write."
+        },
+        {
+          "case_id": "before_anchor_day",
+          "query": "What happened before the keynote day?",
+          "expected_answer": "The keynote rehearsal happened on 2026-06-09.",
+          "answer": "The keynote day was on 2026-06-10.",
+          "passed": false,
+          "evidence_ids": [
+            "keynote_day"
+          ],
+          "rationale": "uses write_time as the effective answer clock",
+          "note": "The system should select the latest event before the anchor day, not just any related event."
+        }
+      ]
+    },
+    {
+      "variant": "three_clock_no_interval",
+      "correct": 1,
+      "total": 3,
+      "rows": [
+        {
+          "case_id": "mentioned_on_vs_happened_on",
+          "query": "When did the deal close?",
+          "expected_answer": "2026-05-13",
+          "answer": "2026-05-13",
+          "passed": true,
+          "evidence_ids": [
+            "deal_close_retro"
+          ],
+          "rationale": "preserves event_time but does not explicitly reason over before/after/between windows",
+          "note": "The message was written on 2026-05-20, but the true event happened on 2026-05-13."
+        },
+        {
+          "case_id": "interval_between_two_anchors",
+          "query": "Between the lease signing and partner approval, what happened?",
+          "expected_answer": "The board requested one more budget revision on 2026-05-06.",
+          "answer": "Partner approval happened on 2026-05-10.",
+          "passed": false,
+          "evidence_ids": [
+            "partner_approval"
+          ],
+          "rationale": "preserves event_time but does not explicitly reason over before/after/between windows",
+          "note": "The answer should come from the event inside the interval, not from one of the anchor events or the most recent write."
+        },
+        {
+          "case_id": "before_anchor_day",
+          "query": "What happened before the keynote day?",
+          "expected_answer": "The keynote rehearsal happened on 2026-06-09.",
+          "answer": "The keynote day was on 2026-06-10.",
+          "passed": false,
+          "evidence_ids": [
+            "keynote_day"
+          ],
+          "rationale": "preserves event_time but does not explicitly reason over before/after/between windows",
+          "note": "The system should select the latest event before the anchor day, not just any related event."
+        }
+      ]
+    },
+    {
+      "variant": "temporal_arbitration",
+      "correct": 3,
+      "total": 3,
+      "rows": [
+        {
+          "case_id": "mentioned_on_vs_happened_on",
+          "query": "When did the deal close?",
+          "expected_answer": "2026-05-13",
+          "answer": "2026-05-13",
+          "passed": true,
+          "evidence_ids": [
+            "deal_close_retro"
+          ],
+          "rationale": "prefer event_time for close-date question over later mention_time",
+          "note": "The message was written on 2026-05-20, but the true event happened on 2026-05-13."
+        },
+        {
+          "case_id": "interval_between_two_anchors",
+          "query": "Between the lease signing and partner approval, what happened?",
+          "expected_answer": "The board requested one more budget revision on 2026-05-06.",
+          "answer": "The board requested one more budget revision on 2026-05-06.",
+          "passed": true,
+          "evidence_ids": [
+            "budget_revision"
+          ],
+          "rationale": "resolve query as an event_time interval between two anchors",
+          "note": "The answer should come from the event inside the interval, not from one of the anchor events or the most recent write."
+        },
+        {
+          "case_id": "before_anchor_day",
+          "query": "What happened before the keynote day?",
+          "expected_answer": "The keynote rehearsal happened on 2026-06-09.",
+          "answer": "The keynote rehearsal happened on 2026-06-09.",
+          "passed": true,
+          "evidence_ids": [
+            "rehearsal"
+          ],
+          "rationale": "filter candidates by event_time before keynote anchor",
+          "note": "The system should select the latest event before the anchor day, not just any related event."
+        }
+      ]
+    }
+  ]
+}

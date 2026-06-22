@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EchoMemory Nano Readiness Temporal Ablation</title>
+  <style>
+    :root {
+      --bg:#f6f7fb; --panel:#fff; --text:#1f2937; --muted:#667085; --line:#e5e7eb;
+      --blue:#2563eb; --green:#047857; --red:#b42318; --amber:#b45309;
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0; background:var(--bg); color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; line-height:1.6;
+    }
+    .wrap { width:min(1200px, calc(100vw - 32px)); margin:24px auto 48px; }
+    .panel {
+      background:var(--panel); border:1px solid var(--line); border-radius:10px;
+      padding:20px 22px; margin-bottom:16px;
+    }
+    h1,h2,h3 { margin:0 0 12px; }
+    p { margin:8px 0; }
+    .muted,.mini,.note { color:var(--muted); }
+    .metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:12px; }
+    .metric { border:1px solid var(--line); border-radius:8px; padding:12px; background:#fafafa; }
+    .metric .label { font-size:12px; color:var(--muted); text-transform:uppercase; }
+    .metric .value { font-size:28px; font-weight:700; margin-top:4px; }
+    .callout {
+      background:#eff6ff; border-left:4px solid var(--blue); border-radius:8px; padding:12px 14px;
+    }
+    ul { margin:8px 0 0 18px; padding:0; }
+    table { width:100%; border-collapse:collapse; font-size:14px; }
+    th,td { border-top:1px solid var(--line); padding:10px; text-align:left; vertical-align:top; }
+    th { background:#fafafa; color:var(--muted); font-size:12px; border-top:0; }
+    .badge {
+      display:inline-block; border-radius:999px; padding:3px 8px; font-size:12px; font-weight:600;
+      color:#fff;
+    }
+    .badge.ok { background:var(--green); }
+    .badge.bad { background:var(--red); }
+    .detail td { background:#fcfcfd; }
+    code { background:#f4f4f5; padding:2px 5px; border-radius:5px; font-size:12px; }
+    @media (max-width: 900px) {
+      .metrics { grid-template-columns:1fr; }
+      .wrap { width:min(100vw - 20px, 1200px); }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="panel">
+      <h1>EchoMemory Nano Ablation: Readiness + Temporal Normalize + Graph-First</h1>
+      <p class="muted">
+        这个 nano 实验不追求复杂，而是专门对准 EchoMemory 当前最关键的三个系统问题：
+        记忆是否 QA-ready、相对时间是否被解析成 story time、以及 graph 是否真的改变时间链问题的检索。
+      </p>
+      <div class="callout">
+        这里对比三套系统：
+        <strong>baseline</strong>（无时间归一、无 graph-first、无 readiness gate）、
+        <strong>temporal_graph</strong>（有时间归一 + graph-first）、
+        <strong>full</strong>（再加 readiness gate）。
+      </div>
+      <div class="metrics">
+        <div class="metric">
+          <div class="label">baseline</div>
+          <div class="value">1/5</div>
+        </div>
+        
+        <div class="metric">
+          <div class="label">temporal_graph</div>
+          <div class="value">4/5</div>
+        </div>
+        
+        <div class="metric">
+          <div class="label">full</div>
+          <div class="value">5/5</div>
+        </div>
+        </div>
+    </section>
+
+    <section class="panel">
+      <h2>测试场景</h2>
+      <ul><li><code>2025-05-10</code> · Yesterday Jon lost his job at the bank.</li><li><code>2025-05-15</code> · Two days ago Gina visited Rome for a design fair.</li><li><code>2025-05-18</code> · Maya introduced Jon to Lena.</li></ul>
+    </section>
+
+    <section class="panel">
+      <h2>为什么这组实验重要</h2>
+      <ul>
+        <li><strong>relative time：</strong> “Yesterday / Two days ago” 会暴露 write time 和 story time 混淆。</li>
+        <li><strong>temporal chain：</strong> “What happened before ...” 会暴露 graph 的 <code>temporal_next</code> 是否只是摆设。</li>
+        <li><strong>readiness：</strong> 如果 messages 已写入，但 graph / organized 尚未构建，系统是否还会贸然回答。</li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>逐题结果</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>阶段</th>
+            <th>Case</th>
+            <th>系统</th>
+            <th>问题</th>
+            <th>期望</th>
+            <th>结果</th>
+            <th>Status</th>
+            <th>Answer</th>
+          </tr>
+        </thead>
+        <tbody>
+        <tr>
+          <td>before_cold_path</td>
+          <td><code>readiness_pre_cold</code></td>
+          <td>baseline</td>
+          <td>When did Jon lose his job?</td>
+          <td>status should be not_ready</td>
+          <td><span class="badge bad">fail</span></td>
+          <td>ok</td>
+          <td>2025-05-10</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="note">This checks whether a system treats persisted messages as immediately answerable, or waits until memory is QA-ready.</div>
+            <div class="mini">plan={&#x27;intent&#x27;: &#x27;temporal&#x27;, &#x27;target_layers&#x27;: [&#x27;event&#x27;, &#x27;fact&#x27;], &#x27;notes&#x27;: &#x27;Prefer story-time carrying event nodes.&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_extracted&#x27;: True, &#x27;graph_built&#x27;: False, &#x27;qa_ready&#x27;: False}</div>
+            <div class="mini">top_hits=[{&#x27;score&#x27;: 3.0, &#x27;node_id&#x27;: &#x27;atom-000-00&#x27;, &#x27;node_type&#x27;: &#x27;event&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-10&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-10&#x27;, &#x27;content&#x27;: &#x27;Yesterday Jon lost his job at the bank.&#x27;}, {&#x27;score&#x27;: 1.0, &#x27;node_id&#x27;: &#x27;atom-002-03&#x27;, &#x27;node_type&#x27;: &#x27;relation&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-18&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-18&#x27;, &#x27;content&#x27;: &#x27;Maya introduced Jon to Lena.&#x27;}]</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>before_cold_path</td>
+          <td><code>readiness_pre_cold</code></td>
+          <td>temporal_graph</td>
+          <td>When did Jon lose his job?</td>
+          <td>status should be not_ready</td>
+          <td><span class="badge bad">fail</span></td>
+          <td>ok</td>
+          <td>2025-05-09</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="note">This checks whether a system treats persisted messages as immediately answerable, or waits until memory is QA-ready.</div>
+            <div class="mini">plan={&#x27;intent&#x27;: &#x27;temporal&#x27;, &#x27;target_layers&#x27;: [&#x27;event&#x27;, &#x27;fact&#x27;], &#x27;notes&#x27;: &#x27;Prefer story-time carrying event nodes.&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_extracted&#x27;: True, &#x27;graph_built&#x27;: False, &#x27;qa_ready&#x27;: False}</div>
+            <div class="mini">top_hits=[{&#x27;score&#x27;: 3.0, &#x27;node_id&#x27;: &#x27;atom-000-00&#x27;, &#x27;node_type&#x27;: &#x27;event&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-09&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-10&#x27;, &#x27;content&#x27;: &#x27;Yesterday Jon lost his job at the bank.&#x27;}, {&#x27;score&#x27;: 1.0, &#x27;node_id&#x27;: &#x27;atom-002-03&#x27;, &#x27;node_type&#x27;: &#x27;relation&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-18&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-18&#x27;, &#x27;content&#x27;: &#x27;Maya introduced Jon to Lena.&#x27;}]</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>before_cold_path</td>
+          <td><code>readiness_pre_cold</code></td>
+          <td>full</td>
+          <td>When did Jon lose his job?</td>
+          <td>status should be not_ready</td>
+          <td><span class="badge ok">pass</span></td>
+          <td>not_ready</td>
+          <td>not_ready</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="note">This checks whether a system treats persisted messages as immediately answerable, or waits until memory is QA-ready.</div>
+            <div class="mini">plan={&#x27;intent&#x27;: &#x27;temporal&#x27;, &#x27;target_layers&#x27;: [&#x27;event&#x27;, &#x27;fact&#x27;], &#x27;notes&#x27;: &#x27;Prefer story-time carrying event nodes.&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_extracted&#x27;: True, &#x27;graph_built&#x27;: False, &#x27;qa_ready&#x27;: False}</div>
+            <div class="mini">top_hits=[]</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>after_cold_path</td>
+          <td><code>temporal_date_job</code></td>
+          <td>baseline</td>
+          <td>When did Jon lose his job?</td>
+          <td>2025-05-09</td>
+          <td><span class="badge bad">fail</span></td>
+          <td>ok</td>
+          <td>2025-05-10</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="note">Baseline tends to confuse write time with story time; improved systems should recover the resolved story date.</div>
+            <div class="mini">plan={&#x27;intent&#x27;: &#x27;temporal&#x27;, &#x27;target_layers&#x27;: [&#x27;event&#x27;, &#x27;fact&#x27;], &#x27;notes&#x27;: &#x27;Prefer story-time carrying event nodes.&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_extracted&#x27;: True, &#x27;graph_built&#x27;: True, &#x27;qa_ready&#x27;: True}</div>
+            <div class="mini">top_hits=[{&#x27;score&#x27;: 3.0, &#x27;node_id&#x27;: &#x27;atom-000-00&#x27;, &#x27;node_type&#x27;: &#x27;event&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-10&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-10&#x27;, &#x27;content&#x27;: &#x27;Yesterday Jon lost his job at the bank.&#x27;}, {&#x27;score&#x27;: 1.0, &#x27;node_id&#x27;: &#x27;atom-002-03&#x27;, &#x27;node_type&#x27;: &#x27;relation&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-18&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-18&#x27;, &#x27;content&#x27;: &#x27;Maya introduced Jon to Lena.&#x27;}]</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>after_cold_path</td>
+          <td><code>temporal_date_job</code></td>
+          <td>temporal_graph</td>
+          <td>When did Jon lose his job?</td>
+          <td>2025-05-09</td>
+          <td><span class="badge ok">pass</span></td>
+          <td>ok</td>
+          <td>2025-05-09</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="note">Baseline tends to confuse write time with story time; improved systems should recover the resolved story date.</div>
+            <div class="mini">plan={&#x27;intent&#x27;: &#x27;temporal&#x27;, &#x27;target_layers&#x27;: [&#x27;event&#x27;, &#x27;fact&#x27;], &#x27;notes&#x27;: &#x27;Prefer story-time carrying event nodes.&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_extracted&#x27;: True, &#x27;graph_built&#x27;: True, &#x27;qa_ready&#x27;: True}</div>
+            <div class="mini">top_hits=[{&#x27;score&#x27;: 5.0, &#x27;node_id&#x27;: &#x27;event:atom-000-00&#x27;, &#x27;node_type&#x27;: &#x27;event&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-09&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-10&#x27;, &#x27;content&#x27;: &#x27;statement=Yesterday Jon lost his job at the bank.\nstory_time=2025-05-09\nparticipants=Jon, job&#x27;}, {&#x27;score&#x27;: 3.0, &#x27;node_id&#x27;: &#x27;event:atom-002-03&#x27;, &#x27;node_type&#x27;: &#x27;event&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-18&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-18&#x27;, &#x27;content&#x27;: &#x27;statement=Maya introduced Jon to Lena.\nstory_time=2025-05-18\nparticipants=Maya, Jon-&gt;Lena&#x27;}]</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>after_cold_path</td>
+          <td><code>temporal_date_job</code></td>
+          <td>full</td>
+          <td>When did Jon lose his job?</td>
+          <td>2025-05-09</td>
+          <td><span class="badge ok">pass</span></td>
+          <td>ok</td>
+          <td>2025-05-09</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="note">Baseline tends to confuse write time with story time; improved systems should recover the resolved story date.</div>
+            <div class="mini">plan={&#x27;intent&#x27;: &#x27;temporal&#x27;, &#x27;target_layers&#x27;: [&#x27;event&#x27;, &#x27;fact&#x27;], &#x27;notes&#x27;: &#x27;Prefer story-time carrying event nodes.&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_extracted&#x27;: True, &#x27;graph_built&#x27;: True, &#x27;qa_ready&#x27;: True}</div>
+            <div class="mini">top_hits=[{&#x27;score&#x27;: 5.0, &#x27;node_id&#x27;: &#x27;event:atom-000-00&#x27;, &#x27;node_type&#x27;: &#x27;event&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-09&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-10&#x27;, &#x27;content&#x27;: &#x27;statement=Yesterday Jon lost his job at the bank.\nstory_time=2025-05-09\nparticipants=Jon, job&#x27;}, {&#x27;score&#x27;: 3.0, &#x27;node_id&#x27;: &#x27;event:atom-002-03&#x27;, &#x27;node_type&#x27;: &#x27;event&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-18&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-18&#x27;, &#x27;content&#x27;: &#x27;statement=Maya introduced Jon to Lena.\nstory_time=2025-05-18\nparticipants=Maya, Jon-&gt;Lena&#x27;}]</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>after_cold_path</td>
+          <td><code>temporal_date_rome</code></td>
+          <td>baseline</td>
+          <td>When did Gina visit Rome?</td>
+          <td>2025-05-13</td>
+          <td><span class="badge bad">fail</span></td>
+          <td>ok</td>
+          <td>2025-05-15</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="note">A second relative-time case to show this is not a one-off rule.</div>
+            <div class="mini">plan={&#x27;intent&#x27;: &#x27;temporal&#x27;, &#x27;target_layers&#x27;: [&#x27;event&#x27;, &#x27;fact&#x27;], &#x27;notes&#x27;: &#x27;Prefer story-time carrying event nodes.&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_extracted&#x27;: True, &#x27;graph_built&#x27;: True, &#x27;qa_ready&#x27;: True}</div>
+            <div class="mini">top_hits=[{&#x27;score&#x27;: 2.0, &#x27;node_id&#x27;: &#x27;atom-001-01&#x27;, &#x27;node_type&#x27;: &#x27;event&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-15&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-15&#x27;, &#x27;content&#x27;: &#x27;Two days ago Gina visited Rome for a design fair.&#x27;}]</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>after_cold_path</td>
+          <td><code>temporal_date_rome</code></td>
+          <td>temporal_graph</td>
+          <td>When did Gina visit Rome?</td>
+          <td>2025-05-13</td>
+          <td><span class="badge ok">pass</span></td>
+          <td>ok</td>
+          <td>2025-05-13</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="note">A second relative-time case to show this is not a one-off rule.</div>
+            <div class="mini">plan={&#x27;intent&#x27;: &#x27;temporal&#x27;, &#x27;target_layers&#x27;: [&#x27;event&#x27;, &#x27;fact&#x27;], &#x27;notes&#x27;: &#x27;Prefer story-time carrying event nodes.&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_extracted&#x27;: True, &#x27;graph_built&#x27;: True, &#x27;qa_ready&#x27;: True}</div>
+            <div class="mini">top_hits=[{&#x27;score&#x27;: 4.0, &#x27;node_id&#x27;: &#x27;event:atom-001-01&#x27;, &#x27;node_type&#x27;: &#x27;event&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-13&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-15&#x27;, &#x27;content&#x27;: &#x27;statement=Two days ago Gina visited Rome for a design fair.\nstory_time=2025-05-13\nparticipants=Gina, Rome&#x27;}, {&#x27;score&#x27;: 2.0, &#x27;node_id&#x27;: &#x27;fact:atom-001-01&#x27;, &#x27;node_type&#x27;: &#x27;fact&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-13&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-15&#x27;, &#x27;content&#x27;: &#x27;statement=Two days ago Gina visited Rome for a design fair.\nsubject=Gina\npredicate=visited\nobject=Rome\nstory_time=2025-05-13\ncreated_at=2025-05-15&#x27;}]</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>after_cold_path</td>
+          <td><code>temporal_date_rome</code></td>
+          <td>full</td>
+          <td>When did Gina visit Rome?</td>
+          <td>2025-05-13</td>
+          <td><span class="badge ok">pass</span></td>
+          <td>ok</td>
+          <td>2025-05-13</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="note">A second relative-time case to show this is not a one-off rule.</div>
+            <div class="mini">plan={&#x27;intent&#x27;: &#x27;temporal&#x27;, &#x27;target_layers&#x27;: [&#x27;event&#x27;, &#x27;fact&#x27;], &#x27;notes&#x27;: &#x27;Prefer story-time carrying event nodes.&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_extracted&#x27;: True, &#x27;graph_built&#x27;: True, &#x27;qa_ready&#x27;: True}</div>
+            <div class="mini">top_hits=[{&#x27;score&#x27;: 4.0, &#x27;node_id&#x27;: &#x27;event:atom-001-01&#x27;, &#x27;node_type&#x27;: &#x27;event&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-13&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-15&#x27;, &#x27;content&#x27;: &#x27;statement=Two days ago Gina visited Rome for a design fair.\nstory_time=2025-05-13\nparticipants=Gina, Rome&#x27;}, {&#x27;score&#x27;: 2.0, &#x27;node_id&#x27;: &#x27;fact:atom-001-01&#x27;, &#x27;node_type&#x27;: &#x27;fact&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-13&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-15&#x27;, &#x27;content&#x27;: &#x27;statement=Two days ago Gina visited Rome for a design fair.\nsubject=Gina\npredicate=visited\nobject=Rome\nstory_time=2025-05-13\ncreated_at=2025-05-15&#x27;}]</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>after_cold_path</td>
+          <td><code>temporal_chain_before_intro</code></td>
+          <td>baseline</td>
+          <td>What happened before Maya introduced Jon to Lena?</td>
+          <td>Gina visited Rome on 2025-05-13</td>
+          <td><span class="badge bad">fail</span></td>
+          <td>ok</td>
+          <td>2025-05-18</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="note">This is the graph-specific case: the answer should come from the temporal_next chain, not just token overlap.</div>
+            <div class="mini">plan={&#x27;intent&#x27;: &#x27;temporal&#x27;, &#x27;target_layers&#x27;: [&#x27;event&#x27;, &#x27;fact&#x27;], &#x27;notes&#x27;: &#x27;Prefer story-time carrying event nodes.&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_extracted&#x27;: True, &#x27;graph_built&#x27;: True, &#x27;qa_ready&#x27;: True}</div>
+            <div class="mini">top_hits=[{&#x27;score&#x27;: 5.0, &#x27;node_id&#x27;: &#x27;atom-002-03&#x27;, &#x27;node_type&#x27;: &#x27;relation&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-18&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-18&#x27;, &#x27;content&#x27;: &#x27;Maya introduced Jon to Lena.&#x27;}, {&#x27;score&#x27;: 1.0, &#x27;node_id&#x27;: &#x27;atom-000-00&#x27;, &#x27;node_type&#x27;: &#x27;event&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-10&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-10&#x27;, &#x27;content&#x27;: &#x27;Yesterday Jon lost his job at the bank.&#x27;}]</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>after_cold_path</td>
+          <td><code>temporal_chain_before_intro</code></td>
+          <td>temporal_graph</td>
+          <td>What happened before Maya introduced Jon to Lena?</td>
+          <td>Gina visited Rome on 2025-05-13</td>
+          <td><span class="badge ok">pass</span></td>
+          <td>ok</td>
+          <td>2025-05-13</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="note">This is the graph-specific case: the answer should come from the temporal_next chain, not just token overlap.</div>
+            <div class="mini">plan={&#x27;intent&#x27;: &#x27;temporal&#x27;, &#x27;target_layers&#x27;: [&#x27;event&#x27;, &#x27;fact&#x27;], &#x27;notes&#x27;: &#x27;Prefer story-time carrying event nodes.&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_extracted&#x27;: True, &#x27;graph_built&#x27;: True, &#x27;qa_ready&#x27;: True}</div>
+            <div class="mini">top_hits=[{&#x27;score&#x27;: 5.0, &#x27;node_id&#x27;: &#x27;event:atom-001-01&#x27;, &#x27;node_type&#x27;: &#x27;event&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-13&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-15&#x27;, &#x27;content&#x27;: &#x27;statement=Two days ago Gina visited Rome for a design fair.\nstory_time=2025-05-13\nparticipants=Gina, Rome&#x27;}]</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>after_cold_path</td>
+          <td><code>temporal_chain_before_intro</code></td>
+          <td>full</td>
+          <td>What happened before Maya introduced Jon to Lena?</td>
+          <td>Gina visited Rome on 2025-05-13</td>
+          <td><span class="badge ok">pass</span></td>
+          <td>ok</td>
+          <td>2025-05-13</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="note">This is the graph-specific case: the answer should come from the temporal_next chain, not just token overlap.</div>
+            <div class="mini">plan={&#x27;intent&#x27;: &#x27;temporal&#x27;, &#x27;target_layers&#x27;: [&#x27;event&#x27;, &#x27;fact&#x27;], &#x27;notes&#x27;: &#x27;Prefer story-time carrying event nodes.&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_extracted&#x27;: True, &#x27;graph_built&#x27;: True, &#x27;qa_ready&#x27;: True}</div>
+            <div class="mini">top_hits=[{&#x27;score&#x27;: 5.0, &#x27;node_id&#x27;: &#x27;event:atom-001-01&#x27;, &#x27;node_type&#x27;: &#x27;event&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-13&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-15&#x27;, &#x27;content&#x27;: &#x27;statement=Two days ago Gina visited Rome for a design fair.\nstory_time=2025-05-13\nparticipants=Gina, Rome&#x27;}]</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>after_cold_path</td>
+          <td><code>relation_intro</code></td>
+          <td>baseline</td>
+          <td>Who introduced Jon to Lena?</td>
+          <td>Maya</td>
+          <td><span class="badge ok">pass</span></td>
+          <td>ok</td>
+          <td>Maya introduced Jon to Lena.</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="note">A sanity check that the improved system still handles direct relation questions.</div>
+            <div class="mini">plan={&#x27;intent&#x27;: &#x27;relational&#x27;, &#x27;target_layers&#x27;: [&#x27;relation&#x27;, &#x27;entity&#x27;, &#x27;event&#x27;, &#x27;fact&#x27;], &#x27;notes&#x27;: &#x27;Prefer relation/entity path for people-company linkage questions.&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_extracted&#x27;: True, &#x27;graph_built&#x27;: True, &#x27;qa_ready&#x27;: True}</div>
+            <div class="mini">top_hits=[{&#x27;score&#x27;: 4.0, &#x27;node_id&#x27;: &#x27;atom-002-03&#x27;, &#x27;node_type&#x27;: &#x27;relation&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-18&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-18&#x27;, &#x27;content&#x27;: &#x27;Maya introduced Jon to Lena.&#x27;}, {&#x27;score&#x27;: 1.0, &#x27;node_id&#x27;: &#x27;atom-000-00&#x27;, &#x27;node_type&#x27;: &#x27;event&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-10&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-10&#x27;, &#x27;content&#x27;: &#x27;Yesterday Jon lost his job at the bank.&#x27;}]</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>after_cold_path</td>
+          <td><code>relation_intro</code></td>
+          <td>temporal_graph</td>
+          <td>Who introduced Jon to Lena?</td>
+          <td>Maya</td>
+          <td><span class="badge ok">pass</span></td>
+          <td>ok</td>
+          <td>Maya introduced_to Jon-&gt;Lena</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="note">A sanity check that the improved system still handles direct relation questions.</div>
+            <div class="mini">plan={&#x27;intent&#x27;: &#x27;relational&#x27;, &#x27;target_layers&#x27;: [&#x27;relation&#x27;, &#x27;entity&#x27;, &#x27;event&#x27;, &#x27;fact&#x27;], &#x27;notes&#x27;: &#x27;Prefer relation/entity path for people-company linkage questions.&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_extracted&#x27;: True, &#x27;graph_built&#x27;: True, &#x27;qa_ready&#x27;: True}</div>
+            <div class="mini">top_hits=[{&#x27;score&#x27;: 6.0, &#x27;node_id&#x27;: &#x27;relation:atom-002-03&#x27;, &#x27;node_type&#x27;: &#x27;relation&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-18&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-18&#x27;, &#x27;content&#x27;: &#x27;relation=Maya introduced_to Jon-&gt;Lena\nstatement=Maya introduced Jon to Lena.\nstory_time=2025-05-18&#x27;}, {&#x27;score&#x27;: 6.0, &#x27;node_id&#x27;: &#x27;entity:Jon-&gt;Lena&#x27;, &#x27;node_type&#x27;: &#x27;entity&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-18&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-18&#x27;, &#x27;content&#x27;: &#x27;name=Jon-&gt;Lena\nfirst_seen=Maya introduced Jon to Lena.&#x27;}]</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td>after_cold_path</td>
+          <td><code>relation_intro</code></td>
+          <td>full</td>
+          <td>Who introduced Jon to Lena?</td>
+          <td>Maya</td>
+          <td><span class="badge ok">pass</span></td>
+          <td>ok</td>
+          <td>Maya introduced_to Jon-&gt;Lena</td>
+        </tr>
+        <tr class="detail">
+          <td colspan="8">
+            <div class="note">A sanity check that the improved system still handles direct relation questions.</div>
+            <div class="mini">plan={&#x27;intent&#x27;: &#x27;relational&#x27;, &#x27;target_layers&#x27;: [&#x27;relation&#x27;, &#x27;entity&#x27;, &#x27;event&#x27;, &#x27;fact&#x27;], &#x27;notes&#x27;: &#x27;Prefer relation/entity path for people-company linkage questions.&#x27;}</div>
+            <div class="mini">readiness={&#x27;messages_persisted&#x27;: True, &#x27;atoms_extracted&#x27;: True, &#x27;graph_built&#x27;: True, &#x27;qa_ready&#x27;: True}</div>
+            <div class="mini">top_hits=[{&#x27;score&#x27;: 6.0, &#x27;node_id&#x27;: &#x27;relation:atom-002-03&#x27;, &#x27;node_type&#x27;: &#x27;relation&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-18&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-18&#x27;, &#x27;content&#x27;: &#x27;relation=Maya introduced_to Jon-&gt;Lena\nstatement=Maya introduced Jon to Lena.\nstory_time=2025-05-18&#x27;}, {&#x27;score&#x27;: 6.0, &#x27;node_id&#x27;: &#x27;entity:Jon-&gt;Lena&#x27;, &#x27;node_type&#x27;: &#x27;entity&#x27;, &#x27;story_time&#x27;: &#x27;2025-05-18&#x27;, &#x27;created_at&#x27;: &#x27;2025-05-18&#x27;, &#x27;content&#x27;: &#x27;name=Jon-&gt;Lena\nfirst_seen=Maya introduced Jon to Lena.&#x27;}]</div>
+          </td>
+        </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h2>可写进论文的结论</h2>
+      <ul>
+        <li><strong>readiness gate</strong> 不是“更保守的 UI”，而是一个系统正确性约束：写入成功不等于 QA-ready。</li>
+        <li><strong>temporal normalize</strong> 直接改善 relative-time 问题，不是只靠后端 LLM 猜时间。</li>
+        <li><strong>graph-first retrieval</strong> 在时间链问题上能产生与 flat lexical retrieval 不同的行为，这一点是可以做 ablation 的。</li>
+      </ul>
+    </section>
+  </div>
+</body>
+</html>

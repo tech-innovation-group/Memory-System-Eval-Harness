@@ -3,7 +3,7 @@
 Web 地址：
 
 ```text
-http://127.0.0.1:19181/
+<WEB_BASE_URL>/
 ```
 
 当前版本已经去掉原生机器人评测入口。可用流程是：
@@ -28,13 +28,13 @@ LoCoMo 数据集
 浏览器访问：
 
 ```text
-http://127.0.0.1:19181/
+<WEB_BASE_URL>/
 ```
 
 如果服务没有启动：
 
 ```bash
-cd /Users/chx/locomo-eval-web
+cd <repo-root>
 python3 server.py --host 127.0.0.1 --port 19181
 ```
 
@@ -66,7 +66,7 @@ dataset/locomo10.json
 ```text
 Host: 127.0.0.1
 Port: 1933
-Workspace: /Users/chx/openviking_workspace
+Workspace: <openviking-workspace>
 Account: default
 ```
 
@@ -207,13 +207,13 @@ How do Jon and Gina both like to destress?
 ### 页面打不开
 
 ```bash
-curl http://127.0.0.1:19181/health
+curl <WEB_BASE_URL>/health
 ```
 
 如果失败，重启：
 
 ```bash
-cd /Users/chx/locomo-eval-web
+cd <repo-root>
 python3 server.py --host 127.0.0.1 --port 19181
 ```
 

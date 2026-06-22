@@ -17,12 +17,12 @@
 
 3. LongMemEval 新结果
    - Acronym-alias 100-row local run: exact reference 80/100。
-   - CSV: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_acronym_100/local_agent/local_agent_results.csv`
+   - CSV: `<repo-root>/runs/manual_longmemeval_acronym_100/local_agent/local_agent_results.csv`
 
 4. Formal Judge 新结果
    - 从 acronym-alias 100-row run 复制前 50 行到独立 smoke run。
    - Formal Judge: 50/50，100.0%。
-   - Report: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_acronym_judge_smoke_50/report.md`
+   - Report: `<repo-root>/runs/manual_longmemeval_acronym_judge_smoke_50/report.md`
 
 5. UI / 文档更新
    - Runs 页面 quick cards 更新到最新结果：80/100 exact、50/50 formal。

@@ -21,7 +21,7 @@ This segment improved pending-Judge triage. Pending rows can now be exported as 
 - `node --check static/app.js`: passed.
 - `python3 -m py_compile server.py`: passed.
 - `/api/export-pending-csv`:
-  - LongMemEval 100 exports 100 rows to `/Users/chx/locomo-eval-web/runs/manual_longmemeval_100_check_v2/local_agent/local_agent_results.pending_judge.csv`.
+  - LongMemEval 100 exports 100 rows to `<repo-root>/runs/manual_longmemeval_100_check_v2/local_agent/local_agent_results.pending_judge.csv`.
   - LoCoMo judged smoke exports 0 rows.
 - Browser verification:
   - Pending panel shows `导出 pending CSV`.

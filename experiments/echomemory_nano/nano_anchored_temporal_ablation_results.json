@@ -1,0 +1,525 @@
+{
+  "summary": {
+    "cases": 3,
+    "tree_only_passed": 3,
+    "graph_only_passed": 2,
+    "dual_passed": 3
+  },
+  "cases": [
+    {
+      "case_id": "yesterday_loss",
+      "query": "What happened yesterday?",
+      "query_time": "2023-01-21T09:00:00+00:00",
+      "expected_keywords": [
+        "2023-01-19",
+        "lost his banker job"
+      ],
+      "expected_top_layers": [
+        "temporal_tree"
+      ],
+      "note": "Relative day query should anchor to query_time and prefer day/month blocks.",
+      "tree_only": {
+        "mode": "tree_only",
+        "hits": [
+          {
+            "source": "month:2023-01",
+            "layer": "temporal_tree",
+            "score": 1.1333333333333333,
+            "content": "level=month\nkey=2023-01\n- 2023-01-19: Jon lost his banker job yesterday and decided to start a studio."
+          },
+          {
+            "source": "year:2023",
+            "layer": "temporal_tree",
+            "score": 0.9833333333333334,
+            "content": "level=year\nkey=2023\n- 2023-01-19: Jon lost his banker job yesterday and decided to start a studio.\n- 2023-04: Jon opened his studio in April 2023 after months of preparation.\n- 2023-04: Jon started expanding his studio social media presence in April 2023.\n- 2023-06-19: Jon visited Rome on 2023-06-19.\n- 2023-07: Jon started learning marketing and analytics tools in July 2023."
+          },
+          {
+            "source": "day:2023-01-19",
+            "layer": "temporal_tree",
+            "score": 0.3333333333333333,
+            "content": "level=day\nkey=2023-01-19\n- 2023-01-19: Jon lost his banker job yesterday and decided to start a studio."
+          }
+        ]
+      },
+      "tree_only_judge": {
+        "top_layer": "temporal_tree",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      },
+      "graph_only": {
+        "mode": "graph_only",
+        "hits": [
+          {
+            "source": "event:atom-000",
+            "layer": "event",
+            "score": 0.4833333333333333,
+            "content": "unknown / mentions / Jon lost his banker job yesterday and decided to\nstatement=Jon lost his banker job yesterday and decided to start a studio.\nevent_time=2023-01-19"
+          },
+          {
+            "source": "fact:atom-000",
+            "layer": "fact",
+            "score": 0.3333333333333333,
+            "content": "statement=Jon lost his banker job yesterday and decided to start a studio.\nsubject=unknown\npredicate=mentions\nobject=Jon lost his banker job yesterday and decided to\nmention_time=2023-01-20\nevent_time=2023-01-19\ntime_confidence=0.20"
+          },
+          {
+            "source": "event:atom-001",
+            "layer": "event",
+            "score": 0.15,
+            "content": "Jon / opened / studio\nstatement=Jon opened his studio in April 2023 after months of preparation.\nevent_time=2023-04"
+          },
+          {
+            "source": "event:atom-002",
+            "layer": "event",
+            "score": 0.15,
+            "content": "Jon / started_expanding_social_media / studio_social_media\nstatement=Jon started expanding his studio social media presence in April 2023.\nevent_time=2023-04"
+          },
+          {
+            "source": "event:atom-003",
+            "layer": "event",
+            "score": 0.15,
+            "content": "Jon / started_learning / marketing_and_analytics_tools\nstatement=Jon started learning marketing and analytics tools in July 2023.\nevent_time=2023-07"
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.15,
+            "content": "Jon / visited / Rome\nstatement=Jon visited Rome on 2023-06-19.\nevent_time=2023-06-19"
+          }
+        ]
+      },
+      "graph_only_judge": {
+        "top_layer": "event",
+        "keyword_ok": true,
+        "top_layer_ok": false,
+        "overall_ok": false
+      },
+      "dual_backbone": {
+        "mode": "dual_backbone",
+        "hits": [
+          {
+            "source": "month:2023-01",
+            "layer": "temporal_tree",
+            "score": 1.1333333333333333,
+            "content": "level=month\nkey=2023-01\n- 2023-01-19: Jon lost his banker job yesterday and decided to start a studio."
+          },
+          {
+            "source": "year:2023",
+            "layer": "temporal_tree",
+            "score": 0.9833333333333334,
+            "content": "level=year\nkey=2023\n- 2023-01-19: Jon lost his banker job yesterday and decided to start a studio.\n- 2023-04: Jon opened his studio in April 2023 after months of preparation.\n- 2023-04: Jon started expanding his studio social media presence in April 2023.\n- 2023-06-19: Jon visited Rome on 2023-06-19.\n- 2023-07: Jon started learning marketing and analytics tools in July 2023."
+          },
+          {
+            "source": "event:atom-000",
+            "layer": "event",
+            "score": 0.4833333333333333,
+            "content": "unknown / mentions / Jon lost his banker job yesterday and decided to\nstatement=Jon lost his banker job yesterday and decided to start a studio.\nevent_time=2023-01-19"
+          },
+          {
+            "source": "day:2023-01-19",
+            "layer": "temporal_tree",
+            "score": 0.3333333333333333,
+            "content": "level=day\nkey=2023-01-19\n- 2023-01-19: Jon lost his banker job yesterday and decided to start a studio."
+          },
+          {
+            "source": "fact:atom-000",
+            "layer": "fact",
+            "score": 0.3333333333333333,
+            "content": "statement=Jon lost his banker job yesterday and decided to start a studio.\nsubject=unknown\npredicate=mentions\nobject=Jon lost his banker job yesterday and decided to\nmention_time=2023-01-20\nevent_time=2023-01-19\ntime_confidence=0.20"
+          },
+          {
+            "source": "org:unknown",
+            "layer": "organized",
+            "score": 0.3333333333333333,
+            "content": "2023-01-19: unknown mentions Jon lost his banker job yesterday and decided to"
+          },
+          {
+            "source": "event:atom-001",
+            "layer": "event",
+            "score": 0.15,
+            "content": "Jon / opened / studio\nstatement=Jon opened his studio in April 2023 after months of preparation.\nevent_time=2023-04"
+          },
+          {
+            "source": "event:atom-002",
+            "layer": "event",
+            "score": 0.15,
+            "content": "Jon / started_expanding_social_media / studio_social_media\nstatement=Jon started expanding his studio social media presence in April 2023.\nevent_time=2023-04"
+          }
+        ],
+        "plan": {
+          "intent": "temporal",
+          "target_layers": [
+            "temporal_tree",
+            "event",
+            "fact",
+            "organized"
+          ],
+          "graph_first": true,
+          "prefer_event": true,
+          "prefer_fact": false,
+          "notes": "Temporal question: prefer anchored temporal tree and story-time carrying event nodes."
+        }
+      },
+      "dual_backbone_judge": {
+        "top_layer": "temporal_tree",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      }
+    },
+    {
+      "case_id": "last_week_learning",
+      "query": "What happened last week about marketing and analytics tools?",
+      "query_time": "2023-07-17T09:00:00+00:00",
+      "expected_keywords": [
+        "2023-07",
+        "marketing and analytics tools"
+      ],
+      "expected_top_layers": [
+        "temporal_tree",
+        "event"
+      ],
+      "note": "Relative week query should find the anchored July event.",
+      "tree_only": {
+        "mode": "tree_only",
+        "hits": [
+          {
+            "source": "month:2023-07",
+            "layer": "temporal_tree",
+            "score": 1.2444444444444445,
+            "content": "level=month\nkey=2023-07\n- 2023-07: Jon started learning marketing and analytics tools in July 2023."
+          },
+          {
+            "source": "year:2023",
+            "layer": "temporal_tree",
+            "score": 1.0944444444444446,
+            "content": "level=year\nkey=2023\n- 2023-01-19: Jon lost his banker job yesterday and decided to start a studio.\n- 2023-04: Jon opened his studio in April 2023 after months of preparation.\n- 2023-04: Jon started expanding his studio social media presence in April 2023.\n- 2023-06-19: Jon visited Rome on 2023-06-19.\n- 2023-07: Jon started learning marketing and analytics tools in July 2023."
+          },
+          {
+            "source": "day:2023-07-01",
+            "layer": "temporal_tree",
+            "score": 0.4444444444444444,
+            "content": "level=day\nkey=2023-07-01\n- 2023-07: Jon started learning marketing and analytics tools in July 2023."
+          },
+          {
+            "source": "day:2023-01-19",
+            "layer": "temporal_tree",
+            "score": 0.1111111111111111,
+            "content": "level=day\nkey=2023-01-19\n- 2023-01-19: Jon lost his banker job yesterday and decided to start a studio."
+          },
+          {
+            "source": "month:2023-01",
+            "layer": "temporal_tree",
+            "score": 0.1111111111111111,
+            "content": "level=month\nkey=2023-01\n- 2023-01-19: Jon lost his banker job yesterday and decided to start a studio."
+          }
+        ]
+      },
+      "tree_only_judge": {
+        "top_layer": "temporal_tree",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      },
+      "graph_only": {
+        "mode": "graph_only",
+        "hits": [
+          {
+            "source": "event:atom-003",
+            "layer": "event",
+            "score": 0.5944444444444444,
+            "content": "Jon / started_learning / marketing_and_analytics_tools\nstatement=Jon started learning marketing and analytics tools in July 2023.\nevent_time=2023-07"
+          },
+          {
+            "source": "fact:atom-003",
+            "layer": "fact",
+            "score": 0.4444444444444444,
+            "content": "statement=Jon started learning marketing and analytics tools in July 2023.\nsubject=Jon\npredicate=started_learning\nobject=marketing_and_analytics_tools\nmention_time=2023-07-10\nevent_time=2023-07\ntime_confidence=0.95"
+          },
+          {
+            "source": "event:atom-000",
+            "layer": "event",
+            "score": 0.26111111111111107,
+            "content": "unknown / mentions / Jon lost his banker job yesterday and decided to\nstatement=Jon lost his banker job yesterday and decided to start a studio.\nevent_time=2023-01-19"
+          },
+          {
+            "source": "event:atom-001",
+            "layer": "event",
+            "score": 0.15,
+            "content": "Jon / opened / studio\nstatement=Jon opened his studio in April 2023 after months of preparation.\nevent_time=2023-04"
+          },
+          {
+            "source": "event:atom-002",
+            "layer": "event",
+            "score": 0.15,
+            "content": "Jon / started_expanding_social_media / studio_social_media\nstatement=Jon started expanding his studio social media presence in April 2023.\nevent_time=2023-04"
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.15,
+            "content": "Jon / visited / Rome\nstatement=Jon visited Rome on 2023-06-19.\nevent_time=2023-06-19"
+          }
+        ]
+      },
+      "graph_only_judge": {
+        "top_layer": "event",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      },
+      "dual_backbone": {
+        "mode": "dual_backbone",
+        "hits": [
+          {
+            "source": "month:2023-07",
+            "layer": "temporal_tree",
+            "score": 1.2444444444444445,
+            "content": "level=month\nkey=2023-07\n- 2023-07: Jon started learning marketing and analytics tools in July 2023."
+          },
+          {
+            "source": "year:2023",
+            "layer": "temporal_tree",
+            "score": 1.0944444444444446,
+            "content": "level=year\nkey=2023\n- 2023-01-19: Jon lost his banker job yesterday and decided to start a studio.\n- 2023-04: Jon opened his studio in April 2023 after months of preparation.\n- 2023-04: Jon started expanding his studio social media presence in April 2023.\n- 2023-06-19: Jon visited Rome on 2023-06-19.\n- 2023-07: Jon started learning marketing and analytics tools in July 2023."
+          },
+          {
+            "source": "event:atom-003",
+            "layer": "event",
+            "score": 0.5944444444444444,
+            "content": "Jon / started_learning / marketing_and_analytics_tools\nstatement=Jon started learning marketing and analytics tools in July 2023.\nevent_time=2023-07"
+          },
+          {
+            "source": "day:2023-07-01",
+            "layer": "temporal_tree",
+            "score": 0.4444444444444444,
+            "content": "level=day\nkey=2023-07-01\n- 2023-07: Jon started learning marketing and analytics tools in July 2023."
+          },
+          {
+            "source": "fact:atom-003",
+            "layer": "fact",
+            "score": 0.4444444444444444,
+            "content": "statement=Jon started learning marketing and analytics tools in July 2023.\nsubject=Jon\npredicate=started_learning\nobject=marketing_and_analytics_tools\nmention_time=2023-07-10\nevent_time=2023-07\ntime_confidence=0.95"
+          },
+          {
+            "source": "event:atom-000",
+            "layer": "event",
+            "score": 0.26111111111111107,
+            "content": "unknown / mentions / Jon lost his banker job yesterday and decided to\nstatement=Jon lost his banker job yesterday and decided to start a studio.\nevent_time=2023-01-19"
+          },
+          {
+            "source": "event:atom-001",
+            "layer": "event",
+            "score": 0.15,
+            "content": "Jon / opened / studio\nstatement=Jon opened his studio in April 2023 after months of preparation.\nevent_time=2023-04"
+          },
+          {
+            "source": "event:atom-002",
+            "layer": "event",
+            "score": 0.15,
+            "content": "Jon / started_expanding_social_media / studio_social_media\nstatement=Jon started expanding his studio social media presence in April 2023.\nevent_time=2023-04"
+          }
+        ],
+        "plan": {
+          "intent": "temporal",
+          "target_layers": [
+            "temporal_tree",
+            "event",
+            "fact",
+            "organized"
+          ],
+          "graph_first": true,
+          "prefer_event": true,
+          "prefer_fact": false,
+          "notes": "Temporal question: prefer anchored temporal tree and story-time carrying event nodes."
+        }
+      },
+      "dual_backbone_judge": {
+        "top_layer": "temporal_tree",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      }
+    },
+    {
+      "case_id": "rome_date",
+      "query": "When was Jon in Rome?",
+      "query_time": "2023-06-21T09:00:00+00:00",
+      "expected_keywords": [
+        "2023-06-19",
+        "visited Rome"
+      ],
+      "expected_top_layers": [
+        "temporal_tree",
+        "event"
+      ],
+      "note": "Explicit temporal question should be stable under anchored retrieval.",
+      "tree_only": {
+        "mode": "tree_only",
+        "hits": [
+          {
+            "source": "year:2023",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "level=year\nkey=2023\n- 2023-01-19: Jon lost his banker job yesterday and decided to start a studio.\n- 2023-04: Jon opened his studio in April 2023 after months of preparation.\n- 2023-04: Jon started expanding his studio social media presence in April 2023.\n- 2023-06-19: Jon visited Rome on 2023-06-19.\n- 2023-07: Jon started learning marketing and analytics tools in July 2023."
+          },
+          {
+            "source": "day:2023-04-01",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "level=day\nkey=2023-04-01\n- 2023-04: Jon opened his studio in April 2023 after months of preparation.\n- 2023-04: Jon started expanding his studio social media presence in April 2023."
+          },
+          {
+            "source": "day:2023-06-19",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "level=day\nkey=2023-06-19\n- 2023-06-19: Jon visited Rome on 2023-06-19."
+          },
+          {
+            "source": "day:2023-07-01",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "level=day\nkey=2023-07-01\n- 2023-07: Jon started learning marketing and analytics tools in July 2023."
+          },
+          {
+            "source": "month:2023-04",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "level=month\nkey=2023-04\n- 2023-04: Jon opened his studio in April 2023 after months of preparation.\n- 2023-04: Jon started expanding his studio social media presence in April 2023."
+          },
+          {
+            "source": "month:2023-06",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "level=month\nkey=2023-06\n- 2023-06-19: Jon visited Rome on 2023-06-19."
+          }
+        ]
+      },
+      "tree_only_judge": {
+        "top_layer": "temporal_tree",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      },
+      "graph_only": {
+        "mode": "graph_only",
+        "hits": [
+          {
+            "source": "event:atom-001",
+            "layer": "event",
+            "score": 0.55,
+            "content": "Jon / opened / studio\nstatement=Jon opened his studio in April 2023 after months of preparation.\nevent_time=2023-04"
+          },
+          {
+            "source": "event:atom-002",
+            "layer": "event",
+            "score": 0.55,
+            "content": "Jon / started_expanding_social_media / studio_social_media\nstatement=Jon started expanding his studio social media presence in April 2023.\nevent_time=2023-04"
+          },
+          {
+            "source": "event:atom-003",
+            "layer": "event",
+            "score": 0.55,
+            "content": "Jon / started_learning / marketing_and_analytics_tools\nstatement=Jon started learning marketing and analytics tools in July 2023.\nevent_time=2023-07"
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.55,
+            "content": "Jon / visited / Rome\nstatement=Jon visited Rome on 2023-06-19.\nevent_time=2023-06-19"
+          },
+          {
+            "source": "fact:atom-001",
+            "layer": "fact",
+            "score": 0.4,
+            "content": "statement=Jon opened his studio in April 2023 after months of preparation.\nsubject=Jon\npredicate=opened\nobject=studio\nmention_time=2023-04-20\nevent_time=2023-04\ntime_confidence=0.95"
+          },
+          {
+            "source": "fact:atom-002",
+            "layer": "fact",
+            "score": 0.4,
+            "content": "statement=Jon started expanding his studio social media presence in April 2023.\nsubject=Jon\npredicate=started_expanding_social_media\nobject=studio_social_media\nmention_time=2023-04-25\nevent_time=2023-04\ntime_confidence=0.95"
+          }
+        ]
+      },
+      "graph_only_judge": {
+        "top_layer": "event",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      },
+      "dual_backbone": {
+        "mode": "dual_backbone",
+        "hits": [
+          {
+            "source": "year:2023",
+            "layer": "temporal_tree",
+            "score": 0.6,
+            "content": "level=year\nkey=2023\n- 2023-01-19: Jon lost his banker job yesterday and decided to start a studio.\n- 2023-04: Jon opened his studio in April 2023 after months of preparation.\n- 2023-04: Jon started expanding his studio social media presence in April 2023.\n- 2023-06-19: Jon visited Rome on 2023-06-19.\n- 2023-07: Jon started learning marketing and analytics tools in July 2023."
+          },
+          {
+            "source": "event:atom-001",
+            "layer": "event",
+            "score": 0.55,
+            "content": "Jon / opened / studio\nstatement=Jon opened his studio in April 2023 after months of preparation.\nevent_time=2023-04"
+          },
+          {
+            "source": "event:atom-002",
+            "layer": "event",
+            "score": 0.55,
+            "content": "Jon / started_expanding_social_media / studio_social_media\nstatement=Jon started expanding his studio social media presence in April 2023.\nevent_time=2023-04"
+          },
+          {
+            "source": "event:atom-003",
+            "layer": "event",
+            "score": 0.55,
+            "content": "Jon / started_learning / marketing_and_analytics_tools\nstatement=Jon started learning marketing and analytics tools in July 2023.\nevent_time=2023-07"
+          },
+          {
+            "source": "event:atom-004",
+            "layer": "event",
+            "score": 0.55,
+            "content": "Jon / visited / Rome\nstatement=Jon visited Rome on 2023-06-19.\nevent_time=2023-06-19"
+          },
+          {
+            "source": "day:2023-04-01",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "level=day\nkey=2023-04-01\n- 2023-04: Jon opened his studio in April 2023 after months of preparation.\n- 2023-04: Jon started expanding his studio social media presence in April 2023."
+          },
+          {
+            "source": "day:2023-06-19",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "level=day\nkey=2023-06-19\n- 2023-06-19: Jon visited Rome on 2023-06-19."
+          },
+          {
+            "source": "day:2023-07-01",
+            "layer": "temporal_tree",
+            "score": 0.4,
+            "content": "level=day\nkey=2023-07-01\n- 2023-07: Jon started learning marketing and analytics tools in July 2023."
+          }
+        ],
+        "plan": {
+          "intent": "temporal",
+          "target_layers": [
+            "temporal_tree",
+            "event",
+            "fact",
+            "organized"
+          ],
+          "graph_first": true,
+          "prefer_event": true,
+          "prefer_fact": false,
+          "notes": "Temporal question: prefer anchored temporal tree and story-time carrying event nodes."
+        }
+      },
+      "dual_backbone_judge": {
+        "top_layer": "temporal_tree",
+        "keyword_ok": true,
+        "top_layer_ok": true,
+        "overall_ok": true
+      }
+    }
+  ]
+}

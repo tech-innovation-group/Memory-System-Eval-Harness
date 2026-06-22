@@ -11,6 +11,35 @@ from typing import Any
 DEFAULT_ACCOUNT = "default"
 SECRET_MARKERS = ("key", "token", "password", "secret")
 COUNTED_MEMORY_SUFFIXES = {".json", ".jsonl", ".md", ".txt", ".yaml", ".yml", ".csv"}
+BACKEND_CONFIG_ORDER = ("openviking", "echomemory")
+BACKEND_CONFIG_FIELDS = (
+    "echoImportMode",
+    "workspaceAuto",
+    "ovHost",
+    "ovPort",
+    "ovWorkspace",
+    "memoryWorkspace",
+    "echomemRoot",
+    "memoryUserId",
+    "memoryAgentId",
+    "ovApiKey",
+    "judgeBaseUrl",
+    "judgeModel",
+    "agentBaseUrl",
+    "agentModel",
+    "memoryInjectBaseUrl",
+    "memoryInjectModel",
+    "agentToken",
+    "judgeToken",
+    "memoryInjectToken",
+    "answerTokenSet",
+    "judgeTokenSet",
+    "echomemTokenSet",
+    "echomemEmbeddingTokenSet",
+    "echomemChatTokenSet",
+    "chatTopK",
+    "workspace_source",
+)
 
 
 def now_iso() -> str:
@@ -45,11 +74,81 @@ def is_legacy_fixed_workspace(workspace: str | Path | None) -> bool:
     return value.endswith("/openviking_workspace_new0420") or ("workspace" in name and retired_marker in name)
 
 
+def _equal_config_text(left: Any, right: Any) -> bool:
+    return str(left or "").strip().lower() == str(right or "").strip().lower()
+
+
+_MODEL_PREFIX_RE = re.compile(
+    r"^(gpt|o1|o3|o4|claude|deepseek|qwen|gemini|llama|mistral|glm|yi|moonshot|doubao|hunyuan|ernie|step|kimi)"
+    r"[A-Za-z0-9._:-]*$",
+    re.I,
+)
+_MODEL_KEYWORD_RE = re.compile(
+    r"(?:^|[-_.])(flash|turbo|preview|mini|nano|sonnet|haiku|opus|instruct|reasoner|chat|vision|vl)(?:$|[-_.0-9])",
+    re.I,
+)
+
+
+def _looks_like_model_identifier(value: str) -> bool:
+    """Return True if *value* looks like a model name rather than a file path."""
+    text = str(value or "").strip()
+    if not text or re.search(r"[/\\]", text) or text[0] in ".~" or " " in text:
+        return False
+    if _MODEL_PREFIX_RE.match(text):
+        return True
+    return bool(_MODEL_KEYWORD_RE.search(text))
+
+
+def workspace_looks_suspicious(workspace: str | Path | None, config: dict[str, Any]) -> bool:
+    value = str(workspace or "").strip()
+    if not value:
+        return False
+    if re.match(r"^https?://", value, re.I):
+        return True
+    if re.match(r"^(sk-|sess-|rk-)[A-Za-z0-9_-]+", value, re.I):
+        return True
+    if _looks_like_model_identifier(value):
+        return True
+    mirrors = [
+        config.get("judgeModel"),
+        config.get("agentModel"),
+        config.get("memoryInjectModel"),
+        config.get("judgeBaseUrl"),
+        config.get("agentBaseUrl"),
+        config.get("memoryInjectBaseUrl"),
+    ]
+    return any(str(item or "").strip() and _equal_config_text(item, value) for item in mirrors)
+
+
+def recover_workspace_from_backend_profile(config: dict[str, Any], active_backend: str) -> str:
+    profiles = normalize_backend_configs(config)
+    profile = pick_backend_config_fields(profiles.get(active_backend, {}))
+    for candidate in (profile.get("ovWorkspace"), profile.get("memoryWorkspace")):
+        value = str(candidate or "").strip()
+        if not value or is_legacy_fixed_workspace(value) or workspace_looks_suspicious(value, {**config, **profile}):
+            continue
+        return value
+    return ""
+
+
 def normalize_workspace_config(defaults: dict[str, Any], account: str, config: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(config or {})
     normalized["memoryBackend"] = normalize_backend(str(normalized.get("memoryBackend") or defaults.get("memory_backend") or "openviking"))
-    workspace = str(normalized.get("ovWorkspace") or normalized.get("memoryWorkspace") or "").strip()
+    raw_workspace = str(normalized.get("ovWorkspace") or normalized.get("memoryWorkspace") or "").strip()
+    suspicious = workspace_looks_suspicious(raw_workspace, normalized)
+    recovered = recover_workspace_from_backend_profile(normalized, normalized["memoryBackend"]) if suspicious else ""
+    workspace = recovered or raw_workspace
     was_legacy = is_legacy_fixed_workspace(workspace)
+    if suspicious and recovered:
+        normalized["ovWorkspace"] = recovered
+        normalized["memoryWorkspace"] = recovered
+        normalized["workspace_source"] = normalized.get("workspace_source") or "recovered_invalid_workspace"
+        return normalized
+    if suspicious:
+        normalized["ovWorkspace"] = ""
+        normalized["memoryWorkspace"] = ""
+        normalized["workspace_source"] = normalized.get("workspace_source") or "cleared_invalid_workspace"
+        return normalized
     if not workspace or was_legacy:
         workspace = clean_workspace(defaults.get("home") or str(Path.home()), account, backend=normalized["memoryBackend"])
         normalized["ovWorkspace"] = workspace
@@ -58,6 +157,40 @@ def normalize_workspace_config(defaults: dict[str, Any], account: str, config: d
     elif not normalized.get("memoryWorkspace"):
         normalized["memoryWorkspace"] = workspace
     return normalized
+
+
+def pick_backend_config_fields(config: dict[str, Any]) -> dict[str, Any]:
+    picked: dict[str, Any] = {}
+    for key in BACKEND_CONFIG_FIELDS:
+        if key in config:
+            picked[key] = config.get(key)
+    return picked
+
+
+def normalize_backend_configs(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    source = config.get("backendConfigs")
+    raw = source if isinstance(source, dict) else {}
+    normalized: dict[str, dict[str, Any]] = {}
+    for backend in BACKEND_CONFIG_ORDER:
+        value = raw.get(backend)
+        normalized[backend] = dict(value) if isinstance(value, dict) else {}
+    return normalized
+
+
+def sync_backend_profile_config(config: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(config or {})
+    active_backend = normalize_backend(str(normalized.get("memoryBackend") or "openviking"))
+    backend_configs = normalize_backend_configs(normalized)
+    active_profile = dict(backend_configs.get(active_backend) or {})
+    active_profile.update(pick_backend_config_fields(normalized))
+    backend_configs[active_backend] = active_profile
+    normalized["backendConfigs"] = backend_configs
+    return normalized
+
+
+def normalize_account_config(defaults: dict[str, Any], account: str, config: dict[str, Any]) -> dict[str, Any]:
+    normalized = normalize_workspace_config(defaults, account, config)
+    return sync_backend_profile_config(normalized)
 
 
 def account_root(workspace: str | Path, account: str) -> Path:
@@ -212,7 +345,7 @@ def ensure_default(path: Path, defaults: dict[str, Any]) -> dict[str, Any]:
         changed = True
     for account_id, record in accounts.items():
         config = record.get("config") or {}
-        normalized = normalize_workspace_config(defaults, account_id, config)
+        normalized = normalize_account_config(defaults, account_id, config)
         if normalized != config:
             record["config"] = normalized
             record["updated_at"] = now_iso()
@@ -222,8 +355,9 @@ def ensure_default(path: Path, defaults: dict[str, Any]) -> dict[str, Any]:
     return state
 
 
-def public_account(record: dict[str, Any]) -> dict[str, Any]:
-    config = sanitize_config(record.get("config") or {})
+def account_view(record: dict[str, Any], *, include_secrets: bool = False, include_counts: bool = False) -> dict[str, Any]:
+    raw_config = dict(record.get("config") or {})
+    config = raw_config if include_secrets else sanitize_config(raw_config)
     account_id = record.get("id") or DEFAULT_ACCOUNT
     workspace = str(config.get("ovWorkspace") or config.get("memoryWorkspace") or "").strip()
     backend = normalize_backend(str(config.get("memoryBackend") or "openviking"))
@@ -241,30 +375,36 @@ def public_account(record: dict[str, Any]) -> dict[str, Any]:
         session_root = root / "session" if root else None
         memory_root = root / "user" / "default" / "memories" if root else None
         atom_root = None
-    def count_files(path: Path | None, limit: int = 200000) -> int:
-        if not path or not path.exists():
-            return 0
-        total = 0
-        try:
-            for item in path.rglob("*"):
-                if item.is_file() and (not item.suffix or item.suffix.lower() in COUNTED_MEMORY_SUFFIXES):
-                    total += 1
-                    if total >= limit:
-                        break
-        except Exception:
-            return 0
-        return total
+    storage_files = None
+    session_files = None
+    memory_files = None
+    atom_files = None
+    retrievable_memory_files = None
+    if include_counts:
+        def count_files(path: Path | None, limit: int = 200000) -> int:
+            if not path or not path.exists():
+                return 0
+            total = 0
+            try:
+                for item in path.rglob("*"):
+                    if item.is_file() and (not item.suffix or item.suffix.lower() in COUNTED_MEMORY_SUFFIXES):
+                        total += 1
+                        if total >= limit:
+                            break
+            except Exception:
+                return 0
+            return total
 
-    storage_files = count_files(root)
-    session_files = count_files(session_root)
-    memory_files = count_files(memory_root)
-    atom_files = count_files(atom_root)
-    retrievable_memory_files = atom_files + memory_files
+        storage_files = count_files(root)
+        session_files = count_files(session_root)
+        memory_files = count_files(memory_root)
+        atom_files = count_files(atom_root)
+        retrievable_memory_files = atom_files + memory_files
     return {
         "id": account_id,
         "created_at": record.get("created_at") or "",
         "updated_at": record.get("updated_at") or "",
-        "config": redact_config(config),
+        "config": dict(config) if include_secrets else redact_config(config),
         "plugin_configs": plugin_config_view(config),
         "isolation": {
             "backend": backend,
@@ -281,10 +421,15 @@ def public_account(record: dict[str, Any]) -> dict[str, Any]:
             "memory_file_count": memory_files,
             "atom_file_count": atom_files,
             "retrievable_memory_file_count": retrievable_memory_files,
-            "empty": retrievable_memory_files == 0,
+            "counts_ready": include_counts,
+            "empty": retrievable_memory_files == 0 if include_counts else None,
             "status": "pending",
         },
     }
+
+
+def public_account(record: dict[str, Any]) -> dict[str, Any]:
+    return account_view(record, include_secrets=False, include_counts=False)
 
 
 def public_state(path: Path, defaults: dict[str, Any]) -> dict[str, Any]:
@@ -323,19 +468,28 @@ def public_state(path: Path, defaults: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def private_account_state(path: Path, defaults: dict[str, Any], account: str) -> dict[str, Any]:
+    state = ensure_default(path, defaults)
+    account_id = slug_account(account)
+    record = (state.get("accounts") or {}).get(account_id)
+    if not record:
+        raise KeyError(account_id)
+    return account_view(record, include_secrets=True, include_counts=False)
+
+
 def create_account(path: Path, defaults: dict[str, Any], account: str, inherit_from: str = "", config: dict[str, Any] | None = None) -> dict[str, Any]:
     state = ensure_default(path, defaults)
     accounts = state.setdefault("accounts", {})
     account_id = slug_account(account)
     inherited = dict((accounts.get(inherit_from) or {}).get("config") or {})
     incoming = {k: v for k, v in inherited.items() if k not in {"ovWorkspace", "memoryWorkspace"}}
-    incoming.update(sanitize_config(config or {}))
+    incoming.update(dict(config or {}))
     base_defaults = dict(defaults)
     if incoming.get("memoryBackend"):
         base_defaults["memory_backend"] = incoming["memoryBackend"]
     base = default_account_config(base_defaults, account_id, clean=True)
     base.update(incoming)
-    base = normalize_workspace_config(defaults, account_id, base)
+    base = normalize_account_config(defaults, account_id, base)
     workspace = str(base.get("ovWorkspace") or "").strip()
     if not workspace:
         workspace = clean_workspace(defaults.get("home") or str(Path.home()), account_id, backend=str(base.get("memoryBackend") or defaults.get("memory_backend") or "openviking"))
@@ -378,8 +532,8 @@ def update_config(path: Path, defaults: dict[str, Any], account: str, config: di
         state = read_state(path)
         accounts = state.setdefault("accounts", {})
     current = accounts[account_id]
-    current["config"] = {**(current.get("config") or {}), **sanitize_config(config or {})}
-    current["config"] = normalize_workspace_config(defaults, account_id, current["config"])
+    current["config"] = {**(current.get("config") or {}), **dict(config or {})}
+    current["config"] = normalize_account_config(defaults, account_id, current["config"])
     current["updated_at"] = now_iso()
     workspace = str(current["config"].get("ovWorkspace") or current["config"].get("memoryWorkspace") or "").strip()
     if workspace:

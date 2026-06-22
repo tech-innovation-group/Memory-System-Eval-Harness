@@ -12,6 +12,9 @@ from pathlib import Path
 from typing import Any
 from urllib import error, request
 
+JUDGE_ALIGNMENT = "OpenViking benchmark/locomo/vikingbot/judge.py"
+JUDGE_INPUT_MODE = "question_gold_generated_answer_only"
+
 
 def norm(text: str) -> str:
     return re.sub(r"\s+", " ", str(text or "").lower()).strip()
@@ -19,18 +22,9 @@ def norm(text: str) -> str:
 
 def heuristic_grade(row: dict[str, str]) -> tuple[str, str]:
     expected = norm(row.get("answer") or row.get("expected") or row.get("gold"))
-    actual = norm(row.get("response") or row.get("prediction") or "")
-    evidence = norm(row.get("relevant_memory") or row.get("context_preview") or "")
     if not expected:
         return "NEEDS_JUDGE", "missing gold answer"
-    if expected in actual:
-        return "CORRECT", "gold answer appears in response"
-    years = re.findall(r"\b(19\d{2}|20\d{2})\b", expected)
-    if years and all(year in actual for year in years):
-        return "CORRECT", "all gold years appear in response"
-    if expected in evidence and actual and actual in evidence:
-        return "CORRECT", "gold answer and response are both supported by retrieved memory"
-    return "NEEDS_JUDGE", "heuristic judge could not confidently match gold answer"
+    return "NEEDS_JUDGE", "judge.py-aligned mode does not use heuristic correctness shortcuts"
 
 
 def parse_model_grade(text: str) -> tuple[str, str]:
@@ -72,21 +66,49 @@ def extract_chat_content(raw: str) -> str:
     raise RuntimeError(f"non-json judge API response: {raw[:800]}")
 
 
+def parse_judge_json(text: str) -> tuple[str, str] | None:
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        return None
+    verdict = str(parsed.get("result") or parsed.get("is_correct") or "").strip().upper()
+    if verdict in {"CORRECT", "WRONG"}:
+        return verdict, str(parsed.get("reasoning") or text)
+    return None
+
+
 def call_openai_compatible(base_url: str, model: str, token: str, row: dict[str, str], timeout: int) -> tuple[str, str]:
     url = base_url.rstrip("/") + "/chat/completions"
+    system_prompt = "You are an expert grader that determines if answers to questions match a gold standard answer."
     prompt = (
-        "You are grading a memory benchmark answer. Reply with JSON only: "
-        "{\"result\":\"CORRECT\" or \"WRONG\", \"reasoning\":\"short reason\"}.\n"
-        "Mark CORRECT if the response is semantically equivalent to the gold answer, "
-        "including relative dates supported by the evidence. Otherwise mark WRONG.\n\n"
+        "Your task is to label an answer to a question as 'CORRECT' or 'WRONG'. "
+        "You will be given the following data:\n"
+        "(1) a question (posed by one user to another user),\n"
+        "(2) a 'gold' (ground truth) answer,\n"
+        "(3) a generated answer\n"
+        "which you will score as CORRECT/WRONG.\n\n"
+        "The point of the question is to ask about something one user should know about the other user based on their prior conversations.\n"
+        "The gold answer will usually be a concise and short answer that includes the referenced topic.\n"
+        "The generated answer might be much longer, but you should be generous with your grading - as long as it touches on the same topic as the gold answer, it should be counted as CORRECT.\n\n"
+        "For time related questions, the gold answer will be a specific date, month, year, etc. "
+        "The generated answer might be much longer or use relative time references (like 'last Tuesday' or 'next month'), "
+        "but you should be generous with your grading - as long as it refers to the same date or time period as the gold answer, it should be counted as CORRECT. "
+        "Even if the format differs (e.g., 'May 7th' vs '7 May'), consider it CORRECT if it's the same date.\n\n"
+        "Now it's time for the real question:\n"
         f"Question: {row.get('question','')}\n"
         f"Gold answer: {row.get('answer') or row.get('expected') or row.get('gold')}\n"
-        f"Response: {row.get('response') or row.get('prediction')}\n"
-        f"Retrieved memory: {(row.get('relevant_memory') or row.get('context_preview') or '')[:6000]}"
+        f"Generated answer: {row.get('response') or row.get('prediction')}\n\n"
+        "First, provide a short (one sentence) explanation of your reasoning, then finish with CORRECT or WRONG.\n"
+        "Do NOT include both CORRECT and WRONG in your response, or it will break the evaluation script.\n\n"
+        "Respond with JSON only: "
+        "{\"is_correct\": \"CORRECT\" or \"WRONG\", \"reasoning\": \"your explanation\"}"
     )
     payload = {
         "model": model,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt},
+        ],
         "temperature": 0,
     }
     req = request.Request(
@@ -104,50 +126,36 @@ def call_openai_compatible(base_url: str, model: str, token: str, row: dict[str,
     if not raw.strip():
         raise RuntimeError("empty judge API response")
     content = extract_chat_content(raw)
-    try:
-        parsed = json.loads(content)
-        result = str(parsed.get("result") or "").upper()
-        if result in {"CORRECT", "WRONG"}:
-            return result, str(parsed.get("reasoning") or content)
-    except Exception:
-        pass
+    parsed = parse_judge_json(content)
+    if parsed:
+        return parsed
     return parse_model_grade(content)
 
 
 def judge_row(row: dict[str, str], args: argparse.Namespace, token: str) -> dict[str, str]:
     existing = (row.get("result") or "").upper()
-    if existing in {"CORRECT", "WRONG"} and not str(row.get("reasoning") or "").startswith("[NO JUDGE TOKEN]"):
-        return row
-    simple = (row.get("simple_grade") or row.get("simple_match") or "").upper()
-    if simple in {"CORRECT", "MATCH"}:
-        row["result"] = "CORRECT"
-        row["reasoning"] = "accepted existing simple match"
+    if (
+        not bool(getattr(args, "force_rejudge", False))
+        and existing in {"CORRECT", "WRONG"}
+        and not str(row.get("reasoning") or "").startswith("[JUDGE ERROR]")
+    ):
         return row
     started = time.time()
-    if token:
-        last_exc: Exception | None = None
-        for attempt in range(max(1, args.retries + 1)):
-            try:
-                result, reasoning = call_openai_compatible(args.base_url, args.model, token, row, args.timeout_s)
-                row["result"] = result
-                row["reasoning"] = reasoning
-                last_exc = None
-                break
-            except Exception as exc:
-                last_exc = exc
-                if attempt < args.retries:
-                    time.sleep(min(8, 1.5 ** attempt))
-        if last_exc is not None:
-            row["result"], fallback_reason = heuristic_grade(row)
-            row["reasoning"] = f"[API ERROR] {last_exc}; fallback={fallback_reason}"
-    else:
-        result, reason = heuristic_grade(row)
-        row["result"] = "CORRECT" if result == "CORRECT" else ""
-        row["reasoning"] = (
-            f"[NO JUDGE TOKEN] {reason}; pending model judge"
-            if result != "CORRECT"
-            else f"[NO JUDGE TOKEN] {reason}"
-        )
+    last_exc: Exception | None = None
+    for attempt in range(max(1, args.retries + 1)):
+        try:
+            result, reasoning = call_openai_compatible(args.base_url, args.model, token, row, args.timeout_s)
+            row["result"] = result
+            row["reasoning"] = reasoning
+            last_exc = None
+            break
+        except Exception as exc:
+            last_exc = exc
+            if attempt < args.retries:
+                time.sleep(min(8, 1.5 ** attempt))
+    if last_exc is not None:
+        row["result"] = "WRONG"
+        row["reasoning"] = f"[JUDGE ERROR] {last_exc}"
     try:
         prior = float(row.get("time_cost") or 0)
         row["time_cost"] = f"{prior + (time.time() - started):.4f}"
@@ -194,7 +202,7 @@ def row_matches_filters(index: int, row: dict[str, str], args: argparse.Namespac
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Local OpenAI-compatible judge for Locomo Eval Web CSV files.")
+    parser = argparse.ArgumentParser(description="OpenAI-compatible judge aligned with OpenViking LoCoMo VikingBot judge.py.")
     parser.add_argument("--input", required=True)
     parser.add_argument("--base-url", default=os.environ.get("JUDGE_BASE_URL", ""))
     parser.add_argument("--model", default=os.environ.get("JUDGE_MODEL", "gpt-5.5"))
@@ -219,7 +227,10 @@ def main() -> None:
     parser.add_argument("--query", default="", help="Judge only rows whose id/question/gold/response contains this text.")
     parser.add_argument("--min-tokens", type=int, default=None)
     parser.add_argument("--max-tokens", type=int, default=None)
+    parser.add_argument("--force-rejudge", action="store_true", help="Re-run the judge even for rows that already have CORRECT/WRONG.")
     args = parser.parse_args()
+    if not args.token:
+        raise SystemExit("judge token is required in judge.py-aligned mode")
 
     path = Path(args.input).expanduser().resolve()
     rows = list(csv.DictReader(path.open(newline="", encoding="utf-8")))
@@ -235,6 +246,7 @@ def main() -> None:
     selected = [(idx, row) for idx, row in enumerate(rows) if row_matches_filters(idx, row, args)]
     print(f"[judge] input={path}", flush=True)
     print(f"[judge] rows={len(rows)} selected={len(selected)} model={args.model} base_url={args.base_url or '-'} token={'set' if args.token else 'missing; heuristic fallback'}", flush=True)
+    print(f"[judge] alignment={JUDGE_ALIGNMENT} input_mode={JUDGE_INPUT_MODE}", flush=True)
     if not selected:
         print("[judge] no rows matched filters; nothing to do", flush=True)
         return
@@ -269,6 +281,11 @@ def main() -> None:
         "status": "JUDGE_DONE",
         "input": str(path),
         "selected": len(selected),
+        "judge_alignment": JUDGE_ALIGNMENT,
+        "judge_input_mode": JUDGE_INPUT_MODE,
+        "uses_retrieved_memory": False,
+        "uses_message_jsonl": False,
+        "judge_model": args.model,
     }
     (path.parent / "judge_summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Grading completed: {correct}/{graded} correct, accuracy: {summary['accuracy'] * 100:.2f}%" if graded else "Grading completed: 0 graded", flush=True)

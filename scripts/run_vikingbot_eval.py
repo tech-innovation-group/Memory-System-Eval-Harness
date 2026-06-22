@@ -7,6 +7,7 @@ import json
 import os
 import random
 import re
+import shutil
 import subprocess
 import time
 from collections import Counter
@@ -44,14 +45,16 @@ def find_vikingbot(require_memory_user: bool = False) -> str:
     env = os.environ.get("VIKINGBOT_BIN", "") or os.environ.get("VIKINGBOAT_BIN", "")
     candidates = [
         env,
+        str(Path.home() / "Code/openviking/versions/v0.3.24/.venv/bin/vikingbot"),
+        str(Path.home() / "Code/openviking/versions/v0.3.24/.venv/bin/vikingboat"),
+        shutil.which("vikingbot") or "",
+        shutil.which("vikingboat") or "",
         str(Path.home() / "openviking-locomo-latest-20260528/.venv/bin/vikingbot"),
         str(Path.home() / "openviking-locomo-latest-20260528/.venv/bin/vikingboat"),
         str(Path.home() / "openviking-v0312-fresh-venv/bin/vikingbot"),
         str(Path.home() / "openviking-v0312-fresh-venv/bin/vikingboat"),
         str(Path.home() / "openviking-latest/.venv/bin/vikingbot"),
         str(Path.home() / "openviking-latest/.venv/bin/vikingboat"),
-        "vikingbot",
-        "vikingboat",
     ]
     for candidate in candidates:
         if not candidate:
@@ -117,6 +120,33 @@ def parse_cli_json(output: str) -> dict[str, Any] | None:
         except Exception:
             return None
     return None
+
+
+def append_native_cli_log(
+    log_path: str,
+    *,
+    phase: str,
+    question_id: str,
+    command: list[str],
+    returncode: int | str,
+    elapsed_s: float | int,
+    stdout: str,
+    stderr: str,
+) -> None:
+    path = Path(log_path).expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = [
+        f"=== native_cli phase={phase} question_id={question_id} returncode={returncode} elapsed_s={float(elapsed_s):.4f} ===",
+        "COMMAND:",
+        " ".join(command),
+    ]
+    if stdout:
+        payload.extend(["[stdout]", stdout.rstrip()])
+    if stderr:
+        payload.extend(["[stderr]", stderr.rstrip()])
+    payload.append("")
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write("\n".join(payload))
 
 
 def infer_vikingbot_provider(model: str, api_base: str) -> str:
@@ -217,12 +247,30 @@ def run_native_vikingbot_chat(
     base_cmd = [vikingbot_bin, "chat"]
     if config_path:
         base_cmd += ["--config", config_path]
+    native_log_path = str(getattr(args, "native_log_path", "") or "").strip()
 
     reset_cmd = [*base_cmd, "-m", "/new", "-e", "--sender", sample_id, "--session", session_id]
     for user in memory_users:
         reset_cmd += ["--memory-user", user]
     try:
-        subprocess.run(reset_cmd, capture_output=True, text=True, timeout=min(max(args.timeout_s, 60), 300), check=False)
+        reset_proc = subprocess.run(
+            reset_cmd,
+            capture_output=True,
+            text=True,
+            timeout=min(max(args.timeout_s, 60), 300),
+            check=False,
+        )
+        if native_log_path:
+            append_native_cli_log(
+                native_log_path,
+                phase="reset",
+                question_id=job.question_id,
+                command=reset_cmd,
+                returncode=reset_proc.returncode,
+                elapsed_s=0,
+                stdout=reset_proc.stdout or "",
+                stderr=reset_proc.stderr or "",
+            )
     except Exception:
         pass
 
@@ -239,6 +287,17 @@ def run_native_vikingbot_chat(
     )
     elapsed = time.time() - started
     combined = (proc.stdout or "").strip()
+    if native_log_path:
+        append_native_cli_log(
+            native_log_path,
+            phase="chat",
+            question_id=job.question_id,
+            command=cmd,
+            returncode=proc.returncode,
+            elapsed_s=elapsed,
+            stdout=proc.stdout or "",
+            stderr=proc.stderr or "",
+        )
     if proc.returncode != 0:
         stderr = (proc.stderr or "").strip()
         return (
@@ -433,6 +492,7 @@ def main() -> None:
     out_dir = Path(args.out_dir).expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     csv_path = Path(args.output).expanduser().resolve() if args.output else out_dir / "vikingbot_eval.csv"
+    args.native_log_path = str(out_dir / "qa.log")
     args.native_config = prepare_vikingbot_config(args, out_dir)
     vikingbot_bin = find_vikingbot(require_memory_user=bool(args.group_chat))
     if args.engine in {"auto", "vikingbot"} and not vikingbot_bin:

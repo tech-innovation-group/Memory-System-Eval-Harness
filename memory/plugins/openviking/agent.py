@@ -530,6 +530,7 @@ def chat(payload: dict[str, Any], defaults: dict[str, Any], config_path: Path) -
 
 def recent_workspace_candidates(workspace_hint: str, output_dir: Path) -> list[Path]:
     candidates: list[Path] = []
+    repo_root = Path(__file__).resolve().parents[3]
 
     def add(path_like: Any) -> None:
         if not path_like:
@@ -542,6 +543,18 @@ def recent_workspace_candidates(workspace_hint: str, output_dir: Path) -> list[P
             candidates.append(path)
 
     add(workspace_hint)
+    add(os.environ.get("OPENVIKING_WORKSPACE"))
+    add(os.environ.get("LOCOMO_EVAL_WORKSPACE"))
+    add(Path.cwd() / "workspace")
+    add(repo_root / "workspace")
+    add(Path.cwd().parent / "workspace")
+    try:
+        config_path = os.environ.get("OPENVIKING_CONFIG_FILE")
+        if config_path:
+            cfg = read_json(Path(config_path).expanduser().resolve())
+            add((cfg.get("storage") or {}).get("workspace"))
+    except Exception:
+        pass
     try:
         cfg = read_json(Path.home() / ".openviking" / "ov.conf")
         add((cfg.get("storage") or {}).get("workspace"))

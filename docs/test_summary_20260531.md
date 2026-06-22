@@ -8,7 +8,7 @@
 ## ✅ 已完成的工作
 
 ### 1. 环境配置
-- ✅ OpenViking 服务运行正常 (http://localhost:1933)
+- ✅ OpenViking 服务运行正常 (<OPENVIKING_BASE_URL>)
 - ✅ 数据文件准备完成 (echomem_memrouter_locomo10.json, 2.7MB)
 - ✅ 代码配置完成，默认使用 gpt-5.5
 
@@ -57,14 +57,14 @@ ping: cannot resolve codexcs.ysaikeji.cn: Unknown host
 ```bash
 export OPENAI_API_KEY=sk-REDACTED
 
-/Users/chx/jiuwenclaw/bin/python3.12 scripts/run_vikingbot_eval.py \
+<python-bin> scripts/run_vikingbot_eval.py \
   --dataset dataset/locomo10.json \
-  --out-dir /Users/chx/locomo-eval-web/runs/echomem_vikingbot_gpt55_10q \
+  --out-dir <repo-root>/runs/echomem_vikingbot_gpt55_10q \
   --sample conv-30 \
   --random-count 10 \
   --engine openviking_memory \
-  --openviking-url http://localhost:1933 \
-  --workspace /Users/chx/openviking_workspace \
+  --openviking-url <OPENVIKING_BASE_URL> \
+  --workspace <openviking-workspace> \
   --answer-base-url https://api.openai.com/v1 \
   --answer-model gpt-4o \
   --answer-token $OPENAI_API_KEY \
@@ -93,7 +93,7 @@ export OPENAI_API_KEY=sk-REDACTED
 
 3. **运行测试**
    ```bash
-   /Users/chx/jiuwenclaw/bin/python3.12 scripts/run_vikingbot_eval.py \
+   <python-bin> scripts/run_vikingbot_eval.py \
      --answer-base-url https://your-api-domain.com/v1 \
      --answer-model gpt-4o \
      --answer-token your-api-key \
@@ -108,14 +108,14 @@ export OPENAI_API_KEY=sk-REDACTED
 
 ```bash
 # 不提供 API token，系统会返回 "unknown" 作为答案
-/Users/chx/jiuwenclaw/bin/python3.12 scripts/run_vikingbot_eval.py \
+<python-bin> scripts/run_vikingbot_eval.py \
   --dataset dataset/locomo10.json \
-  --out-dir /Users/chx/locomo-eval-web/runs/echomem_mock_10q \
+  --out-dir <repo-root>/runs/echomem_mock_10q \
   --sample conv-30 \
   --random-count 10 \
   --engine openviking_memory \
-  --openviking-url http://localhost:1933 \
-  --workspace /Users/chx/openviking_workspace \
+  --openviking-url <OPENVIKING_BASE_URL> \
+  --workspace <openviking-workspace> \
   --top-k 8
 ```
 
@@ -128,7 +128,7 @@ export OPENAI_API_KEY=sk-REDACTED
 ### Local Memory Agent（已完成）
 
 ```
-位置: /Users/chx/locomo-eval-web/runs/echomem_test_10q/
+位置: <repo-root>/runs/echomem_test_10q/
 结果:
 - 总题数: 10
 - Exact Match: 3/10 (30%)
@@ -140,7 +140,7 @@ export OPENAI_API_KEY=sk-REDACTED
 ### VikingBot + GPT-5.5（未完成）
 
 ```
-位置: /Users/chx/locomo-eval-web/runs/echomem_custom_agent_gpt55_10q/
+位置: <repo-root>/runs/echomem_custom_agent_gpt55_10q/
 状态: API 端点不可用，测试中断
 已完成: 6/10 题（但都是错误）
 ```
@@ -165,10 +165,10 @@ export OPENAI_API_KEY=sk-REDACTED
 
 ```bash
 # 查看结果
-cat /Users/chx/locomo-eval-web/runs/echomem_test_10q/summary.json
+cat <repo-root>/runs/echomem_test_10q/summary.json
 
 # 分析详细结果
-head -20 /Users/chx/locomo-eval-web/runs/echomem_test_10q/local_agent_results.csv
+head -20 <repo-root>/runs/echomem_test_10q/local_agent_results.csv
 ```
 
 **价值**:
@@ -185,9 +185,9 @@ head -20 /Users/chx/locomo-eval-web/runs/echomem_test_10q/local_agent_results.cs
 
 ```bash
 # 测试完整 conv-30 (199 题)
-/Users/chx/jiuwenclaw/bin/python3.12 scripts/local_memory_agent.py \
+<python-bin> scripts/local_memory_agent.py \
   --dataset dataset/locomo10.json \
-  --out-dir /Users/chx/locomo-eval-web/runs/echomem_local_conv30_full \
+  --out-dir <repo-root>/runs/echomem_local_conv30_full \
   --sample conv-30 \
   --top-k 6
 
@@ -200,7 +200,7 @@ head -20 /Users/chx/locomo-eval-web/runs/echomem_test_10q/local_agent_results.cs
 ## 📁 生成的文件
 
 ```
-/Users/chx/locomo-eval-web/
+<repo-root>/
 ├── docs/
 │   ├── openviking_gpt55_setup_guide.md      # 完整配置指南
 │   ├── SETUP_COMPLETE.md                    # 配置总结
@@ -233,21 +233,21 @@ head -20 /Users/chx/locomo-eval-web/runs/echomem_test_10q/local_agent_results.cs
 ## 🚀 完整的测试命令（待 API 可用后运行）
 
 ```bash
-cd /Users/chx/locomo-eval-web
+cd <repo-root>
 
 # 设置有效的 API Key
 export OPENAI_API_KEY=sk-your-real-key
 
 # 运行 10 题测试
-/Users/chx/jiuwenclaw/bin/python3.12 scripts/run_vikingbot_eval.py \
+<python-bin> scripts/run_vikingbot_eval.py \
   --dataset dataset/locomo10.json \
-  --out-dir /Users/chx/locomo-eval-web/runs/echomem_vikingbot_final \
+  --out-dir <repo-root>/runs/echomem_vikingbot_final \
   --sample conv-30 \
   --random-count 10 \
   --random-seed 42 \
   --engine openviking_memory \
-  --openviking-url http://localhost:1933 \
-  --workspace /Users/chx/openviking_workspace \
+  --openviking-url <OPENVIKING_BASE_URL> \
+  --workspace <openviking-workspace> \
   --account default \
   --answer-base-url https://api.openai.com/v1 \
   --answer-model gpt-4o \

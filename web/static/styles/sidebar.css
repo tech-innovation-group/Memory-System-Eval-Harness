@@ -1,0 +1,120 @@
+/* sidebar.css — extracted and deduplicated from styles.css */
+
+.app-sidebar {
+  position: sticky;
+  top: 0;
+  width: 218px;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 18px;
+  padding: 18px 14px;
+  border-right: 1px solid var(--line);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafd 100%);
+  color: var(--accent-deep);
+  box-shadow: 1px 0 8px rgba(15, 23, 42, 0.03);
+  min-width: 0;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.brand-block {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 18px;
+  padding: 0 8px 14px;
+  border-bottom: 1px solid transparent;
+  border-image: linear-gradient(to right, var(--accent), var(--purple), transparent) 1;
+}
+
+.brand-block strong {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent-deep);
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.brand-block span,
+.brand-block small {
+  color: var(--muted);
+}
+
+.side-nav {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+}
+
+.nav-group {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.nav-group:last-child {
+  border-bottom: 0;
+}
+
+.nav-group > span {
+  padding: 0 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.nav-item {
+  position: relative;
+  width: 100%;
+  justify-content: flex-start;
+  min-height: 38px;
+  padding: 9px 11px 9px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: #475569;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all var(--transition);
+}
+
+.nav-item.nav-link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.nav-item:hover {
+  background: var(--bg-secondary);
+  border-color: var(--line);
+  color: var(--ink);
+  transform: translateX(2px);
+}
+
+.nav-item.active {
+  background: var(--accent-light);
+  border-color: rgba(99, 102, 241, 0.2);
+  color: var(--accent-hover);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.1);
+  font-weight: 700;
+}
+
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, var(--accent), var(--purple));
+}
+
+.nav-item.active:hover {
+  background: #e0e7ff;
+  border-color: rgba(99, 102, 241, 0.3);
+  color: var(--accent-hover);
+}

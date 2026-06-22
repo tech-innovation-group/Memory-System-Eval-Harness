@@ -55,6 +55,11 @@ def build_openviking_qa_command(
     tool_search_limit = int(payload.get("tool_search_limit") or VIKINGBOT_TOOL_SEARCH_LIMIT)
     tool_min_score = float(payload.get("tool_min_score") or VIKINGBOT_TOOL_MIN_SCORE)
     max_iterations = int(payload.get("max_iterations") or VIKINGBOT_MAX_ITERATIONS)
+    judge_base_url = payload.get("judge_base_url") or payload.get("answer_base_url") or defaults.get("judge_base_url") or ""
+    judge_model = payload.get("judge_model") or payload.get("answer_model") or defaults.get("judge_model") or defaults.get("answer_model") or "gpt-5.5"
+    judge_token = payload.get("judge_token") or token
+    judge_every = int(payload.get("judge_every") or 0)
+    judge_parallel = int(payload.get("judge_parallel") or 6)
     command = [
         "/usr/bin/env",
         "python3",
@@ -81,6 +86,20 @@ def build_openviking_qa_command(
         payload.get("answer_model") or payload.get("judge_model") or defaults.get("answer_model") or defaults.get("judge_model") or "gpt-5.5",
         "--answer-token",
         str(token or ""),
+        "--judge-base-url",
+        str(judge_base_url),
+        "--judge-model",
+        str(judge_model),
+        "--judge-token",
+        str(judge_token or ""),
+        "--judge-every",
+        str(judge_every),
+        "--judge-parallel",
+        str(judge_parallel),
+        "--judge-timeout-s",
+        str(payload.get("judge_timeout_s") or payload.get("timeout_s") or 90),
+        "--judge-retries",
+        str(payload.get("judge_retries") or payload.get("model_retries") or 5),
         "--top-k",
         str(top_k),
         "--prompt-mode",
@@ -119,7 +138,7 @@ def build_openviking_qa_command(
     return PluginTaskSpec(
         command=command,
         output_file=output_file,
-        name=payload.get("name") or "LoCoMo MemoryBench Agent OpenViking QA",
+        name=payload.get("name") or "LoCoMo 自定义 Agent OpenViking QA",
         metadata={
             **alignment_metadata("openviking", "memorybench_agent_openviking_adapter"),
             "task_kind": "openviking_qa",
@@ -140,6 +159,8 @@ def build_openviking_qa_command(
             "read_openviking_content": bool_value(payload.get("read_openviking_content"), True),
             "max_iterations": max_iterations,
             "top_k": top_k,
+            "judge_every": judge_every,
+            "judge_parallel": judge_parallel,
             "initial_search_limit": VIKINGBOT_INITIAL_SEARCH_LIMIT,
             "initial_score_threshold": VIKINGBOT_INITIAL_MIN_SCORE,
         },

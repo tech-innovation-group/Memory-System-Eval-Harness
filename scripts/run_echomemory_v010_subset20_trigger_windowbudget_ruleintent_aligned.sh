@@ -1,0 +1,221 @@
+#!/bin/zsh
+set -euo pipefail
+
+ROOT="/Users/chx/locomo-eval-web"
+ECHO_ROOT="/Users/chx/Code/echomemory/echo_memory_v010"
+PY="$ECHO_ROOT/.venv/bin/python"
+RUN_DIR="${1:?run_dir required}"
+WORKSPACE="${2:?workspace required}"
+ACCOUNT="${3:?account required}"
+WINDOW_TURNS="${4:?window_turns required}"
+PENDING_TOKENS="${5:?pending_token_threshold required}"
+LABEL="${6:-windowbudget}"
+MAX_SESSIONS="${7:-0}"
+QUESTIONS_OVERRIDE="${8:-}"
+DATASET="$ROOT/dataset/locomo10.json"
+SUBSET="$ROOT/configs/echomemory_mm_locomo_conv30_formal_subset20_20260614.json"
+BASELINE_MANIFEST="$ROOT/runs/echomemory_v010_subset20_baseline_20260615/subset20_manifest.json"
+
+mkdir -p "$RUN_DIR"
+LOG_PATH="$RUN_DIR/subset20_import.log"
+exec >>"$LOG_PATH" 2>&1
+export RUN_DIR WORKSPACE ACCOUNT DATASET SUBSET ECHO_ROOT PY BASELINE_MANIFEST WINDOW_TURNS PENDING_TOKENS LABEL MAX_SESSIONS QUESTIONS_OVERRIDE
+
+TOKEN="$("$PY" - <<'PY'
+import json
+import os
+from pathlib import Path
+
+manifest = Path(os.environ["BASELINE_MANIFEST"])
+data = json.loads(manifest.read_text(encoding="utf-8"))
+eval_cmd = data.get("eval_cmd") or []
+token = ""
+for index, arg in enumerate(eval_cmd):
+    if arg == "--answer-token" and index + 1 < len(eval_cmd):
+        token = str(eval_cmd[index + 1] or "")
+        break
+print(token)
+PY
+)"
+
+if [[ -n "$QUESTIONS_OVERRIDE" ]]; then
+  QUESTIONS="$QUESTIONS_OVERRIDE"
+else
+  QUESTIONS="$("$PY" - <<'PY'
+import json
+import os
+from pathlib import Path
+
+subset = Path(os.environ["SUBSET"])
+data = json.loads(subset.read_text(encoding="utf-8"))
+print(",".join(data.get("question_ids") or []))
+PY
+)"
+fi
+
+export JUDGE_TOKEN="$TOKEN"
+export LOCOMO_JUDGE_TOKEN="$TOKEN"
+export DASHSCOPE_API_KEY="$TOKEN"
+export JUDGE_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+export JUDGE_MODEL="deepseek-v4-flash"
+export ECHOMEM_CHAT_API_KEY="$TOKEN"
+export ECHOMEM_CHAT_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+export ECHOMEM_CHAT_MODEL="deepseek-v4-flash"
+export ECHOMEM_CHAT_PROVIDER="deepseek"
+
+# Keep the aligned QA chain fixed; only change the extraction window + pending token budget.
+export ECHOMEM_SEARCH_INTENT_LLM_FIRST="false"
+export ECHOMEM_SEARCH_INTENT_LLM_FALLBACK="false"
+export ECHOMEM_SEARCH_INTENT_BACKEND="rule"
+export ECHOMEM_ATOM_WINDOW_SIZE="$WINDOW_TURNS"
+export ECHOMEM_ATOM_MAX_TOKENS="$PENDING_TOKENS"
+
+"$PY" - <<'PY'
+import json
+import os
+from pathlib import Path
+
+run_dir = Path(os.environ["RUN_DIR"])
+payload = {
+    "dataset": os.environ["DATASET"],
+    "subset": os.environ["SUBSET"],
+    "run_dir": os.environ["RUN_DIR"],
+    "workspace": os.environ["WORKSPACE"],
+    "account": os.environ["ACCOUNT"],
+    "user_id": "default",
+    "agent_id": "default",
+    "resolved_python_bin": os.environ["PY"],
+    "env": {
+        "ECHOMEM_SEARCH_INTENT_LLM_FIRST": os.environ["ECHOMEM_SEARCH_INTENT_LLM_FIRST"],
+        "ECHOMEM_SEARCH_INTENT_LLM_FALLBACK": os.environ["ECHOMEM_SEARCH_INTENT_LLM_FALLBACK"],
+        "ECHOMEM_SEARCH_INTENT_BACKEND": os.environ["ECHOMEM_SEARCH_INTENT_BACKEND"],
+        "ECHOMEM_ATOM_WINDOW_SIZE": os.environ["ECHOMEM_ATOM_WINDOW_SIZE"],
+        "ECHOMEM_ATOM_MAX_TOKENS": os.environ["ECHOMEM_ATOM_MAX_TOKENS"],
+    },
+    "max_sessions": int(os.environ["MAX_SESSIONS"] or 0),
+    "questions_override": os.environ["QUESTIONS_OVERRIDE"],
+    "notes": [
+        "Single-change experiment: trigger atom extraction by atom window size + pending token budget.",
+        "message.persisted extraction is always enabled; there is no separate auto-flush switch in this experiment.",
+        "Import-side flush timeout/retry only waits for async extraction to finish; it is not a trigger condition.",
+        "Keep rule-only search intent and aligned QA config fixed.",
+        f"Current threshold group: {os.environ['LABEL']} (atom_window_size={os.environ['WINDOW_TURNS']}, atom_max_tokens={os.environ['PENDING_TOKENS']}).",
+    ],
+}
+(run_dir / "subset20_manifest.json").write_text(
+    json.dumps(payload, ensure_ascii=False, indent=2),
+    encoding="utf-8",
+)
+PY
+
+"$PY" "$ROOT/scripts/echomemory_locomo_import.py" \
+  --dataset "$DATASET" \
+  --out-dir "$RUN_DIR/echomemory_import" \
+  --echomem-root "$ECHO_ROOT" \
+  --workspace "$WORKSPACE" \
+  --account "$ACCOUNT" \
+  --user-id default \
+  --agent-id default \
+  --sample conv-30 \
+  --session-mode locomo \
+  --max-sessions "$MAX_SESSIONS" \
+  --import-wait-mode full \
+  --commit-wait-s 900 \
+  --commit-call-timeout-s 900 \
+  --flush-call-timeout-s 1800 \
+  --flush-attempts 3 \
+  --continue-on-session-error
+
+"$PY" "$ROOT/scripts/echomemory_memory_qa.py" \
+  --dataset "$DATASET" \
+  --out-dir "$RUN_DIR/echomemory_qa_ruleintent_aligned" \
+  --sample conv-30 \
+  --questions "$QUESTIONS" \
+  --echomem-root "$ECHO_ROOT" \
+  --workspace "$WORKSPACE" \
+  --account "$ACCOUNT" \
+  --user-id default \
+  --agent-id default \
+  --prompt-mode vikingboat_lite \
+  --answer-base-url "https://dashscope.aliyuncs.com/compatible-mode/v1" \
+  --answer-model "deepseek-v4-flash" \
+  --answer-token "$TOKEN" \
+  --top-k 30 \
+  --score-threshold 0.75 \
+  --memory-budget-chars 6000 \
+  --user-memory-budget-chars 4000 \
+  --agent-memory-budget-chars 2000 \
+  --retrieval-mode search \
+  --retrieval-ranker score \
+  --retrieval-uri-dedup \
+  --search-overview-enrichment \
+  --tool-set search_read \
+  --tool-search-limit 20 \
+  --tool-min-score 0.35 \
+  --tool-log-chars 1200 \
+  --prefetch-read-count 4 \
+  --prefetch-context-chars 5000 \
+  --max-iterations 50 \
+  --no-vikingboat-tool-loop \
+  --no-vikingboat-compat \
+  --no-initial-tool-prefetch \
+  --fallback-to-one-shot
+
+"$PY" "$ROOT/scripts/local_judge.py" \
+  --input "$RUN_DIR/echomemory_qa_ruleintent_aligned/echomemory_memory_qa_results.csv" \
+  --base-url "https://dashscope.aliyuncs.com/compatible-mode/v1" \
+  --model "deepseek-v4-flash" \
+  --token "$TOKEN" \
+  --parallel 10 \
+  --timeout-s 120 \
+  --retries 5
+
+"$PY" - <<'PY'
+import json
+import os
+from pathlib import Path
+import sys
+
+root = Path("/Users/chx/locomo-eval-web/scripts")
+if str(root) not in sys.path:
+    sys.path.insert(0, str(root))
+
+echomem_root = Path(os.environ["ECHO_ROOT"])
+if str(echomem_root) not in sys.path:
+    sys.path.insert(0, str(echomem_root))
+
+from echomemory_common import workspace_token_usage_summary  # noqa: E402
+from echomem.observability.log_parser import parse_log, summarize  # noqa: E402
+
+run_dir = Path(os.environ["RUN_DIR"])
+qa_summary = json.loads((run_dir / "echomemory_qa_ruleintent_aligned" / "summary.json").read_text(encoding="utf-8"))
+judge_summary = json.loads((run_dir / "echomemory_qa_ruleintent_aligned" / "judge_summary.json").read_text(encoding="utf-8"))
+token_usage = workspace_token_usage_summary(os.environ["WORKSPACE"], os.environ["ACCOUNT"])
+log_path = run_dir / "subset20_import.log"
+log_text = log_path.read_text(encoding="utf-8", errors="ignore")
+qa_marker = log_text.find("[qa]")
+import_log_text = log_text[:qa_marker] if qa_marker >= 0 else log_text
+import_log_summary = summarize(parse_log(import_log_text))
+result = {
+    "label": os.environ["LABEL"],
+    "pending_window_turns": int(os.environ["WINDOW_TURNS"]),
+    "pending_token_threshold": int(os.environ["PENDING_TOKENS"]),
+    "workspace": os.environ["WORKSPACE"],
+    "account": os.environ["ACCOUNT"],
+    "import_token_usage": token_usage,
+    "import_log_usage": {
+        "total_calls": import_log_summary.total_calls,
+        "total_input_tokens": import_log_summary.total_input_tokens,
+        "total_output_tokens": import_log_summary.total_output_tokens,
+        "total_tokens": import_log_summary.total_tokens,
+        "by_call_site": import_log_summary.by_call_site,
+    },
+    "qa_summary": qa_summary,
+    "judge_summary": judge_summary,
+}
+(run_dir / "trigger_windowbudget_summary.json").write_text(
+    json.dumps(result, ensure_ascii=False, indent=2),
+    encoding="utf-8",
+)
+print(json.dumps(result, ensure_ascii=False, indent=2))
+PY

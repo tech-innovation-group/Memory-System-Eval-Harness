@@ -1,0 +1,513 @@
+{
+  "note": "Paraphrase robustness benchmark for query-family routing. No dataset-specific entity list or benchmark keyword table is used.",
+  "systems": [
+    {
+      "name": "baseline_reference_v14",
+      "overall": {
+        "count": 15,
+        "answer_ok": 8,
+        "family_ok": 13,
+        "contract_ok": 15
+      },
+      "family_stats": {
+        "temporal": {
+          "count": 3,
+          "answer_ok": 3,
+          "family_ok": 3,
+          "contract_ok": 3
+        },
+        "relational": {
+          "count": 3,
+          "answer_ok": 3,
+          "family_ok": 3,
+          "contract_ok": 3
+        },
+        "longitudinal": {
+          "count": 3,
+          "answer_ok": 0,
+          "family_ok": 2,
+          "contract_ok": 3
+        },
+        "visual": {
+          "count": 3,
+          "answer_ok": 0,
+          "family_ok": 3,
+          "contract_ok": 3
+        },
+        "readiness": {
+          "count": 3,
+          "answer_ok": 2,
+          "family_ok": 2,
+          "contract_ok": 3
+        }
+      },
+      "rows": [
+        {
+          "qid": "temporal_1",
+          "expected_family": "temporal",
+          "query": "When did Maya start the visa paperwork?",
+          "expected_keywords": [
+            "2026-03-02"
+          ],
+          "predicted_family": "temporal",
+          "primary_reader": "temporal_tree",
+          "contract_ok": true,
+          "answer": "2026-03-02",
+          "answer_ok": true,
+          "family_ok": true
+        },
+        {
+          "qid": "temporal_2",
+          "expected_family": "temporal",
+          "query": "On what date did Maya begin the visa paperwork?",
+          "expected_keywords": [
+            "2026-03-02"
+          ],
+          "predicted_family": "temporal",
+          "primary_reader": "temporal_tree",
+          "contract_ok": true,
+          "answer": "2026-03-02",
+          "answer_ok": true,
+          "family_ok": true
+        },
+        {
+          "qid": "temporal_3",
+          "expected_family": "temporal",
+          "query": "What date marks the start of Maya's visa paperwork?",
+          "expected_keywords": [
+            "2026-03-02"
+          ],
+          "predicted_family": "temporal",
+          "primary_reader": "temporal_tree",
+          "contract_ok": true,
+          "answer": "2026-03-02",
+          "answer_ok": true,
+          "family_ok": true
+        },
+        {
+          "qid": "rel_1",
+          "expected_family": "relational",
+          "query": "Who helped Maya with the visa paperwork?",
+          "expected_keywords": [
+            "Nora"
+          ],
+          "predicted_family": "relational",
+          "primary_reader": "graph",
+          "contract_ok": true,
+          "answer": "Maya, Nora",
+          "answer_ok": true,
+          "family_ok": true
+        },
+        {
+          "qid": "rel_2",
+          "expected_family": "relational",
+          "query": "Through whom did Maya get help for the visa paperwork?",
+          "expected_keywords": [
+            "Nora"
+          ],
+          "predicted_family": "relational",
+          "primary_reader": "graph",
+          "contract_ok": true,
+          "answer": "Maya, Nora",
+          "answer_ok": true,
+          "family_ok": true
+        },
+        {
+          "qid": "rel_3",
+          "expected_family": "relational",
+          "query": "Who assisted Maya on the visa paperwork?",
+          "expected_keywords": [
+            "Nora"
+          ],
+          "predicted_family": "relational",
+          "primary_reader": "graph",
+          "contract_ok": true,
+          "answer": "Maya, Nora",
+          "answer_ok": true,
+          "family_ok": true
+        },
+        {
+          "qid": "long_1",
+          "expected_family": "longitudinal",
+          "query": "How did the apartment lease situation evolve?",
+          "expected_keywords": [
+            "2026-03-27"
+          ],
+          "predicted_family": "longitudinal",
+          "primary_reader": "topic_dossier",
+          "contract_ok": true,
+          "answer": "2026-03-01: Maya found an apartment on Rua Augusta 14 on 2026-03-01\n2026-03-20: Maya showed the lease screenshot with move-in date 2026-03-20\n2026-03-20: Lease contract screenshot\nRua Augusta 14 move-in 2026-03-20",
+          "answer_ok": false,
+          "family_ok": true
+        },
+        {
+          "qid": "long_2",
+          "expected_family": "longitudinal",
+          "query": "What changed over time in the apartment lease situation?",
+          "expected_keywords": [
+            "2026-03-27"
+          ],
+          "predicted_family": "temporal",
+          "primary_reader": "temporal_tree",
+          "contract_ok": true,
+          "answer": "2026-03-20",
+          "answer_ok": false,
+          "family_ok": false
+        },
+        {
+          "qid": "long_3",
+          "expected_family": "longitudinal",
+          "query": "Give the timeline of the apartment lease updates.",
+          "expected_keywords": [
+            "Rua Augusta 14",
+            "2026-03-27"
+          ],
+          "predicted_family": "longitudinal",
+          "primary_reader": "topic_dossier",
+          "contract_ok": true,
+          "answer": "2026-03-01: Maya found an apartment on Rua Augusta 14 on 2026-03-01\n2026-03-20: Maya showed the lease screenshot with move-in date 2026-03-20\n2026-03-20: Lease contract screenshot\nRua Augusta 14 move-in 2026-03-20",
+          "answer_ok": false,
+          "family_ok": true
+        },
+        {
+          "qid": "vis_1",
+          "expected_family": "visual",
+          "query": "What was shown in the lease screenshot?",
+          "expected_keywords": [
+            "Rua Augusta 14"
+          ],
+          "predicted_family": "visual",
+          "primary_reader": "graph",
+          "contract_ok": true,
+          "answer": "Lease contract screenshot",
+          "answer_ok": false,
+          "family_ok": true
+        },
+        {
+          "qid": "vis_2",
+          "expected_family": "visual",
+          "query": "What appears in the lease contract image?",
+          "expected_keywords": [
+            "Rua Augusta 14"
+          ],
+          "predicted_family": "visual",
+          "primary_reader": "graph",
+          "contract_ok": true,
+          "answer": "Lease contract screenshot",
+          "answer_ok": false,
+          "family_ok": true
+        },
+        {
+          "qid": "vis_3",
+          "expected_family": "visual",
+          "query": "Which address is visible in the lease screenshot?",
+          "expected_keywords": [
+            "Rua Augusta 14"
+          ],
+          "predicted_family": "visual",
+          "primary_reader": "graph",
+          "contract_ok": true,
+          "answer": "Lease contract screenshot",
+          "answer_ok": false,
+          "family_ok": true
+        },
+        {
+          "qid": "ready_1",
+          "expected_family": "readiness",
+          "query": "Can you answer now?",
+          "expected_keywords": [
+            "ready"
+          ],
+          "predicted_family": "readiness",
+          "primary_reader": "readiness",
+          "contract_ok": true,
+          "answer": "ready",
+          "answer_ok": true,
+          "family_ok": true
+        },
+        {
+          "qid": "ready_2",
+          "expected_family": "readiness",
+          "query": "Is the memory ready for QA now?",
+          "expected_keywords": [
+            "ready"
+          ],
+          "predicted_family": "readiness",
+          "primary_reader": "readiness",
+          "contract_ok": true,
+          "answer": "ready",
+          "answer_ok": true,
+          "family_ok": true
+        },
+        {
+          "qid": "ready_3",
+          "expected_family": "readiness",
+          "query": "Can the system answer at this point?",
+          "expected_keywords": [
+            "ready"
+          ],
+          "predicted_family": "general",
+          "primary_reader": "atom",
+          "contract_ok": true,
+          "answer": "Maya showed the lease screenshot with move-in date 2026-03-20",
+          "answer_ok": false,
+          "family_ok": false
+        }
+      ]
+    },
+    {
+      "name": "improved_reference_v14",
+      "overall": {
+        "count": 15,
+        "answer_ok": 15,
+        "family_ok": 15,
+        "contract_ok": 15
+      },
+      "family_stats": {
+        "temporal": {
+          "count": 3,
+          "answer_ok": 3,
+          "family_ok": 3,
+          "contract_ok": 3
+        },
+        "relational": {
+          "count": 3,
+          "answer_ok": 3,
+          "family_ok": 3,
+          "contract_ok": 3
+        },
+        "longitudinal": {
+          "count": 3,
+          "answer_ok": 3,
+          "family_ok": 3,
+          "contract_ok": 3
+        },
+        "visual": {
+          "count": 3,
+          "answer_ok": 3,
+          "family_ok": 3,
+          "contract_ok": 3
+        },
+        "readiness": {
+          "count": 3,
+          "answer_ok": 3,
+          "family_ok": 3,
+          "contract_ok": 3
+        }
+      },
+      "rows": [
+        {
+          "qid": "temporal_1",
+          "expected_family": "temporal",
+          "query": "When did Maya start the visa paperwork?",
+          "expected_keywords": [
+            "2026-03-02"
+          ],
+          "predicted_family": "temporal",
+          "primary_reader": "temporal_tree",
+          "contract_ok": true,
+          "answer": "2026-03-02",
+          "answer_ok": true,
+          "family_ok": true
+        },
+        {
+          "qid": "temporal_2",
+          "expected_family": "temporal",
+          "query": "On what date did Maya begin the visa paperwork?",
+          "expected_keywords": [
+            "2026-03-02"
+          ],
+          "predicted_family": "temporal",
+          "primary_reader": "temporal_tree",
+          "contract_ok": true,
+          "answer": "2026-03-02",
+          "answer_ok": true,
+          "family_ok": true
+        },
+        {
+          "qid": "temporal_3",
+          "expected_family": "temporal",
+          "query": "What date marks the start of Maya's visa paperwork?",
+          "expected_keywords": [
+            "2026-03-02"
+          ],
+          "predicted_family": "temporal",
+          "primary_reader": "temporal_tree",
+          "contract_ok": true,
+          "answer": "2026-03-02",
+          "answer_ok": true,
+          "family_ok": true
+        },
+        {
+          "qid": "rel_1",
+          "expected_family": "relational",
+          "query": "Who helped Maya with the visa paperwork?",
+          "expected_keywords": [
+            "Nora"
+          ],
+          "predicted_family": "relational",
+          "primary_reader": "graph",
+          "contract_ok": true,
+          "answer": "Maya, Nora",
+          "answer_ok": true,
+          "family_ok": true
+        },
+        {
+          "qid": "rel_2",
+          "expected_family": "relational",
+          "query": "Through whom did Maya get help for the visa paperwork?",
+          "expected_keywords": [
+            "Nora"
+          ],
+          "predicted_family": "relational",
+          "primary_reader": "graph",
+          "contract_ok": true,
+          "answer": "Maya, Nora",
+          "answer_ok": true,
+          "family_ok": true
+        },
+        {
+          "qid": "rel_3",
+          "expected_family": "relational",
+          "query": "Who assisted Maya on the visa paperwork?",
+          "expected_keywords": [
+            "Nora"
+          ],
+          "predicted_family": "relational",
+          "primary_reader": "graph",
+          "contract_ok": true,
+          "answer": "Maya, Nora",
+          "answer_ok": true,
+          "family_ok": true
+        },
+        {
+          "qid": "long_1",
+          "expected_family": "longitudinal",
+          "query": "How did the apartment lease situation evolve?",
+          "expected_keywords": [
+            "2026-03-27"
+          ],
+          "predicted_family": "longitudinal",
+          "primary_reader": "topic_dossier",
+          "contract_ok": true,
+          "answer": "2026-03-01: Maya found an apartment on Rua Augusta 14 on 2026-03-01\n2026-03-20: Maya showed the lease screenshot with move-in date 2026-03-20\n2026-03-20: Lease contract screenshot\nRua Augusta 14 move-in 2026-03-20\n2026-03-27: The landlord delayed the handover and the move-in shifted to 2026-03-27",
+          "answer_ok": true,
+          "family_ok": true
+        },
+        {
+          "qid": "long_2",
+          "expected_family": "longitudinal",
+          "query": "What changed over time in the apartment lease situation?",
+          "expected_keywords": [
+            "2026-03-27"
+          ],
+          "predicted_family": "longitudinal",
+          "primary_reader": "topic_dossier",
+          "contract_ok": true,
+          "answer": "2026-03-01: Maya found an apartment on Rua Augusta 14 on 2026-03-01\n2026-03-20: Maya showed the lease screenshot with move-in date 2026-03-20\n2026-03-20: Lease contract screenshot\nRua Augusta 14 move-in 2026-03-20\n2026-03-27: The landlord delayed the handover and the move-in shifted to 2026-03-27",
+          "answer_ok": true,
+          "family_ok": true
+        },
+        {
+          "qid": "long_3",
+          "expected_family": "longitudinal",
+          "query": "Give the timeline of the apartment lease updates.",
+          "expected_keywords": [
+            "Rua Augusta 14",
+            "2026-03-27"
+          ],
+          "predicted_family": "longitudinal",
+          "primary_reader": "topic_dossier",
+          "contract_ok": true,
+          "answer": "2026-03-01: Maya found an apartment on Rua Augusta 14 on 2026-03-01\n2026-03-20: Maya showed the lease screenshot with move-in date 2026-03-20\n2026-03-20: Lease contract screenshot\nRua Augusta 14 move-in 2026-03-20\n2026-03-27: The landlord delayed the handover and the move-in shifted to 2026-03-27",
+          "answer_ok": true,
+          "family_ok": true
+        },
+        {
+          "qid": "vis_1",
+          "expected_family": "visual",
+          "query": "What was shown in the lease screenshot?",
+          "expected_keywords": [
+            "Rua Augusta 14"
+          ],
+          "predicted_family": "visual",
+          "primary_reader": "graph",
+          "contract_ok": true,
+          "answer": "Rua Augusta 14 move-in 2026-03-20",
+          "answer_ok": true,
+          "family_ok": true
+        },
+        {
+          "qid": "vis_2",
+          "expected_family": "visual",
+          "query": "What appears in the lease contract image?",
+          "expected_keywords": [
+            "Rua Augusta 14"
+          ],
+          "predicted_family": "visual",
+          "primary_reader": "graph",
+          "contract_ok": true,
+          "answer": "Rua Augusta 14 move-in 2026-03-20",
+          "answer_ok": true,
+          "family_ok": true
+        },
+        {
+          "qid": "vis_3",
+          "expected_family": "visual",
+          "query": "Which address is visible in the lease screenshot?",
+          "expected_keywords": [
+            "Rua Augusta 14"
+          ],
+          "predicted_family": "visual",
+          "primary_reader": "graph",
+          "contract_ok": true,
+          "answer": "Rua Augusta 14 move-in 2026-03-20",
+          "answer_ok": true,
+          "family_ok": true
+        },
+        {
+          "qid": "ready_1",
+          "expected_family": "readiness",
+          "query": "Can you answer now?",
+          "expected_keywords": [
+            "ready"
+          ],
+          "predicted_family": "readiness",
+          "primary_reader": "readiness",
+          "contract_ok": true,
+          "answer": "ready",
+          "answer_ok": true,
+          "family_ok": true
+        },
+        {
+          "qid": "ready_2",
+          "expected_family": "readiness",
+          "query": "Is the memory ready for QA now?",
+          "expected_keywords": [
+            "ready"
+          ],
+          "predicted_family": "readiness",
+          "primary_reader": "readiness",
+          "contract_ok": true,
+          "answer": "ready",
+          "answer_ok": true,
+          "family_ok": true
+        },
+        {
+          "qid": "ready_3",
+          "expected_family": "readiness",
+          "query": "Can the system answer at this point?",
+          "expected_keywords": [
+            "ready"
+          ],
+          "predicted_family": "readiness",
+          "primary_reader": "readiness",
+          "contract_ok": true,
+          "answer": "ready",
+          "answer_ok": true,
+          "family_ok": true
+        }
+      ]
+    }
+  ]
+}

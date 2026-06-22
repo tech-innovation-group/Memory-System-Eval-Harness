@@ -10,7 +10,7 @@ gold QA answers into memory.
 The harness now provides an optional but default-enabled memory schema override:
 
 ```text
-/Users/chx/locomo-eval-web/openviking_custom_memory_templates/locomo_evidence
+<repo-root>/openviking_custom_memory_templates/locomo_evidence
 ```
 
 When the Web UI starts a new OpenViking import task, the generated
@@ -19,7 +19,7 @@ When the Web UI starts a new OpenViking import task, the generated
 ```json
 {
   "memory": {
-    "custom_templates_dir": "/Users/chx/locomo-eval-web/openviking_custom_memory_templates/locomo_evidence"
+    "custom_templates_dir": "<repo-root>/openviking_custom_memory_templates/locomo_evidence"
   }
 }
 ```

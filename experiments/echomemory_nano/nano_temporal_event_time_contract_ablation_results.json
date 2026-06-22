@@ -1,0 +1,212 @@
+{
+  "policies": {
+    "layer_only_temporal": {
+      "required": [
+        "temporal_tree",
+        "event"
+      ],
+      "used_readers": [
+        "tree",
+        "graph"
+      ],
+      "final_coverage": {
+        "required": [
+          "temporal_tree",
+          "event"
+        ],
+        "matched": [
+          "temporal_tree",
+          "event"
+        ],
+        "missing": [],
+        "contract_ok": true,
+        "coverage_ratio": 1.0,
+        "has_event_time": false
+      },
+      "hits": [
+        {
+          "source": "tree://2026-03-03",
+          "layer": "temporal_tree",
+          "content": "- 2026-03-03: Aria signed the Riverside lease.",
+          "event_time": "",
+          "why": "Chronology skeleton only."
+        },
+        {
+          "source": "graph://event-sign-lease",
+          "layer": "event",
+          "content": "Aria signed Riverside lease",
+          "event_time": "",
+          "why": "Entity/event relation, but no explicit event-time field."
+        }
+      ],
+      "snapshots": [
+        {
+          "after_reader": "tree",
+          "coverage": {
+            "required": [
+              "temporal_tree",
+              "event"
+            ],
+            "matched": [
+              "temporal_tree"
+            ],
+            "missing": [
+              "event"
+            ],
+            "contract_ok": false,
+            "coverage_ratio": 0.5,
+            "has_event_time": false
+          },
+          "hit_layers": [
+            "temporal_tree"
+          ]
+        },
+        {
+          "after_reader": "graph",
+          "coverage": {
+            "required": [
+              "temporal_tree",
+              "event"
+            ],
+            "matched": [
+              "temporal_tree",
+              "event"
+            ],
+            "missing": [],
+            "contract_ok": true,
+            "coverage_ratio": 1.0,
+            "has_event_time": false
+          },
+          "hit_layers": [
+            "temporal_tree",
+            "event"
+          ]
+        }
+      ]
+    },
+    "event_time_temporal": {
+      "required": [
+        "temporal_tree",
+        "event",
+        "event_time"
+      ],
+      "used_readers": [
+        "tree",
+        "graph",
+        "atom"
+      ],
+      "final_coverage": {
+        "required": [
+          "temporal_tree",
+          "event",
+          "event_time"
+        ],
+        "matched": [
+          "temporal_tree",
+          "event",
+          "event_time"
+        ],
+        "missing": [],
+        "contract_ok": true,
+        "coverage_ratio": 1.0,
+        "has_event_time": true
+      },
+      "hits": [
+        {
+          "source": "tree://2026-03-03",
+          "layer": "temporal_tree",
+          "content": "- 2026-03-03: Aria signed the Riverside lease.",
+          "event_time": "",
+          "why": "Chronology skeleton only."
+        },
+        {
+          "source": "graph://event-sign-lease",
+          "layer": "event",
+          "content": "Aria signed Riverside lease",
+          "event_time": "",
+          "why": "Entity/event relation, but no explicit event-time field."
+        },
+        {
+          "source": "atom://sign-lease",
+          "layer": "event",
+          "content": "Aria signed the Riverside lease [时间=2026-03-03]",
+          "event_time": "2026-03-03",
+          "why": "Explicit story-time grounding."
+        }
+      ],
+      "snapshots": [
+        {
+          "after_reader": "tree",
+          "coverage": {
+            "required": [
+              "temporal_tree",
+              "event",
+              "event_time"
+            ],
+            "matched": [
+              "temporal_tree"
+            ],
+            "missing": [
+              "event",
+              "event_time"
+            ],
+            "contract_ok": false,
+            "coverage_ratio": 0.333,
+            "has_event_time": false
+          },
+          "hit_layers": [
+            "temporal_tree"
+          ]
+        },
+        {
+          "after_reader": "graph",
+          "coverage": {
+            "required": [
+              "temporal_tree",
+              "event",
+              "event_time"
+            ],
+            "matched": [
+              "temporal_tree",
+              "event"
+            ],
+            "missing": [
+              "event_time"
+            ],
+            "contract_ok": false,
+            "coverage_ratio": 0.667,
+            "has_event_time": false
+          },
+          "hit_layers": [
+            "temporal_tree",
+            "event"
+          ]
+        },
+        {
+          "after_reader": "atom",
+          "coverage": {
+            "required": [
+              "temporal_tree",
+              "event",
+              "event_time"
+            ],
+            "matched": [
+              "temporal_tree",
+              "event",
+              "event_time"
+            ],
+            "missing": [],
+            "contract_ok": true,
+            "coverage_ratio": 1.0,
+            "has_event_time": true
+          },
+          "hit_layers": [
+            "temporal_tree",
+            "event",
+            "event"
+          ]
+        }
+      ]
+    }
+  }
+}

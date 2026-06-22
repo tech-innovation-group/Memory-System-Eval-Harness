@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EchoMemory Graph-first Ablation</title>
+  <style>
+    :root {
+      --bg:#f6f7fb;--panel:#fff;--text:#172033;--muted:#667085;--line:#dde4ee;
+      --green:#067647;--green-soft:#ecfdf3;--red:#b42318;--red-soft:#fff1f3;--blue:#175cd3;--blue-soft:#eff4ff;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font:14px/1.68 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+    .wrap{max-width:1240px;margin:0 auto;padding:28px 20px 64px}
+    .hero,.panel,.card,.case{background:var(--panel);border:1px solid var(--line);border-radius:12px}
+    .hero{padding:28px 30px 22px}
+    .panel{padding:20px 22px;margin-top:18px}
+    .grid{display:grid;gap:16px}
+    .grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+    .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:18px}
+    .stat{padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:#fbfcff}
+    .stat .label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px}
+    .stat .value{font-size:22px;font-weight:700}
+    h1,h2,h3{margin:0 0 10px}
+    p{margin:0 0 10px}
+    .muted{color:var(--muted)}
+    .badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;margin-bottom:12px}
+    .badge.ok{background:var(--green-soft);color:var(--green)}
+    .badge.bad{background:var(--red-soft);color:var(--red)}
+    .badge.info{background:var(--blue-soft);color:var(--blue)}
+    .case{padding:18px 20px;margin-top:16px}
+    .card{padding:14px}
+    ul{margin:0;padding-left:18px}
+    li{margin:6px 0}
+    code{background:#f3f6fb;border-radius:6px;padding:2px 6px;font-size:12px}
+    @media (max-width: 980px) {
+      .grid.three,.stats{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1>EchoMemory Nano: Graph-first Ablation</h1>
+      <p>
+        这个实验专门回答一个方法问题：<b>为什么 EchoMemory 值得把 temporal / relational / visual query 交给 graph-first planner</b>。
+        我们比较三种检索模式：
+        <b>lexical baseline</b>（只看 block/fact 文本匹配）、
+        <b>graph-first</b>（按 query intent 优先 event / image_evidence）、
+        <b>graph-path</b>（在 graph-first 基础上沿边补 path evidence）。
+      </p>
+      <div class="stats">
+        <div class="stat"><span class="label">lexical baseline</span><span class="value">1/4</span></div>
+        <div class="stat"><span class="label">graph-first</span><span class="value">3/4</span></div>
+        <div class="stat"><span class="label">graph-path</span><span class="value">4/4</span></div>
+        <div class="stat"><span class="label">最重要结论</span><span class="value">Graph is not decoration</span></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Interpretation</h2>
+      <p>
+        如果结果如预期，说明两件事：
+        第一，时间题和视觉题不是“多检索点文本”就够了，而是要让 <code>event</code>、<code>image_evidence</code> 直接成为主证据入口。
+        第二，只把图节点召回出来还不够，<b>沿边拿到 path evidence</b> 会比孤立节点更接近真实系统要做的事。
+      </p>
+    </div>
+
+    <div class='case'><h3>temporal_event_date</h3><p><b>Query:</b> When did Gina lose her job?</p><p class='muted'>Temporal question should prefer event nodes, not generic fact text.</p><div class='grid three'><div class='card'><div class='badge bad'>lexical baseline fail</div><ul><li><code>block-timeline-main</code> · block · score=3.2<br>- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.
+- 2023-02-02: On 2023-02-02 Gina lost her job and started searching for design roles.
+- 2023-03-12: Jon married Alice on 2023-03-12 i</li><li><code>fact:atom-001</code> · fact · score=3.0<br>statement=On 2023-02-02 Gina lost her job and started searching for design roles.
+subject=unknown
+predicate=mentions
+object=On 2023-02-02 Gina lost her job and star</li><li><code>block-plan-main</code> · block · score=1.2<br>- Gina plans to move to Lisbon after the spring hiring season.</li><li><code>entity:Gina</code> · entity · score=1.0<br>name=Gina</li></ul></div><div class='card'><div class='badge ok'>graph-first pass</div><ul><li><code>event:atom-001</code> · event · score=4.0<br>unknown mentions On 2023-02-02 Gina lost her job and star</li><li><code>block-timeline-main</code> · block · score=3.3<br>- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.
+- 2023-02-02: On 2023-02-02 Gina lost her job and started searching for design roles.
+- 2023-03-12: Jon married Alice on 2023-03-12 i</li><li><code>fact:atom-001</code> · fact · score=3.0<br>statement=On 2023-02-02 Gina lost her job and started searching for design roles.
+subject=unknown
+predicate=mentions
+object=On 2023-02-02 Gina lost her job and star</li><li><code>event:atom-000</code> · event · score=2.0<br>Gina visited Rome</li></ul></div><div class='card'><div class='badge ok'>graph-path pass</div><ul><li><code>event:atom-001</code> · event · score=5.9<br>unknown mentions On 2023-02-02 Gina lost her job and star
+[path:evidence_of]</li><li><code>fact:atom-001</code> · fact · score=4.25<br>statement=On 2023-02-02 Gina lost her job and started searching for design roles.
+subject=unknown
+predicate=mentions
+object=On 2023-02-02 Gina lost her job and star
+[path:evidence_of]</li><li><code>event:atom-000</code> · event · score=3.9<br>Gina visited Rome
+[path:temporal_next]</li><li><code>event:atom-002</code> · event · score=3.9<br>Gina plans move to Lisbon after the spring hiring season.
+[path:temporal_next]</li></ul></div></div></div><div class='case'><h3>visual_arrival_evidence</h3><p><b>Query:</b> What was visible in Gina&#x27;s screenshot from her arrival day?</p><p class='muted'>Visual question should prioritize image evidence rather than timeline blocks.</p><div class='grid three'><div class='card'><div class='badge bad'>lexical baseline fail</div><ul><li><code>block-timeline-main</code> · block · score=3.2<br>- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.
+- 2023-02-02: On 2023-02-02 Gina lost her job and started searching for design roles.
+- 2023-03-12: Jon married Alice on 2023-03-12 i</li><li><code>fact:atom-001</code> · fact · score=3.0<br>statement=On 2023-02-02 Gina lost her job and started searching for design roles.
+subject=unknown
+predicate=mentions
+object=On 2023-02-02 Gina lost her job and star</li><li><code>block-plan-main</code> · block · score=2.2<br>- Gina plans to move to Lisbon after the spring hiring season.</li><li><code>entity:Gina</code> · entity · score=2.0<br>name=Gina</li></ul></div><div class='card'><div class='badge ok'>graph-first pass</div><ul><li><code>image:obs-004</code> · image_evidence · score=7.2<br>caption=Phone screenshot from Gina&#x27;s arrival day.
+ocr=Roma Termini 08:42 Platform 7
+tags=rome,station,arrival</li><li><code>block-timeline-main</code> · block · score=3.3<br>- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.
+- 2023-02-02: On 2023-02-02 Gina lost her job and started searching for design roles.
+- 2023-03-12: Jon married Alice on 2023-03-12 i</li><li><code>event:atom-001</code> · event · score=3.0<br>unknown mentions On 2023-02-02 Gina lost her job and star</li><li><code>block-plan-main</code> · block · score=2.3<br>- Gina plans to move to Lisbon after the spring hiring season.</li></ul></div><div class='card'><div class='badge ok'>graph-path pass</div><ul><li><code>image:obs-004</code> · image_evidence · score=8.5<br>caption=Phone screenshot from Gina&#x27;s arrival day.
+ocr=Roma Termini 08:42 Platform 7
+tags=rome,station,arrival
+[path:shows]</li><li><code>event:atom-001</code> · event · score=4.6<br>unknown mentions On 2023-02-02 Gina lost her job and star
+[path:evidence_of]</li><li><code>fact:atom-001</code> · fact · score=3.85<br>statement=On 2023-02-02 Gina lost her job and started searching for design roles.
+subject=unknown
+predicate=mentions
+object=On 2023-02-02 Gina lost her job and star
+[path:evidence_of]</li><li><code>event:atom-000</code> · event · score=3.6<br>Gina visited Rome
+[path:temporal_next]</li></ul></div></div></div><div class='case'><h3>multi_hop_person_relation</h3><p><b>Query:</b> Who married Alice and when?</p><p class='muted'>This needs relation plus event date; path-style graph evidence should help.</p><div class='grid three'><div class='card'><div class='badge bad'>lexical baseline fail</div><ul><li><code>block-timeline-main</code> · block · score=3.2<br>- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.
+- 2023-02-02: On 2023-02-02 Gina lost her job and started searching for design roles.
+- 2023-03-12: Jon married Alice on 2023-03-12 i</li><li><code>fact:atom-003</code> · fact · score=2.0<br>statement=Jon married Alice on 2023-03-12 in Seattle.
+subject=Jon
+predicate=married
+object=Alice</li><li><code>entity:Alice</code> · entity · score=1.0<br>name=Alice</li><li><code>fact:atom-001</code> · fact · score=1.0<br>statement=On 2023-02-02 Gina lost her job and started searching for design roles.
+subject=unknown
+predicate=mentions
+object=On 2023-02-02 Gina lost her job and star</li></ul></div><div class='card'><div class='badge bad'>graph-first fail</div><ul><li><code>block-timeline-main</code> · block · score=3.3<br>- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.
+- 2023-02-02: On 2023-02-02 Gina lost her job and started searching for design roles.
+- 2023-03-12: Jon married Alice on 2023-03-12 i</li><li><code>event:atom-003</code> · event · score=3.0<br>Jon married Alice</li><li><code>event:atom-001</code> · event · score=2.0<br>unknown mentions On 2023-02-02 Gina lost her job and star</li><li><code>fact:atom-003</code> · fact · score=2.0<br>statement=Jon married Alice on 2023-03-12 in Seattle.
+subject=Jon
+predicate=married
+object=Alice</li></ul></div><div class='card'><div class='badge ok'>graph-path pass</div><ul><li><code>event:atom-003</code> · event · score=4.9<br>Jon married Alice
+[path:evidence_of]</li><li><code>event:atom-001</code> · event · score=3.9<br>unknown mentions On 2023-02-02 Gina lost her job and star
+[path:evidence_of]</li><li><code>fact:atom-003</code> · fact · score=3.25<br>statement=Jon married Alice on 2023-03-12 in Seattle.
+subject=Jon
+predicate=married
+object=Alice
+[path:evidence_of]</li><li><code>event:atom-000</code> · event · score=2.9<br>Gina visited Rome
+[path:temporal_next]</li></ul></div></div></div><div class='case'><h3>future_plan</h3><p><b>Query:</b> What does Gina plan to do after spring hiring season?</p><p class='muted'>Plan blocks are still useful; graph-first should not erase block advantages.</p><div class='grid three'><div class='card'><div class='badge ok'>lexical baseline pass</div><ul><li><code>block-plan-main</code> · block · score=7.2<br>- Gina plans to move to Lisbon after the spring hiring season.</li><li><code>fact:atom-002</code> · fact · score=7.0<br>statement=Gina plans to move to Lisbon after the spring hiring season.
+subject=Gina
+predicate=plans
+object=move to Lisbon after the spring hiring season.</li><li><code>block-timeline-main</code> · block · score=2.2<br>- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.
+- 2023-02-02: On 2023-02-02 Gina lost her job and started searching for design roles.
+- 2023-03-12: Jon married Alice on 2023-03-12 i</li><li><code>fact:atom-000</code> · fact · score=2.0<br>statement=Gina visited Rome on 2023-01-30 after leaving Milan.
+subject=Gina
+predicate=visited
+object=Rome</li></ul></div><div class='card'><div class='badge ok'>graph-first pass</div><ul><li><code>block-plan-main</code> · block · score=7.3<br>- Gina plans to move to Lisbon after the spring hiring season.</li><li><code>event:atom-002</code> · event · score=7.0<br>Gina plans move to Lisbon after the spring hiring season.</li><li><code>fact:atom-002</code> · fact · score=7.0<br>statement=Gina plans to move to Lisbon after the spring hiring season.
+subject=Gina
+predicate=plans
+object=move to Lisbon after the spring hiring season.</li><li><code>block-timeline-main</code> · block · score=2.3<br>- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.
+- 2023-02-02: On 2023-02-02 Gina lost her job and started searching for design roles.
+- 2023-03-12: Jon married Alice on 2023-03-12 i</li></ul></div><div class='card'><div class='badge ok'>graph-path pass</div><ul><li><code>block-plan-main</code> · block · score=7.3<br>- Gina plans to move to Lisbon after the spring hiring season.</li><li><code>event:atom-002</code> · event · score=7.0<br>Gina plans move to Lisbon after the spring hiring season.</li><li><code>fact:atom-002</code> · fact · score=7.0<br>statement=Gina plans to move to Lisbon after the spring hiring season.
+subject=Gina
+predicate=plans
+object=move to Lisbon after the spring hiring season.</li><li><code>block-timeline-main</code> · block · score=2.3<br>- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.
+- 2023-02-02: On 2023-02-02 Gina lost her job and started searching for design roles.
+- 2023-03-12: Jon married Alice on 2023-03-12 i</li></ul></div></div></div>
+  </div>
+</body>
+</html>

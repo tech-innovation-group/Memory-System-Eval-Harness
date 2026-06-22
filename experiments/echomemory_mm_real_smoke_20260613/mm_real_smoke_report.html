@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EchoMemory-MM Real Smoke</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #f4f7fb;
+      color: #162033;
+      font: 14px/1.68 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+    }
+    .page { max-width: 1100px; margin: 0 auto; }
+    .card {
+      background: #fff;
+      border: 1px solid #d8e1ee;
+      border-radius: 10px;
+      padding: 20px 22px;
+      margin-bottom: 16px;
+      box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+    }
+    h1, h2 { margin: 0 0 12px; }
+    p { color: #5e697b; }
+    .kpis { display: flex; flex-wrap: wrap; gap: 10px; }
+    .kpi {
+      border: 1px solid #d8e1ee;
+      background: #f9fbff;
+      border-radius: 8px;
+      padding: 12px 14px;
+      min-width: 180px;
+    }
+    .label { font-size: 12px; color: #5e697b; }
+    .value { font-size: 18px; font-weight: 700; color: #162033; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      border-top: 1px solid #d8e1ee;
+      text-align: left;
+      vertical-align: top;
+      padding: 10px;
+    }
+    th {
+      background: #fbfcff;
+      color: #5e697b;
+      font-size: 12px;
+    }
+    pre {
+      background: #f3f6fb;
+      border-radius: 8px;
+      padding: 12px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    code { background: #f2f6fb; border-radius: 4px; padding: 1px 4px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="card">
+      <h1>EchoMemory-MM Real Smoke</h1>
+      <p>这个 smoke 不再是 unit test，也不是 nano。它直接走主代码 runtime：<code>image observation -&gt; atom_first pipeline -&gt; graph node -&gt; visual query search</code>。</p>
+      <div class="kpis">
+        <div class="kpi"><div class="label">image node found</div><div class="value">True</div></div>
+        <div class="kpi"><div class="label">top1 memory type</div><div class="value">image_evidence</div></div>
+        <div class="kpi"><div class="label">top1 node type</div><div class="value">image_evidence</div></div>
+        <div class="kpi"><div class="label">OCR visible in top1</div><div class="value">True</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Image Node</h2>
+      <pre>{
+  "node_id": "image_evidence:msg-7c86f362c9e1",
+  "node_type": "image_evidence",
+  "backing_ref": "msg-7c86f362c9e1",
+  "backing_plane": "session",
+  "salience": 0.45,
+  "temporal_scope": "historical",
+  "summary_hint": "Finance dashboard screenshot | Revenue 123; Margin 18%",
+  "last_touched_at": "2026-06-13T11:42:27.783011+00:00",
+  "properties": {
+    "message_id": "msg-7c86f362c9e1",
+    "created_at": "2026-06-13T11:42:27.730193+00:00",
+    "resource_uri": "echo://mm-smoke/resources/screenshot-001",
+    "mime": "image/png",
+    "caption": "Finance dashboard screenshot",
+    "ocr": "Revenue 123; Margin 18%",
+    "linked_subject": "Alice",
+    "tags": [
+      "dashboard",
+      "finance",
+      "ocr"
+    ]
+  }
+}</pre>
+    </div>
+    <div class="card">
+      <h2>Top Search Hits</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>memory_type</th>
+            <th>source_uri</th>
+            <th>node_type</th>
+            <th>confidence</th>
+            <th>content</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>image_evidence</td><td>graph://image_evidence:msg-7c86f362c9e1</td><td>image_evidence</td><td>1.000</td><td>Finance dashboard screenshot | Revenue 123; Margin 18% — Finance dashboard screenshot — Revenue 123; Margin 18%</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>

@@ -23,12 +23,12 @@ This segment improved operational confidence and report readability. The app now
 
 ## Evaluation Evidence
 - LoCoMo smoke result remains available:
-  - CSV: `/Users/chx/locomo-eval-web/runs/manual_locomo_smoke_5/local_agent/local_agent_results.csv`
-  - Report: `/Users/chx/locomo-eval-web/runs/manual_locomo_smoke_5/report.md`
+  - CSV: `<repo-root>/runs/manual_locomo_smoke_5/local_agent/local_agent_results.csv`
+  - Report: `<repo-root>/runs/manual_locomo_smoke_5/report.md`
   - Judge score: 1/5, 20.0%.
   - Token estimate: 1,625 injection tokens.
 - LongMemEval 100 result remains available:
-  - Summary: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_100_check_v2/local_agent/summary.json`
+  - Summary: `<repo-root>/runs/manual_longmemeval_100_check_v2/local_agent/summary.json`
   - Rows: 100.
   - Exact-match reference: 7/100.
   - Token estimate: 198,093 injection tokens.

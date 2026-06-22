@@ -1,0 +1,676 @@
+{
+  "summary": {
+    "observations": 8,
+    "atoms": 8,
+    "dossiers": 3,
+    "tree_blocks": 10,
+    "graph_nodes": 23,
+    "qa_ready": true
+  },
+  "readiness": {
+    "persisted": true,
+    "atoms_ready": true,
+    "dossier_ready": true,
+    "tree_ready": true,
+    "graph_ready": true,
+    "qa_ready": true
+  },
+  "cases": [
+    {
+      "case_id": "temporal_1",
+      "query": "When did Maya start the visa paperwork?",
+      "family": "temporal",
+      "expected_keywords": [
+        "2026-03-02"
+      ],
+      "result": {
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "temporal_tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "required_layers": [
+            "temporal_tree",
+            "event",
+            "event_time"
+          ],
+          "reason": "Chronology-heavy query."
+        },
+        "hits": [
+          {
+            "source": "day:2026-03-02",
+            "layer": "temporal_tree",
+            "score": 0.7714285714285714,
+            "content": "- 2026-03-02: Maya started the visa paperwork and Nora helped Maya prepare the financial statement on 2026-03-02",
+            "event_time": "",
+            "trace": {
+              "atom_ids": [
+                "atom-004"
+              ]
+            }
+          },
+          {
+            "source": "month:2026-03",
+            "layer": "temporal_tree",
+            "score": 0.5714285714285714,
+            "content": "- 2026-03-01: Maya found an apartment on Rua Augusta 14 on 2026-03-01\n- 2026-03-02: Maya started the visa paperwork and Nora helped Maya prepare the financial statement on 2026-03-02\n- 2026-03-18: Maya approved the visa process after the consulate received the residence document on 2026-03-18\n- 2026-03-20: Maya showed the lease screenshot with move-in date 2026-03-20\n- 2026-03-20: Lease contract screenshot\nRua Augusta 14 move-in 2026-03-20\n- 2026-03-27: The landlord delayed the handover and the move-in shifted to 2026-03-27",
+            "event_time": "",
+            "trace": {
+              "atom_ids": [
+                "atom-000",
+                "atom-001",
+                "atom-002",
+                "atom-003",
+                "atom-004",
+                "atom-005"
+              ]
+            }
+          },
+          {
+            "source": "year:2026",
+            "layer": "temporal_tree",
+            "score": 0.5714285714285714,
+            "content": "- 2026-03-01: Maya found an apartment on Rua Augusta 14 on 2026-03-01\n- 2026-03-02: Maya started the visa paperwork and Nora helped Maya prepare the financial statement on 2026-03-02\n- 2026-03-18: Maya approved the visa process after the consulate received the residence document on 2026-03-18\n- 2026-03-20: Maya showed the lease screenshot with move-in date 2026-03-20\n- 2026-03-20: Lease contract screenshot\nRua Augusta 14 move-in 2026-03-20\n- 2026-03-27: The landlord delayed the handover and the move-in shifted to 2026-03-27\n- 2026-04-10: Lena started the beta launch plan for 2026-04-10\n- 2026-04-24: Lena confirmed the launch date moved to 2026-04-24 after the payment bug fix",
+            "event_time": "",
+            "trace": {
+              "atom_ids": [
+                "atom-000",
+                "atom-001",
+                "atom-002",
+                "atom-003",
+                "atom-004",
+                "atom-005",
+                "atom-006",
+                "atom-007"
+              ]
+            }
+          },
+          {
+            "source": "atom:atom-004",
+            "layer": "fact",
+            "score": 0.5714285714285714,
+            "content": "Maya started the visa paperwork and Nora helped Maya prepare the financial statement on 2026-03-02",
+            "event_time": "2026-03-02",
+            "trace": {
+              "event_time": "2026-03-02",
+              "subject": "Nora",
+              "predicate": "helped"
+            }
+          },
+          {
+            "source": "day:2026-03-20",
+            "layer": "temporal_tree",
+            "score": 0.4857142857142857,
+            "content": "- 2026-03-20: Maya showed the lease screenshot with move-in date 2026-03-20\n- 2026-03-20: Lease contract screenshot\nRua Augusta 14 move-in 2026-03-20",
+            "event_time": "",
+            "trace": {
+              "atom_ids": [
+                "atom-001",
+                "atom-002"
+              ]
+            }
+          },
+          {
+            "source": "atom:atom-005",
+            "layer": "fact",
+            "score": 0.42857142857142855,
+            "content": "Maya approved the visa process after the consulate received the residence document on 2026-03-18",
+            "event_time": "2026-03-18",
+            "trace": {
+              "event_time": "2026-03-18",
+              "subject": "Maya",
+              "predicate": "approved"
+            }
+          },
+          {
+            "source": "day:2026-03-01",
+            "layer": "temporal_tree",
+            "score": 0.34285714285714286,
+            "content": "- 2026-03-01: Maya found an apartment on Rua Augusta 14 on 2026-03-01",
+            "event_time": "",
+            "trace": {
+              "atom_ids": [
+                "atom-000"
+              ]
+            }
+          },
+          {
+            "source": "day:2026-03-27",
+            "layer": "temporal_tree",
+            "score": 0.34285714285714286,
+            "content": "- 2026-03-27: The landlord delayed the handover and the move-in shifted to 2026-03-27",
+            "event_time": "",
+            "trace": {
+              "atom_ids": [
+                "atom-003"
+              ]
+            }
+          },
+          {
+            "source": "event:atom-001",
+            "layer": "graph",
+            "score": 0.2857142857142857,
+            "content": "Maya showed the lease screenshot with move-in date 2026-03-20",
+            "event_time": "2026-03-20",
+            "trace": {}
+          },
+          {
+            "source": "fact:atom-001",
+            "layer": "graph",
+            "score": 0.2857142857142857,
+            "content": "Maya showed the lease screenshot with move-in date 2026-03-20",
+            "event_time": "2026-03-20",
+            "trace": {}
+          }
+        ],
+        "present_layers": [
+          "event",
+          "event_time",
+          "fact",
+          "graph",
+          "temporal_tree"
+        ],
+        "missing_layers": [],
+        "contract_ok": true,
+        "second_pass_sources": [
+          "graph",
+          "atom"
+        ],
+        "answer": "2026-03-02"
+      }
+    },
+    {
+      "case_id": "relational_1",
+      "query": "Who helped Maya with the visa paperwork?",
+      "family": "relational",
+      "expected_keywords": [
+        "Nora",
+        "Maya"
+      ],
+      "result": {
+        "plan": {
+          "family": "relational",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "atom",
+            "temporal_tree"
+          ],
+          "required_layers": [
+            "graph",
+            "fact",
+            "path_grounding"
+          ],
+          "reason": "Relation-heavy query."
+        },
+        "hits": [
+          {
+            "source": "atom:atom-004",
+            "layer": "fact",
+            "score": 0.7142857142857143,
+            "content": "Maya started the visa paperwork and Nora helped Maya prepare the financial statement on 2026-03-02",
+            "event_time": "2026-03-02",
+            "trace": {
+              "event_time": "2026-03-02",
+              "subject": "Nora",
+              "predicate": "helped"
+            }
+          },
+          {
+            "source": "event:atom-001",
+            "layer": "graph",
+            "score": 0.6285714285714286,
+            "content": "Maya showed the lease screenshot with move-in date 2026-03-20",
+            "event_time": "2026-03-20",
+            "trace": {
+              "path_edge_ids": [
+                "event:atom-001:evidence:fact:atom-001",
+                "event:atom-001:involves:entity:Maya"
+              ]
+            }
+          },
+          {
+            "source": "fact:atom-001",
+            "layer": "graph",
+            "score": 0.42857142857142855,
+            "content": "Maya showed the lease screenshot with move-in date 2026-03-20",
+            "event_time": "2026-03-20",
+            "trace": {}
+          },
+          {
+            "source": "atom:atom-001",
+            "layer": "fact",
+            "score": 0.42857142857142855,
+            "content": "Maya showed the lease screenshot with move-in date 2026-03-20",
+            "event_time": "2026-03-20",
+            "trace": {
+              "event_time": "2026-03-20",
+              "subject": "Maya",
+              "predicate": "showed"
+            }
+          },
+          {
+            "source": "atom:atom-005",
+            "layer": "fact",
+            "score": 0.42857142857142855,
+            "content": "Maya approved the visa process after the consulate received the residence document on 2026-03-18",
+            "event_time": "2026-03-18",
+            "trace": {
+              "event_time": "2026-03-18",
+              "subject": "Maya",
+              "predicate": "approved"
+            }
+          },
+          {
+            "source": "event:atom-000",
+            "layer": "graph",
+            "score": 0.34285714285714286,
+            "content": "Maya found an apartment on Rua Augusta 14 on 2026-03-01",
+            "event_time": "2026-03-01",
+            "trace": {
+              "path_edge_ids": [
+                "event:atom-000:evidence:fact:atom-000",
+                "event:atom-000:involves:entity:Maya"
+              ]
+            }
+          },
+          {
+            "source": "entity:Maya",
+            "layer": "graph",
+            "score": 0.34285714285714286,
+            "content": "name=Maya",
+            "event_time": "",
+            "trace": {}
+          },
+          {
+            "source": "entity:Rua",
+            "layer": "graph",
+            "score": 0.2,
+            "content": "name=Rua",
+            "event_time": "",
+            "trace": {}
+          },
+          {
+            "source": "entity:Augusta",
+            "layer": "graph",
+            "score": 0.2,
+            "content": "name=Augusta",
+            "event_time": "",
+            "trace": {}
+          },
+          {
+            "source": "entity:Lease",
+            "layer": "graph",
+            "score": 0.2,
+            "content": "name=Lease",
+            "event_time": "",
+            "trace": {}
+          }
+        ],
+        "present_layers": [
+          "event",
+          "event_time",
+          "fact",
+          "graph",
+          "path_grounding"
+        ],
+        "missing_layers": [],
+        "contract_ok": true,
+        "second_pass_sources": [
+          "atom"
+        ],
+        "answer": "Maya, Nora"
+      }
+    },
+    {
+      "case_id": "longitudinal_1",
+      "query": "How did the apartment lease situation evolve?",
+      "family": "longitudinal",
+      "expected_keywords": [
+        "Rua Augusta 14",
+        "2026-03-27"
+      ],
+      "result": {
+        "plan": {
+          "family": "longitudinal",
+          "primary_reader": "topic_dossier",
+          "supporting_readers": [
+            "atom",
+            "temporal_tree"
+          ],
+          "required_layers": [
+            "topic_dossier",
+            "fact"
+          ],
+          "reason": "Cross-session topic evolution query."
+        },
+        "hits": [
+          {
+            "source": "dossier:apartment_lease",
+            "layer": "topic_dossier",
+            "score": 0.7285714285714285,
+            "content": "Topic: apartment_lease\nSpan: 2026-03-01 -> 2026-03-27\nKey updates:\n- Maya found an apartment on Rua Augusta 14 on 2026-03-01\n- Maya showed the lease screenshot with move-in date 2026-03-20\n- Lease contract screenshot\nRua Augusta 14 move-in 2026-03-20\n- The landlord delayed the handover and the move-in shifted to 2026-03-27",
+            "event_time": "2026-03-27",
+            "trace": {
+              "timeline": [
+                "2026-03-01: Maya found an apartment on Rua Augusta 14 on 2026-03-01",
+                "2026-03-20: Maya showed the lease screenshot with move-in date 2026-03-20",
+                "2026-03-20: Lease contract screenshot\nRua Augusta 14 move-in 2026-03-20",
+                "2026-03-27: The landlord delayed the handover and the move-in shifted to 2026-03-27"
+              ],
+              "atom_ids": [
+                "atom-000",
+                "atom-001",
+                "atom-002",
+                "atom-003"
+              ]
+            }
+          },
+          {
+            "source": "dossier:visa_process",
+            "layer": "topic_dossier",
+            "score": 0.44285714285714284,
+            "content": "Topic: visa_process\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped Maya prepare the financial statement on 2026-03-02\n- Maya approved the visa process after the consulate received the residence document on 2026-03-18",
+            "event_time": "2026-03-18",
+            "trace": {
+              "timeline": [
+                "2026-03-02: Maya started the visa paperwork and Nora helped Maya prepare the financial statement on 2026-03-02",
+                "2026-03-18: Maya approved the visa process after the consulate received the residence document on 2026-03-18"
+              ],
+              "atom_ids": [
+                "atom-004",
+                "atom-005"
+              ]
+            }
+          },
+          {
+            "source": "dossier:product_launch",
+            "layer": "topic_dossier",
+            "score": 0.44285714285714284,
+            "content": "Topic: product_launch\nSpan: 2026-04-10 -> 2026-04-24\nKey updates:\n- Lena started the beta launch plan for 2026-04-10\n- Lena confirmed the launch date moved to 2026-04-24 after the payment bug fix",
+            "event_time": "2026-04-24",
+            "trace": {
+              "timeline": [
+                "2026-04-10: Lena started the beta launch plan for 2026-04-10",
+                "2026-04-24: Lena confirmed the launch date moved to 2026-04-24 after the payment bug fix"
+              ],
+              "atom_ids": [
+                "atom-006",
+                "atom-007"
+              ]
+            }
+          },
+          {
+            "source": "atom:atom-001",
+            "layer": "fact",
+            "score": 0.2857142857142857,
+            "content": "Maya showed the lease screenshot with move-in date 2026-03-20",
+            "event_time": "2026-03-20",
+            "trace": {
+              "event_time": "2026-03-20",
+              "subject": "Maya",
+              "predicate": "showed"
+            }
+          },
+          {
+            "source": "atom:atom-000",
+            "layer": "fact",
+            "score": 0.14285714285714285,
+            "content": "Maya found an apartment on Rua Augusta 14 on 2026-03-01",
+            "event_time": "2026-03-01",
+            "trace": {
+              "event_time": "2026-03-01",
+              "subject": "Maya",
+              "predicate": "found"
+            }
+          },
+          {
+            "source": "atom:atom-002",
+            "layer": "fact",
+            "score": 0.14285714285714285,
+            "content": "Lease contract screenshot\nRua Augusta 14 move-in 2026-03-20",
+            "event_time": "2026-03-20",
+            "trace": {
+              "event_time": "2026-03-20",
+              "subject": "Maya",
+              "predicate": "shows"
+            }
+          },
+          {
+            "source": "atom:atom-003",
+            "layer": "fact",
+            "score": 0.14285714285714285,
+            "content": "The landlord delayed the handover and the move-in shifted to 2026-03-27",
+            "event_time": "2026-03-27",
+            "trace": {
+              "event_time": "2026-03-27",
+              "subject": "The",
+              "predicate": "mentions"
+            }
+          },
+          {
+            "source": "atom:atom-004",
+            "layer": "fact",
+            "score": 0.14285714285714285,
+            "content": "Maya started the visa paperwork and Nora helped Maya prepare the financial statement on 2026-03-02",
+            "event_time": "2026-03-02",
+            "trace": {
+              "event_time": "2026-03-02",
+              "subject": "Nora",
+              "predicate": "helped"
+            }
+          },
+          {
+            "source": "atom:atom-005",
+            "layer": "fact",
+            "score": 0.14285714285714285,
+            "content": "Maya approved the visa process after the consulate received the residence document on 2026-03-18",
+            "event_time": "2026-03-18",
+            "trace": {
+              "event_time": "2026-03-18",
+              "subject": "Maya",
+              "predicate": "approved"
+            }
+          },
+          {
+            "source": "atom:atom-006",
+            "layer": "fact",
+            "score": 0.14285714285714285,
+            "content": "Lena started the beta launch plan for 2026-04-10",
+            "event_time": "2026-04-10",
+            "trace": {
+              "event_time": "2026-04-10",
+              "subject": "Lena",
+              "predicate": "started"
+            }
+          }
+        ],
+        "present_layers": [
+          "event",
+          "event_time",
+          "fact",
+          "topic_dossier"
+        ],
+        "missing_layers": [],
+        "contract_ok": true,
+        "second_pass_sources": [
+          "atom"
+        ],
+        "answer": "2026-03-01: Maya found an apartment on Rua Augusta 14 on 2026-03-01\n2026-03-20: Maya showed the lease screenshot with move-in date 2026-03-20\n2026-03-20: Lease contract screenshot\nRua Augusta 14 move-in 2026-03-20\n2026-03-27: The landlord delayed the handover and the move-in shifted to 2026-03-27"
+      }
+    },
+    {
+      "case_id": "visual_1",
+      "query": "What was shown in the lease screenshot?",
+      "family": "visual",
+      "expected_keywords": [
+        "Rua Augusta 14"
+      ],
+      "result": {
+        "plan": {
+          "family": "visual",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "atom"
+          ],
+          "required_layers": [
+            "image_evidence",
+            "fact"
+          ],
+          "reason": "Visual evidence query."
+        },
+        "hits": [
+          {
+            "source": "image_evidence:atom-002",
+            "layer": "image_evidence",
+            "score": 0.7285714285714285,
+            "content": "Lease contract screenshot\nRua Augusta 14 move-in 2026-03-20",
+            "event_time": "2026-03-20",
+            "trace": {}
+          },
+          {
+            "source": "event:atom-001",
+            "layer": "graph",
+            "score": 0.5714285714285714,
+            "content": "Maya showed the lease screenshot with move-in date 2026-03-20",
+            "event_time": "2026-03-20",
+            "trace": {}
+          },
+          {
+            "source": "fact:atom-001",
+            "layer": "graph",
+            "score": 0.5714285714285714,
+            "content": "Maya showed the lease screenshot with move-in date 2026-03-20",
+            "event_time": "2026-03-20",
+            "trace": {}
+          },
+          {
+            "source": "atom:atom-001",
+            "layer": "fact",
+            "score": 0.5714285714285714,
+            "content": "Maya showed the lease screenshot with move-in date 2026-03-20",
+            "event_time": "2026-03-20",
+            "trace": {
+              "event_time": "2026-03-20",
+              "subject": "Maya",
+              "predicate": "showed"
+            }
+          },
+          {
+            "source": "fact:atom-002",
+            "layer": "graph",
+            "score": 0.42857142857142855,
+            "content": "Lease contract screenshot\nRua Augusta 14 move-in 2026-03-20",
+            "event_time": "2026-03-20",
+            "trace": {}
+          },
+          {
+            "source": "atom:atom-002",
+            "layer": "fact",
+            "score": 0.42857142857142855,
+            "content": "Lease contract screenshot\nRua Augusta 14 move-in 2026-03-20",
+            "event_time": "2026-03-20",
+            "trace": {
+              "event_time": "2026-03-20",
+              "subject": "Maya",
+              "predicate": "shows"
+            }
+          },
+          {
+            "source": "event:atom-003",
+            "layer": "graph",
+            "score": 0.2857142857142857,
+            "content": "The landlord delayed the handover and the move-in shifted to 2026-03-27",
+            "event_time": "2026-03-27",
+            "trace": {}
+          },
+          {
+            "source": "fact:atom-003",
+            "layer": "graph",
+            "score": 0.2857142857142857,
+            "content": "The landlord delayed the handover and the move-in shifted to 2026-03-27",
+            "event_time": "2026-03-27",
+            "trace": {}
+          },
+          {
+            "source": "atom:atom-003",
+            "layer": "fact",
+            "score": 0.2857142857142857,
+            "content": "The landlord delayed the handover and the move-in shifted to 2026-03-27",
+            "event_time": "2026-03-27",
+            "trace": {
+              "event_time": "2026-03-27",
+              "subject": "The",
+              "predicate": "mentions"
+            }
+          },
+          {
+            "source": "entity:Lease",
+            "layer": "graph",
+            "score": 0.14285714285714285,
+            "content": "name=Lease",
+            "event_time": "",
+            "trace": {}
+          }
+        ],
+        "present_layers": [
+          "event",
+          "event_time",
+          "fact",
+          "graph",
+          "image_evidence"
+        ],
+        "missing_layers": [],
+        "contract_ok": true,
+        "second_pass_sources": [
+          "atom"
+        ],
+        "answer": "Rua Augusta 14 move-in 2026-03-20"
+      }
+    },
+    {
+      "case_id": "readiness_1",
+      "query": "Can you answer now?",
+      "family": "readiness",
+      "expected_keywords": [
+        "ready"
+      ],
+      "result": {
+        "plan": {
+          "family": "readiness",
+          "primary_reader": "readiness",
+          "supporting_readers": [],
+          "required_layers": [
+            "readiness"
+          ],
+          "reason": "Lifecycle / answerability query."
+        },
+        "hits": [
+          {
+            "source": "readiness",
+            "layer": "readiness",
+            "score": 1.0,
+            "content": "qa_ready=True",
+            "event_time": "",
+            "trace": {
+              "persisted": true,
+              "atoms_ready": true,
+              "dossier_ready": true,
+              "tree_ready": true,
+              "graph_ready": true,
+              "qa_ready": true
+            }
+          }
+        ],
+        "present_layers": [
+          "readiness"
+        ],
+        "missing_layers": [],
+        "contract_ok": true,
+        "second_pass_sources": [],
+        "answer": "ready"
+      }
+    }
+  ]
+}

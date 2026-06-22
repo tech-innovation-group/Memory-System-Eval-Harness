@@ -1,0 +1,40 @@
+{
+  "summary": {
+    "passed": 4,
+    "total": 4
+  },
+  "cases": [
+    {
+      "case_id": "case1",
+      "title": "SearchService auto-fills query_time_anchor from current session",
+      "expectation": "2026-06-12T11:30:00Z",
+      "observed": "2026-06-12T11:30:00Z",
+      "passed": true,
+      "notes": "Should use the latest session message timestamp instead of runtime wall clock."
+    },
+    {
+      "case_id": "case2",
+      "title": "Relative-day resolution uses query-time anchor",
+      "expectation": "2025-05-02T00:00:00+00:00 -> 2025-05-03T00:00:00+00:00",
+      "observed": "2025-05-02T00:00:00+00:00 -> 2025-05-03T00:00:00+00:00",
+      "passed": true,
+      "notes": "This is the query-side half of three-clock: relative time should resolve against dialogue-world anchor."
+    },
+    {
+      "case_id": "case3",
+      "title": "Atom retrieval excludes old story-time events from yesterday queries",
+      "expectation": "['atom-yesterday-mention']",
+      "observed": "['atom-yesterday-mention']",
+      "passed": true,
+      "notes": "The 2024 event was mentioned yesterday, but it did not happen yesterday; retrieval should not confuse story_time with mention_time for a pure event-time query."
+    },
+    {
+      "case_id": "case4",
+      "title": "Organized projector falls back to mention_time before created_at",
+      "expectation": "2025-05-02",
+      "observed": "2025-05-02",
+      "passed": true,
+      "notes": "When story_time is missing, the event projection should preserve conversational mention time before system write time."
+    }
+  ]
+}

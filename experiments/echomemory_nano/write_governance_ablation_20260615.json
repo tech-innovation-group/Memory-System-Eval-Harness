@@ -1,0 +1,187 @@
+{
+  "variants": [
+    {
+      "variant": "append_only",
+      "passed": 0,
+      "total": 5,
+      "rows": [
+        {
+          "case_id": "wg1",
+          "title": "Current state should follow the newer state version after a move",
+          "expected": "Seattle",
+          "observed": "ambiguous",
+          "passed": false,
+          "why_it_matters": "Current-state questions should prefer the latest valid state, not all remembered states at once."
+        },
+        {
+          "case_id": "wg2",
+          "title": "Retrospective mention of an older state should not overwrite the current state",
+          "expected": "Seattle",
+          "observed": "ambiguous",
+          "passed": false,
+          "why_it_matters": "A write-time-latest policy confuses old-story mentions with new-state updates."
+        },
+        {
+          "case_id": "wg3",
+          "title": "Explicit correction should replace the mistaken value for the same fact",
+          "expected": "18k",
+          "observed": "ambiguous",
+          "passed": false,
+          "why_it_matters": "A governed memory should support correction without keeping the mistaken value as equally current."
+        },
+        {
+          "case_id": "wg4",
+          "title": "Historical query should return the older preference instead of the newest write",
+          "expected": "tea",
+          "observed": "ambiguous",
+          "passed": false,
+          "why_it_matters": "Write governance should support as-of questions, not only the latest-state snapshot."
+        },
+        {
+          "case_id": "wg5",
+          "title": "Unresolved same-time disagreement should surface conflict rather than overwrite silently",
+          "expected": "unknown_conflict",
+          "observed": "ambiguous",
+          "passed": false,
+          "why_it_matters": "When two sources disagree about the same fact at the same time, a memory system should avoid confident silent overwrite."
+        }
+      ]
+    },
+    {
+      "variant": "write_time_latest",
+      "passed": 2,
+      "total": 5,
+      "rows": [
+        {
+          "case_id": "wg1",
+          "title": "Current state should follow the newer state version after a move",
+          "expected": "Seattle",
+          "observed": "Seattle",
+          "passed": true,
+          "why_it_matters": "Current-state questions should prefer the latest valid state, not all remembered states at once."
+        },
+        {
+          "case_id": "wg2",
+          "title": "Retrospective mention of an older state should not overwrite the current state",
+          "expected": "Seattle",
+          "observed": "Boston",
+          "passed": false,
+          "why_it_matters": "A write-time-latest policy confuses old-story mentions with new-state updates."
+        },
+        {
+          "case_id": "wg3",
+          "title": "Explicit correction should replace the mistaken value for the same fact",
+          "expected": "18k",
+          "observed": "18k",
+          "passed": true,
+          "why_it_matters": "A governed memory should support correction without keeping the mistaken value as equally current."
+        },
+        {
+          "case_id": "wg4",
+          "title": "Historical query should return the older preference instead of the newest write",
+          "expected": "tea",
+          "observed": "coffee",
+          "passed": false,
+          "why_it_matters": "Write governance should support as-of questions, not only the latest-state snapshot."
+        },
+        {
+          "case_id": "wg5",
+          "title": "Unresolved same-time disagreement should surface conflict rather than overwrite silently",
+          "expected": "unknown_conflict",
+          "observed": "3147",
+          "passed": false,
+          "why_it_matters": "When two sources disagree about the same fact at the same time, a memory system should avoid confident silent overwrite."
+        }
+      ]
+    },
+    {
+      "variant": "governed_versioned",
+      "passed": 5,
+      "total": 5,
+      "rows": [
+        {
+          "case_id": "wg1",
+          "title": "Current state should follow the newer state version after a move",
+          "expected": "Seattle",
+          "observed": "Seattle",
+          "passed": true,
+          "why_it_matters": "Current-state questions should prefer the latest valid state, not all remembered states at once."
+        },
+        {
+          "case_id": "wg2",
+          "title": "Retrospective mention of an older state should not overwrite the current state",
+          "expected": "Seattle",
+          "observed": "Seattle",
+          "passed": true,
+          "why_it_matters": "A write-time-latest policy confuses old-story mentions with new-state updates."
+        },
+        {
+          "case_id": "wg3",
+          "title": "Explicit correction should replace the mistaken value for the same fact",
+          "expected": "18k",
+          "observed": "18k",
+          "passed": true,
+          "why_it_matters": "A governed memory should support correction without keeping the mistaken value as equally current."
+        },
+        {
+          "case_id": "wg4",
+          "title": "Historical query should return the older preference instead of the newest write",
+          "expected": "tea",
+          "observed": "tea",
+          "passed": true,
+          "why_it_matters": "Write governance should support as-of questions, not only the latest-state snapshot."
+        },
+        {
+          "case_id": "wg5",
+          "title": "Unresolved same-time disagreement should surface conflict rather than overwrite silently",
+          "expected": "unknown_conflict",
+          "observed": "unknown_conflict",
+          "passed": true,
+          "why_it_matters": "When two sources disagree about the same fact at the same time, a memory system should avoid confident silent overwrite."
+        }
+      ]
+    }
+  ],
+  "main_code_audit": {
+    "available": false,
+    "reason": "echomem package not importable in the current Python environment",
+    "audits": []
+  },
+  "cases": [
+    {
+      "case_id": "wg1",
+      "title": "Current state should follow the newer state version after a move",
+      "expected": "Seattle",
+      "query_time": "2025-03-10T00:00:00Z",
+      "why_it_matters": "Current-state questions should prefer the latest valid state, not all remembered states at once."
+    },
+    {
+      "case_id": "wg2",
+      "title": "Retrospective mention of an older state should not overwrite the current state",
+      "expected": "Seattle",
+      "query_time": "2025-04-02T00:00:00Z",
+      "why_it_matters": "A write-time-latest policy confuses old-story mentions with new-state updates."
+    },
+    {
+      "case_id": "wg3",
+      "title": "Explicit correction should replace the mistaken value for the same fact",
+      "expected": "18k",
+      "query_time": "2025-02-12T00:00:00Z",
+      "why_it_matters": "A governed memory should support correction without keeping the mistaken value as equally current."
+    },
+    {
+      "case_id": "wg4",
+      "title": "Historical query should return the older preference instead of the newest write",
+      "expected": "tea",
+      "query_time": "2025-02-10T00:00:00Z",
+      "why_it_matters": "Write governance should support as-of questions, not only the latest-state snapshot."
+    },
+    {
+      "case_id": "wg5",
+      "title": "Unresolved same-time disagreement should surface conflict rather than overwrite silently",
+      "expected": "unknown_conflict",
+      "query_time": "2025-03-03T00:00:00Z",
+      "why_it_matters": "When two sources disagree about the same fact at the same time, a memory system should avoid confident silent overwrite."
+    }
+  ]
+}

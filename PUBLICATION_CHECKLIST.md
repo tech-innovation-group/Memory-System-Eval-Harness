@@ -4,13 +4,14 @@ Use this before sending the project to another tester or publishing a public
 repository.
 
 Current public backend scope: `OpenViking + EchoMemory`.
+Compatibility wording for docs and handoff: `OpenViking + EchoMem/EchoMemory`.
 
 ## Required Gates
 
 ```bash
 ./preflight.sh
-curl -s http://127.0.0.1:19181/api/handoff-audit | python3 -m json.tool | head -160
-curl -s http://127.0.0.1:19181/api/github-launch-kit | python3 -m json.tool | head -160
+curl -s <WEB_BASE_URL>/api/handoff-audit | python3 -m json.tool | head -160
+curl -s <WEB_BASE_URL>/api/github-launch-kit | python3 -m json.tool | head -160
 ```
 
 All required failures must be zero.
@@ -34,6 +35,7 @@ All required failures must be zero.
 - `web/ui_contract.json`
 - core static UI files under `web/static` and `static`: `index.html`, `app.js`, `styles.css`, and `product-roadmap.html`
 - `dataset/locomo10.json`
+- bundled sample benchmark files such as `dataset/longmemeval.sample.json` and `dataset/evolvingevents.sample.json` when they are part of the intended public package
 
 ## Do Not Include
 
@@ -49,6 +51,7 @@ All required failures must be zero.
 
 - what the workbench does
 - current scope: OpenViking + EchoMemory
+- compatibility wording: OpenViking + EchoMem/EchoMemory
 - public UI boundary from `web/ui_contract.json`
 - 5-minute smoke test
 - safe configuration template

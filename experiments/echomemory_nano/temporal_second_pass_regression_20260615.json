@@ -1,0 +1,147 @@
+{
+  "summary": {
+    "passed": 3,
+    "total": 3
+  },
+  "before_self_check": {
+    "mode": "temporal",
+    "status": "caution",
+    "recommendation": "prefer_story_time_evidence",
+    "rationale": "temporal query currently relies on mention-time evidence without explicit story-time evidence",
+    "evidence_counts": {
+      "event": 1
+    },
+    "expected_types": [
+      "event",
+      "fact",
+      "episode"
+    ],
+    "matched_types": [
+      "event"
+    ],
+    "missing_types": [
+      "fact",
+      "episode"
+    ],
+    "coverage_ratio": 0.3333333333333333,
+    "temporal_anchor_required": true,
+    "query_time_anchor_present": true,
+    "event_time_evidence_count": 0,
+    "mention_time_evidence_count": 1,
+    "top_confidence": 0.9450000000000001
+  },
+  "after_self_check": {
+    "mode": "temporal",
+    "status": "ok",
+    "recommendation": "answerable",
+    "rationale": "evidence shape matches the planned query family",
+    "evidence_counts": {
+      "event": 2
+    },
+    "expected_types": [
+      "event",
+      "fact",
+      "episode"
+    ],
+    "matched_types": [
+      "event"
+    ],
+    "missing_types": [
+      "fact",
+      "episode"
+    ],
+    "coverage_ratio": 0.3333333333333333,
+    "temporal_anchor_required": true,
+    "query_time_anchor_present": true,
+    "event_time_evidence_count": 1,
+    "mention_time_evidence_count": 2,
+    "top_confidence": 0.9450000000000001
+  },
+  "second_pass": {
+    "triggered": true,
+    "reason": "supporting_evidence_supplement",
+    "recommendation": "prefer_story_time_evidence",
+    "query_plan_mode": "temporal",
+    "sources": [
+      "atom"
+    ],
+    "missing_types": [
+      "episode",
+      "fact"
+    ],
+    "extra_items": 1,
+    "new_unique_items": 1,
+    "self_check_before": {
+      "status": "caution",
+      "recommendation": "prefer_story_time_evidence",
+      "coverage_ratio": 0.3333333333333333,
+      "expected_types": [
+        "event",
+        "fact",
+        "episode"
+      ],
+      "matched_types": [
+        "event"
+      ],
+      "missing_types": [
+        "fact",
+        "episode"
+      ],
+      "temporal_anchor_required": true,
+      "query_time_anchor_present": true,
+      "event_time_evidence_count": 0,
+      "mention_time_evidence_count": 1
+    },
+    "self_check_after": {
+      "status": "ok",
+      "recommendation": "answerable",
+      "coverage_ratio": 0.3333333333333333,
+      "expected_types": [
+        "event",
+        "fact",
+        "episode"
+      ],
+      "matched_types": [
+        "event"
+      ],
+      "missing_types": [
+        "fact",
+        "episode"
+      ],
+      "temporal_anchor_required": true,
+      "query_time_anchor_present": true,
+      "event_time_evidence_count": 1,
+      "mention_time_evidence_count": 2
+    }
+  },
+  "merged_l2_items": [
+    "atom://mention-only-event",
+    "atom://story-time-event"
+  ],
+  "cases": [
+    {
+      "case_id": "secondpass1",
+      "title": "Self-check sees mention-only temporal evidence as insufficient story-time support",
+      "expectation": "caution / prefer_story_time_evidence",
+      "observed": "caution / prefer_story_time_evidence",
+      "passed": true,
+      "notes": "Policy should explicitly call out the lack of story-time evidence before second pass."
+    },
+    {
+      "case_id": "secondpass2",
+      "title": "Second pass is now willing to react to prefer_story_time_evidence",
+      "expectation": "triggered=True, source includes atom",
+      "observed": "triggered=True, sources=['atom']",
+      "passed": true,
+      "notes": "This is the new closed-loop behavior: temporal policy recommendation can now trigger supporting retrieval."
+    },
+    {
+      "case_id": "secondpass3",
+      "title": "After supplementation, temporal policy can become answerable",
+      "expectation": "ok / answerable",
+      "observed": "ok / answerable",
+      "passed": true,
+      "notes": "Once story-time evidence is added, policy should calm down."
+    }
+  ]
+}

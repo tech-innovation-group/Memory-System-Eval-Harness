@@ -1,0 +1,620 @@
+{
+  "rows": [
+    {
+      "case_id": "temporal_event_date",
+      "query": "When did Gina lose her job?",
+      "expected_keywords": [
+        "2023-02-02"
+      ],
+      "expected_top_type": "event",
+      "note": "Temporal question should prefer event nodes, not generic fact text.",
+      "lexical": {
+        "mode": "lexical_baseline",
+        "hits": [
+          {
+            "item_id": "block-timeline-main",
+            "node_type": "block",
+            "score": 3.2,
+            "content": "- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.\n- 2023-02-02: On 2023-02-02 Gina lost her job and started searching for design roles.\n- 2023-03-12: Jon married Alice on 2023-03-12 in Seattle."
+          },
+          {
+            "item_id": "fact:atom-001",
+            "node_type": "fact",
+            "score": 3.0,
+            "content": "statement=On 2023-02-02 Gina lost her job and started searching for design roles.\nsubject=unknown\npredicate=mentions\nobject=On 2023-02-02 Gina lost her job and star",
+            "event_time": "2023-02-02"
+          },
+          {
+            "item_id": "block-plan-main",
+            "node_type": "block",
+            "score": 1.2,
+            "content": "- Gina plans to move to Lisbon after the spring hiring season."
+          },
+          {
+            "item_id": "entity:Gina",
+            "node_type": "entity",
+            "score": 1.0,
+            "content": "name=Gina",
+            "event_time": ""
+          },
+          {
+            "item_id": "fact:atom-000",
+            "node_type": "fact",
+            "score": 1.0,
+            "content": "statement=Gina visited Rome on 2023-01-30 after leaving Milan.\nsubject=Gina\npredicate=visited\nobject=Rome",
+            "event_time": "2023-01-30"
+          }
+        ]
+      },
+      "graph_first": {
+        "mode": "graph_first",
+        "plan": {
+          "intent": "temporal",
+          "layers": [
+            "event",
+            "fact",
+            "block"
+          ],
+          "graph_first": true,
+          "note": "Event nodes carry event time."
+        },
+        "hits": [
+          {
+            "item_id": "event:atom-001",
+            "node_type": "event",
+            "score": 4.0,
+            "content": "unknown mentions On 2023-02-02 Gina lost her job and star",
+            "event_time": "2023-02-02"
+          },
+          {
+            "item_id": "block-timeline-main",
+            "node_type": "block",
+            "score": 3.3,
+            "content": "- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.\n- 2023-02-02: On 2023-02-02 Gina lost her job and started searching for design roles.\n- 2023-03-12: Jon married Alice on 2023-03-12 in Seattle.",
+            "event_time": ""
+          },
+          {
+            "item_id": "fact:atom-001",
+            "node_type": "fact",
+            "score": 3.0,
+            "content": "statement=On 2023-02-02 Gina lost her job and started searching for design roles.\nsubject=unknown\npredicate=mentions\nobject=On 2023-02-02 Gina lost her job and star",
+            "event_time": "2023-02-02"
+          },
+          {
+            "item_id": "event:atom-000",
+            "node_type": "event",
+            "score": 2.0,
+            "content": "Gina visited Rome",
+            "event_time": "2023-01-30"
+          },
+          {
+            "item_id": "event:atom-002",
+            "node_type": "event",
+            "score": 2.0,
+            "content": "Gina plans move to Lisbon after the spring hiring season.",
+            "event_time": "2023-02-05"
+          }
+        ]
+      },
+      "graph_path": {
+        "mode": "graph_path",
+        "plan": {
+          "intent": "temporal",
+          "layers": [
+            "event",
+            "fact",
+            "block"
+          ],
+          "graph_first": true,
+          "note": "Event nodes carry event time."
+        },
+        "hits": [
+          {
+            "item_id": "event:atom-001",
+            "node_type": "event",
+            "score": 5.9,
+            "content": "unknown mentions On 2023-02-02 Gina lost her job and star\n[path:evidence_of]",
+            "event_time": "2023-02-02"
+          },
+          {
+            "item_id": "fact:atom-001",
+            "node_type": "fact",
+            "score": 4.25,
+            "content": "statement=On 2023-02-02 Gina lost her job and started searching for design roles.\nsubject=unknown\npredicate=mentions\nobject=On 2023-02-02 Gina lost her job and star\n[path:evidence_of]",
+            "event_time": "2023-02-02"
+          },
+          {
+            "item_id": "event:atom-000",
+            "node_type": "event",
+            "score": 3.9,
+            "content": "Gina visited Rome\n[path:temporal_next]",
+            "event_time": "2023-01-30"
+          },
+          {
+            "item_id": "event:atom-002",
+            "node_type": "event",
+            "score": 3.9,
+            "content": "Gina plans move to Lisbon after the spring hiring season.\n[path:temporal_next]",
+            "event_time": "2023-02-05"
+          },
+          {
+            "item_id": "block-timeline-main",
+            "node_type": "block",
+            "score": 2.5,
+            "content": "- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.\n- 2023-02-02: On 2023-02-02 Gina lost her job and started searching for design roles.\n- 2023-03-12: Jon married Alice on 2023-03-12 in Seattle.",
+            "event_time": ""
+          }
+        ]
+      },
+      "lexical_ok": false,
+      "graph_first_ok": true,
+      "graph_path_ok": true
+    },
+    {
+      "case_id": "visual_arrival_evidence",
+      "query": "What was visible in Gina's screenshot from her arrival day?",
+      "expected_keywords": [
+        "Roma Termini",
+        "08:42"
+      ],
+      "expected_top_type": "image_evidence",
+      "note": "Visual question should prioritize image evidence rather than timeline blocks.",
+      "lexical": {
+        "mode": "lexical_baseline",
+        "hits": [
+          {
+            "item_id": "block-timeline-main",
+            "node_type": "block",
+            "score": 3.2,
+            "content": "- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.\n- 2023-02-02: On 2023-02-02 Gina lost her job and started searching for design roles.\n- 2023-03-12: Jon married Alice on 2023-03-12 in Seattle."
+          },
+          {
+            "item_id": "fact:atom-001",
+            "node_type": "fact",
+            "score": 3.0,
+            "content": "statement=On 2023-02-02 Gina lost her job and started searching for design roles.\nsubject=unknown\npredicate=mentions\nobject=On 2023-02-02 Gina lost her job and star",
+            "event_time": "2023-02-02"
+          },
+          {
+            "item_id": "block-plan-main",
+            "node_type": "block",
+            "score": 2.2,
+            "content": "- Gina plans to move to Lisbon after the spring hiring season."
+          },
+          {
+            "item_id": "entity:Gina",
+            "node_type": "entity",
+            "score": 2.0,
+            "content": "name=Gina",
+            "event_time": ""
+          },
+          {
+            "item_id": "fact:atom-000",
+            "node_type": "fact",
+            "score": 2.0,
+            "content": "statement=Gina visited Rome on 2023-01-30 after leaving Milan.\nsubject=Gina\npredicate=visited\nobject=Rome",
+            "event_time": "2023-01-30"
+          }
+        ]
+      },
+      "graph_first": {
+        "mode": "graph_first",
+        "plan": {
+          "intent": "visual",
+          "layers": [
+            "image_evidence",
+            "event",
+            "block"
+          ],
+          "graph_first": true,
+          "note": "Visual evidence first."
+        },
+        "hits": [
+          {
+            "item_id": "image:obs-004",
+            "node_type": "image_evidence",
+            "score": 7.2,
+            "content": "caption=Phone screenshot from Gina's arrival day.\nocr=Roma Termini 08:42 Platform 7\ntags=rome,station,arrival",
+            "event_time": "2023-01-30"
+          },
+          {
+            "item_id": "block-timeline-main",
+            "node_type": "block",
+            "score": 3.3,
+            "content": "- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.\n- 2023-02-02: On 2023-02-02 Gina lost her job and started searching for design roles.\n- 2023-03-12: Jon married Alice on 2023-03-12 in Seattle.",
+            "event_time": ""
+          },
+          {
+            "item_id": "event:atom-001",
+            "node_type": "event",
+            "score": 3.0,
+            "content": "unknown mentions On 2023-02-02 Gina lost her job and star",
+            "event_time": "2023-02-02"
+          },
+          {
+            "item_id": "block-plan-main",
+            "node_type": "block",
+            "score": 2.3,
+            "content": "- Gina plans to move to Lisbon after the spring hiring season.",
+            "event_time": ""
+          },
+          {
+            "item_id": "event:atom-000",
+            "node_type": "event",
+            "score": 2.0,
+            "content": "Gina visited Rome",
+            "event_time": "2023-01-30"
+          }
+        ]
+      },
+      "graph_path": {
+        "mode": "graph_path",
+        "plan": {
+          "intent": "visual",
+          "layers": [
+            "image_evidence",
+            "event",
+            "block"
+          ],
+          "graph_first": true,
+          "note": "Visual evidence first."
+        },
+        "hits": [
+          {
+            "item_id": "image:obs-004",
+            "node_type": "image_evidence",
+            "score": 8.5,
+            "content": "caption=Phone screenshot from Gina's arrival day.\nocr=Roma Termini 08:42 Platform 7\ntags=rome,station,arrival\n[path:shows]",
+            "event_time": "2023-01-30"
+          },
+          {
+            "item_id": "event:atom-001",
+            "node_type": "event",
+            "score": 4.6,
+            "content": "unknown mentions On 2023-02-02 Gina lost her job and star\n[path:evidence_of]",
+            "event_time": "2023-02-02"
+          },
+          {
+            "item_id": "fact:atom-001",
+            "node_type": "fact",
+            "score": 3.85,
+            "content": "statement=On 2023-02-02 Gina lost her job and started searching for design roles.\nsubject=unknown\npredicate=mentions\nobject=On 2023-02-02 Gina lost her job and star\n[path:evidence_of]",
+            "event_time": "2023-02-02"
+          },
+          {
+            "item_id": "event:atom-000",
+            "node_type": "event",
+            "score": 3.6,
+            "content": "Gina visited Rome\n[path:temporal_next]",
+            "event_time": "2023-01-30"
+          },
+          {
+            "item_id": "event:atom-002",
+            "node_type": "event",
+            "score": 3.6,
+            "content": "Gina plans move to Lisbon after the spring hiring season.\n[path:temporal_next]",
+            "event_time": "2023-02-05"
+          },
+          {
+            "item_id": "entity:Gina",
+            "node_type": "entity",
+            "score": 2.85,
+            "content": "name=Gina\n[path:shows]",
+            "event_time": ""
+          }
+        ]
+      },
+      "lexical_ok": false,
+      "graph_first_ok": true,
+      "graph_path_ok": true
+    },
+    {
+      "case_id": "multi_hop_person_relation",
+      "query": "Who married Alice and when?",
+      "expected_keywords": [
+        "Jon",
+        "2023-03-12"
+      ],
+      "expected_top_type": "event",
+      "note": "This needs relation plus event date; path-style graph evidence should help.",
+      "lexical": {
+        "mode": "lexical_baseline",
+        "hits": [
+          {
+            "item_id": "block-timeline-main",
+            "node_type": "block",
+            "score": 3.2,
+            "content": "- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.\n- 2023-02-02: On 2023-02-02 Gina lost her job and started searching for design roles.\n- 2023-03-12: Jon married Alice on 2023-03-12 in Seattle."
+          },
+          {
+            "item_id": "fact:atom-003",
+            "node_type": "fact",
+            "score": 2.0,
+            "content": "statement=Jon married Alice on 2023-03-12 in Seattle.\nsubject=Jon\npredicate=married\nobject=Alice",
+            "event_time": "2023-03-12"
+          },
+          {
+            "item_id": "entity:Alice",
+            "node_type": "entity",
+            "score": 1.0,
+            "content": "name=Alice",
+            "event_time": ""
+          },
+          {
+            "item_id": "fact:atom-001",
+            "node_type": "fact",
+            "score": 1.0,
+            "content": "statement=On 2023-02-02 Gina lost her job and started searching for design roles.\nsubject=unknown\npredicate=mentions\nobject=On 2023-02-02 Gina lost her job and star",
+            "event_time": "2023-02-02"
+          }
+        ]
+      },
+      "graph_first": {
+        "mode": "graph_first",
+        "plan": {
+          "intent": "temporal",
+          "layers": [
+            "event",
+            "fact",
+            "block"
+          ],
+          "graph_first": true,
+          "note": "Event nodes carry event time."
+        },
+        "hits": [
+          {
+            "item_id": "block-timeline-main",
+            "node_type": "block",
+            "score": 3.3,
+            "content": "- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.\n- 2023-02-02: On 2023-02-02 Gina lost her job and started searching for design roles.\n- 2023-03-12: Jon married Alice on 2023-03-12 in Seattle.",
+            "event_time": ""
+          },
+          {
+            "item_id": "event:atom-003",
+            "node_type": "event",
+            "score": 3.0,
+            "content": "Jon married Alice",
+            "event_time": "2023-03-12"
+          },
+          {
+            "item_id": "event:atom-001",
+            "node_type": "event",
+            "score": 2.0,
+            "content": "unknown mentions On 2023-02-02 Gina lost her job and star",
+            "event_time": "2023-02-02"
+          },
+          {
+            "item_id": "fact:atom-003",
+            "node_type": "fact",
+            "score": 2.0,
+            "content": "statement=Jon married Alice on 2023-03-12 in Seattle.\nsubject=Jon\npredicate=married\nobject=Alice",
+            "event_time": "2023-03-12"
+          },
+          {
+            "item_id": "fact:atom-001",
+            "node_type": "fact",
+            "score": 1.0,
+            "content": "statement=On 2023-02-02 Gina lost her job and started searching for design roles.\nsubject=unknown\npredicate=mentions\nobject=On 2023-02-02 Gina lost her job and star",
+            "event_time": "2023-02-02"
+          }
+        ]
+      },
+      "graph_path": {
+        "mode": "graph_path",
+        "plan": {
+          "intent": "temporal",
+          "layers": [
+            "event",
+            "fact",
+            "block"
+          ],
+          "graph_first": true,
+          "note": "Event nodes carry event time."
+        },
+        "hits": [
+          {
+            "item_id": "event:atom-003",
+            "node_type": "event",
+            "score": 4.9,
+            "content": "Jon married Alice\n[path:evidence_of]",
+            "event_time": "2023-03-12"
+          },
+          {
+            "item_id": "event:atom-001",
+            "node_type": "event",
+            "score": 3.9,
+            "content": "unknown mentions On 2023-02-02 Gina lost her job and star\n[path:evidence_of]",
+            "event_time": "2023-02-02"
+          },
+          {
+            "item_id": "fact:atom-003",
+            "node_type": "fact",
+            "score": 3.25,
+            "content": "statement=Jon married Alice on 2023-03-12 in Seattle.\nsubject=Jon\npredicate=married\nobject=Alice\n[path:evidence_of]",
+            "event_time": "2023-03-12"
+          },
+          {
+            "item_id": "event:atom-000",
+            "node_type": "event",
+            "score": 2.9,
+            "content": "Gina visited Rome\n[path:temporal_next]",
+            "event_time": "2023-01-30"
+          },
+          {
+            "item_id": "event:atom-002",
+            "node_type": "event",
+            "score": 2.9,
+            "content": "Gina plans move to Lisbon after the spring hiring season.\n[path:temporal_next]",
+            "event_time": "2023-02-05"
+          },
+          {
+            "item_id": "block-timeline-main",
+            "node_type": "block",
+            "score": 2.5,
+            "content": "- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.\n- 2023-02-02: On 2023-02-02 Gina lost her job and started searching for design roles.\n- 2023-03-12: Jon married Alice on 2023-03-12 in Seattle.",
+            "event_time": ""
+          }
+        ]
+      },
+      "lexical_ok": false,
+      "graph_first_ok": false,
+      "graph_path_ok": true
+    },
+    {
+      "case_id": "future_plan",
+      "query": "What does Gina plan to do after spring hiring season?",
+      "expected_keywords": [
+        "move to Lisbon"
+      ],
+      "expected_top_type": "block",
+      "note": "Plan blocks are still useful; graph-first should not erase block advantages.",
+      "lexical": {
+        "mode": "lexical_baseline",
+        "hits": [
+          {
+            "item_id": "block-plan-main",
+            "node_type": "block",
+            "score": 7.2,
+            "content": "- Gina plans to move to Lisbon after the spring hiring season."
+          },
+          {
+            "item_id": "fact:atom-002",
+            "node_type": "fact",
+            "score": 7.0,
+            "content": "statement=Gina plans to move to Lisbon after the spring hiring season.\nsubject=Gina\npredicate=plans\nobject=move to Lisbon after the spring hiring season.",
+            "event_time": "2023-02-05"
+          },
+          {
+            "item_id": "block-timeline-main",
+            "node_type": "block",
+            "score": 2.2,
+            "content": "- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.\n- 2023-02-02: On 2023-02-02 Gina lost her job and started searching for design roles.\n- 2023-03-12: Jon married Alice on 2023-03-12 in Seattle."
+          },
+          {
+            "item_id": "fact:atom-000",
+            "node_type": "fact",
+            "score": 2.0,
+            "content": "statement=Gina visited Rome on 2023-01-30 after leaving Milan.\nsubject=Gina\npredicate=visited\nobject=Rome",
+            "event_time": "2023-01-30"
+          },
+          {
+            "item_id": "entity:Gina",
+            "node_type": "entity",
+            "score": 1.0,
+            "content": "name=Gina",
+            "event_time": ""
+          }
+        ]
+      },
+      "graph_first": {
+        "mode": "graph_first",
+        "plan": {
+          "intent": "plan",
+          "layers": [
+            "block",
+            "event",
+            "fact"
+          ],
+          "graph_first": true,
+          "note": "Plan block summarizes future actions."
+        },
+        "hits": [
+          {
+            "item_id": "block-plan-main",
+            "node_type": "block",
+            "score": 7.3,
+            "content": "- Gina plans to move to Lisbon after the spring hiring season.",
+            "event_time": ""
+          },
+          {
+            "item_id": "event:atom-002",
+            "node_type": "event",
+            "score": 7.0,
+            "content": "Gina plans move to Lisbon after the spring hiring season.",
+            "event_time": "2023-02-05"
+          },
+          {
+            "item_id": "fact:atom-002",
+            "node_type": "fact",
+            "score": 7.0,
+            "content": "statement=Gina plans to move to Lisbon after the spring hiring season.\nsubject=Gina\npredicate=plans\nobject=move to Lisbon after the spring hiring season.",
+            "event_time": "2023-02-05"
+          },
+          {
+            "item_id": "block-timeline-main",
+            "node_type": "block",
+            "score": 2.3,
+            "content": "- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.\n- 2023-02-02: On 2023-02-02 Gina lost her job and started searching for design roles.\n- 2023-03-12: Jon married Alice on 2023-03-12 in Seattle.",
+            "event_time": ""
+          },
+          {
+            "item_id": "fact:atom-000",
+            "node_type": "fact",
+            "score": 2.0,
+            "content": "statement=Gina visited Rome on 2023-01-30 after leaving Milan.\nsubject=Gina\npredicate=visited\nobject=Rome",
+            "event_time": "2023-01-30"
+          }
+        ]
+      },
+      "graph_path": {
+        "mode": "graph_path",
+        "plan": {
+          "intent": "plan",
+          "layers": [
+            "block",
+            "event",
+            "fact"
+          ],
+          "graph_first": true,
+          "note": "Plan block summarizes future actions."
+        },
+        "hits": [
+          {
+            "item_id": "block-plan-main",
+            "node_type": "block",
+            "score": 7.3,
+            "content": "- Gina plans to move to Lisbon after the spring hiring season.",
+            "event_time": ""
+          },
+          {
+            "item_id": "event:atom-002",
+            "node_type": "event",
+            "score": 7.0,
+            "content": "Gina plans move to Lisbon after the spring hiring season.",
+            "event_time": "2023-02-05"
+          },
+          {
+            "item_id": "fact:atom-002",
+            "node_type": "fact",
+            "score": 7.0,
+            "content": "statement=Gina plans to move to Lisbon after the spring hiring season.\nsubject=Gina\npredicate=plans\nobject=move to Lisbon after the spring hiring season.",
+            "event_time": "2023-02-05"
+          },
+          {
+            "item_id": "block-timeline-main",
+            "node_type": "block",
+            "score": 2.3,
+            "content": "- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.\n- 2023-02-02: On 2023-02-02 Gina lost her job and started searching for design roles.\n- 2023-03-12: Jon married Alice on 2023-03-12 in Seattle.",
+            "event_time": ""
+          },
+          {
+            "item_id": "fact:atom-000",
+            "node_type": "fact",
+            "score": 2.0,
+            "content": "statement=Gina visited Rome on 2023-01-30 after leaving Milan.\nsubject=Gina\npredicate=visited\nobject=Rome",
+            "event_time": "2023-01-30"
+          }
+        ]
+      },
+      "lexical_ok": true,
+      "graph_first_ok": true,
+      "graph_path_ok": true
+    }
+  ],
+  "summary": {
+    "lexical_correct": 1,
+    "graph_first_correct": 3,
+    "graph_path_correct": 4,
+    "total_cases": 4
+  }
+}

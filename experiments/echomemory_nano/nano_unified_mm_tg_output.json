@@ -1,0 +1,1200 @@
+{
+  "system_name": "UnifiedEchoMemoryNano",
+  "research_claim": [
+    "text and image evidence should share one temporal memory graph",
+    "story time must be separated from mention/write time",
+    "qa_ready should gate answering",
+    "planner-guided graph retrieval improves temporal/relational/visual evidence selection"
+  ],
+  "readiness_before_hot": {
+    "messages_persisted": true,
+    "atoms_ready": false,
+    "graph_ready": false,
+    "organized_ready": false,
+    "multimodal_ready": false,
+    "qa_ready": false
+  },
+  "pre_ready_result": {
+    "query": "When did Jon start learning marketing and analytics tools?",
+    "plan": {
+      "intent": "temporal",
+      "target_layers": [
+        "event",
+        "fact",
+        "organized"
+      ],
+      "graph_first": true,
+      "prefer_event": true,
+      "prefer_fact": false,
+      "prefer_visual": false,
+      "notes": "Temporal question: prefer event nodes that preserve story time."
+    },
+    "readiness": {
+      "messages_persisted": true,
+      "atoms_ready": false,
+      "graph_ready": false,
+      "organized_ready": false,
+      "multimodal_ready": false,
+      "qa_ready": false
+    },
+    "allowed_to_answer": false,
+    "hits": [],
+    "answer_sketch": "",
+    "note": "qa_ready=false: memory is persisted but not fully consolidated."
+  },
+  "after_hot_result": {
+    "query": "When did Jon start learning marketing and analytics tools?",
+    "plan": {
+      "intent": "temporal",
+      "target_layers": [
+        "event",
+        "fact",
+        "organized"
+      ],
+      "graph_first": true,
+      "prefer_event": true,
+      "prefer_fact": false,
+      "prefer_visual": false,
+      "notes": "Temporal question: prefer event nodes that preserve story time."
+    },
+    "readiness": {
+      "messages_persisted": true,
+      "atoms_ready": true,
+      "graph_ready": false,
+      "organized_ready": false,
+      "multimodal_ready": false,
+      "qa_ready": false
+    },
+    "allowed_to_answer": false,
+    "hits": [],
+    "answer_sketch": "",
+    "note": "qa_ready=false: memory is persisted but not fully consolidated."
+  },
+  "readiness_after_cold": {
+    "messages_persisted": true,
+    "atoms_ready": true,
+    "graph_ready": true,
+    "organized_ready": true,
+    "multimodal_ready": true,
+    "qa_ready": true
+  },
+  "final_results": [
+    {
+      "query": "When did Jon start learning marketing and analytics tools?",
+      "plan": {
+        "intent": "temporal",
+        "target_layers": [
+          "event",
+          "fact",
+          "organized"
+        ],
+        "graph_first": true,
+        "prefer_event": true,
+        "prefer_fact": false,
+        "prefer_visual": false,
+        "notes": "Temporal question: prefer event nodes that preserve story time."
+      },
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "graph_ready": true,
+        "organized_ready": true,
+        "multimodal_ready": true,
+        "qa_ready": true
+      },
+      "allowed_to_answer": true,
+      "hits": [
+        {
+          "node_id": "event:atom-004",
+          "node_type": "event",
+          "score": 9.7,
+          "event_time": "2023-07",
+          "content": "Jon / started_learning / marketing and analytics tools in July\nstatement=Jon started learning marketing and analytics tools in July 2023.\nevent_time=2023-07",
+          "matched_terms": [
+            "jon",
+            "start",
+            "learning",
+            "marketing",
+            "and",
+            "analytics",
+            "tools"
+          ]
+        },
+        {
+          "node_id": "fact:atom-004",
+          "node_type": "fact",
+          "score": 7.15,
+          "event_time": "2023-07",
+          "content": "statement=Jon started learning marketing and analytics tools in July 2023.\nsubject=Jon\npredicate=started_learning\nobject=marketing and analytics tools in July\nmention_time=2023-07-10\nevent_time=2023-07\ntime_confidence=0.85",
+          "matched_terms": [
+            "jon",
+            "start",
+            "learning",
+            "marketing",
+            "and",
+            "analytics",
+            "tools"
+          ]
+        },
+        {
+          "node_id": "organized:Jon",
+          "node_type": "organized",
+          "score": 7.0,
+          "event_time": "2023-07-25",
+          "content": "2023-04: Jon / opened / studio in April; 2023-06-19: Jon / visited / Rome; 2023-07: Jon / started_learning / marketing and analytics tools in July; 2023-07-23: Jon / shared_experience_with / Gina; 2023-07-23: Jon / shared_business_transition_with / Gina; 2023-07-25: Jon / wanted_style / a waterfront loft with natural light and Marley flooring.",
+          "matched_terms": [
+            "jon",
+            "start",
+            "learning",
+            "marketing",
+            "and",
+            "analytics",
+            "tools"
+          ]
+        },
+        {
+          "node_id": "event:atom-006",
+          "node_type": "event",
+          "score": 5.7,
+          "event_time": "2023-07-23",
+          "content": "Jon / shared_business_transition_with / Gina\nstatement=Jon and Gina both lost their jobs and later started businesses.\nevent_time=2023-07-23",
+          "matched_terms": [
+            "jon",
+            "start",
+            "and"
+          ]
+        },
+        {
+          "node_id": "event:atom-005",
+          "node_type": "event",
+          "score": 5.7,
+          "event_time": "2023-07-23",
+          "content": "Jon / shared_experience_with / Gina\nstatement=Jon and Gina both lost their jobs and later started businesses.\nevent_time=2023-07-23",
+          "matched_terms": [
+            "jon",
+            "start",
+            "and"
+          ]
+        },
+        {
+          "node_id": "event:atom-002",
+          "node_type": "event",
+          "score": 5.7,
+          "event_time": "2023-04",
+          "content": "unknown / mentions / Jon started expanding his studio social media pr\nstatement=Jon started expanding his studio social media presence in April 2023.\nevent_time=2023-04",
+          "matched_terms": [
+            "jon",
+            "start",
+            "and"
+          ]
+        },
+        {
+          "node_id": "event:atom-000",
+          "node_type": "event",
+          "score": 5.55,
+          "event_time": "2023-01-19",
+          "content": "unknown / mentions / Jon lost his banker job yesterday and decided to\nstatement=Jon lost his banker job yesterday and decided to start a studio.\nevent_time=2023-01-19",
+          "matched_terms": [
+            "jon",
+            "start",
+            "and"
+          ]
+        },
+        {
+          "node_id": "event:atom-007",
+          "node_type": "event",
+          "score": 4.55,
+          "event_time": "2023-07-25",
+          "content": "Jon / wanted_style / a waterfront loft with natural light and Marley flooring.\nstatement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.\nevent_time=2023-07-25",
+          "matched_terms": [
+            "jon",
+            "and"
+          ]
+        }
+      ],
+      "answer_sketch": "Use top evidence: event:atom-004 | Jon / started_learning / marketing and analytics tools in July | statement=Jon started learning marketing and analytics tools in July 2023. | event_time=2023-07",
+      "note": ""
+    },
+    {
+      "query": "What did Jon and Gina both have in common?",
+      "plan": {
+        "intent": "general",
+        "target_layers": [
+          "fact",
+          "organized",
+          "event"
+        ],
+        "graph_first": false,
+        "prefer_event": false,
+        "prefer_fact": false,
+        "prefer_visual": false,
+        "notes": "Default factual path."
+      },
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "graph_ready": true,
+        "organized_ready": true,
+        "multimodal_ready": true,
+        "qa_ready": true
+      },
+      "allowed_to_answer": true,
+      "hits": [
+        {
+          "node_id": "fact:atom-006",
+          "node_type": "fact",
+          "score": 5.0,
+          "event_time": "2023-07-23",
+          "content": "statement=Jon and Gina both lost their jobs and later started businesses.\nsubject=Jon\npredicate=shared_business_transition_with\nobject=Gina\nmention_time=2023-07-23\nevent_time=2023-07-23\ntime_confidence=0.20",
+          "matched_terms": [
+            "jon",
+            "and",
+            "gina",
+            "both",
+            "in"
+          ]
+        },
+        {
+          "node_id": "fact:atom-005",
+          "node_type": "fact",
+          "score": 5.0,
+          "event_time": "2023-07-23",
+          "content": "statement=Jon and Gina both lost their jobs and later started businesses.\nsubject=Jon\npredicate=shared_experience_with\nobject=Gina\nmention_time=2023-07-23\nevent_time=2023-07-23\ntime_confidence=0.20",
+          "matched_terms": [
+            "jon",
+            "and",
+            "gina",
+            "both",
+            "in"
+          ]
+        },
+        {
+          "node_id": "event:atom-006",
+          "node_type": "event",
+          "score": 5.0,
+          "event_time": "2023-07-23",
+          "content": "Jon / shared_business_transition_with / Gina\nstatement=Jon and Gina both lost their jobs and later started businesses.\nevent_time=2023-07-23",
+          "matched_terms": [
+            "jon",
+            "and",
+            "gina",
+            "both",
+            "in"
+          ]
+        },
+        {
+          "node_id": "event:atom-005",
+          "node_type": "event",
+          "score": 5.0,
+          "event_time": "2023-07-23",
+          "content": "Jon / shared_experience_with / Gina\nstatement=Jon and Gina both lost their jobs and later started businesses.\nevent_time=2023-07-23",
+          "matched_terms": [
+            "jon",
+            "and",
+            "gina",
+            "both",
+            "in"
+          ]
+        },
+        {
+          "node_id": "organized:Jon",
+          "node_type": "organized",
+          "score": 4.0,
+          "event_time": "2023-07-25",
+          "content": "2023-04: Jon / opened / studio in April; 2023-06-19: Jon / visited / Rome; 2023-07: Jon / started_learning / marketing and analytics tools in July; 2023-07-23: Jon / shared_experience_with / Gina; 2023-07-23: Jon / shared_business_transition_with / Gina; 2023-07-25: Jon / wanted_style / a waterfront loft with natural light and Marley flooring.",
+          "matched_terms": [
+            "jon",
+            "and",
+            "gina",
+            "in"
+          ]
+        },
+        {
+          "node_id": "fact:atom-007",
+          "node_type": "fact",
+          "score": 3.0,
+          "event_time": "2023-07-25",
+          "content": "statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.\nsubject=Jon\npredicate=wanted_style\nobject=a waterfront loft with natural light and Marley flooring.\nmention_time=2023-07-25\nevent_time=2023-07-25\ntime_confidence=0.20",
+          "matched_terms": [
+            "jon",
+            "and",
+            "in"
+          ]
+        },
+        {
+          "node_id": "event:atom-007",
+          "node_type": "event",
+          "score": 3.0,
+          "event_time": "2023-07-25",
+          "content": "Jon / wanted_style / a waterfront loft with natural light and Marley flooring.\nstatement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.\nevent_time=2023-07-25",
+          "matched_terms": [
+            "jon",
+            "and",
+            "in"
+          ]
+        },
+        {
+          "node_id": "fact:atom-004",
+          "node_type": "fact",
+          "score": 3.0,
+          "event_time": "2023-07",
+          "content": "statement=Jon started learning marketing and analytics tools in July 2023.\nsubject=Jon\npredicate=started_learning\nobject=marketing and analytics tools in July\nmention_time=2023-07-10\nevent_time=2023-07\ntime_confidence=0.85",
+          "matched_terms": [
+            "jon",
+            "and",
+            "in"
+          ]
+        }
+      ],
+      "answer_sketch": "Use top evidence: fact:atom-006 | statement=Jon and Gina both lost their jobs and later started businesses. | subject=Jon | predicate=shared_business_transition_with | object=Gina | mention_time=2023-07-23 | event_time=2023-07-23 | time_confidence=0.20",
+      "note": ""
+    },
+    {
+      "query": "What time was visible in Gina's screenshot?",
+      "plan": {
+        "intent": "visual",
+        "target_layers": [
+          "image_evidence",
+          "event",
+          "entity"
+        ],
+        "graph_first": true,
+        "prefer_event": false,
+        "prefer_fact": false,
+        "prefer_visual": true,
+        "notes": "Visual question: image evidence should be treated as first-class memory."
+      },
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "graph_ready": true,
+        "organized_ready": true,
+        "multimodal_ready": true,
+        "qa_ready": true
+      },
+      "allowed_to_answer": true,
+      "hits": [
+        {
+          "node_id": "image:obs-007",
+          "node_type": "image_evidence",
+          "score": 8.05,
+          "event_time": "2023-07-23",
+          "content": "caption=Phone screenshot from Gina's arrival day showing Roma Termini station board.\nocr=Roma Termini 08:42 Platform 7\ntags=rome, station, arrival, travel\nlinked_subject=Gina\nevent_time=2023-07-23\ncreated_at=2023-07-24",
+          "matched_terms": [
+            "time",
+            "in",
+            "gina",
+            "s",
+            "screenshot"
+          ]
+        },
+        {
+          "node_id": "image:obs-008",
+          "node_type": "image_evidence",
+          "score": 6.9,
+          "event_time": "2023-07-25",
+          "content": "caption=Moodboard screenshot for Jon's dream studio with sunlit windows and a waterfront interior.\nocr=waterfront loft natural light Marley floor\ntags=studio, moodboard, design, waterfront\nlinked_subject=Jon\nevent_time=2023-07-25\ncreated_at=2023-07-25",
+          "matched_terms": [
+            "time",
+            "in",
+            "s",
+            "screenshot"
+          ]
+        },
+        {
+          "node_id": "event:atom-005",
+          "node_type": "event",
+          "score": 4.6,
+          "event_time": "2023-07-23",
+          "content": "Jon / shared_experience_with / Gina\nstatement=Jon and Gina both lost their jobs and later started businesses.\nevent_time=2023-07-23",
+          "matched_terms": [
+            "time",
+            "in",
+            "gina",
+            "s"
+          ]
+        },
+        {
+          "node_id": "event:atom-006",
+          "node_type": "event",
+          "score": 4.45,
+          "event_time": "2023-07-23",
+          "content": "Jon / shared_business_transition_with / Gina\nstatement=Jon and Gina both lost their jobs and later started businesses.\nevent_time=2023-07-23",
+          "matched_terms": [
+            "time",
+            "in",
+            "gina",
+            "s"
+          ]
+        },
+        {
+          "node_id": "event:atom-007",
+          "node_type": "event",
+          "score": 3.45,
+          "event_time": "2023-07-25",
+          "content": "Jon / wanted_style / a waterfront loft with natural light and Marley flooring.\nstatement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.\nevent_time=2023-07-25",
+          "matched_terms": [
+            "time",
+            "in",
+            "s"
+          ]
+        },
+        {
+          "node_id": "event:atom-004",
+          "node_type": "event",
+          "score": 3.45,
+          "event_time": "2023-07",
+          "content": "Jon / started_learning / marketing and analytics tools in July\nstatement=Jon started learning marketing and analytics tools in July 2023.\nevent_time=2023-07",
+          "matched_terms": [
+            "time",
+            "in",
+            "s"
+          ]
+        },
+        {
+          "node_id": "event:atom-002",
+          "node_type": "event",
+          "score": 3.45,
+          "event_time": "2023-04",
+          "content": "unknown / mentions / Jon started expanding his studio social media pr\nstatement=Jon started expanding his studio social media presence in April 2023.\nevent_time=2023-04",
+          "matched_terms": [
+            "time",
+            "in",
+            "s"
+          ]
+        },
+        {
+          "node_id": "event:atom-001",
+          "node_type": "event",
+          "score": 3.45,
+          "event_time": "2023-04",
+          "content": "Jon / opened / studio in April\nstatement=Jon opened his studio in April 2023 after months of preparation.\nevent_time=2023-04",
+          "matched_terms": [
+            "time",
+            "in",
+            "s"
+          ]
+        }
+      ],
+      "answer_sketch": "Use top evidence: image:obs-007 | caption=Phone screenshot from Gina's arrival day showing Roma Termini station board. | ocr=Roma Termini 08:42 Platform 7 | tags=rome, station, arrival, travel | linked_subject=Gina | event_time=2023-07-23 | created_at=2023-07-24",
+      "note": ""
+    },
+    {
+      "query": "What did Jon want the studio to look like?",
+      "plan": {
+        "intent": "profile",
+        "target_layers": [
+          "fact",
+          "image_evidence",
+          "organized"
+        ],
+        "graph_first": false,
+        "prefer_event": false,
+        "prefer_fact": true,
+        "prefer_visual": true,
+        "notes": "Profile or style question: text facts first, visual moodboard second."
+      },
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "graph_ready": true,
+        "organized_ready": true,
+        "multimodal_ready": true,
+        "qa_ready": true
+      },
+      "allowed_to_answer": true,
+      "hits": [
+        {
+          "node_id": "fact:atom-007",
+          "node_type": "fact",
+          "score": 8.8,
+          "event_time": "2023-07-25",
+          "content": "statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.\nsubject=Jon\npredicate=wanted_style\nobject=a waterfront loft with natural light and Marley flooring.\nmention_time=2023-07-25\nevent_time=2023-07-25\ntime_confidence=0.20",
+          "matched_terms": [
+            "jon",
+            "want",
+            "the",
+            "studio",
+            "to",
+            "look",
+            "like"
+          ]
+        },
+        {
+          "node_id": "image:obs-008",
+          "node_type": "image_evidence",
+          "score": 5.300000000000001,
+          "event_time": "2023-07-25",
+          "content": "caption=Moodboard screenshot for Jon's dream studio with sunlit windows and a waterfront interior.\nocr=waterfront loft natural light Marley floor\ntags=studio, moodboard, design, waterfront\nlinked_subject=Jon\nevent_time=2023-07-25\ncreated_at=2023-07-25",
+          "matched_terms": [
+            "jon",
+            "studio"
+          ]
+        },
+        {
+          "node_id": "fact:atom-000",
+          "node_type": "fact",
+          "score": 4.8,
+          "event_time": "2023-01-19",
+          "content": "statement=Jon lost his banker job yesterday and decided to start a studio.\nsubject=unknown\npredicate=mentions\nobject=Jon lost his banker job yesterday and decided to\nmention_time=2023-01-20\nevent_time=2023-01-19\ntime_confidence=0.70",
+          "matched_terms": [
+            "jon",
+            "studio",
+            "to"
+          ]
+        },
+        {
+          "node_id": "organized:Jon",
+          "node_type": "organized",
+          "score": 4.0,
+          "event_time": "2023-07-25",
+          "content": "2023-04: Jon / opened / studio in April; 2023-06-19: Jon / visited / Rome; 2023-07: Jon / started_learning / marketing and analytics tools in July; 2023-07-23: Jon / shared_experience_with / Gina; 2023-07-23: Jon / shared_business_transition_with / Gina; 2023-07-25: Jon / wanted_style / a waterfront loft with natural light and Marley flooring.",
+          "matched_terms": [
+            "jon",
+            "want",
+            "studio",
+            "to"
+          ]
+        },
+        {
+          "node_id": "fact:atom-006",
+          "node_type": "fact",
+          "score": 3.8,
+          "event_time": "2023-07-23",
+          "content": "statement=Jon and Gina both lost their jobs and later started businesses.\nsubject=Jon\npredicate=shared_business_transition_with\nobject=Gina\nmention_time=2023-07-23\nevent_time=2023-07-23\ntime_confidence=0.20",
+          "matched_terms": [
+            "jon",
+            "the"
+          ]
+        },
+        {
+          "node_id": "fact:atom-005",
+          "node_type": "fact",
+          "score": 3.8,
+          "event_time": "2023-07-23",
+          "content": "statement=Jon and Gina both lost their jobs and later started businesses.\nsubject=Jon\npredicate=shared_experience_with\nobject=Gina\nmention_time=2023-07-23\nevent_time=2023-07-23\ntime_confidence=0.20",
+          "matched_terms": [
+            "jon",
+            "the"
+          ]
+        },
+        {
+          "node_id": "fact:atom-004",
+          "node_type": "fact",
+          "score": 3.8,
+          "event_time": "2023-07",
+          "content": "statement=Jon started learning marketing and analytics tools in July 2023.\nsubject=Jon\npredicate=started_learning\nobject=marketing and analytics tools in July\nmention_time=2023-07-10\nevent_time=2023-07\ntime_confidence=0.85",
+          "matched_terms": [
+            "jon",
+            "to"
+          ]
+        },
+        {
+          "node_id": "fact:atom-002",
+          "node_type": "fact",
+          "score": 3.8,
+          "event_time": "2023-04",
+          "content": "statement=Jon started expanding his studio social media presence in April 2023.\nsubject=unknown\npredicate=mentions\nobject=Jon started expanding his studio social media pr\nmention_time=2023-04-22\nevent_time=2023-04\ntime_confidence=0.85",
+          "matched_terms": [
+            "jon",
+            "studio"
+          ]
+        }
+      ],
+      "answer_sketch": "Use top evidence: fact:atom-007 | statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring. | subject=Jon | predicate=wanted_style | object=a waterfront loft with natural light and Marley flooring. | mention_time=2023-07-25 | event_time=2023-07-25 | time_confidence=0.20",
+      "note": ""
+    }
+  ],
+  "atoms": [
+    {
+      "atom_id": "atom-000",
+      "atom_type": "fact",
+      "subject": "unknown",
+      "predicate": "mentions",
+      "object": "Jon lost his banker job yesterday and decided to",
+      "statement": "Jon lost his banker job yesterday and decided to start a studio.",
+      "mention_time": "2023-01-20",
+      "event_time": "2023-01-19",
+      "source_obs_id": "obs-000",
+      "time_confidence": 0.7
+    },
+    {
+      "atom_id": "atom-001",
+      "atom_type": "event",
+      "subject": "Jon",
+      "predicate": "opened",
+      "object": "studio in April",
+      "statement": "Jon opened his studio in April 2023 after months of preparation.",
+      "mention_time": "2023-04-18",
+      "event_time": "2023-04",
+      "source_obs_id": "obs-001",
+      "time_confidence": 0.85
+    },
+    {
+      "atom_id": "atom-002",
+      "atom_type": "fact",
+      "subject": "unknown",
+      "predicate": "mentions",
+      "object": "Jon started expanding his studio social media pr",
+      "statement": "Jon started expanding his studio social media presence in April 2023.",
+      "mention_time": "2023-04-22",
+      "event_time": "2023-04",
+      "source_obs_id": "obs-002",
+      "time_confidence": 0.85
+    },
+    {
+      "atom_id": "atom-003",
+      "atom_type": "event",
+      "subject": "Jon",
+      "predicate": "visited",
+      "object": "Rome",
+      "statement": "Jon visited Rome on 2023-06-19.",
+      "mention_time": "2023-06-20",
+      "event_time": "2023-06-19",
+      "source_obs_id": "obs-003",
+      "time_confidence": 0.95
+    },
+    {
+      "atom_id": "atom-004",
+      "atom_type": "event",
+      "subject": "Jon",
+      "predicate": "started_learning",
+      "object": "marketing and analytics tools in July",
+      "statement": "Jon started learning marketing and analytics tools in July 2023.",
+      "mention_time": "2023-07-10",
+      "event_time": "2023-07",
+      "source_obs_id": "obs-004",
+      "time_confidence": 0.85
+    },
+    {
+      "atom_id": "atom-005",
+      "atom_type": "relation",
+      "subject": "Jon",
+      "predicate": "shared_experience_with",
+      "object": "Gina",
+      "statement": "Jon and Gina both lost their jobs and later started businesses.",
+      "mention_time": "2023-07-23",
+      "event_time": "2023-07-23",
+      "source_obs_id": "obs-005",
+      "time_confidence": 0.2
+    },
+    {
+      "atom_id": "atom-006",
+      "atom_type": "relation",
+      "subject": "Jon",
+      "predicate": "shared_business_transition_with",
+      "object": "Gina",
+      "statement": "Jon and Gina both lost their jobs and later started businesses.",
+      "mention_time": "2023-07-23",
+      "event_time": "2023-07-23",
+      "source_obs_id": "obs-005",
+      "time_confidence": 0.2
+    },
+    {
+      "atom_id": "atom-007",
+      "atom_type": "fact",
+      "subject": "Jon",
+      "predicate": "wanted_style",
+      "object": "a waterfront loft with natural light and Marley flooring.",
+      "statement": "Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.",
+      "mention_time": "2023-07-25",
+      "event_time": "2023-07-25",
+      "source_obs_id": "obs-006",
+      "time_confidence": 0.2
+    }
+  ],
+  "nodes": [
+    {
+      "node_id": "fact:atom-000",
+      "node_type": "fact",
+      "content": "statement=Jon lost his banker job yesterday and decided to start a studio.\nsubject=unknown\npredicate=mentions\nobject=Jon lost his banker job yesterday and decided to\nmention_time=2023-01-20\nevent_time=2023-01-19\ntime_confidence=0.70",
+      "source_ref": "obs-000",
+      "event_time": "2023-01-19"
+    },
+    {
+      "node_id": "event:atom-000",
+      "node_type": "event",
+      "content": "unknown / mentions / Jon lost his banker job yesterday and decided to\nstatement=Jon lost his banker job yesterday and decided to start a studio.\nevent_time=2023-01-19",
+      "source_ref": "obs-000",
+      "event_time": "2023-01-19"
+    },
+    {
+      "node_id": "entity:Jon lost his banker job yesterday and decided to",
+      "node_type": "entity",
+      "content": "name=Jon lost his banker job yesterday and decided to",
+      "source_ref": "obs-000",
+      "event_time": ""
+    },
+    {
+      "node_id": "fact:atom-001",
+      "node_type": "fact",
+      "content": "statement=Jon opened his studio in April 2023 after months of preparation.\nsubject=Jon\npredicate=opened\nobject=studio in April\nmention_time=2023-04-18\nevent_time=2023-04\ntime_confidence=0.85",
+      "source_ref": "obs-001",
+      "event_time": "2023-04"
+    },
+    {
+      "node_id": "event:atom-001",
+      "node_type": "event",
+      "content": "Jon / opened / studio in April\nstatement=Jon opened his studio in April 2023 after months of preparation.\nevent_time=2023-04",
+      "source_ref": "obs-001",
+      "event_time": "2023-04"
+    },
+    {
+      "node_id": "entity:Jon",
+      "node_type": "entity",
+      "content": "name=Jon",
+      "source_ref": "obs-001",
+      "event_time": ""
+    },
+    {
+      "node_id": "entity:studio in April",
+      "node_type": "entity",
+      "content": "name=studio in April",
+      "source_ref": "obs-001",
+      "event_time": ""
+    },
+    {
+      "node_id": "fact:atom-002",
+      "node_type": "fact",
+      "content": "statement=Jon started expanding his studio social media presence in April 2023.\nsubject=unknown\npredicate=mentions\nobject=Jon started expanding his studio social media pr\nmention_time=2023-04-22\nevent_time=2023-04\ntime_confidence=0.85",
+      "source_ref": "obs-002",
+      "event_time": "2023-04"
+    },
+    {
+      "node_id": "event:atom-002",
+      "node_type": "event",
+      "content": "unknown / mentions / Jon started expanding his studio social media pr\nstatement=Jon started expanding his studio social media presence in April 2023.\nevent_time=2023-04",
+      "source_ref": "obs-002",
+      "event_time": "2023-04"
+    },
+    {
+      "node_id": "entity:Jon started expanding his studio social media pr",
+      "node_type": "entity",
+      "content": "name=Jon started expanding his studio social media pr",
+      "source_ref": "obs-002",
+      "event_time": ""
+    },
+    {
+      "node_id": "fact:atom-003",
+      "node_type": "fact",
+      "content": "statement=Jon visited Rome on 2023-06-19.\nsubject=Jon\npredicate=visited\nobject=Rome\nmention_time=2023-06-20\nevent_time=2023-06-19\ntime_confidence=0.95",
+      "source_ref": "obs-003",
+      "event_time": "2023-06-19"
+    },
+    {
+      "node_id": "event:atom-003",
+      "node_type": "event",
+      "content": "Jon / visited / Rome\nstatement=Jon visited Rome on 2023-06-19.\nevent_time=2023-06-19",
+      "source_ref": "obs-003",
+      "event_time": "2023-06-19"
+    },
+    {
+      "node_id": "entity:Rome",
+      "node_type": "entity",
+      "content": "name=Rome",
+      "source_ref": "obs-003",
+      "event_time": ""
+    },
+    {
+      "node_id": "fact:atom-004",
+      "node_type": "fact",
+      "content": "statement=Jon started learning marketing and analytics tools in July 2023.\nsubject=Jon\npredicate=started_learning\nobject=marketing and analytics tools in July\nmention_time=2023-07-10\nevent_time=2023-07\ntime_confidence=0.85",
+      "source_ref": "obs-004",
+      "event_time": "2023-07"
+    },
+    {
+      "node_id": "event:atom-004",
+      "node_type": "event",
+      "content": "Jon / started_learning / marketing and analytics tools in July\nstatement=Jon started learning marketing and analytics tools in July 2023.\nevent_time=2023-07",
+      "source_ref": "obs-004",
+      "event_time": "2023-07"
+    },
+    {
+      "node_id": "entity:marketing and analytics tools in July",
+      "node_type": "entity",
+      "content": "name=marketing and analytics tools in July",
+      "source_ref": "obs-004",
+      "event_time": ""
+    },
+    {
+      "node_id": "fact:atom-005",
+      "node_type": "fact",
+      "content": "statement=Jon and Gina both lost their jobs and later started businesses.\nsubject=Jon\npredicate=shared_experience_with\nobject=Gina\nmention_time=2023-07-23\nevent_time=2023-07-23\ntime_confidence=0.20",
+      "source_ref": "obs-005",
+      "event_time": "2023-07-23"
+    },
+    {
+      "node_id": "event:atom-005",
+      "node_type": "event",
+      "content": "Jon / shared_experience_with / Gina\nstatement=Jon and Gina both lost their jobs and later started businesses.\nevent_time=2023-07-23",
+      "source_ref": "obs-005",
+      "event_time": "2023-07-23"
+    },
+    {
+      "node_id": "entity:Gina",
+      "node_type": "entity",
+      "content": "name=Gina",
+      "source_ref": "obs-005",
+      "event_time": ""
+    },
+    {
+      "node_id": "fact:atom-006",
+      "node_type": "fact",
+      "content": "statement=Jon and Gina both lost their jobs and later started businesses.\nsubject=Jon\npredicate=shared_business_transition_with\nobject=Gina\nmention_time=2023-07-23\nevent_time=2023-07-23\ntime_confidence=0.20",
+      "source_ref": "obs-005",
+      "event_time": "2023-07-23"
+    },
+    {
+      "node_id": "event:atom-006",
+      "node_type": "event",
+      "content": "Jon / shared_business_transition_with / Gina\nstatement=Jon and Gina both lost their jobs and later started businesses.\nevent_time=2023-07-23",
+      "source_ref": "obs-005",
+      "event_time": "2023-07-23"
+    },
+    {
+      "node_id": "fact:atom-007",
+      "node_type": "fact",
+      "content": "statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.\nsubject=Jon\npredicate=wanted_style\nobject=a waterfront loft with natural light and Marley flooring.\nmention_time=2023-07-25\nevent_time=2023-07-25\ntime_confidence=0.20",
+      "source_ref": "obs-006",
+      "event_time": "2023-07-25"
+    },
+    {
+      "node_id": "event:atom-007",
+      "node_type": "event",
+      "content": "Jon / wanted_style / a waterfront loft with natural light and Marley flooring.\nstatement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.\nevent_time=2023-07-25",
+      "source_ref": "obs-006",
+      "event_time": "2023-07-25"
+    },
+    {
+      "node_id": "entity:a waterfront loft with natural light and Marley flooring.",
+      "node_type": "entity",
+      "content": "name=a waterfront loft with natural light and Marley flooring.",
+      "source_ref": "obs-006",
+      "event_time": ""
+    },
+    {
+      "node_id": "image:obs-007",
+      "node_type": "image_evidence",
+      "content": "caption=Phone screenshot from Gina's arrival day showing Roma Termini station board.\nocr=Roma Termini 08:42 Platform 7\ntags=rome, station, arrival, travel\nlinked_subject=Gina\nevent_time=2023-07-23\ncreated_at=2023-07-24",
+      "source_ref": "obs-007",
+      "event_time": "2023-07-23"
+    },
+    {
+      "node_id": "image:obs-008",
+      "node_type": "image_evidence",
+      "content": "caption=Moodboard screenshot for Jon's dream studio with sunlit windows and a waterfront interior.\nocr=waterfront loft natural light Marley floor\ntags=studio, moodboard, design, waterfront\nlinked_subject=Jon\nevent_time=2023-07-25\ncreated_at=2023-07-25",
+      "source_ref": "obs-008",
+      "event_time": "2023-07-25"
+    },
+    {
+      "node_id": "organized:Jon",
+      "node_type": "organized",
+      "content": "2023-04: Jon / opened / studio in April; 2023-06-19: Jon / visited / Rome; 2023-07: Jon / started_learning / marketing and analytics tools in July; 2023-07-23: Jon / shared_experience_with / Gina; 2023-07-23: Jon / shared_business_transition_with / Gina; 2023-07-25: Jon / wanted_style / a waterfront loft with natural light and Marley flooring.",
+      "source_ref": "derived",
+      "event_time": "2023-07-25"
+    },
+    {
+      "node_id": "organized:unknown",
+      "node_type": "organized",
+      "content": "2023-01-19: unknown / mentions / Jon lost his banker job yesterday and decided to; 2023-04: unknown / mentions / Jon started expanding his studio social media pr",
+      "source_ref": "derived",
+      "event_time": "2023-04"
+    }
+  ],
+  "edges": [
+    {
+      "edge_id": "event:atom-000:evidence_of:fact:atom-000",
+      "source_id": "event:atom-000",
+      "target_id": "fact:atom-000",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "entity:Jon lost his banker job yesterday and decided to:has_fact:atom-000",
+      "source_id": "entity:Jon lost his banker job yesterday and decided to",
+      "target_id": "fact:atom-000",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-000:involves:Jon lost his banker job yesterday and decided to",
+      "source_id": "event:atom-000",
+      "target_id": "entity:Jon lost his banker job yesterday and decided to",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "event:atom-001:evidence_of:fact:atom-001",
+      "source_id": "event:atom-001",
+      "target_id": "fact:atom-001",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "entity:Jon:has_fact:atom-001",
+      "source_id": "entity:Jon",
+      "target_id": "fact:atom-001",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-001:involves:Jon",
+      "source_id": "event:atom-001",
+      "target_id": "entity:Jon",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "entity:studio in April:has_fact:atom-001",
+      "source_id": "entity:studio in April",
+      "target_id": "fact:atom-001",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-001:involves:studio in April",
+      "source_id": "event:atom-001",
+      "target_id": "entity:studio in April",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "event:atom-002:evidence_of:fact:atom-002",
+      "source_id": "event:atom-002",
+      "target_id": "fact:atom-002",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "entity:Jon started expanding his studio social media pr:has_fact:atom-002",
+      "source_id": "entity:Jon started expanding his studio social media pr",
+      "target_id": "fact:atom-002",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-002:involves:Jon started expanding his studio social media pr",
+      "source_id": "event:atom-002",
+      "target_id": "entity:Jon started expanding his studio social media pr",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "event:atom-003:evidence_of:fact:atom-003",
+      "source_id": "event:atom-003",
+      "target_id": "fact:atom-003",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "entity:Jon:has_fact:atom-003",
+      "source_id": "entity:Jon",
+      "target_id": "fact:atom-003",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-003:involves:Jon",
+      "source_id": "event:atom-003",
+      "target_id": "entity:Jon",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "entity:Rome:has_fact:atom-003",
+      "source_id": "entity:Rome",
+      "target_id": "fact:atom-003",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-003:involves:Rome",
+      "source_id": "event:atom-003",
+      "target_id": "entity:Rome",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "event:atom-004:evidence_of:fact:atom-004",
+      "source_id": "event:atom-004",
+      "target_id": "fact:atom-004",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "entity:Jon:has_fact:atom-004",
+      "source_id": "entity:Jon",
+      "target_id": "fact:atom-004",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-004:involves:Jon",
+      "source_id": "event:atom-004",
+      "target_id": "entity:Jon",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "entity:marketing and analytics tools in July:has_fact:atom-004",
+      "source_id": "entity:marketing and analytics tools in July",
+      "target_id": "fact:atom-004",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-004:involves:marketing and analytics tools in July",
+      "source_id": "event:atom-004",
+      "target_id": "entity:marketing and analytics tools in July",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "event:atom-005:evidence_of:fact:atom-005",
+      "source_id": "event:atom-005",
+      "target_id": "fact:atom-005",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "entity:Jon:has_fact:atom-005",
+      "source_id": "entity:Jon",
+      "target_id": "fact:atom-005",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-005:involves:Jon",
+      "source_id": "event:atom-005",
+      "target_id": "entity:Jon",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "entity:Gina:has_fact:atom-005",
+      "source_id": "entity:Gina",
+      "target_id": "fact:atom-005",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-005:involves:Gina",
+      "source_id": "event:atom-005",
+      "target_id": "entity:Gina",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "event:atom-006:evidence_of:fact:atom-006",
+      "source_id": "event:atom-006",
+      "target_id": "fact:atom-006",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "entity:Jon:has_fact:atom-006",
+      "source_id": "entity:Jon",
+      "target_id": "fact:atom-006",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-006:involves:Jon",
+      "source_id": "event:atom-006",
+      "target_id": "entity:Jon",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "entity:Gina:has_fact:atom-006",
+      "source_id": "entity:Gina",
+      "target_id": "fact:atom-006",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-006:involves:Gina",
+      "source_id": "event:atom-006",
+      "target_id": "entity:Gina",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "event:atom-007:evidence_of:fact:atom-007",
+      "source_id": "event:atom-007",
+      "target_id": "fact:atom-007",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "entity:Jon:has_fact:atom-007",
+      "source_id": "entity:Jon",
+      "target_id": "fact:atom-007",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-007:involves:Jon",
+      "source_id": "event:atom-007",
+      "target_id": "entity:Jon",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "entity:a waterfront loft with natural light and Marley flooring.:has_fact:atom-007",
+      "source_id": "entity:a waterfront loft with natural light and Marley flooring.",
+      "target_id": "fact:atom-007",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-007:involves:a waterfront loft with natural light and Marley flooring.",
+      "source_id": "event:atom-007",
+      "target_id": "entity:a waterfront loft with natural light and Marley flooring.",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "image:obs-007:shows:entity:Gina",
+      "source_id": "image:obs-007",
+      "target_id": "entity:Gina",
+      "relation_type": "shows"
+    },
+    {
+      "edge_id": "image:obs-007:supports_event:event:atom-005",
+      "source_id": "image:obs-007",
+      "target_id": "event:atom-005",
+      "relation_type": "supports_event"
+    },
+    {
+      "edge_id": "image:obs-008:shows:entity:Jon",
+      "source_id": "image:obs-008",
+      "target_id": "entity:Jon",
+      "relation_type": "shows"
+    },
+    {
+      "edge_id": "image:obs-008:supports_event:event:atom-007",
+      "source_id": "image:obs-008",
+      "target_id": "event:atom-007",
+      "relation_type": "supports_event"
+    },
+    {
+      "edge_id": "event:atom-000:temporal_next:event:atom-001",
+      "source_id": "event:atom-000",
+      "target_id": "event:atom-001",
+      "relation_type": "temporal_next"
+    },
+    {
+      "edge_id": "event:atom-001:temporal_next:event:atom-002",
+      "source_id": "event:atom-001",
+      "target_id": "event:atom-002",
+      "relation_type": "temporal_next"
+    },
+    {
+      "edge_id": "event:atom-002:temporal_next:event:atom-003",
+      "source_id": "event:atom-002",
+      "target_id": "event:atom-003",
+      "relation_type": "temporal_next"
+    },
+    {
+      "edge_id": "event:atom-003:temporal_next:event:atom-004",
+      "source_id": "event:atom-003",
+      "target_id": "event:atom-004",
+      "relation_type": "temporal_next"
+    },
+    {
+      "edge_id": "event:atom-004:temporal_next:event:atom-005",
+      "source_id": "event:atom-004",
+      "target_id": "event:atom-005",
+      "relation_type": "temporal_next"
+    },
+    {
+      "edge_id": "event:atom-005:temporal_next:event:atom-006",
+      "source_id": "event:atom-005",
+      "target_id": "event:atom-006",
+      "relation_type": "temporal_next"
+    },
+    {
+      "edge_id": "event:atom-006:temporal_next:event:atom-007",
+      "source_id": "event:atom-006",
+      "target_id": "event:atom-007",
+      "relation_type": "temporal_next"
+    }
+  ],
+  "organized": [
+    {
+      "summary_id": "org:Jon",
+      "subject": "Jon",
+      "content": "2023-04: Jon / opened / studio in April; 2023-06-19: Jon / visited / Rome; 2023-07: Jon / started_learning / marketing and analytics tools in July; 2023-07-23: Jon / shared_experience_with / Gina; 2023-07-23: Jon / shared_business_transition_with / Gina; 2023-07-25: Jon / wanted_style / a waterfront loft with natural light and Marley flooring."
+    },
+    {
+      "summary_id": "org:unknown",
+      "subject": "unknown",
+      "content": "2023-01-19: unknown / mentions / Jon lost his banker job yesterday and decided to; 2023-04: unknown / mentions / Jon started expanding his studio social media pr"
+    }
+  ]
+}

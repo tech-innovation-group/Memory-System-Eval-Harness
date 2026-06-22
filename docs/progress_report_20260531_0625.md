@@ -4,8 +4,8 @@
 验证 clean-answer LongMemEval 100 新基线的 formal Judge smoke，并把“完整 memory events vs 页面预览”这个关键完整性约束产品化。
 
 ## 已完成
-- 基于 `/Users/chx/locomo-eval-web/runs/manual_longmemeval_cleananswer_100/local_agent/local_agent_results.csv` 复制前 3 行到独立 Judge smoke run：
-  - `/Users/chx/locomo-eval-web/runs/manual_longmemeval_cleananswer_100_judge_smoke_3/local_agent/local_agent_results.csv`
+- 基于 `<repo-root>/runs/manual_longmemeval_cleananswer_100/local_agent/local_agent_results.csv` 复制前 3 行到独立 Judge smoke run：
+  - `<repo-root>/runs/manual_longmemeval_cleananswer_100_judge_smoke_3/local_agent/local_agent_results.csv`
 - 对该 3 行副本执行 formal Judge：
   - rows: 3
   - graded: 3
@@ -14,7 +14,7 @@
   - accuracy: 100.0%
   - source 100-row CSV 未被修改，仍保持 pending。
 - 导出 smoke report：
-  - `/Users/chx/locomo-eval-web/runs/manual_longmemeval_cleananswer_100_judge_smoke_3/report.md`
+  - `<repo-root>/runs/manual_longmemeval_cleananswer_100_judge_smoke_3/report.md`
 - 数据集页补充 memory completeness 说明：
   - 小数据集扫描时 KPI 显示 `Memory Events`。
   - 大文件 lazy 概览明确提示：页面概览不会全量扫描，正式任务会完整读取 memory events。
@@ -43,7 +43,7 @@
 
 ## Addendum: 10-row Formal Judge Smoke
 - Copied first 10 rows from clean-answer 100 baseline into an isolated run:
-  - `/Users/chx/locomo-eval-web/runs/manual_longmemeval_cleananswer_100_judge_smoke_10/local_agent/local_agent_results.csv`
+  - `<repo-root>/runs/manual_longmemeval_cleananswer_100_judge_smoke_10/local_agent/local_agent_results.csv`
 - Formal Judge result:
   - rows: 10
   - graded: 10
@@ -52,5 +52,5 @@
   - accuracy: 80.0%
   - duration: 5.9s
 - Report:
-  - `/Users/chx/locomo-eval-web/runs/manual_longmemeval_cleananswer_100_judge_smoke_10/report.md`
+  - `<repo-root>/runs/manual_longmemeval_cleananswer_100_judge_smoke_10/report.md`
 - The 100-row source CSV remains pending and unmodified.

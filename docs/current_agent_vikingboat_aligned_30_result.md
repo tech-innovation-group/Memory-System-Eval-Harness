@@ -4,18 +4,18 @@
 
 ## 运行产物
 
-- 方案文档：`/Users/chx/locomo-eval-web/docs/current_agent_vikingboat_alignment_plan.md`
-- Run 目录：`/Users/chx/locomo-eval-web/runs/current_agent_vikingboat_aligned_30_20260601_160050`
-- QA CSV：`/Users/chx/locomo-eval-web/runs/current_agent_vikingboat_aligned_30_20260601_160050/openviking_memory_qa_results.csv`
-- QA Summary：`/Users/chx/locomo-eval-web/runs/current_agent_vikingboat_aligned_30_20260601_160050/summary.json`
-- Judge Summary：`/Users/chx/locomo-eval-web/runs/current_agent_vikingboat_aligned_30_20260601_160050/judge_summary.json`
+- 方案文档：`<repo-root>/docs/current_agent_vikingboat_alignment_plan.md`
+- Run 目录：`<repo-root>/runs/current_agent_vikingboat_aligned_30_20260601_160050`
+- QA CSV：`<repo-root>/runs/current_agent_vikingboat_aligned_30_20260601_160050/openviking_memory_qa_results.csv`
+- QA Summary：`<repo-root>/runs/current_agent_vikingboat_aligned_30_20260601_160050/summary.json`
+- Judge Summary：`<repo-root>/runs/current_agent_vikingboat_aligned_30_20260601_160050/judge_summary.json`
 
 ## 上下文工程配置
 
 - Dataset：LoCoMo `conv-30`
 - 题数：30
-- OpenViking：`http://127.0.0.1:1933`
-- 记忆 workspace：`/Users/chx/openviking_workspace_locomo_20260601_014238_5b2c49`
+- OpenViking：`<OPENVIKING_BASE_URL>`
+- 记忆 workspace：`<openviking-workspace>`
 - Account/User/Agent：`default/default/default`
 - 检索：OpenViking `/api/v1/search/find`
 - Top-K：30
@@ -26,7 +26,7 @@
 
 ## 前置记忆导入状态
 
-导入 summary：`/Users/chx/locomo-eval-web/runs/openviking_import_20260601_014238_227a10/openviking_import/openviking_import_summary.json`
+导入 summary：`<repo-root>/runs/openviking_import_20260601_014238_227a10/openviking_import/openviking_import_summary.json`
 
 - 状态：`OPENVIKING_IMPORT_DONE`
 - Sample：`conv-30`

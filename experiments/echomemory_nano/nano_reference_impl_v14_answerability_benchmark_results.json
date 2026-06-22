@@ -1,0 +1,157 @@
+{
+  "summary": {
+    "cases": 6,
+    "legacy_correct": 2,
+    "enforced_correct": 6,
+    "improved_cases": [
+      "temporal",
+      "longitudinal",
+      "visual",
+      "unsupported"
+    ]
+  },
+  "rows": [
+    {
+      "case_id": "temporal",
+      "query": "When did Maya start the visa paperwork?",
+      "expected": "2026-03-02",
+      "legacy": "unknown",
+      "legacy_ok": false,
+      "enforced": "2026-03-02",
+      "enforced_ok": true,
+      "plan": {
+        "family": "temporal",
+        "primary_reader": "temporal_tree",
+        "supporting_readers": [
+          "graph",
+          "atom"
+        ],
+        "required_layers": [
+          "temporal_tree",
+          "event",
+          "event_time"
+        ],
+        "reason": "Chronology-heavy query."
+      },
+      "contract_ok": true,
+      "missing_layers": []
+    },
+    {
+      "case_id": "relational",
+      "query": "Who helped Maya with the visa paperwork?",
+      "expected": "Nora",
+      "legacy": "Nora",
+      "legacy_ok": true,
+      "enforced": "Maya, Nora",
+      "enforced_ok": true,
+      "plan": {
+        "family": "relational",
+        "primary_reader": "graph",
+        "supporting_readers": [
+          "atom",
+          "temporal_tree"
+        ],
+        "required_layers": [
+          "graph",
+          "fact",
+          "path_grounding"
+        ],
+        "reason": "Relation-heavy query."
+      },
+      "contract_ok": true,
+      "missing_layers": []
+    },
+    {
+      "case_id": "longitudinal",
+      "query": "How did the apartment lease situation evolve?",
+      "expected": "Rua Augusta 14",
+      "legacy": "Topic: maya_move-in",
+      "legacy_ok": false,
+      "enforced": "2026-03-01: Maya found an apartment on Rua Augusta 14 on 2026-03-01\n2026-03-02: Maya started the visa paperwork and Nora helped Maya prepare the financial statement on 2026-03-02\n2026-03-18: Maya approved the visa process after the consulate received the residence document on 2026-03-18\n2026-03-20: Maya showed the lease screenshot with move-in date 2026-03-20",
+      "enforced_ok": true,
+      "plan": {
+        "family": "longitudinal",
+        "primary_reader": "topic_dossier",
+        "supporting_readers": [
+          "atom",
+          "temporal_tree"
+        ],
+        "required_layers": [
+          "topic_dossier",
+          "fact"
+        ],
+        "reason": "Cross-session topic evolution query."
+      },
+      "contract_ok": true,
+      "missing_layers": []
+    },
+    {
+      "case_id": "visual",
+      "query": "What was shown in the lease screenshot?",
+      "expected": "Rua Augusta 14",
+      "legacy": "Lease contract screenshot",
+      "legacy_ok": false,
+      "enforced": "Rua Augusta 14 move-in 2026-03-20",
+      "enforced_ok": true,
+      "plan": {
+        "family": "visual",
+        "primary_reader": "graph",
+        "supporting_readers": [
+          "atom"
+        ],
+        "required_layers": [
+          "image_evidence",
+          "fact"
+        ],
+        "reason": "Visual evidence query."
+      },
+      "contract_ok": true,
+      "missing_layers": []
+    },
+    {
+      "case_id": "unsupported",
+      "query": "Which company invited Nora to Lisbon?",
+      "expected": "unknown",
+      "legacy": "The landlord delayed the handover and the move-in shifted to 2026-03-27",
+      "legacy_ok": false,
+      "enforced": "unknown",
+      "enforced_ok": true,
+      "plan": {
+        "family": "relational",
+        "primary_reader": "graph",
+        "supporting_readers": [
+          "atom",
+          "temporal_tree"
+        ],
+        "required_layers": [
+          "graph",
+          "fact",
+          "path_grounding"
+        ],
+        "reason": "Relation-heavy query."
+      },
+      "contract_ok": true,
+      "missing_layers": []
+    },
+    {
+      "case_id": "readiness",
+      "query": "Can you answer now?",
+      "expected": "ready",
+      "legacy": "qa_ready=True",
+      "legacy_ok": true,
+      "enforced": "ready",
+      "enforced_ok": true,
+      "plan": {
+        "family": "readiness",
+        "primary_reader": "readiness",
+        "supporting_readers": [],
+        "required_layers": [
+          "readiness"
+        ],
+        "reason": "Lifecycle / answerability query."
+      },
+      "contract_ok": true,
+      "missing_layers": []
+    }
+  ]
+}

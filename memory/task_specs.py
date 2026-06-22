@@ -288,6 +288,104 @@ def build_openviking_qa_retry_missing_task(
     return TaskSpec(command, str(input_file), payload.get("name") or "Retry missing OpenViking QA questions")
 
 
+def build_echomemory_qa_retry_failed_task(
+    payload: dict[str, Any],
+    run_dir: Path,
+    root: Path,
+    default_data: Path,
+    safe_path: SafePath,
+    config: Path,
+    resolve_token: ResolveToken,
+) -> TaskSpec:
+    input_file = safe_path(str(payload.get("input") or ""))
+    data = safe_path(str(payload.get("data") or str(default_data)))
+    out_dir = safe_path(str(payload.get("retry_out_dir") or str(run_dir / "echomemory_qa_retry_failed")))
+    token = payload.get("answer_token") or resolve_token(payload, config)
+    retrieval_mode = str(payload.get("retrieval_mode") or "search").strip().lower() or "search"
+    command = [
+        "/usr/bin/env",
+        "python3",
+        str(root / "scripts/retry_failed_echomemory_qa.py"),
+        "--input",
+        str(input_file),
+        "--dataset",
+        str(data),
+        "--out-dir",
+        str(out_dir),
+        "--echomem-root",
+        str(payload.get("echomem_root") or ""),
+        "--echomem-config",
+        str(payload.get("echomem_config") or ""),
+        "--workspace",
+        str(payload.get("workspace") or payload.get("echomemory_workspace") or ""),
+        "--account",
+        str(payload.get("account") or "default"),
+        "--user-id",
+        str(payload.get("em_user_id") or payload.get("user_id") or "default"),
+        "--agent-id",
+        str(payload.get("em_agent_id") or payload.get("agent_id") or "default"),
+        "--prompt-mode",
+        str(payload.get("prompt_mode") or "one_shot"),
+        "--top-k",
+        str(payload.get("top_k") or 30),
+        "--score-threshold",
+        str(payload.get("score_threshold") or 0.1),
+        "--memory-budget-chars",
+        str(payload.get("memory_budget_chars") or 6000),
+        "--user-memory-budget-chars",
+        str(payload.get("user_memory_budget_chars") or 4000),
+        "--agent-memory-budget-chars",
+        str(payload.get("agent_memory_budget_chars") or 2000),
+        "--retrieval-mode",
+        retrieval_mode,
+        "--answer-base-url",
+        str(payload.get("answer_base_url") or payload.get("judge_base_url") or ""),
+        "--answer-model",
+        str(payload.get("answer_model") or payload.get("judge_model") or "gpt-5.5"),
+        "--model-retries",
+        str(payload.get("model_retries") or 5),
+        "--timeout-s",
+        str(payload.get("timeout_s") or 120),
+        "--question-timeout-s",
+        str(payload.get("question_timeout_s") or 600),
+        "--tool-set",
+        str(payload.get("tool_set") or payload.get("openviking_tool_set") or "search_read"),
+        "--tool-search-limit",
+        str(payload.get("tool_search_limit") or 20),
+        "--tool-min-score",
+        str(payload.get("tool_min_score") or 0.35),
+        "--tool-log-chars",
+        str(payload.get("tool_log_chars") or 1200),
+        "--prefetch-read-count",
+        str(payload.get("prefetch_read_count") or 4),
+        "--prefetch-context-chars",
+        str(payload.get("prefetch_context_chars") or 5000),
+        "--max-iterations",
+        str(payload.get("max_iterations") or 8),
+    ]
+    if token:
+        command += ["--answer-token", str(token)]
+    if retrieval_mode == "local":
+        command.append("--local-session-summaries" if str(payload.get("local_session_summaries", True)).strip().lower() not in {"0", "false", "no", "off"} else "--no-local-session-summaries")
+        command.append("--local-atoms" if str(payload.get("local_atoms", True)).strip().lower() not in {"0", "false", "no", "off"} else "--no-local-atoms")
+        command.append("--local-messages" if str(payload.get("local_messages", False)).strip().lower() not in {"0", "false", "no", "off"} else "--no-local-messages")
+        command.append("--local-timeline-hints" if str(payload.get("local_timeline_hints", True)).strip().lower() not in {"0", "false", "no", "off"} else "--no-local-timeline-hints")
+        command.append("--local-memory-artifacts" if str(payload.get("local_memory_artifacts", True)).strip().lower() not in {"0", "false", "no", "off"} else "--no-local-memory-artifacts")
+    else:
+        command += [
+            "--no-local-session-summaries",
+            "--no-local-atoms",
+            "--no-local-messages",
+            "--no-local-timeline-hints",
+            "--no-local-memory-artifacts",
+        ]
+    command.append("--vikingboat-tool-loop" if str(payload.get("vikingboat_tool_loop", False)).strip().lower() not in {"0", "false", "no", "off"} else "--no-vikingboat-tool-loop")
+    command.append("--vikingboat-compat" if str(payload.get("vikingboat_compat", False)).strip().lower() not in {"0", "false", "no", "off"} else "--no-vikingboat-compat")
+    command.append("--initial-tool-prefetch" if str(payload.get("initial_tool_prefetch", False)).strip().lower() not in {"0", "false", "no", "off"} else "--no-initial-tool-prefetch")
+    command.append("--fallback-to-one-shot" if str(payload.get("fallback_to_one_shot", True)).strip().lower() not in {"0", "false", "no", "off"} else "--no-fallback-to-one-shot")
+    return TaskSpec(command, str(input_file), payload.get("name") or "Retry failed EchoMemory QA rows")
+
+
 def build_local_pipeline_task(
     payload: dict[str, Any],
     run_dir: Path,

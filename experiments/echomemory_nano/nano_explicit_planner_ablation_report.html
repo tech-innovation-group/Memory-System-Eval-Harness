@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EchoMemory Explicit Planner Ablation</title>
+  <style>
+    :root {
+      --bg:#f6f7fb;--panel:#fff;--text:#172033;--muted:#667085;--line:#dde4ee;
+      --green:#067647;--green-soft:#ecfdf3;--red:#b42318;--red-soft:#fff1f3;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font:14px/1.68 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+    .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 60px}
+    .hero,.case,.card{background:var(--panel);border:1px solid var(--line);border-radius:12px}
+    .hero{padding:28px 30px 22px}
+    .case{padding:18px 20px;margin-top:16px}
+    .grid{display:grid;gap:16px}
+    .grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px}
+    .stat{padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:#fbfcff}
+    .stat .label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+    .stat .value{font-size:22px;font-weight:700}
+    .card{padding:14px}
+    h1,h3{margin:0 0 10px}
+    p{margin:0 0 10px}
+    ul{margin:8px 0 0;padding-left:18px}
+    code{background:#f3f6fb;border-radius:6px;padding:2px 6px;font-size:12px}
+    .badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;margin-bottom:12px}
+    .badge.ok{background:var(--green-soft);color:var(--green)}
+    .badge.bad{background:var(--red-soft);color:var(--red)}
+    .muted{color:var(--muted)}
+    @media (max-width: 960px) {
+      .grid.two,.stats{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1>EchoMemory Nano: Explicit Planner Ablation</h1>
+      <p>
+        这个实验比较两种思路：一种是“混合式检索，谁匹配谁先上”，另一种是“先判断 query family，再决定 graph-first / hybrid 路径”。
+      </p>
+      <div class="stats">
+        <div class="stat"><span class="label">mixed baseline</span><span class="value">1/4</span></div>
+        <div class="stat"><span class="label">explicit planner</span><span class="value">3/4</span></div>
+        <div class="stat"><span class="label">结论</span><span class="value">Separation helps</span></div>
+      </div>
+    </div>
+    <div class='case'><h3>When did Gina lose her job?</h3><p class='muted'>Temporal query should start from event evidence.</p><div class='grid two'><div class='card'><div class='badge bad'>mixed baseline fail</div><p><b>plan:</b> mixed</p><ul><li><code>block:timeline</code> · block · score=2.3<br>- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.
+- 2023-02-02: Gina lost his job on 2023-02-02 and started searching for design roles.
+- 2023-03-12: Jon married A</li><li><code>event:atom-001</code> · event · score=2.0<br>Gina lost_job job</li><li><code>fact:atom-001</code> · fact · score=2.0<br>Gina lost his job on 2023-02-02 and started searching for design roles.</li><li><code>block:plans</code> · block · score=1.3<br>- Gina plans to move to Lisbon after the spring hiring season.</li></ul></div><div class='card'><div class='badge ok'>explicit planner pass</div><p><b>plan:</b> temporal</p><ul><li><code>event:atom-001</code> · event · score=3.0<br>Gina lost_job job</li><li><code>event:atom-000</code> · event · score=2.0<br>Gina visited Rome</li><li><code>event:atom-003</code> · event · score=2.0<br>Gina plans move to Lisbon after the spring hiring season.</li><li><code>fact:atom-001</code> · fact · score=2.0<br>Gina lost his job on 2023-02-02 and started searching for design roles.</li></ul></div></div></div><div class='case'><h3>Who married Alice and when?</h3><p class='muted'>Temporal+relation query should not be treated as flat lexical lookup.</p><div class='grid two'><div class='card'><div class='badge bad'>mixed baseline fail</div><p><b>plan:</b> mixed</p><ul><li><code>block:timeline</code> · block · score=3.3<br>- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.
+- 2023-02-02: Gina lost his job on 2023-02-02 and started searching for design roles.
+- 2023-03-12: Jon married A</li><li><code>event:atom-002</code> · event · score=2.0<br>Jon married Alice</li><li><code>fact:atom-002</code> · fact · score=2.0<br>Jon married Alice on 2023-03-12 in Seattle.</li><li><code>fact:atom-001</code> · fact · score=1.0<br>Gina lost his job on 2023-02-02 and started searching for design roles.</li></ul></div><div class='card'><div class='badge ok'>explicit planner pass</div><p><b>plan:</b> temporal+relation</p><ul><li><code>event:atom-002</code> · event · score=3.0<br>Jon married Alice</li><li><code>fact:atom-002</code> · fact · score=2.0<br>Jon married Alice on 2023-03-12 in Seattle.</li><li><code>entity:Alice</code> · entity · score=1.8<br>name=Alice</li><li><code>fact:atom-001</code> · fact · score=1.0<br>Gina lost his job on 2023-02-02 and started searching for design roles.</li></ul></div></div></div><div class='case'><h3>Which two people were involved in the Seattle wedding?</h3><p class='muted'>Relation query should prefer relation path and entities.</p><div class='grid two'><div class='card'><div class='badge bad'>mixed baseline fail</div><p><b>plan:</b> mixed</p><ul><li><code>block:timeline</code> · block · score=2.3<br>- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.
+- 2023-02-02: Gina lost his job on 2023-02-02 and started searching for design roles.
+- 2023-03-12: Jon married A</li><li><code>fact:atom-002</code> · fact · score=2.0<br>Jon married Alice on 2023-03-12 in Seattle.</li><li><code>block:plans</code> · block · score=1.3<br>- Gina plans to move to Lisbon after the spring hiring season.</li><li><code>event:atom-000</code> · event · score=1.0<br>Gina visited Rome</li></ul></div><div class='card'><div class='badge bad'>explicit planner fail</div><p><b>plan:</b> relation</p><ul><li><code>fact:atom-002</code> · fact · score=2.0<br>Jon married Alice on 2023-03-12 in Seattle.</li><li><code>entity:Gina</code> · entity · score=1.9<br>name=Gina</li><li><code>entity:Milan</code> · entity · score=1.9<br>name=Milan</li><li><code>entity:Rome</code> · entity · score=1.9<br>name=Rome</li></ul></div></div></div><div class='case'><h3>What does Gina plan to do after spring hiring season?</h3><p class='muted'>Plan block can stay hybrid and need not be graph-first.</p><div class='grid two'><div class='card'><div class='badge ok'>mixed baseline pass</div><p><b>plan:</b> mixed</p><ul><li><code>block:plans</code> · block · score=7.3<br>- Gina plans to move to Lisbon after the spring hiring season.</li><li><code>event:atom-003</code> · event · score=7.0<br>Gina plans move to Lisbon after the spring hiring season.</li><li><code>fact:atom-003</code> · fact · score=7.0<br>Gina plans to move to Lisbon after the spring hiring season.</li><li><code>block:timeline</code> · block · score=2.3<br>- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.
+- 2023-02-02: Gina lost his job on 2023-02-02 and started searching for design roles.
+- 2023-03-12: Jon married A</li></ul></div><div class='card'><div class='badge ok'>explicit planner pass</div><p><b>plan:</b> plan</p><ul><li><code>block:plans</code> · block · score=7.3<br>- Gina plans to move to Lisbon after the spring hiring season.</li><li><code>event:atom-003</code> · event · score=7.0<br>Gina plans move to Lisbon after the spring hiring season.</li><li><code>fact:atom-003</code> · fact · score=7.0<br>Gina plans to move to Lisbon after the spring hiring season.</li><li><code>block:timeline</code> · block · score=2.3<br>- 2023-01-30: Gina visited Rome on 2023-01-30 after leaving Milan.
+- 2023-02-02: Gina lost his job on 2023-02-02 and started searching for design roles.
+- 2023-03-12: Jon married A</li></ul></div></div></div>
+  </div>
+</body>
+</html>

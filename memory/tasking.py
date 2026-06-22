@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import re
@@ -22,6 +23,24 @@ SECRET_ARGS = {
     "--judge-token",
     "--openviking-api-key",
 }
+
+
+def _recent_log_lines(path: Path, limit_bytes: int = 256_000) -> list[str]:
+    if not path.exists():
+        return []
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return []
+    read_size = min(size, limit_bytes)
+    try:
+        with path.open("rb") as f:
+            if read_size < size:
+                f.seek(size - read_size)
+            data = f.read()
+    except OSError:
+        return []
+    return data.decode("utf-8", errors="replace").splitlines()
 
 
 def redact_manifest_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -73,6 +92,7 @@ def write_manifest(task: Any, payload: dict[str, Any], run_dir: Path) -> None:
         "ended_at": datetime.fromtimestamp(getattr(task, "ended_at", 0)).isoformat(timespec="seconds") if getattr(task, "ended_at", None) else None,
         "duration_s": public.get("duration"),
         "returncode": getattr(task, "returncode", None),
+        "pid": getattr(task, "pid", None),
         "cwd": getattr(task, "cwd", ""),
         "command": command,
         "output_file": getattr(task, "output_file", ""),
@@ -90,12 +110,13 @@ def write_manifest(task: Any, payload: dict[str, Any], run_dir: Path) -> None:
         "agent_type": agent_type,
         "config": redacted_config,
         "command": manifest["command"],
-        "artifacts": {
-            "output_file": getattr(task, "output_file", ""),
-            "log_file": getattr(task, "log_file", ""),
-            "manifest_file": str(run_dir / "manifest.json"),
-        },
-    }
+            "artifacts": {
+                "output_file": getattr(task, "output_file", ""),
+                "log_file": getattr(task, "log_file", ""),
+                "pid": getattr(task, "pid", None),
+                "manifest_file": str(run_dir / "manifest.json"),
+            },
+        }
     (run_dir / "config_snapshot.json").write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
     path = run_dir / "manifest.json"
     path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -128,6 +149,28 @@ def task_log_diagnostics(task: Any) -> dict[str, Any]:
     embedding_timeout_count = 0
     embedding_circuit_breaker_count = 0
     generic_failure_count = 0
+    token_usage = {
+        "llm_input_tokens": 0,
+        "llm_output_tokens": 0,
+        "llm_total_tokens": 0,
+        "llm_call_count": 0,
+        "answer_prompt_tokens": 0,
+        "answer_completion_tokens": 0,
+        "answer_total_tokens": 0,
+        "retrieval_tokens_est": 0,
+        "retrieval_tokens_est_total": 0,
+        "total_injection_tokens_est": 0,
+        "import_llm_prompt_tokens": 0,
+        "import_llm_completion_tokens": 0,
+        "import_llm_total_tokens": 0,
+        "import_embedding_total_tokens": 0,
+        "import_total_tokens": 0,
+        "search_intent_total_tokens": 0,
+        "search_intent_call_count": 0,
+        "embedding_total_tokens": 0,
+        "embedding_call_count": 0,
+    }
+    call_site_usage: dict[str, dict[str, int]] = {}
     for item in logs:
         try:
             info = tail_file(item["path"], 24000)
@@ -148,6 +191,39 @@ def task_log_diagnostics(task: Any) -> dict[str, Any]:
             info.get("embedding_circuit_breaker_count") or len(info.get("embedding_circuit_breaker_hits", []))
         )
         generic_failure_count += int(info.get("generic_failure_count") or len(info.get("generic_failure_hits", [])))
+        usage = info.get("token_usage") if isinstance(info.get("token_usage"), dict) else {}
+        for key in (
+            "llm_input_tokens",
+            "llm_output_tokens",
+            "llm_total_tokens",
+            "llm_call_count",
+            "answer_prompt_tokens",
+            "answer_completion_tokens",
+            "answer_total_tokens",
+            "retrieval_tokens_est",
+            "retrieval_tokens_est_total",
+            "total_injection_tokens_est",
+            "import_llm_prompt_tokens",
+            "import_llm_completion_tokens",
+            "import_llm_total_tokens",
+            "import_embedding_total_tokens",
+            "import_total_tokens",
+            "search_intent_total_tokens",
+            "search_intent_call_count",
+            "embedding_total_tokens",
+            "embedding_call_count",
+        ):
+            token_usage[key] += int(usage.get(key) or 0)
+        usage_sites = usage.get("call_sites") if isinstance(usage.get("call_sites"), dict) else {}
+        for site_name, site_usage in usage_sites.items():
+            if not isinstance(site_usage, dict):
+                continue
+            bucket = call_site_usage.setdefault(
+                str(site_name),
+                {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "call_count": 0},
+            )
+            for key in ("input_tokens", "output_tokens", "total_tokens", "call_count"):
+                bucket[key] += int(site_usage.get(key) or 0)
 
     model_issue_hits = (
         rate_limit_hits
@@ -163,6 +239,8 @@ def task_log_diagnostics(task: Any) -> dict[str, Any]:
         + embedding_timeout_count
         + embedding_circuit_breaker_count
     )
+    token_usage["call_sites"] = {key: value for key, value in call_site_usage.items() if any(int(v or 0) for v in value.values())}
+    token_usage = {key: value for key, value in token_usage.items() if value not in (0, {}, None)}
     return {
         "rate_limit_hits": rate_limit_hits[-20:],
         "rate_limit_count": rate_limit_count,
@@ -178,6 +256,7 @@ def task_log_diagnostics(task: Any) -> dict[str, Any]:
         "generic_failure_count": generic_failure_count,
         "model_issue_hits": model_issue_hits[-20:],
         "model_issue_count": model_issue_count,
+        "token_usage": token_usage,
     }
 
 
@@ -264,6 +343,17 @@ def _task_config(task: Any) -> dict[str, Any]:
     meta = getattr(task, "meta", {}) if isinstance(getattr(task, "meta", {}), dict) else {}
     config = meta.get("config") if isinstance(meta, dict) else {}
     return config if isinstance(config, dict) else {}
+
+
+def _csv_row_count(path_like: Any) -> int:
+    path = Path(str(path_like or "")).expanduser()
+    if not path.exists() or not path.is_file():
+        return 0
+    try:
+        with path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
+            return sum(1 for _ in csv.DictReader(handle))
+    except Exception:
+        return 0
 
 
 def _locomo_turn_preview(raw: dict[str, Any]) -> str:
@@ -359,9 +449,32 @@ def _locomo_session_progress_index(session_label: str, locomo_totals: dict[str, 
     return number
 
 
+def _locomo_session_progress_display_current(
+    completed_count: int,
+    total_count: int,
+    current_label: str,
+    locomo_totals: dict[str, Any],
+) -> int:
+    """Return a conservative visible progress count for LoCoMo imports.
+
+    Progress bars should track completed sessions only. The current in-flight
+    session is described in text, not counted as finished.
+    """
+    total = max(int(total_count or 0), 0)
+    completed = max(int(completed_count or 0), 0)
+    current_index = _locomo_session_progress_index(current_label, locomo_totals)
+    if total <= 0:
+        return completed
+    if current_index > 0:
+        return min(max(completed, min(current_index - 1, total)), total)
+    return min(completed, total)
+
+
 def task_progress(task: Any) -> dict[str, Any] | None:
     kind = str(getattr(task, "kind", "") or "")
     log_file = str(getattr(task, "log_file", "") or "")
+    config = _task_config(task)
+    dataset_format = str(config.get("dataset_format") or config.get("format") or "").strip().lower()
     if kind not in {
         "local_agent",
         "openviking_qa",
@@ -369,6 +482,8 @@ def task_progress(task: Any) -> dict[str, Any] | None:
         "openviking_import",
         "echomemory_qa",
         "echomemory_import",
+        "echomemory_generic_qa",
+        "echomemory_qa_retry_failed",
         "openviking_qa_retry_failed",
         "openviking_qa_retry_missing",
     } or not log_file:
@@ -391,13 +506,28 @@ def task_progress(task: Any) -> dict[str, Any] | None:
     current_session_expected = 0
     current_session_added = 0
     current_sample_sessions = 0
+    current_flush_attempt = 0
+    current_flush_total = 0
     current_import: dict[str, Any] | None = None
+    generic_item_current = 0
+    generic_item_total = 0
+    generic_item_stage = ""
+    generic_answered_rows = 0
     awaiting_echomem_commit = False
+    warnings: list[str] = []
     is_memory_import = kind in {"openviking_import", "echomemory_import"}
+    is_generic_memory_qa = kind in {"openviking_generic_qa", "echomemory_generic_qa"}
+    is_generic_question_benchmark = is_generic_memory_qa and dataset_format != "locomo"
+    is_echomemory_postprocess_kind = kind in {
+        "echomemory_import",
+        "echomemory_qa",
+        "echomemory_generic_qa",
+        "echomemory_qa_retry_failed",
+    }
     backend_label = "EchoMemory" if kind.startswith("echomemory") else "OpenViking"
-    locomo_totals = _locomo_import_totals(task) if is_memory_import else {}
+    locomo_totals = _locomo_import_totals(task) if (is_memory_import or (is_generic_memory_qa and dataset_format == "locomo")) else {}
     try:
-        for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        for line in _recent_log_lines(log_path):
             match = re.search(r"\[(import|qa)\]\s+(\d+)/(\d+)\s+(.*)", line)
             if match:
                 phase = match.group(1)
@@ -406,6 +536,10 @@ def task_progress(task: Any) -> dict[str, Any] | None:
                 unit = "questions" if phase == "qa" else "samples"
                 detail = match.group(4).strip()
                 indeterminate = False
+                if is_generic_question_benchmark:
+                    generic_item_stage = phase
+                    generic_item_current = int(match.group(2))
+                    generic_item_total = int(match.group(3))
 
             sample_match = re.search(r"\[import\]\s+sample=([^\s]+).*?\bsessions=(\d+)", line)
             if sample_match:
@@ -446,14 +580,18 @@ def task_progress(task: Any) -> dict[str, Any] | None:
                 current_session_added = int(ov_match.group(1))
                 current_session_expected = int(ov_match.group(2))
                 awaiting_echomem_commit = (
-                    kind == "echomemory_import"
+                    is_echomemory_postprocess_kind
                     and current_session_expected > 0
                     and current_session_added >= current_session_expected
                 )
                 if is_memory_import and locomo_totals.get("session_count"):
                     total = int(locomo_totals["session_count"])
-                    session_index = _locomo_session_progress_index(current_session_label, locomo_totals)
-                    current = min(max(session_index, commit_completed_count + 1, current), total)
+                    current = _locomo_session_progress_display_current(
+                        commit_completed_count,
+                        total,
+                        current_session_label,
+                        locomo_totals,
+                    )
                     unit = "sessions"
                     detail = (
                         f"{current_session_label or current_sample}: "
@@ -466,6 +604,148 @@ def task_progress(task: Any) -> dict[str, Any] | None:
                     detail = f"session messages submitted to {backend_label}"
                 indeterminate = False
 
+            if is_echomemory_postprocess_kind and "call_site=atom_extraction" in line:
+                latency_match = re.search(r"latency=([0-9.]+)ms", line)
+                latency_s = ""
+                if latency_match:
+                    try:
+                        latency_s = f"{float(latency_match.group(1)) / 1000:.1f}s"
+                    except Exception:
+                        latency_s = ""
+                phase = "commit:atom_extraction"
+                if is_generic_question_benchmark:
+                    total = max(total, generic_item_total, 1)
+                    current = max(generic_item_current, 1)
+                    unit = "questions"
+                elif is_memory_import:
+                    total = int(locomo_totals.get("session_count") or max(commit_expected_count, current_sample_sessions, total, 1))
+                    current = _locomo_session_progress_display_current(
+                        commit_completed_count,
+                        total,
+                        current_session_label,
+                        locomo_totals,
+                    )
+                    unit = "sessions"
+                else:
+                    if total <= 0:
+                        total = max(current_session_expected, current_session_added, 1)
+                    current = min(max(current_session_added, 1), total)
+                    unit = "messages" if current_session_expected else unit or "items"
+                detail = (
+                    f"{current_session_label or current_sample or 'current sample'}: "
+                    f"EchoMemory 正在抽取长期记忆原子"
+                )
+                if latency_s:
+                    detail += f" · 最近一次 {latency_s}"
+                indeterminate = True
+
+            if is_echomemory_postprocess_kind and "Atomic extraction output appears truncated" in line:
+                if "atom_extraction_truncated" not in warnings:
+                    warnings.append("atom_extraction_truncated")
+                phase = "commit:atom_truncated"
+                if is_generic_question_benchmark:
+                    total = max(total, generic_item_total, 1)
+                    current = max(generic_item_current, 1)
+                    unit = "questions"
+                elif is_memory_import:
+                    total = int(locomo_totals.get("session_count") or max(commit_expected_count, current_sample_sessions, total, 1))
+                    current = _locomo_session_progress_display_current(
+                        commit_completed_count,
+                        total,
+                        current_session_label,
+                        locomo_totals,
+                    )
+                    unit = "sessions"
+                else:
+                    if total <= 0:
+                        total = max(current_session_expected, current_session_added, 1)
+                    current = min(max(current_session_added, 1), total)
+                    unit = "messages" if current_session_expected else unit or "items"
+                detail = (
+                    f"{current_session_label or current_sample or 'current sample'}: "
+                    f"atom extraction 输出被截断，EchoMemory 仍在继续处理"
+                )
+                indeterminate = True
+
+            generic_flush_match = re.search(
+                r"\[flush\]\s+session=([^\s]+)\s+attempt=(\d+).*?(?:atom_pipeline_index=(\d+)/(\d+))?.*?(?:elapsed=([0-9.]+)s)?",
+                line,
+            )
+            if is_echomemory_postprocess_kind and generic_flush_match:
+                current_flush_attempt = int(generic_flush_match.group(2) or 0)
+                current_flush_total = int(generic_flush_match.group(4) or generic_flush_match.group(2) or 0)
+                atom_index = int(generic_flush_match.group(3) or 0)
+                atom_total = int(generic_flush_match.group(4) or 0)
+                elapsed_s = generic_flush_match.group(5) or ""
+                phase = "commit:atom_flush"
+                if is_generic_question_benchmark:
+                    total = max(total, generic_item_total, 1)
+                    current = max(generic_item_current, 1)
+                    unit = "questions"
+                elif is_memory_import:
+                    total = int(locomo_totals.get("session_count") or max(commit_expected_count, current_sample_sessions, total, 1))
+                    current = _locomo_session_progress_display_current(
+                        commit_completed_count,
+                        total,
+                        current_session_label,
+                        locomo_totals,
+                    )
+                    unit = "sessions"
+                else:
+                    total = max(total, current_session_expected or total or 1)
+                    current = min(current_session_added or total, total)
+                    unit = "messages" if current_session_expected else (unit or "items")
+                detail = (
+                    f"{current_session_label or current_sample or generic_flush_match.group(1)}: "
+                    f"EchoMemory 正在做 atom flush"
+                )
+                if atom_index and atom_total:
+                    detail += f" ({atom_index}/{atom_total})"
+                elif current_flush_attempt:
+                    detail += f" (attempt {current_flush_attempt}"
+                    if current_flush_total and current_flush_total != current_flush_attempt:
+                        detail += f"/{current_flush_total}"
+                    detail += ")"
+                if elapsed_s:
+                    detail += f" · {elapsed_s}s"
+                indeterminate = True
+
+            generic_commit_match = re.search(
+                r"\[commit\]\s+(.+?)\s+complete=(True|False|true|false).*?(?:atom_pipeline_index=(\d+)/(\d+))?.*?(?:flush_complete=(True|False|true|false))?",
+                line,
+            )
+            if is_echomemory_postprocess_kind and generic_commit_match:
+                complete = generic_commit_match.group(2).lower() == "true"
+                sample_label = generic_commit_match.group(1)
+                atom_index = int(generic_commit_match.group(3) or 0)
+                atom_total = int(generic_commit_match.group(4) or 0)
+                flush_complete = str(generic_commit_match.group(5) or "").lower() == "true"
+                phase = "commit:done" if complete else ("commit:partial" if flush_complete else "commit:indexing")
+                if is_generic_question_benchmark:
+                    total = max(total, generic_item_total, 1)
+                    current = max(generic_item_current, 1)
+                    unit = "questions"
+                elif is_memory_import:
+                    total = int(locomo_totals.get("session_count") or max(commit_expected_count, current_sample_sessions, commit_total_count, 1))
+                    current = _locomo_session_progress_display_current(
+                        commit_completed_count + (1 if complete else 0),
+                        total,
+                        sample_label,
+                        locomo_totals,
+                    )
+                    unit = "sessions"
+                else:
+                    if total <= 0:
+                        total = max(current_session_expected, current_session_added, 1)
+                    current = total if complete else min(max(current_session_added, 1), total)
+                    unit = "messages" if current_session_expected else unit
+                detail = f"{sample_label}: EchoMemory commit complete={complete}"
+                if atom_index and atom_total:
+                    detail += f" · atom {atom_index}/{atom_total}"
+                if flush_complete and not complete:
+                    detail += " · flush complete, waiting for remaining artifacts"
+                indeterminate = not complete
+
             commit_accepted_match = re.search(r"\[commit\]\s+(.+?)\s+status=accepted\s+task_id=", line)
             if commit_accepted_match:
                 commit_total_count += 1
@@ -477,7 +757,18 @@ def task_progress(task: Any) -> dict[str, Any] | None:
             commit_match = re.search(r"\[commit\]\s+task=.*status=(\w+)", line)
             if commit_match:
                 phase = f"commit:{commit_match.group(1)}"
-                if commit_total_count > 0:
+                if is_memory_import:
+                    current = _locomo_session_progress_display_current(
+                        commit_completed_count,
+                        int(locomo_totals.get("session_count") or max(commit_expected_count, current_sample_sessions, commit_total_count, total, 1)),
+                        current_session_label,
+                        locomo_totals,
+                    )
+                    total = int(locomo_totals.get("session_count") or max(commit_expected_count, current_sample_sessions, commit_total_count, total, 1))
+                    unit = "sessions"
+                    detail = f"{backend_label} extracting memories from {current_session_label or current_sample or 'sessions'}"
+                    indeterminate = False
+                elif commit_total_count > 0:
                     current = commit_completed_count
                     total = int(locomo_totals.get("session_count") or max(commit_expected_count, commit_total_count))
                     unit = "sessions"
@@ -492,7 +783,18 @@ def task_progress(task: Any) -> dict[str, Any] | None:
             commit_start_match = re.search(r"\[commit\]\s+(.+?)\s+status=(\w+)\s+task_id=([^\s]+)", line)
             if commit_start_match:
                 phase = f"commit:{commit_start_match.group(2)}"
-                if commit_total_count > 0:
+                if is_memory_import:
+                    total = int(locomo_totals.get("session_count") or max(commit_expected_count, current_sample_sessions, commit_total_count, total, 1))
+                    current = _locomo_session_progress_display_current(
+                        commit_completed_count,
+                        total,
+                        commit_start_match.group(1),
+                        locomo_totals,
+                    )
+                    unit = "sessions"
+                    detail = f"Commit submitted for {commit_start_match.group(1)}"
+                    indeterminate = False
+                elif commit_total_count > 0:
                     current = commit_completed_count
                     total = int(locomo_totals.get("session_count") or max(commit_expected_count, commit_total_count))
                     unit = "sessions"
@@ -513,8 +815,12 @@ def task_progress(task: Any) -> dict[str, Any] | None:
                 awaiting_echomem_commit = False
                 phase = "commit:done" if complete else "commit:incomplete"
                 total = int(locomo_totals.get("session_count") or max(commit_expected_count, current_sample_sessions, commit_total_count))
-                session_index = _locomo_session_progress_index(echomem_commit_match.group(1), locomo_totals)
-                current = min(max(session_index, commit_completed_count if complete else commit_total_count, current), total)
+                current = _locomo_session_progress_display_current(
+                    commit_completed_count,
+                    total,
+                    echomem_commit_match.group(1),
+                    locomo_totals,
+                )
                 unit = "sessions"
                 detail = f"EchoMemory commit for {echomem_commit_match.group(1)} complete={complete}"
                 indeterminate = False
@@ -535,22 +841,74 @@ def task_progress(task: Any) -> dict[str, Any] | None:
     except OSError:
         return None
 
+    if is_generic_question_benchmark:
+        answered_rows = _csv_row_count(getattr(task, "output_file", ""))
+        generic_answered_rows = answered_rows
+        configured_total = 0
+        try:
+            configured_total = int(config.get("count") or _command_option(task, "count") or 0)
+        except Exception:
+            configured_total = 0
+        inferred_total = max(generic_item_total, configured_total, answered_rows, total)
+        if inferred_total > 0:
+            total = inferred_total
+            current = max(generic_item_current, current if unit == "questions" else 0, answered_rows)
+            if (
+                getattr(task, "status", "") == "running"
+                and answered_rows < total
+                and not str(phase or "").startswith("qa")
+            ):
+                current = max(current, min(answered_rows + 1, total))
+            unit = "questions"
+            if not phase:
+                phase = generic_item_stage or ("qa" if answered_rows else "running")
+            question_scope = f"{dataset_format or 'generic_qa'} question {current}/{total}"
+            if detail:
+                detail = f"{question_scope} · {detail}"
+            else:
+                detail = question_scope
+
     if total <= 0:
         return None
 
-    if kind == "echomemory_import" and awaiting_echomem_commit:
+    if is_echomemory_postprocess_kind and awaiting_echomem_commit:
         phase = "commit:indexing"
-        unit = "sessions"
-        total = int(locomo_totals.get("session_count") or max(commit_expected_count, current_sample_sessions, total))
-        session_index = _locomo_session_progress_index(current_session_label, locomo_totals)
-        current = min(max(session_index, commit_completed_count + 1, current), total)
-        detail = (
-            f"{current_session_label or current_sample}: "
-            f"EchoMemory is committing and indexing {current_session_added}/{current_session_expected} messages"
-        )
-        indeterminate = False
+        if kind == "echomemory_import":
+            unit = "sessions"
+            total = int(locomo_totals.get("session_count") or max(commit_expected_count, current_sample_sessions, total))
+            current = _locomo_session_progress_display_current(
+                commit_completed_count,
+                total,
+                current_session_label,
+                locomo_totals,
+            )
+            detail = (
+                f"{current_session_label or current_sample}: "
+                f"EchoMemory is committing and indexing {current_session_added}/{current_session_expected} messages"
+            )
+        elif is_generic_question_benchmark:
+            unit = "questions"
+            total = max(total, generic_item_total, generic_answered_rows, 1)
+            if getattr(task, "status", "") == "running" and generic_answered_rows < total:
+                current = max(current, min(generic_answered_rows + 1, total))
+            else:
+                current = max(current, generic_answered_rows)
+            question_scope = f"{dataset_format or 'generic_qa'} question {current}/{total}"
+            detail = (
+                f"{question_scope} · "
+                f"{current_session_label or current_sample or 'current sample'}: "
+                f"EchoMemory 已提交消息，正在后台整理、抽取并索引长期记忆"
+            )
+        else:
+            total = max(total, current_session_expected or total or 1)
+            current = min(max(current_session_added, 1), total)
+            unit = "messages" if current_session_expected else (unit or "items")
+            detail = (
+                f"{current_session_label or current_sample or 'current sample'}: "
+                f"EchoMemory 已提交消息，正在后台整理、抽取并索引长期记忆"
+            )
+        indeterminate = True
 
-    warnings: list[str] = []
     if kind == "openviking_import":
         diagnostics = task_log_diagnostics(task)
         if diagnostics.get("embedding_timeout_count") or diagnostics.get("embedding_circuit_breaker_count"):
@@ -567,7 +925,7 @@ def task_progress(task: Any) -> dict[str, Any] | None:
     if getattr(task, "status", "") == "running" and current > 0 and current < total:
         eta = max(0, round((elapsed / current) * (total - current), 1))
 
-    if not current_import and is_memory_import:
+    if not current_import and (is_memory_import or (is_generic_memory_qa and dataset_format == "locomo")):
         current_import = _locomo_current_import_preview(
             task,
             sample=current_sample,

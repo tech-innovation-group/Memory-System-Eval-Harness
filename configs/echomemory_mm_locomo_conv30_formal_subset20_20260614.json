@@ -1,0 +1,70 @@
+{
+  "subset_name": "echomemory_mm_locomo_conv30_formal_subset20",
+  "version": "2026-06-14",
+  "dataset": "LoCoMo",
+  "sample_id": "conv-30",
+  "source_dataset_path": "/Users/chx/locomo-eval-web/dataset/locomo10.json",
+  "protocol_freeze": "/Users/chx/locomo-eval-web/configs/echomemory_mm_benchmark_protocol_freeze_20260614.json",
+  "purpose": "paper-facing formal subset for EchoMemory-MM benchmark development",
+  "selection_principles": [
+    "cover temporal questions with absolute and relative dates",
+    "cover relation-heavy and multi-evidence synthesis questions",
+    "cover why/reason questions that require combining motivation with event state",
+    "cover detail grounding questions that test evidence precision rather than broad gist",
+    "avoid relying only on easy lexical overlap questions"
+  ],
+  "category_coverage": {
+    "1_multi_evidence_or_relation": 8,
+    "2_temporal": 8,
+    "4_detail_or_reason": 4
+  },
+  "question_indices": [
+    0,
+    1,
+    3,
+    4,
+    7,
+    8,
+    13,
+    14,
+    17,
+    23,
+    24,
+    25,
+    29,
+    31,
+    32,
+    36,
+    43,
+    46,
+    58,
+    71
+  ],
+  "question_ids": [
+    "conv-30_qa0",
+    "conv-30_qa1",
+    "conv-30_qa3",
+    "conv-30_qa4",
+    "conv-30_qa7",
+    "conv-30_qa8",
+    "conv-30_qa13",
+    "conv-30_qa14",
+    "conv-30_qa17",
+    "conv-30_qa23",
+    "conv-30_qa24",
+    "conv-30_qa25",
+    "conv-30_qa29",
+    "conv-30_qa31",
+    "conv-30_qa32",
+    "conv-30_qa36",
+    "conv-30_qa43",
+    "conv-30_qa46",
+    "conv-30_qa58",
+    "conv-30_qa71"
+  ],
+  "notes": [
+    "This subset is intended to be harder and more paper-representative than a 5-question smoke test.",
+    "It is still a subset, not a final benchmark table.",
+    "Future subset revisions should keep old IDs stable or bump the version."
+  ]
+}

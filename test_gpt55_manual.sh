@@ -63,7 +63,7 @@ echo ""
 # 步骤 1: 导入数据
 NAMESPACE="echomem_gpt55_$TIMESTAMP"
 echo "📥 步骤 1/3: 导入数据到 namespace: $NAMESPACE"
-$PYTHON scripts/benchmark_adapter.py \
+$PYTHON "$ROOT/scripts/benchmark_adapter.py" \
   --dataset "$DATASET" \
   --format auto \
   --out-dir "$ROOT/runs/echomem_ov_import_$TIMESTAMP" \
@@ -81,7 +81,7 @@ echo ""
 
 # 步骤 2: 运行评测
 echo "🤖 步骤 2/3: 运行 VikingBot + GPT-5.5 评测..."
-$PYTHON scripts/run_vikingbot_eval.py \
+$PYTHON "$ROOT/scripts/run_vikingbot_eval.py" \
   --dataset "$DATASET" \
   --out-dir "$OUT_DIR" \
   $SAMPLE \
@@ -105,7 +105,7 @@ echo ""
 
 # 步骤 3: 运行 Judge
 echo "⚖️ 步骤 3/3: 运行 Judge 评估..."
-$PYTHON scripts/local_judge.py \
+$PYTHON "$ROOT/scripts/local_judge.py" \
   --input "$OUT_DIR/vikingbot_eval.csv" \
   --base-url https://dashscope.aliyuncs.com/compatible-mode/v1 \
   --model deepseek-v4-flash \

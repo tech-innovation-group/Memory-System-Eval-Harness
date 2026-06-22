@@ -1,0 +1,1287 @@
+{
+  "summary": {
+    "flat_direct": {
+      "correct": 1,
+      "total": 5,
+      "accuracy": 0.2
+    },
+    "temporal_only": {
+      "correct": 4,
+      "total": 5,
+      "accuracy": 0.8
+    },
+    "full_family_aware": {
+      "correct": 5,
+      "total": 5,
+      "accuracy": 1.0
+    }
+  },
+  "cases": {
+    "flat_direct": [
+      {
+        "case_id": "temporal_retro_mention",
+        "query": "When did the deal close?",
+        "family": "temporal",
+        "mode": "flat_direct",
+        "expected": "2026-05-13",
+        "answer": "2026-05-20",
+        "correct": false,
+        "used_gate": false,
+        "used_supporting": false,
+        "missing": [],
+        "note": "Retrospective mention should not replace the real event date.",
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "temporal_tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "required_layers": [
+            "temporal_tree",
+            "event",
+            "event_time"
+          ],
+          "note": "Chronology-heavy query prefers event-time-aware evidence."
+        },
+        "hits": [
+          {
+            "source": "tree:deal_close_retro",
+            "layer": "temporal_tree",
+            "score": 0.75,
+            "content": "mentioned_on=2026-05-20 :: On 2026-05-20 I mentioned that the deal had actually closed on 2026-05-13.",
+            "answer_hint": "2026-05-20",
+            "story_time": "2026-05-13",
+            "trace": {
+              "mention_time": "2026-05-20"
+            }
+          },
+          {
+            "source": "tree:budget_revision",
+            "layer": "temporal_tree",
+            "score": 0.55,
+            "content": "mentioned_on=2026-05-06 :: The board requested one more budget revision on 2026-05-06.",
+            "answer_hint": "2026-05-06",
+            "story_time": "2026-05-06",
+            "trace": {
+              "mention_time": "2026-05-06"
+            }
+          },
+          {
+            "source": "tree:introducer_bridge",
+            "layer": "temporal_tree",
+            "score": 0.55,
+            "content": "mentioned_on=2026-04-14 :: Maya introduced Jon to Lena at the launch dinner.",
+            "answer_hint": "2026-04-14",
+            "story_time": "2026-04-14",
+            "trace": {
+              "mention_time": "2026-04-14"
+            }
+          },
+          {
+            "source": "tree:keynote_day",
+            "layer": "temporal_tree",
+            "score": 0.55,
+            "content": "mentioned_on=2026-06-10 :: The keynote itself happened on 2026-06-10.",
+            "answer_hint": "2026-06-10",
+            "story_time": "2026-06-10",
+            "trace": {
+              "mention_time": "2026-06-10"
+            }
+          },
+          {
+            "source": "tree:lease_signing",
+            "layer": "temporal_tree",
+            "score": 0.55,
+            "content": "mentioned_on=2026-05-02 :: The lease signing happened on 2026-05-02.",
+            "answer_hint": "2026-05-02",
+            "story_time": "2026-05-02",
+            "trace": {
+              "mention_time": "2026-05-02"
+            }
+          },
+          {
+            "source": "tree:rehearsal",
+            "layer": "temporal_tree",
+            "score": 0.55,
+            "content": "mentioned_on=2026-06-09 :: The keynote rehearsal happened on 2026-06-09.",
+            "answer_hint": "2026-06-09",
+            "story_time": "2026-06-09",
+            "trace": {
+              "mention_time": "2026-06-09"
+            }
+          },
+          {
+            "source": "tree:partner_approval",
+            "layer": "temporal_tree",
+            "score": 0.35,
+            "content": "mentioned_on=2026-05-10 :: Partner approval happened on 2026-05-10.",
+            "answer_hint": "2026-05-10",
+            "story_time": "2026-05-10",
+            "trace": {
+              "mention_time": "2026-05-10"
+            }
+          }
+        ]
+      },
+      {
+        "case_id": "temporal_interval",
+        "query": "What happened between the lease signing and partner approval?",
+        "family": "temporal",
+        "mode": "flat_direct",
+        "expected": "The board requested one more budget revision on 2026-05-06.",
+        "answer": "2026-05-02",
+        "correct": false,
+        "used_gate": false,
+        "used_supporting": false,
+        "missing": [],
+        "note": "Interval reasoning needs more than one timestamp field.",
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "temporal_tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "required_layers": [
+            "temporal_tree",
+            "event",
+            "event_time"
+          ],
+          "note": "Chronology-heavy query prefers event-time-aware evidence."
+        },
+        "hits": [
+          {
+            "source": "tree:lease_signing",
+            "layer": "temporal_tree",
+            "score": 0.5944444444444444,
+            "content": "mentioned_on=2026-05-02 :: The lease signing happened on 2026-05-02.",
+            "answer_hint": "2026-05-02",
+            "story_time": "2026-05-02",
+            "trace": {
+              "mention_time": "2026-05-02"
+            }
+          },
+          {
+            "source": "tree:partner_approval",
+            "layer": "temporal_tree",
+            "score": 0.4833333333333333,
+            "content": "mentioned_on=2026-05-10 :: Partner approval happened on 2026-05-10.",
+            "answer_hint": "2026-05-10",
+            "story_time": "2026-05-10",
+            "trace": {
+              "mention_time": "2026-05-10"
+            }
+          },
+          {
+            "source": "tree:keynote_day",
+            "layer": "temporal_tree",
+            "score": 0.37222222222222223,
+            "content": "mentioned_on=2026-06-10 :: The keynote itself happened on 2026-06-10.",
+            "answer_hint": "2026-06-10",
+            "story_time": "2026-06-10",
+            "trace": {
+              "mention_time": "2026-06-10"
+            }
+          },
+          {
+            "source": "tree:rehearsal",
+            "layer": "temporal_tree",
+            "score": 0.37222222222222223,
+            "content": "mentioned_on=2026-06-09 :: The keynote rehearsal happened on 2026-06-09.",
+            "answer_hint": "2026-06-09",
+            "story_time": "2026-06-09",
+            "trace": {
+              "mention_time": "2026-06-09"
+            }
+          },
+          {
+            "source": "tree:budget_revision",
+            "layer": "temporal_tree",
+            "score": 0.26111111111111107,
+            "content": "mentioned_on=2026-05-06 :: The board requested one more budget revision on 2026-05-06.",
+            "answer_hint": "2026-05-06",
+            "story_time": "2026-05-06",
+            "trace": {
+              "mention_time": "2026-05-06"
+            }
+          },
+          {
+            "source": "tree:deal_close_retro",
+            "layer": "temporal_tree",
+            "score": 0.26111111111111107,
+            "content": "mentioned_on=2026-05-20 :: On 2026-05-20 I mentioned that the deal had actually closed on 2026-05-13.",
+            "answer_hint": "2026-05-20",
+            "story_time": "2026-05-13",
+            "trace": {
+              "mention_time": "2026-05-20"
+            }
+          },
+          {
+            "source": "tree:introducer_bridge",
+            "layer": "temporal_tree",
+            "score": 0.26111111111111107,
+            "content": "mentioned_on=2026-04-14 :: Maya introduced Jon to Lena at the launch dinner.",
+            "answer_hint": "2026-04-14",
+            "story_time": "2026-04-14",
+            "trace": {
+              "mention_time": "2026-04-14"
+            }
+          }
+        ]
+      },
+      {
+        "case_id": "temporal_before_anchor",
+        "query": "What happened before the keynote day?",
+        "family": "temporal",
+        "mode": "flat_direct",
+        "expected": "The keynote rehearsal happened on 2026-06-09.",
+        "answer": "2026-06-10",
+        "correct": false,
+        "used_gate": false,
+        "used_supporting": false,
+        "missing": [],
+        "note": "Before/after reasoning should use event_time against an anchor event.",
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "temporal_tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "required_layers": [
+            "temporal_tree",
+            "event",
+            "event_time"
+          ],
+          "note": "Chronology-heavy query prefers event-time-aware evidence."
+        },
+        "hits": [
+          {
+            "source": "tree:keynote_day",
+            "layer": "temporal_tree",
+            "score": 0.65,
+            "content": "mentioned_on=2026-06-10 :: The keynote itself happened on 2026-06-10.",
+            "answer_hint": "2026-06-10",
+            "story_time": "2026-06-10",
+            "trace": {
+              "mention_time": "2026-06-10"
+            }
+          },
+          {
+            "source": "tree:rehearsal",
+            "layer": "temporal_tree",
+            "score": 0.65,
+            "content": "mentioned_on=2026-06-09 :: The keynote rehearsal happened on 2026-06-09.",
+            "answer_hint": "2026-06-09",
+            "story_time": "2026-06-09",
+            "trace": {
+              "mention_time": "2026-06-09"
+            }
+          },
+          {
+            "source": "tree:lease_signing",
+            "layer": "temporal_tree",
+            "score": 0.4833333333333333,
+            "content": "mentioned_on=2026-05-02 :: The lease signing happened on 2026-05-02.",
+            "answer_hint": "2026-05-02",
+            "story_time": "2026-05-02",
+            "trace": {
+              "mention_time": "2026-05-02"
+            }
+          },
+          {
+            "source": "tree:budget_revision",
+            "layer": "temporal_tree",
+            "score": 0.31666666666666665,
+            "content": "mentioned_on=2026-05-06 :: The board requested one more budget revision on 2026-05-06.",
+            "answer_hint": "2026-05-06",
+            "story_time": "2026-05-06",
+            "trace": {
+              "mention_time": "2026-05-06"
+            }
+          },
+          {
+            "source": "tree:deal_close_retro",
+            "layer": "temporal_tree",
+            "score": 0.31666666666666665,
+            "content": "mentioned_on=2026-05-20 :: On 2026-05-20 I mentioned that the deal had actually closed on 2026-05-13.",
+            "answer_hint": "2026-05-20",
+            "story_time": "2026-05-13",
+            "trace": {
+              "mention_time": "2026-05-20"
+            }
+          },
+          {
+            "source": "tree:introducer_bridge",
+            "layer": "temporal_tree",
+            "score": 0.31666666666666665,
+            "content": "mentioned_on=2026-04-14 :: Maya introduced Jon to Lena at the launch dinner.",
+            "answer_hint": "2026-04-14",
+            "story_time": "2026-04-14",
+            "trace": {
+              "mention_time": "2026-04-14"
+            }
+          },
+          {
+            "source": "tree:partner_approval",
+            "layer": "temporal_tree",
+            "score": 0.31666666666666665,
+            "content": "mentioned_on=2026-05-10 :: Partner approval happened on 2026-05-10.",
+            "answer_hint": "2026-05-10",
+            "story_time": "2026-05-10",
+            "trace": {
+              "mention_time": "2026-05-10"
+            }
+          }
+        ]
+      },
+      {
+        "case_id": "relational_path_grounding",
+        "query": "Who introduced Jon to Lena?",
+        "family": "relational",
+        "mode": "flat_direct",
+        "expected": "Maya",
+        "answer": "Figma",
+        "correct": false,
+        "used_gate": false,
+        "used_supporting": false,
+        "missing": [],
+        "note": "A shared neighbor can look relevant; typed path grounding should recover the real introducer.",
+        "plan": {
+          "family": "relational",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "atom"
+          ],
+          "required_layers": [
+            "graph",
+            "fact",
+            "path_grounding"
+          ],
+          "note": "Relation-heavy query prefers graph plus typed path grounding."
+        },
+        "hits": [
+          {
+            "source": "graph:shared_neighbor:figma",
+            "layer": "graph",
+            "score": 0.92,
+            "content": "Jon and Lena both connect to Figma in the collaboration graph.",
+            "answer_hint": "Figma",
+            "story_time": "",
+            "trace": {}
+          }
+        ]
+      },
+      {
+        "case_id": "readiness_barrier",
+        "query": "Can the system answer now?",
+        "family": "readiness",
+        "mode": "flat_direct",
+        "expected": "not_ready",
+        "answer": "not_ready",
+        "correct": true,
+        "used_gate": false,
+        "used_supporting": false,
+        "missing": [],
+        "note": "Durability is weaker than answerability; readiness should remain a hard gate.",
+        "plan": {
+          "family": "readiness",
+          "primary_reader": "readiness",
+          "supporting_readers": [],
+          "required_layers": [
+            "readiness"
+          ],
+          "note": "Lifecycle / answerability query."
+        },
+        "hits": [
+          {
+            "source": "readiness",
+            "layer": "readiness",
+            "score": 0.0,
+            "content": "qa_ready=False",
+            "answer_hint": "not_ready",
+            "story_time": "",
+            "trace": {}
+          }
+        ]
+      }
+    ],
+    "temporal_only": [
+      {
+        "case_id": "temporal_retro_mention",
+        "query": "When did the deal close?",
+        "family": "temporal",
+        "mode": "temporal_only",
+        "expected": "2026-05-13",
+        "answer": "2026-05-13",
+        "correct": true,
+        "used_gate": false,
+        "used_supporting": true,
+        "missing": [],
+        "note": "Retrospective mention should not replace the real event date.",
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "temporal_tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "required_layers": [
+            "temporal_tree",
+            "event",
+            "event_time"
+          ],
+          "note": "Chronology-heavy query prefers event-time-aware evidence."
+        },
+        "hits": [
+          {
+            "source": "atom:deal_close_retro",
+            "layer": "fact",
+            "score": 1.0,
+            "content": "On 2026-05-20 I mentioned that the deal had actually closed on 2026-05-13. event_time=2026-05-13",
+            "answer_hint": "2026-05-13",
+            "story_time": "2026-05-13",
+            "trace": {
+              "event_time": "2026-05-13"
+            }
+          },
+          {
+            "source": "tree:deal_close_retro",
+            "layer": "temporal_tree",
+            "score": 0.75,
+            "content": "mentioned_on=2026-05-20 :: On 2026-05-20 I mentioned that the deal had actually closed on 2026-05-13.",
+            "answer_hint": "2026-05-20",
+            "story_time": "2026-05-13",
+            "trace": {
+              "mention_time": "2026-05-20"
+            }
+          },
+          {
+            "source": "tree:budget_revision",
+            "layer": "temporal_tree",
+            "score": 0.55,
+            "content": "mentioned_on=2026-05-06 :: The board requested one more budget revision on 2026-05-06.",
+            "answer_hint": "2026-05-06",
+            "story_time": "2026-05-06",
+            "trace": {
+              "mention_time": "2026-05-06"
+            }
+          },
+          {
+            "source": "tree:introducer_bridge",
+            "layer": "temporal_tree",
+            "score": 0.55,
+            "content": "mentioned_on=2026-04-14 :: Maya introduced Jon to Lena at the launch dinner.",
+            "answer_hint": "2026-04-14",
+            "story_time": "2026-04-14",
+            "trace": {
+              "mention_time": "2026-04-14"
+            }
+          },
+          {
+            "source": "tree:keynote_day",
+            "layer": "temporal_tree",
+            "score": 0.55,
+            "content": "mentioned_on=2026-06-10 :: The keynote itself happened on 2026-06-10.",
+            "answer_hint": "2026-06-10",
+            "story_time": "2026-06-10",
+            "trace": {
+              "mention_time": "2026-06-10"
+            }
+          },
+          {
+            "source": "tree:lease_signing",
+            "layer": "temporal_tree",
+            "score": 0.55,
+            "content": "mentioned_on=2026-05-02 :: The lease signing happened on 2026-05-02.",
+            "answer_hint": "2026-05-02",
+            "story_time": "2026-05-02",
+            "trace": {
+              "mention_time": "2026-05-02"
+            }
+          },
+          {
+            "source": "tree:rehearsal",
+            "layer": "temporal_tree",
+            "score": 0.55,
+            "content": "mentioned_on=2026-06-09 :: The keynote rehearsal happened on 2026-06-09.",
+            "answer_hint": "2026-06-09",
+            "story_time": "2026-06-09",
+            "trace": {
+              "mention_time": "2026-06-09"
+            }
+          },
+          {
+            "source": "tree:partner_approval",
+            "layer": "temporal_tree",
+            "score": 0.35,
+            "content": "mentioned_on=2026-05-10 :: Partner approval happened on 2026-05-10.",
+            "answer_hint": "2026-05-10",
+            "story_time": "2026-05-10",
+            "trace": {
+              "mention_time": "2026-05-10"
+            }
+          }
+        ]
+      },
+      {
+        "case_id": "temporal_interval",
+        "query": "What happened between the lease signing and partner approval?",
+        "family": "temporal",
+        "mode": "temporal_only",
+        "expected": "The board requested one more budget revision on 2026-05-06.",
+        "answer": "The board requested one more budget revision on 2026-05-06.",
+        "correct": true,
+        "used_gate": false,
+        "used_supporting": true,
+        "missing": [],
+        "note": "Interval reasoning needs more than one timestamp field.",
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "temporal_tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "required_layers": [
+            "temporal_tree",
+            "event",
+            "event_time"
+          ],
+          "note": "Chronology-heavy query prefers event-time-aware evidence."
+        },
+        "hits": [
+          {
+            "source": "atom:budget_revision",
+            "layer": "fact",
+            "score": 1.0,
+            "content": "The board requested one more budget revision on 2026-05-06. event_time=2026-05-06",
+            "answer_hint": "The board requested one more budget revision on 2026-05-06.",
+            "story_time": "2026-05-06",
+            "trace": {
+              "event_time": "2026-05-06"
+            }
+          },
+          {
+            "source": "tree:lease_signing",
+            "layer": "temporal_tree",
+            "score": 0.5944444444444444,
+            "content": "mentioned_on=2026-05-02 :: The lease signing happened on 2026-05-02.",
+            "answer_hint": "2026-05-02",
+            "story_time": "2026-05-02",
+            "trace": {
+              "mention_time": "2026-05-02"
+            }
+          },
+          {
+            "source": "tree:partner_approval",
+            "layer": "temporal_tree",
+            "score": 0.4833333333333333,
+            "content": "mentioned_on=2026-05-10 :: Partner approval happened on 2026-05-10.",
+            "answer_hint": "2026-05-10",
+            "story_time": "2026-05-10",
+            "trace": {
+              "mention_time": "2026-05-10"
+            }
+          },
+          {
+            "source": "tree:keynote_day",
+            "layer": "temporal_tree",
+            "score": 0.37222222222222223,
+            "content": "mentioned_on=2026-06-10 :: The keynote itself happened on 2026-06-10.",
+            "answer_hint": "2026-06-10",
+            "story_time": "2026-06-10",
+            "trace": {
+              "mention_time": "2026-06-10"
+            }
+          },
+          {
+            "source": "tree:rehearsal",
+            "layer": "temporal_tree",
+            "score": 0.37222222222222223,
+            "content": "mentioned_on=2026-06-09 :: The keynote rehearsal happened on 2026-06-09.",
+            "answer_hint": "2026-06-09",
+            "story_time": "2026-06-09",
+            "trace": {
+              "mention_time": "2026-06-09"
+            }
+          },
+          {
+            "source": "tree:budget_revision",
+            "layer": "temporal_tree",
+            "score": 0.26111111111111107,
+            "content": "mentioned_on=2026-05-06 :: The board requested one more budget revision on 2026-05-06.",
+            "answer_hint": "2026-05-06",
+            "story_time": "2026-05-06",
+            "trace": {
+              "mention_time": "2026-05-06"
+            }
+          },
+          {
+            "source": "tree:deal_close_retro",
+            "layer": "temporal_tree",
+            "score": 0.26111111111111107,
+            "content": "mentioned_on=2026-05-20 :: On 2026-05-20 I mentioned that the deal had actually closed on 2026-05-13.",
+            "answer_hint": "2026-05-20",
+            "story_time": "2026-05-13",
+            "trace": {
+              "mention_time": "2026-05-20"
+            }
+          },
+          {
+            "source": "tree:introducer_bridge",
+            "layer": "temporal_tree",
+            "score": 0.26111111111111107,
+            "content": "mentioned_on=2026-04-14 :: Maya introduced Jon to Lena at the launch dinner.",
+            "answer_hint": "2026-04-14",
+            "story_time": "2026-04-14",
+            "trace": {
+              "mention_time": "2026-04-14"
+            }
+          }
+        ]
+      },
+      {
+        "case_id": "temporal_before_anchor",
+        "query": "What happened before the keynote day?",
+        "family": "temporal",
+        "mode": "temporal_only",
+        "expected": "The keynote rehearsal happened on 2026-06-09.",
+        "answer": "The keynote rehearsal happened on 2026-06-09.",
+        "correct": true,
+        "used_gate": false,
+        "used_supporting": true,
+        "missing": [],
+        "note": "Before/after reasoning should use event_time against an anchor event.",
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "temporal_tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "required_layers": [
+            "temporal_tree",
+            "event",
+            "event_time"
+          ],
+          "note": "Chronology-heavy query prefers event-time-aware evidence."
+        },
+        "hits": [
+          {
+            "source": "atom:rehearsal",
+            "layer": "fact",
+            "score": 1.0,
+            "content": "The keynote rehearsal happened on 2026-06-09. event_time=2026-06-09",
+            "answer_hint": "The keynote rehearsal happened on 2026-06-09.",
+            "story_time": "2026-06-09",
+            "trace": {
+              "event_time": "2026-06-09"
+            }
+          },
+          {
+            "source": "tree:keynote_day",
+            "layer": "temporal_tree",
+            "score": 0.65,
+            "content": "mentioned_on=2026-06-10 :: The keynote itself happened on 2026-06-10.",
+            "answer_hint": "2026-06-10",
+            "story_time": "2026-06-10",
+            "trace": {
+              "mention_time": "2026-06-10"
+            }
+          },
+          {
+            "source": "tree:rehearsal",
+            "layer": "temporal_tree",
+            "score": 0.65,
+            "content": "mentioned_on=2026-06-09 :: The keynote rehearsal happened on 2026-06-09.",
+            "answer_hint": "2026-06-09",
+            "story_time": "2026-06-09",
+            "trace": {
+              "mention_time": "2026-06-09"
+            }
+          },
+          {
+            "source": "tree:lease_signing",
+            "layer": "temporal_tree",
+            "score": 0.4833333333333333,
+            "content": "mentioned_on=2026-05-02 :: The lease signing happened on 2026-05-02.",
+            "answer_hint": "2026-05-02",
+            "story_time": "2026-05-02",
+            "trace": {
+              "mention_time": "2026-05-02"
+            }
+          },
+          {
+            "source": "tree:budget_revision",
+            "layer": "temporal_tree",
+            "score": 0.31666666666666665,
+            "content": "mentioned_on=2026-05-06 :: The board requested one more budget revision on 2026-05-06.",
+            "answer_hint": "2026-05-06",
+            "story_time": "2026-05-06",
+            "trace": {
+              "mention_time": "2026-05-06"
+            }
+          },
+          {
+            "source": "tree:deal_close_retro",
+            "layer": "temporal_tree",
+            "score": 0.31666666666666665,
+            "content": "mentioned_on=2026-05-20 :: On 2026-05-20 I mentioned that the deal had actually closed on 2026-05-13.",
+            "answer_hint": "2026-05-20",
+            "story_time": "2026-05-13",
+            "trace": {
+              "mention_time": "2026-05-20"
+            }
+          },
+          {
+            "source": "tree:introducer_bridge",
+            "layer": "temporal_tree",
+            "score": 0.31666666666666665,
+            "content": "mentioned_on=2026-04-14 :: Maya introduced Jon to Lena at the launch dinner.",
+            "answer_hint": "2026-04-14",
+            "story_time": "2026-04-14",
+            "trace": {
+              "mention_time": "2026-04-14"
+            }
+          },
+          {
+            "source": "tree:partner_approval",
+            "layer": "temporal_tree",
+            "score": 0.31666666666666665,
+            "content": "mentioned_on=2026-05-10 :: Partner approval happened on 2026-05-10.",
+            "answer_hint": "2026-05-10",
+            "story_time": "2026-05-10",
+            "trace": {
+              "mention_time": "2026-05-10"
+            }
+          }
+        ]
+      },
+      {
+        "case_id": "relational_path_grounding",
+        "query": "Who introduced Jon to Lena?",
+        "family": "relational",
+        "mode": "temporal_only",
+        "expected": "Maya",
+        "answer": "Figma",
+        "correct": false,
+        "used_gate": false,
+        "used_supporting": false,
+        "missing": [
+          "fact",
+          "path_grounding"
+        ],
+        "note": "A shared neighbor can look relevant; typed path grounding should recover the real introducer.",
+        "plan": {
+          "family": "relational",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "atom"
+          ],
+          "required_layers": [
+            "graph",
+            "fact",
+            "path_grounding"
+          ],
+          "note": "Relation-heavy query prefers graph plus typed path grounding."
+        },
+        "hits": [
+          {
+            "source": "graph:shared_neighbor:figma",
+            "layer": "graph",
+            "score": 0.92,
+            "content": "Jon and Lena both connect to Figma in the collaboration graph.",
+            "answer_hint": "Figma",
+            "story_time": "",
+            "trace": {}
+          }
+        ]
+      },
+      {
+        "case_id": "readiness_barrier",
+        "query": "Can the system answer now?",
+        "family": "readiness",
+        "mode": "temporal_only",
+        "expected": "not_ready",
+        "answer": "not_ready",
+        "correct": true,
+        "used_gate": false,
+        "used_supporting": false,
+        "missing": [],
+        "note": "Durability is weaker than answerability; readiness should remain a hard gate.",
+        "plan": {
+          "family": "readiness",
+          "primary_reader": "readiness",
+          "supporting_readers": [],
+          "required_layers": [
+            "readiness"
+          ],
+          "note": "Lifecycle / answerability query."
+        },
+        "hits": [
+          {
+            "source": "readiness",
+            "layer": "readiness",
+            "score": 0.0,
+            "content": "qa_ready=False",
+            "answer_hint": "not_ready",
+            "story_time": "",
+            "trace": {}
+          }
+        ]
+      }
+    ],
+    "full_family_aware": [
+      {
+        "case_id": "temporal_retro_mention",
+        "query": "When did the deal close?",
+        "family": "temporal",
+        "mode": "full_family_aware",
+        "expected": "2026-05-13",
+        "answer": "2026-05-13",
+        "correct": true,
+        "used_gate": true,
+        "used_supporting": true,
+        "missing": [],
+        "note": "Retrospective mention should not replace the real event date.",
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "temporal_tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "required_layers": [
+            "temporal_tree",
+            "event",
+            "event_time"
+          ],
+          "note": "Chronology-heavy query prefers event-time-aware evidence."
+        },
+        "hits": [
+          {
+            "source": "atom:deal_close_retro",
+            "layer": "fact",
+            "score": 1.0,
+            "content": "On 2026-05-20 I mentioned that the deal had actually closed on 2026-05-13. event_time=2026-05-13",
+            "answer_hint": "2026-05-13",
+            "story_time": "2026-05-13",
+            "trace": {
+              "event_time": "2026-05-13"
+            }
+          },
+          {
+            "source": "tree:deal_close_retro",
+            "layer": "temporal_tree",
+            "score": 0.75,
+            "content": "mentioned_on=2026-05-20 :: On 2026-05-20 I mentioned that the deal had actually closed on 2026-05-13.",
+            "answer_hint": "2026-05-20",
+            "story_time": "2026-05-13",
+            "trace": {
+              "mention_time": "2026-05-20"
+            }
+          },
+          {
+            "source": "tree:budget_revision",
+            "layer": "temporal_tree",
+            "score": 0.55,
+            "content": "mentioned_on=2026-05-06 :: The board requested one more budget revision on 2026-05-06.",
+            "answer_hint": "2026-05-06",
+            "story_time": "2026-05-06",
+            "trace": {
+              "mention_time": "2026-05-06"
+            }
+          },
+          {
+            "source": "tree:introducer_bridge",
+            "layer": "temporal_tree",
+            "score": 0.55,
+            "content": "mentioned_on=2026-04-14 :: Maya introduced Jon to Lena at the launch dinner.",
+            "answer_hint": "2026-04-14",
+            "story_time": "2026-04-14",
+            "trace": {
+              "mention_time": "2026-04-14"
+            }
+          },
+          {
+            "source": "tree:keynote_day",
+            "layer": "temporal_tree",
+            "score": 0.55,
+            "content": "mentioned_on=2026-06-10 :: The keynote itself happened on 2026-06-10.",
+            "answer_hint": "2026-06-10",
+            "story_time": "2026-06-10",
+            "trace": {
+              "mention_time": "2026-06-10"
+            }
+          },
+          {
+            "source": "tree:lease_signing",
+            "layer": "temporal_tree",
+            "score": 0.55,
+            "content": "mentioned_on=2026-05-02 :: The lease signing happened on 2026-05-02.",
+            "answer_hint": "2026-05-02",
+            "story_time": "2026-05-02",
+            "trace": {
+              "mention_time": "2026-05-02"
+            }
+          },
+          {
+            "source": "tree:rehearsal",
+            "layer": "temporal_tree",
+            "score": 0.55,
+            "content": "mentioned_on=2026-06-09 :: The keynote rehearsal happened on 2026-06-09.",
+            "answer_hint": "2026-06-09",
+            "story_time": "2026-06-09",
+            "trace": {
+              "mention_time": "2026-06-09"
+            }
+          },
+          {
+            "source": "tree:partner_approval",
+            "layer": "temporal_tree",
+            "score": 0.35,
+            "content": "mentioned_on=2026-05-10 :: Partner approval happened on 2026-05-10.",
+            "answer_hint": "2026-05-10",
+            "story_time": "2026-05-10",
+            "trace": {
+              "mention_time": "2026-05-10"
+            }
+          }
+        ]
+      },
+      {
+        "case_id": "temporal_interval",
+        "query": "What happened between the lease signing and partner approval?",
+        "family": "temporal",
+        "mode": "full_family_aware",
+        "expected": "The board requested one more budget revision on 2026-05-06.",
+        "answer": "The board requested one more budget revision on 2026-05-06.",
+        "correct": true,
+        "used_gate": true,
+        "used_supporting": true,
+        "missing": [],
+        "note": "Interval reasoning needs more than one timestamp field.",
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "temporal_tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "required_layers": [
+            "temporal_tree",
+            "event",
+            "event_time"
+          ],
+          "note": "Chronology-heavy query prefers event-time-aware evidence."
+        },
+        "hits": [
+          {
+            "source": "atom:budget_revision",
+            "layer": "fact",
+            "score": 1.0,
+            "content": "The board requested one more budget revision on 2026-05-06. event_time=2026-05-06",
+            "answer_hint": "The board requested one more budget revision on 2026-05-06.",
+            "story_time": "2026-05-06",
+            "trace": {
+              "event_time": "2026-05-06"
+            }
+          },
+          {
+            "source": "tree:lease_signing",
+            "layer": "temporal_tree",
+            "score": 0.5944444444444444,
+            "content": "mentioned_on=2026-05-02 :: The lease signing happened on 2026-05-02.",
+            "answer_hint": "2026-05-02",
+            "story_time": "2026-05-02",
+            "trace": {
+              "mention_time": "2026-05-02"
+            }
+          },
+          {
+            "source": "tree:partner_approval",
+            "layer": "temporal_tree",
+            "score": 0.4833333333333333,
+            "content": "mentioned_on=2026-05-10 :: Partner approval happened on 2026-05-10.",
+            "answer_hint": "2026-05-10",
+            "story_time": "2026-05-10",
+            "trace": {
+              "mention_time": "2026-05-10"
+            }
+          },
+          {
+            "source": "tree:keynote_day",
+            "layer": "temporal_tree",
+            "score": 0.37222222222222223,
+            "content": "mentioned_on=2026-06-10 :: The keynote itself happened on 2026-06-10.",
+            "answer_hint": "2026-06-10",
+            "story_time": "2026-06-10",
+            "trace": {
+              "mention_time": "2026-06-10"
+            }
+          },
+          {
+            "source": "tree:rehearsal",
+            "layer": "temporal_tree",
+            "score": 0.37222222222222223,
+            "content": "mentioned_on=2026-06-09 :: The keynote rehearsal happened on 2026-06-09.",
+            "answer_hint": "2026-06-09",
+            "story_time": "2026-06-09",
+            "trace": {
+              "mention_time": "2026-06-09"
+            }
+          },
+          {
+            "source": "tree:budget_revision",
+            "layer": "temporal_tree",
+            "score": 0.26111111111111107,
+            "content": "mentioned_on=2026-05-06 :: The board requested one more budget revision on 2026-05-06.",
+            "answer_hint": "2026-05-06",
+            "story_time": "2026-05-06",
+            "trace": {
+              "mention_time": "2026-05-06"
+            }
+          },
+          {
+            "source": "tree:deal_close_retro",
+            "layer": "temporal_tree",
+            "score": 0.26111111111111107,
+            "content": "mentioned_on=2026-05-20 :: On 2026-05-20 I mentioned that the deal had actually closed on 2026-05-13.",
+            "answer_hint": "2026-05-20",
+            "story_time": "2026-05-13",
+            "trace": {
+              "mention_time": "2026-05-20"
+            }
+          },
+          {
+            "source": "tree:introducer_bridge",
+            "layer": "temporal_tree",
+            "score": 0.26111111111111107,
+            "content": "mentioned_on=2026-04-14 :: Maya introduced Jon to Lena at the launch dinner.",
+            "answer_hint": "2026-04-14",
+            "story_time": "2026-04-14",
+            "trace": {
+              "mention_time": "2026-04-14"
+            }
+          }
+        ]
+      },
+      {
+        "case_id": "temporal_before_anchor",
+        "query": "What happened before the keynote day?",
+        "family": "temporal",
+        "mode": "full_family_aware",
+        "expected": "The keynote rehearsal happened on 2026-06-09.",
+        "answer": "The keynote rehearsal happened on 2026-06-09.",
+        "correct": true,
+        "used_gate": true,
+        "used_supporting": true,
+        "missing": [],
+        "note": "Before/after reasoning should use event_time against an anchor event.",
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "temporal_tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "required_layers": [
+            "temporal_tree",
+            "event",
+            "event_time"
+          ],
+          "note": "Chronology-heavy query prefers event-time-aware evidence."
+        },
+        "hits": [
+          {
+            "source": "atom:rehearsal",
+            "layer": "fact",
+            "score": 1.0,
+            "content": "The keynote rehearsal happened on 2026-06-09. event_time=2026-06-09",
+            "answer_hint": "The keynote rehearsal happened on 2026-06-09.",
+            "story_time": "2026-06-09",
+            "trace": {
+              "event_time": "2026-06-09"
+            }
+          },
+          {
+            "source": "tree:keynote_day",
+            "layer": "temporal_tree",
+            "score": 0.65,
+            "content": "mentioned_on=2026-06-10 :: The keynote itself happened on 2026-06-10.",
+            "answer_hint": "2026-06-10",
+            "story_time": "2026-06-10",
+            "trace": {
+              "mention_time": "2026-06-10"
+            }
+          },
+          {
+            "source": "tree:rehearsal",
+            "layer": "temporal_tree",
+            "score": 0.65,
+            "content": "mentioned_on=2026-06-09 :: The keynote rehearsal happened on 2026-06-09.",
+            "answer_hint": "2026-06-09",
+            "story_time": "2026-06-09",
+            "trace": {
+              "mention_time": "2026-06-09"
+            }
+          },
+          {
+            "source": "tree:lease_signing",
+            "layer": "temporal_tree",
+            "score": 0.4833333333333333,
+            "content": "mentioned_on=2026-05-02 :: The lease signing happened on 2026-05-02.",
+            "answer_hint": "2026-05-02",
+            "story_time": "2026-05-02",
+            "trace": {
+              "mention_time": "2026-05-02"
+            }
+          },
+          {
+            "source": "tree:budget_revision",
+            "layer": "temporal_tree",
+            "score": 0.31666666666666665,
+            "content": "mentioned_on=2026-05-06 :: The board requested one more budget revision on 2026-05-06.",
+            "answer_hint": "2026-05-06",
+            "story_time": "2026-05-06",
+            "trace": {
+              "mention_time": "2026-05-06"
+            }
+          },
+          {
+            "source": "tree:deal_close_retro",
+            "layer": "temporal_tree",
+            "score": 0.31666666666666665,
+            "content": "mentioned_on=2026-05-20 :: On 2026-05-20 I mentioned that the deal had actually closed on 2026-05-13.",
+            "answer_hint": "2026-05-20",
+            "story_time": "2026-05-13",
+            "trace": {
+              "mention_time": "2026-05-20"
+            }
+          },
+          {
+            "source": "tree:introducer_bridge",
+            "layer": "temporal_tree",
+            "score": 0.31666666666666665,
+            "content": "mentioned_on=2026-04-14 :: Maya introduced Jon to Lena at the launch dinner.",
+            "answer_hint": "2026-04-14",
+            "story_time": "2026-04-14",
+            "trace": {
+              "mention_time": "2026-04-14"
+            }
+          },
+          {
+            "source": "tree:partner_approval",
+            "layer": "temporal_tree",
+            "score": 0.31666666666666665,
+            "content": "mentioned_on=2026-05-10 :: Partner approval happened on 2026-05-10.",
+            "answer_hint": "2026-05-10",
+            "story_time": "2026-05-10",
+            "trace": {
+              "mention_time": "2026-05-10"
+            }
+          }
+        ]
+      },
+      {
+        "case_id": "relational_path_grounding",
+        "query": "Who introduced Jon to Lena?",
+        "family": "relational",
+        "mode": "full_family_aware",
+        "expected": "Maya",
+        "answer": "Maya",
+        "correct": true,
+        "used_gate": true,
+        "used_supporting": true,
+        "missing": [],
+        "note": "A shared neighbor can look relevant; typed path grounding should recover the real introducer.",
+        "plan": {
+          "family": "relational",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "atom"
+          ],
+          "required_layers": [
+            "graph",
+            "fact",
+            "path_grounding"
+          ],
+          "note": "Relation-heavy query prefers graph plus typed path grounding."
+        },
+        "hits": [
+          {
+            "source": "graph:shared_neighbor:figma",
+            "layer": "graph",
+            "score": 0.92,
+            "content": "Jon and Lena both connect to Figma in the collaboration graph.",
+            "answer_hint": "Figma",
+            "story_time": "",
+            "trace": {}
+          }
+        ]
+      },
+      {
+        "case_id": "readiness_barrier",
+        "query": "Can the system answer now?",
+        "family": "readiness",
+        "mode": "full_family_aware",
+        "expected": "not_ready",
+        "answer": "not_ready",
+        "correct": true,
+        "used_gate": true,
+        "used_supporting": false,
+        "missing": [],
+        "note": "Durability is weaker than answerability; readiness should remain a hard gate.",
+        "plan": {
+          "family": "readiness",
+          "primary_reader": "readiness",
+          "supporting_readers": [],
+          "required_layers": [
+            "readiness"
+          ],
+          "note": "Lifecycle / answerability query."
+        },
+        "hits": [
+          {
+            "source": "readiness",
+            "layer": "readiness",
+            "score": 0.0,
+            "content": "qa_ready=False",
+            "answer_hint": "not_ready",
+            "story_time": "",
+            "trace": {}
+          }
+        ]
+      }
+    ]
+  },
+  "paper_claim": [
+    "Preserving timestamps is necessary but not sufficient; temporal answers need explicit arbitration.",
+    "Retrieval quality should still pass a family-aware answerability gate before answering.",
+    "The mechanism remains generic because it operates on query family and evidence shape, not dataset keywords."
+  ],
+  "code_mapping": [
+    {
+      "concept": "time arbitration",
+      "real_code": "/Users/chx/Code/echomemory/echo_memory/echomem/index_engine/policy/self_check.py",
+      "why": "The current stack already detects mention-time-only evidence; the next step is to turn that into a stronger answering policy."
+    },
+    {
+      "concept": "family-aware planning",
+      "real_code": "/Users/chx/Code/echomemory/echo_memory/echomem/index_engine/planner/query_planner.py",
+      "why": "Temporal, relational, and readiness-sensitive queries should not share the same primary evidence path."
+    },
+    {
+      "concept": "answerability gate",
+      "real_code": "/Users/chx/Code/echomemory/echo_memory/echomem/index_engine/policy/answerability_gate.py",
+      "why": "Final answers should be controlled by evidence completeness, not only by retrieval relevance."
+    },
+    {
+      "concept": "supporting re-read",
+      "real_code": "/Users/chx/Code/echomemory/echo_memory/echomem/index_engine/search_service.py",
+      "why": "Missing evidence families should trigger targeted second-pass retrieval instead of generic context expansion."
+    }
+  ]
+}

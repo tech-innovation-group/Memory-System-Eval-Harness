@@ -1,0 +1,479 @@
+{
+  "summary": {
+    "strict": {
+      "correct": 3,
+      "total": 4
+    },
+    "core_global": {
+      "correct": 3,
+      "total": 4
+    },
+    "family_aware": {
+      "correct": 4,
+      "total": 4
+    }
+  },
+  "rows": [
+    {
+      "case_id": "pre_relation",
+      "stage": "before_heavy_stages",
+      "system": "strict",
+      "query": "Who introduced Jon to Lena?",
+      "family": "relational",
+      "expected_answer": "Maya",
+      "answer": {
+        "status": "not_ready",
+        "answer": "unknown",
+        "reason": "strict barrier",
+        "plan": {
+          "family": "relational",
+          "required_layers": [
+            "graph",
+            "fact"
+          ],
+          "primary_reader": "graph"
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "graph_ready": true,
+          "organized_ready": false,
+          "episode_ready": false,
+          "qa_ready": false
+        },
+        "hits": []
+      },
+      "ok": false,
+      "note": "A core graph+fact query should be answerable once atoms and graph are ready."
+    },
+    {
+      "case_id": "pre_relation",
+      "stage": "before_heavy_stages",
+      "system": "core_global",
+      "query": "Who introduced Jon to Lena?",
+      "family": "relational",
+      "expected_answer": "Maya",
+      "answer": {
+        "status": "ready",
+        "answer": "Maya",
+        "reason": "core-global barrier",
+        "plan": {
+          "family": "relational",
+          "required_layers": [
+            "graph",
+            "fact"
+          ],
+          "primary_reader": "graph"
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "graph_ready": true,
+          "organized_ready": false,
+          "episode_ready": false,
+          "qa_ready": true
+        },
+        "hits": [
+          {
+            "layer": "graph",
+            "content": "Maya --introduced--> Jon and Maya --introduced--> Lena"
+          },
+          {
+            "layer": "fact",
+            "content": "Maya introduced Jon to Lena on 2025-05-18."
+          }
+        ]
+      },
+      "ok": true,
+      "note": "A core graph+fact query should be answerable once atoms and graph are ready."
+    },
+    {
+      "case_id": "pre_relation",
+      "stage": "before_heavy_stages",
+      "system": "family_aware",
+      "query": "Who introduced Jon to Lena?",
+      "family": "relational",
+      "expected_answer": "Maya",
+      "answer": {
+        "status": "ready",
+        "answer": "Maya",
+        "reason": "family-aware barrier",
+        "plan": {
+          "family": "relational",
+          "required_layers": [
+            "graph",
+            "fact"
+          ],
+          "primary_reader": "graph"
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "graph_ready": true,
+          "organized_ready": false,
+          "episode_ready": false,
+          "qa_ready": true
+        },
+        "hits": [
+          {
+            "layer": "graph",
+            "content": "Maya --introduced--> Jon and Maya --introduced--> Lena"
+          },
+          {
+            "layer": "fact",
+            "content": "Maya introduced Jon to Lena on 2025-05-18."
+          }
+        ]
+      },
+      "ok": true,
+      "note": "A core graph+fact query should be answerable once atoms and graph are ready."
+    },
+    {
+      "case_id": "pre_longitudinal",
+      "stage": "before_heavy_stages",
+      "system": "strict",
+      "query": "What was Gina's latest Lisbon move plan after leaving Figma?",
+      "family": "longitudinal",
+      "expected_answer": "unknown",
+      "answer": {
+        "status": "not_ready",
+        "answer": "unknown",
+        "reason": "strict barrier",
+        "plan": {
+          "family": "longitudinal",
+          "required_layers": [
+            "topic_dossier",
+            "fact"
+          ],
+          "primary_reader": "topic_dossier"
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "graph_ready": true,
+          "organized_ready": false,
+          "episode_ready": false,
+          "qa_ready": false
+        },
+        "hits": []
+      },
+      "ok": true,
+      "note": "A topic-dossier query should wait for organized memory instead of being globally unlocked."
+    },
+    {
+      "case_id": "pre_longitudinal",
+      "stage": "before_heavy_stages",
+      "system": "core_global",
+      "query": "What was Gina's latest Lisbon move plan after leaving Figma?",
+      "family": "longitudinal",
+      "expected_answer": "unknown",
+      "answer": {
+        "status": "ready",
+        "answer": "Gina planned something after leaving Figma.",
+        "reason": "core-global barrier",
+        "plan": {
+          "family": "longitudinal",
+          "required_layers": [
+            "topic_dossier",
+            "fact"
+          ],
+          "primary_reader": "topic_dossier"
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "graph_ready": true,
+          "organized_ready": false,
+          "episode_ready": false,
+          "qa_ready": true
+        },
+        "hits": [
+          {
+            "layer": "fact",
+            "content": "Gina planned to move to Lisbon after leaving Figma."
+          }
+        ]
+      },
+      "ok": false,
+      "note": "A topic-dossier query should wait for organized memory instead of being globally unlocked."
+    },
+    {
+      "case_id": "pre_longitudinal",
+      "stage": "before_heavy_stages",
+      "system": "family_aware",
+      "query": "What was Gina's latest Lisbon move plan after leaving Figma?",
+      "family": "longitudinal",
+      "expected_answer": "unknown",
+      "answer": {
+        "status": "not_ready",
+        "answer": "unknown",
+        "reason": "organized stage required for this family",
+        "plan": {
+          "family": "longitudinal",
+          "required_layers": [
+            "topic_dossier",
+            "fact"
+          ],
+          "primary_reader": "topic_dossier"
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "graph_ready": true,
+          "organized_ready": false,
+          "episode_ready": false,
+          "qa_ready": true
+        },
+        "hits": []
+      },
+      "ok": true,
+      "note": "A topic-dossier query should wait for organized memory instead of being globally unlocked."
+    },
+    {
+      "case_id": "post_relation",
+      "stage": "after_heavy_stages",
+      "system": "strict",
+      "query": "Who introduced Jon to Lena?",
+      "family": "relational",
+      "expected_answer": "Maya",
+      "answer": {
+        "status": "ready",
+        "answer": "Maya",
+        "reason": "strict barrier",
+        "plan": {
+          "family": "relational",
+          "required_layers": [
+            "graph",
+            "fact"
+          ],
+          "primary_reader": "graph"
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "graph_ready": true,
+          "organized_ready": true,
+          "episode_ready": true,
+          "qa_ready": true
+        },
+        "hits": [
+          {
+            "layer": "graph",
+            "content": "Maya --introduced--> Jon and Maya --introduced--> Lena"
+          },
+          {
+            "layer": "fact",
+            "content": "Maya introduced Jon to Lena on 2025-05-18."
+          }
+        ]
+      },
+      "ok": true,
+      "note": "After full consolidation, every mode should answer correctly."
+    },
+    {
+      "case_id": "post_relation",
+      "stage": "after_heavy_stages",
+      "system": "core_global",
+      "query": "Who introduced Jon to Lena?",
+      "family": "relational",
+      "expected_answer": "Maya",
+      "answer": {
+        "status": "ready",
+        "answer": "Maya",
+        "reason": "core-global barrier",
+        "plan": {
+          "family": "relational",
+          "required_layers": [
+            "graph",
+            "fact"
+          ],
+          "primary_reader": "graph"
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "graph_ready": true,
+          "organized_ready": true,
+          "episode_ready": true,
+          "qa_ready": true
+        },
+        "hits": [
+          {
+            "layer": "graph",
+            "content": "Maya --introduced--> Jon and Maya --introduced--> Lena"
+          },
+          {
+            "layer": "fact",
+            "content": "Maya introduced Jon to Lena on 2025-05-18."
+          }
+        ]
+      },
+      "ok": true,
+      "note": "After full consolidation, every mode should answer correctly."
+    },
+    {
+      "case_id": "post_relation",
+      "stage": "after_heavy_stages",
+      "system": "family_aware",
+      "query": "Who introduced Jon to Lena?",
+      "family": "relational",
+      "expected_answer": "Maya",
+      "answer": {
+        "status": "ready",
+        "answer": "Maya",
+        "reason": "family-aware barrier",
+        "plan": {
+          "family": "relational",
+          "required_layers": [
+            "graph",
+            "fact"
+          ],
+          "primary_reader": "graph"
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "graph_ready": true,
+          "organized_ready": true,
+          "episode_ready": true,
+          "qa_ready": true
+        },
+        "hits": [
+          {
+            "layer": "graph",
+            "content": "Maya --introduced--> Jon and Maya --introduced--> Lena"
+          },
+          {
+            "layer": "fact",
+            "content": "Maya introduced Jon to Lena on 2025-05-18."
+          }
+        ]
+      },
+      "ok": true,
+      "note": "After full consolidation, every mode should answer correctly."
+    },
+    {
+      "case_id": "post_longitudinal",
+      "stage": "after_heavy_stages",
+      "system": "strict",
+      "query": "What was Gina's latest Lisbon move plan after leaving Figma?",
+      "family": "longitudinal",
+      "expected_answer": "Gina planned to move to Lisbon after leaving Figma.",
+      "answer": {
+        "status": "ready",
+        "answer": "Gina planned to move to Lisbon after leaving Figma.",
+        "reason": "strict barrier",
+        "plan": {
+          "family": "longitudinal",
+          "required_layers": [
+            "topic_dossier",
+            "fact"
+          ],
+          "primary_reader": "topic_dossier"
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "graph_ready": true,
+          "organized_ready": true,
+          "episode_ready": true,
+          "qa_ready": true
+        },
+        "hits": [
+          {
+            "layer": "topic_dossier",
+            "content": "Move to Lisbon dossier: after leaving Figma, Gina planned the move, signed a lease, and prepared the relocation."
+          },
+          {
+            "layer": "fact",
+            "content": "Gina planned to move to Lisbon after leaving Figma."
+          }
+        ]
+      },
+      "ok": true,
+      "note": "Once dossier/organized layers are ready, the longitudinal query should open."
+    },
+    {
+      "case_id": "post_longitudinal",
+      "stage": "after_heavy_stages",
+      "system": "core_global",
+      "query": "What was Gina's latest Lisbon move plan after leaving Figma?",
+      "family": "longitudinal",
+      "expected_answer": "Gina planned to move to Lisbon after leaving Figma.",
+      "answer": {
+        "status": "ready",
+        "answer": "Gina planned to move to Lisbon after leaving Figma.",
+        "reason": "core-global barrier",
+        "plan": {
+          "family": "longitudinal",
+          "required_layers": [
+            "topic_dossier",
+            "fact"
+          ],
+          "primary_reader": "topic_dossier"
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "graph_ready": true,
+          "organized_ready": true,
+          "episode_ready": true,
+          "qa_ready": true
+        },
+        "hits": [
+          {
+            "layer": "topic_dossier",
+            "content": "Move to Lisbon dossier: after leaving Figma, Gina planned the move, signed a lease, and prepared the relocation."
+          },
+          {
+            "layer": "fact",
+            "content": "Gina planned to move to Lisbon after leaving Figma."
+          }
+        ]
+      },
+      "ok": true,
+      "note": "Once dossier/organized layers are ready, the longitudinal query should open."
+    },
+    {
+      "case_id": "post_longitudinal",
+      "stage": "after_heavy_stages",
+      "system": "family_aware",
+      "query": "What was Gina's latest Lisbon move plan after leaving Figma?",
+      "family": "longitudinal",
+      "expected_answer": "Gina planned to move to Lisbon after leaving Figma.",
+      "answer": {
+        "status": "ready",
+        "answer": "Gina planned to move to Lisbon after leaving Figma.",
+        "reason": "family-aware barrier",
+        "plan": {
+          "family": "longitudinal",
+          "required_layers": [
+            "topic_dossier",
+            "fact"
+          ],
+          "primary_reader": "topic_dossier"
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "graph_ready": true,
+          "organized_ready": true,
+          "episode_ready": true,
+          "qa_ready": true
+        },
+        "hits": [
+          {
+            "layer": "topic_dossier",
+            "content": "Move to Lisbon dossier: after leaving Figma, Gina planned the move, signed a lease, and prepared the relocation."
+          },
+          {
+            "layer": "fact",
+            "content": "Gina planned to move to Lisbon after leaving Figma."
+          }
+        ]
+      },
+      "ok": true,
+      "note": "Once dossier/organized layers are ready, the longitudinal query should open."
+    }
+  ]
+}

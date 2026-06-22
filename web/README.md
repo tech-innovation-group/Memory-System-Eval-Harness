@@ -31,7 +31,7 @@ files. Keys are entered in the web UI at runtime.
    - Local project path for `locomo-eval-web`.
    - Python 3.9+.
    - Start command: `python3 server.py --host 127.0.0.1 --port 19181`.
-   - Browser URL: `http://127.0.0.1:19181/`.
+   - Browser URL: `<WEB_BASE_URL>/`.
 2. Dataset
    - LoCoMo JSON path on the tester machine.
    - Dataset validation should show conversation count, QA count, and category

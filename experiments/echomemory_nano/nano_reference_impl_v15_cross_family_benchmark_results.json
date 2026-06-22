@@ -1,0 +1,343 @@
+{
+  "summary": {
+    "cases": 7,
+    "v14_correct": 4,
+    "v15_correct": 7,
+    "improved_cases": [
+      "cf3",
+      "cf6",
+      "cf7"
+    ]
+  },
+  "rows": [
+    {
+      "case_id": "cf1",
+      "family": "temporal",
+      "query": "When did Maya start the visa paperwork?",
+      "query_time": "2026-03-20",
+      "expected": [
+        "2026-03-02"
+      ],
+      "why": "Checks that three-clock temporal QA is still intact.",
+      "v14": {
+        "answer": "2026-03-02",
+        "ok": true,
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "temporal_tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "required_layers": [
+            "temporal_tree",
+            "event",
+            "event_time"
+          ],
+          "reason": "Chronology-heavy query."
+        },
+        "contract_ok": true,
+        "missing_layers": []
+      },
+      "v15": {
+        "answer": "2026-03-02",
+        "ok": true,
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "temporal_tree",
+          "supporting_readers": [
+            "graph",
+            "atom"
+          ],
+          "required_layers": [
+            "temporal_tree",
+            "event",
+            "event_time"
+          ],
+          "reason": "Chronology-heavy query."
+        },
+        "contract_ok": true,
+        "missing_layers": []
+      }
+    },
+    {
+      "case_id": "cf2",
+      "family": "relational",
+      "query": "Who helped Maya with the visa paperwork?",
+      "query_time": "2026-03-20",
+      "expected": [
+        "Maya",
+        "Nora"
+      ],
+      "why": "Checks relation lookup did not regress while lifecycle logic was added.",
+      "v14": {
+        "answer": "Maya, Nora",
+        "ok": true,
+        "plan": {
+          "family": "relational",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "atom",
+            "temporal_tree"
+          ],
+          "required_layers": [
+            "graph",
+            "fact",
+            "path_grounding"
+          ],
+          "reason": "Relation-heavy query."
+        },
+        "contract_ok": true,
+        "missing_layers": []
+      },
+      "v15": {
+        "answer": "Maya, Nora",
+        "ok": true,
+        "plan": {
+          "family": "relational",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "atom",
+            "temporal_tree"
+          ],
+          "required_layers": [
+            "graph",
+            "fact",
+            "path_grounding"
+          ],
+          "reason": "Relation-heavy query."
+        },
+        "contract_ok": true,
+        "missing_layers": []
+      }
+    },
+    {
+      "case_id": "cf3",
+      "family": "longitudinal",
+      "query": "How did the apartment lease situation evolve?",
+      "query_time": "2026-04-01",
+      "expected": [
+        "Rua Augusta 14",
+        "2026-03-30"
+      ],
+      "why": "Checks that dossier/timeline answers still surface multi-step evolution.",
+      "v14": {
+        "answer": "2026-03-01: Maya found an apartment on Rua Augusta 14 on 2026-03-01\n2026-03-20: Maya showed the lease screenshot with move-in date 2026-03-20\n2026-03-20: Lease contract screenshot\nRua Augusta 14 move-in 2026-03-20\n2026-03-27: The landlord delayed the handover and the move-in shifted to 2026-03-27",
+        "ok": false,
+        "plan": {
+          "family": "longitudinal",
+          "primary_reader": "topic_dossier",
+          "supporting_readers": [
+            "atom",
+            "temporal_tree"
+          ],
+          "required_layers": [
+            "topic_dossier",
+            "fact"
+          ],
+          "reason": "Cross-session topic evolution query."
+        },
+        "contract_ok": true,
+        "missing_layers": []
+      },
+      "v15": {
+        "answer": "2026-03-01: Maya found an apartment on Rua Augusta 14 on 2026-03-01 [active]\n2026-03-20: Lease contract screenshot\nRua Augusta 14 move-in 2026-03-20 [active]\n2026-03-27: The landlord delayed the handover and the move-in shifted to 2026-03-27 [active]\n2026-03-30: Maya signed a revised lease and the move-in date changed again to 2026-03-30 [active]",
+        "ok": true,
+        "plan": {
+          "family": "longitudinal",
+          "primary_reader": "topic_dossier",
+          "supporting_readers": [
+            "atom",
+            "temporal_tree"
+          ],
+          "required_layers": [
+            "topic_dossier",
+            "fact"
+          ],
+          "reason": "Cross-session topic evolution query."
+        },
+        "contract_ok": true,
+        "missing_layers": []
+      }
+    },
+    {
+      "case_id": "cf4",
+      "family": "visual",
+      "query": "What was shown in the lease screenshot?",
+      "query_time": "2026-03-20",
+      "expected": [
+        "Rua Augusta 14",
+        "2026-03-20"
+      ],
+      "why": "Checks image evidence grounding stays available.",
+      "v14": {
+        "answer": "Rua Augusta 14 move-in 2026-03-20",
+        "ok": true,
+        "plan": {
+          "family": "visual",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "atom"
+          ],
+          "required_layers": [
+            "image_evidence",
+            "fact"
+          ],
+          "reason": "Visual evidence query."
+        },
+        "contract_ok": true,
+        "missing_layers": []
+      },
+      "v15": {
+        "answer": "Rua Augusta 14 move-in 2026-03-20",
+        "ok": true,
+        "plan": {
+          "family": "visual",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "atom"
+          ],
+          "required_layers": [
+            "image_evidence",
+            "fact"
+          ],
+          "reason": "Visual evidence query."
+        },
+        "contract_ok": true,
+        "missing_layers": []
+      }
+    },
+    {
+      "case_id": "cf5",
+      "family": "readiness",
+      "query": "Can you answer now?",
+      "query_time": "2026-03-20",
+      "expected": [
+        "ready"
+      ],
+      "why": "Checks lifecycle/readiness gate remains exposed.",
+      "v14": {
+        "answer": "ready",
+        "ok": true,
+        "plan": {
+          "family": "readiness",
+          "primary_reader": "readiness",
+          "supporting_readers": [],
+          "required_layers": [
+            "readiness"
+          ],
+          "reason": "Lifecycle / answerability query."
+        },
+        "contract_ok": true,
+        "missing_layers": []
+      },
+      "v15": {
+        "answer": "ready",
+        "ok": true,
+        "plan": {
+          "family": "readiness",
+          "primary_reader": "readiness",
+          "supporting_readers": [],
+          "required_layers": [
+            "readiness"
+          ],
+          "reason": "Lifecycle / answerability query."
+        },
+        "contract_ok": true,
+        "missing_layers": []
+      }
+    },
+    {
+      "case_id": "cf6",
+      "family": "state",
+      "query": "What does Nora prefer?",
+      "query_time": "2026-04-10",
+      "expected": [
+        "coffee"
+      ],
+      "why": "Checks current-state selection after preference update.",
+      "v14": {
+        "answer": "Maya started the visa paperwork and Nora helped Maya prepare the financial statement on 2026-03-02",
+        "ok": false,
+        "plan": {
+          "family": "general",
+          "primary_reader": "atom",
+          "supporting_readers": [
+            "topic_dossier"
+          ],
+          "required_layers": [
+            "fact"
+          ],
+          "reason": "General factual query."
+        },
+        "contract_ok": true,
+        "missing_layers": []
+      },
+      "v15": {
+        "answer": "coffee",
+        "ok": true,
+        "plan": {
+          "family": "state",
+          "primary_reader": "atom",
+          "supporting_readers": [
+            "temporal_tree",
+            "topic_dossier"
+          ],
+          "required_layers": [
+            "fact"
+          ],
+          "reason": "State / as-of query."
+        },
+        "contract_ok": true,
+        "missing_layers": []
+      }
+    },
+    {
+      "case_id": "cf7",
+      "family": "state",
+      "query": "What is Kai's badge number?",
+      "query_time": "2026-04-14",
+      "expected": [
+        "unknown_conflict"
+      ],
+      "why": "Checks unresolved same-time disagreement surfaces conflict instead of a confident wrong answer.",
+      "v14": {
+        "answer": "unknown",
+        "ok": false,
+        "plan": {
+          "family": "general",
+          "primary_reader": "atom",
+          "supporting_readers": [
+            "topic_dossier"
+          ],
+          "required_layers": [
+            "fact"
+          ],
+          "reason": "General factual query."
+        },
+        "contract_ok": false,
+        "missing_layers": [
+          "fact"
+        ]
+      },
+      "v15": {
+        "answer": "unknown_conflict",
+        "ok": true,
+        "plan": {
+          "family": "state",
+          "primary_reader": "atom",
+          "supporting_readers": [
+            "temporal_tree",
+            "topic_dossier"
+          ],
+          "required_layers": [
+            "fact"
+          ],
+          "reason": "State / as-of query."
+        },
+        "contract_ok": true,
+        "missing_layers": []
+      }
+    }
+  ]
+}

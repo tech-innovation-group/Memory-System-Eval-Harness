@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import time
 import uuid
@@ -24,6 +25,48 @@ def compact(text: Any, limit: int = 900) -> str:
 
 def token_estimate(text: str) -> int:
     return max(1, (len(text or "") + 3) // 4) if text else 0
+
+
+def token_char_estimate(tokens: Any, chars_per_token: int = 4) -> int:
+    try:
+        token_count = max(0, int(tokens or 0))
+    except (TypeError, ValueError):
+        return 0
+    try:
+        multiplier = max(1, int(chars_per_token or 4))
+    except (TypeError, ValueError):
+        multiplier = 4
+    return token_count * multiplier
+
+
+def resolve_openviking_workspace() -> str:
+    token_dir_env = str(os.environ.get("OPENVIKING_LLM_TOKEN_USAGE_DIR") or "").strip()
+    if token_dir_env:
+        token_dir = Path(token_dir_env).expanduser().resolve()
+        if token_dir.name == "llm_token_usage" and token_dir.parent.name == "_system":
+            return str(token_dir.parent.parent)
+
+    config_file = str(os.environ.get("OPENVIKING_CONFIG_FILE") or "").strip()
+    if config_file:
+        try:
+            payload = json.loads(Path(config_file).expanduser().read_text(encoding="utf-8"))
+        except Exception:
+            payload = {}
+        storage = (payload.get("storage") or {}) if isinstance(payload, dict) else {}
+        workspace_value = str(storage.get("workspace") or "").strip()
+        if workspace_value:
+            return str(Path(workspace_value).expanduser().resolve())
+    return ""
+
+
+def resolve_openviking_token_usage_dir() -> str:
+    workspace = resolve_openviking_workspace()
+    if workspace:
+        return str((Path(workspace) / "_system" / "llm_token_usage").resolve())
+    token_dir_env = str(os.environ.get("OPENVIKING_LLM_TOKEN_USAGE_DIR") or "").strip()
+    if token_dir_env:
+        return str(Path(token_dir_env).expanduser().resolve())
+    return ""
 
 
 def session_number(key: str) -> int:
@@ -168,6 +211,53 @@ def poll_task(client: OpenVikingHTTP, task_id: str, timeout_s: int) -> dict[str,
     return last
 
 
+def extract_import_token_usage(session_record: dict[str, Any]) -> dict[str, int]:
+    task_usage = (((session_record.get("task") or {}).get("result") or {}).get("token_usage") or {})
+    task_llm = task_usage.get("llm") or {}
+    task_embedding = task_usage.get("embedding") or {}
+    task_total = task_usage.get("total") or {}
+    after_commit = session_record.get("session_after_commit") or {}
+    after_llm = after_commit.get("llm_token_usage") or {}
+    after_embedding = after_commit.get("embedding_token_usage") or {}
+
+    llm_prompt_tokens = int(task_llm.get("prompt_tokens") or after_llm.get("prompt_tokens") or 0)
+    llm_completion_tokens = int(
+        task_llm.get("completion_tokens") or after_llm.get("completion_tokens") or 0
+    )
+    llm_total_tokens = int(
+        task_llm.get("total_tokens")
+        or after_llm.get("total_tokens")
+        or (llm_prompt_tokens + llm_completion_tokens)
+    )
+    embedding_total_tokens = int(
+        task_embedding.get("total_tokens") or after_embedding.get("total_tokens") or 0
+    )
+    import_total_tokens = int(
+        task_total.get("total_tokens") or (llm_total_tokens + embedding_total_tokens)
+    )
+    return {
+        "import_llm_prompt_tokens": llm_prompt_tokens,
+        "import_llm_completion_tokens": llm_completion_tokens,
+        "import_llm_total_tokens": llm_total_tokens,
+        "import_embedding_total_tokens": embedding_total_tokens,
+        "import_total_tokens": import_total_tokens,
+    }
+
+
+def aggregate_import_token_usage(records: list[dict[str, Any]]) -> dict[str, int]:
+    totals = {
+        "import_llm_prompt_tokens": 0,
+        "import_llm_completion_tokens": 0,
+        "import_llm_total_tokens": 0,
+        "import_embedding_total_tokens": 0,
+        "import_total_tokens": 0,
+    }
+    for record in records:
+        for key in totals:
+            totals[key] += int(record.get(key) or 0)
+    return totals
+
+
 def import_one_openviking_session(
     args: argparse.Namespace,
     client: OpenVikingHTTP,
@@ -229,7 +319,7 @@ def import_one_openviking_session(
     committed = str(commit.get("status") or "").lower() in {"accepted", "committed", "ok"} or task_status == "completed"
     archive_complete = committed and pending == 0
     integrity = "complete" if live_complete and archive_complete else "incomplete"
-    return {
+    result = {
         "session_id": session_id,
         "expected_messages": len(messages),
         "submitted_messages": added,
@@ -244,6 +334,8 @@ def import_one_openviking_session(
         "session_before_commit": before_commit,
         "session_after_commit": after_commit,
     }
+    result.update(extract_import_token_usage(result))
+    return result
 
 
 def import_sample(args: argparse.Namespace, sample_index: int, sample: dict[str, Any], out_dir: Path) -> dict[str, Any]:
@@ -285,6 +377,7 @@ def import_sample(args: argparse.Namespace, sample_index: int, sample: dict[str,
     submitted_messages = sum(item["submitted_messages"] for item in session_records)
     pending_messages = sum(item["pending_message_count_after_commit"] for item in session_records)
     integrity = "complete" if session_records and all(item["integrity"] == "complete" for item in session_records) else "incomplete"
+    token_usage = aggregate_import_token_usage(session_records)
     record = {
         "sample_index": sample_index,
         "sample_id": sample_id,
@@ -304,6 +397,7 @@ def import_sample(args: argparse.Namespace, sample_index: int, sample: dict[str,
         "integrity": integrity,
         "estimated_import_tokens": estimated_tokens,
     }
+    record.update(token_usage)
     (out_dir / f"{sample_id}_messages.json").write_text(json.dumps(session_batches, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"[done] sample={sample_id} integrity={integrity}", flush=True)
     return record
@@ -340,6 +434,8 @@ def main() -> None:
     print(f"[start] dataset={args.dataset} samples={len(samples)} openviking={args.openviking_url}", flush=True)
     records = [import_sample(args, index, sample, out_dir) for index, sample in samples]
     complete = sum(1 for item in records if item["integrity"] == "complete")
+    token_usage = aggregate_import_token_usage(records)
+    workspace = resolve_openviking_workspace()
     summary = {
         "status": "OPENVIKING_IMPORT_DONE" if complete == len(records) else "OPENVIKING_IMPORT_INCOMPLETE",
         "samples": len(records),
@@ -349,12 +445,24 @@ def main() -> None:
         "submitted_messages": sum(item["submitted_messages"] for item in records),
         "estimated_import_tokens": sum(item["estimated_import_tokens"] for item in records),
         "openviking_url": args.openviking_url,
+        "workspace": workspace,
+        "llm_log_dir": resolve_openviking_token_usage_dir(),
         "sample": args.sample,
         "group_chat": bool(args.group_chat),
         "session_limit": int(args.max_sessions or 0),
         "identity_mode": "sample_id_user_agent" if not args.user_id and not args.agent_id else "fixed_user_agent",
         "records": records,
     }
+    summary.update(token_usage)
+    summary.update(
+        {
+            "import_llm_prompt_chars_est": token_char_estimate(summary.get("import_llm_prompt_tokens")),
+            "import_llm_completion_chars_est": token_char_estimate(summary.get("import_llm_completion_tokens")),
+            "import_llm_total_chars_est": token_char_estimate(summary.get("import_llm_total_tokens")),
+            "import_embedding_chars_est": token_char_estimate(summary.get("import_embedding_total_tokens")),
+            "import_total_chars_est": token_char_estimate(summary.get("import_total_tokens")),
+        }
+    )
     (out_dir / "openviking_import_summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(summary, ensure_ascii=False, indent=2), flush=True)
     if summary["incomplete_samples"]:

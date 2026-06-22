@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EchoMemory Graph Second-Pass Contract Ablation</title>
+  <style>
+    :root {
+      --bg:#f6f8fc; --panel:#fff; --text:#18212f; --muted:#5f6b7a; --line:#dde4ee;
+      --blue:#2563eb; --blue-soft:#eaf2ff; --green:#0f9f6e; --green-soft:#eafaf4;
+      --amber:#c77b00; --amber-soft:#fff7e8;
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font:14px/1.65 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif; }
+    .wrap { max-width:1160px; margin:0 auto; padding:28px 20px 48px; }
+    .hero,.section { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:20px 22px; margin-bottom:16px; }
+    h1,h2 { margin:0 0 10px; }
+    p { margin:0 0 10px; }
+    .kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-top:14px; }
+    .kpi { border:1px solid var(--line); border-radius:10px; padding:12px 14px; background:#fbfcff; }
+    .label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
+    .value { font-size:22px; font-weight:700; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th,td { border-top:1px solid var(--line); text-align:left; vertical-align:top; padding:10px 8px; }
+    th { background:#fbfcfe; color:var(--muted); font-size:12px; text-transform:uppercase; }
+    .grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+    .card { border:1px solid var(--line); border-radius:10px; padding:14px 16px; background:#fff; }
+    code, pre { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    pre { background:#f8fafc; border:1px solid var(--line); border-radius:8px; padding:12px; overflow:auto; font-size:12px; }
+    .tag { display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; background:var(--blue-soft); color:var(--blue); margin-right:6px; }
+    @media (max-width:980px) { .grid,.kpis { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <div class="tag">nano</div>
+      <div class="tag">main-code shaped</div>
+      <div class="tag">second-pass</div>
+      <h1>EchoMemory Graph Second-Pass Contract Ablation</h1>
+      <p>
+        This is a deliberately narrow experiment. It does <b>not</b> claim that one extra graph pass solves all QA problems.
+        It tests one sharper question:
+        <b>when the planner says a temporal query should have both chronology evidence and event support, does a self-check-driven graph second-pass actually complete that evidence contract?</b>
+      </p>
+      <div class="kpis">
+        <div class="kpi"><span class="label">Cases</span><span class="value">6</span></div>
+        <div class="kpi"><span class="label">One-pass Contract OK</span><span class="value">0</span></div>
+        <div class="kpi"><span class="label">Graph Second-pass Contract OK</span><span class="value">4</span></div>
+        <div class="kpi"><span class="label">Improved Cases</span><span class="value">4</span></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Interpretation</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>What is being measured</h3>
+          <p>
+            We judge each run by two criteria:
+            keyword correctness and <b>layer-contract completeness</b>.
+            For example, temporal queries in this nano planner want both
+            <code>temporal_tree</code> and <code>event</code>.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Why this is relevant</h3>
+          <p>
+            This mirrors the current main-code direction:
+            self-check first diagnoses evidence weakness,
+            then a conservative graph second-pass tries to补足 missing support.
+          </p>
+        </div>
+        <div class="card">
+          <h3>What this does not claim</h3>
+          <p>
+            It is not a general benchmark.
+            It is a method ablation about evidence-shape repair,
+            closer to a paper figure than to a product QA leaderboard.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Results</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Case</th>
+            <th>Query</th>
+            <th>Required Layers</th>
+            <th>One-pass</th>
+            <th>Graph Second-pass</th>
+            <th>Triggered</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody>
+            <tr>
+              <td>temporal_leave_date</td>
+              <td>When did Gina leave Figma?</td>
+              <td>temporal_tree, event</td>
+              <td>temporal_tree / 0.50 / no</td>
+              <td>event / 1.00 / yes</td>
+              <td>yes</td>
+              <td>Primary tree hit already has the date, but the contract still wants event support.</td>
+            </tr>
+            
+            <tr>
+              <td>temporal_join_date</td>
+              <td>When did Gina join Figma?</td>
+              <td>temporal_tree, event</td>
+              <td>temporal_tree / 0.50 / no</td>
+              <td>event / 1.00 / yes</td>
+              <td>yes</td>
+              <td>Temporal date lookup should benefit from adding event evidence after tree-first retrieval.</td>
+            </tr>
+            
+            <tr>
+              <td>temporal_helper_date</td>
+              <td>When did Nora help Gina prepare the Lisbon visa checklist?</td>
+              <td>temporal_tree, event</td>
+              <td>temporal_tree / 0.50 / no</td>
+              <td>fact / 1.00 / yes</td>
+              <td>yes</td>
+              <td>Another temporal case where tree-only evidence is accurate but structurally incomplete.</td>
+            </tr>
+            
+            <tr>
+              <td>temporal_lease_date</td>
+              <td>When did Gina sign the Lisbon lease?</td>
+              <td>temporal_tree, event</td>
+              <td>temporal_tree / 0.50 / no</td>
+              <td>event / 1.00 / yes</td>
+              <td>yes</td>
+              <td>Tests the same contract on a different event family.</td>
+            </tr>
+            
+            <tr>
+              <td>relational_helper</td>
+              <td>Who helped Gina with the Lisbon visa checklist?</td>
+              <td>entity, fact</td>
+              <td>fact / 0.50 / no</td>
+              <td>fact / 0.50 / no</td>
+              <td>no</td>
+              <td>Control case: graph is already the primary backbone, so second-pass should not matter.</td>
+            </tr>
+            
+            <tr>
+              <td>visual_lease</td>
+              <td>What did the screenshot of the lease contract show?</td>
+              <td>image_evidence, fact</td>
+              <td>fact / 0.50 / no</td>
+              <td>fact / 0.50 / no</td>
+              <td>no</td>
+              <td>Another control case: visual evidence should already enter through graph/image nodes.</td>
+            </tr>
+            </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>Summary</h2>
+      <p>
+        Keyword coverage stayed at <b>6 / 6</b> for one-pass and
+        <b>6 / 6</b> after graph second-pass.
+        The bigger change is contract completeness:
+        <b>0 / 6</b> ->
+        <b>4 / 6</b>.
+      </p>
+      <p>
+        Improved cases: <code>temporal_leave_date, temporal_join_date, temporal_helper_date, temporal_lease_date</code><br/>
+        Triggered second-pass cases: <code>temporal_leave_date, temporal_join_date, temporal_helper_date, temporal_lease_date</code>
+      </p>
+    </div>
+
+    <div class="section">
+      <h2>Why this matters for the paper line</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Self-RAG flavor</h3>
+          <p>
+            The point is not just “retrieve once and answer”.
+            It is closer to the Self-RAG idea that evidence quality should decide whether the system keeps searching.
+          </p>
+        </div>
+        <div class="card">
+          <h3>MemoRAG / coarse-to-fine</h3>
+          <p>
+            One-pass tree retrieval is the coarse stage.
+            Graph second-pass is the fine support stage that only runs when evidence shape is incomplete.
+          </p>
+        </div>
+        <div class="card">
+          <h3>LongMemEval-style auditability</h3>
+          <p>
+            This experiment explicitly measures evidence completeness, not just whether a surface keyword shows up.
+            That is closer to memory-system evaluation than a raw QA scoreboard.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Example Case</h2>
+      <pre>{
+  &quot;case_id&quot;: &quot;temporal_leave_date&quot;,
+  &quot;query&quot;: &quot;When did Gina leave Figma?&quot;,
+  &quot;expected_keywords&quot;: [
+    &quot;2024-06-01&quot;,
+    &quot;left Figma&quot;
+  ],
+  &quot;note&quot;: &quot;Primary tree hit already has the date, but the contract still wants event support.&quot;,
+  &quot;one_pass&quot;: {
+    &quot;query&quot;: &quot;When did Gina leave Figma?&quot;,
+    &quot;intent&quot;: {
+      &quot;label&quot;: &quot;temporal&quot;,
+      &quot;rationale&quot;: &quot;Temporal words detected.&quot;
+    },
+    &quot;plan&quot;: {
+      &quot;family&quot;: &quot;temporal&quot;,
+      &quot;primary_reader&quot;: &quot;tree&quot;,
+      &quot;supporting_readers&quot;: [
+        &quot;graph&quot;,
+        &quot;atom&quot;
+      ],
+      &quot;must_have_layers&quot;: [
+        &quot;temporal_tree&quot;,
+        &quot;event&quot;
+      ],
+      &quot;answer_rule&quot;: &quot;Prefer chronology blocks; use event/fact as support.&quot;
+    },
+    &quot;hits&quot;: [
+      {
+        &quot;source&quot;: &quot;day:2024-06-01&quot;,
+        &quot;layer&quot;: &quot;temporal_tree&quot;,
+        &quot;score&quot;: 0.6,
+        &quot;content&quot;: &quot;- 2024-06-01: Gina left Figma on 2024-06-01.&quot;,
+        &quot;story_time&quot;: &quot;2024-06-01&quot;
+      },
+      {
+        &quot;source&quot;: &quot;day:2024-06-03&quot;,
+        &quot;layer&quot;: &quot;temporal_tree&quot;,
+        &quot;score&quot;: 0.6,
+        &quot;content&quot;: &quot;- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.&quot;,
+        &quot;story_time&quot;: &quot;2024-06-03&quot;
+      },
+      {
+        &quot;source&quot;: &quot;month:2024-06&quot;,
+        &quot;layer&quot;: &quot;temporal_tree&quot;,
+        &quot;score&quot;: 0.6,
+        &quot;content&quot;: &quot;- 2024-06-01: Gina left Figma on 2024-06-01.\n- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.\n- 2024-06-10: Arrival photo showed Santa Apolonia Platform 4.&quot;,
+        &quot;story_time&quot;: &quot;2024-06&quot;
+      },
+      {
+        &quot;source&quot;: &quot;year:2024&quot;,
+        &quot;layer&quot;: &quot;temporal_tree&quot;,
+        &quot;score&quot;: 0.6,
+        &quot;content&quot;: &quot;- 2024-01-05: Gina joined Figma on 2024-01-05.\n- 2024-03-10: Gina married Alex on 2024-03-10.\n- 2024-04-02: Nora helped Gina prepare a Lisbon visa checklist on 2024-04-02.\n- 2024-05-08: Gina signed a Lisbon lease on 2024-05-08.\n- 2024-05-09: Screenshot of lease contract showed Rua Augusta 14 Lisbon Lease Agreement.\n- 2024-06-01: Gina left Figma on 2024-06-01.&quot;,
+        &quot;story_time&quot;: &quot;2024&quot;
+      },
+      {
+        &quot;source&quot;: &quot;day:2024-01-05&quot;,
+        &quot;layer&quot;: &quot;temporal_tree&quot;,
+        &quot;score&quot;: 0.4,
+        &quot;content&quot;: &quot;- 2024-01-05: Gina joined Figma on 2024-01-05.&quot;,
+        &quot;story_time&quot;: &quot;2024-01-05&quot;
+      },
+      {
+        &quot;source&quot;: &quot;month:2024-01&quot;,
+        &quot;layer&quot;: &quot;temporal_tree&quot;,
+        &quot;score&quot;: 0.4,
+        &quot;content&quot;: &quot;- 2024-01-05: Gina joined Figma on 2024-01-05.&quot;,
+        &quot;story_time&quot;: &quot;2024-01&quot;
+      }
+    ],
+    &quot;mode&quot;: &quot;one_pass&quot;,
+    &quot;readiness&quot;: {
+      &quot;messages_persisted&quot;: true,
+      &quot;atoms_ready&quot;: true,
+      &quot;tree_ready&quot;: true,
+      &quot;graph_ready&quot;: true,
+      &quot;qa_ready&quot;: true
+    },
+    &quot;self_check&quot;: {
+      &quot;need_expand&quot;: true,
+      &quot;confidence&quot;: 0.5,
+      &quot;note&quot;: &quot;Primary evidence shape is incomplete; expand supporting readers.&quot;
+    },
+    &quot;decision&quot;: {
+      &quot;answer&quot;: &quot;Likely time evidence: 2024-06-01&quot;,
+      &quot;confidence&quot;: 0.5,
+      &quot;note&quot;: &quot;Primary reader only.&quot;
+    }
+  },
+  &quot;one_pass_eval&quot;: {
+    &quot;keyword_ok&quot;: true,
+    &quot;required_layers&quot;: [
+      &quot;temporal_tree&quot;,
+      &quot;event&quot;
+    ],
+    &quot;present_layers&quot;: [
+      &quot;temporal_tree&quot;
+    ],
+    &quot;coverage_ratio&quot;: 0.5,
+    &quot;contract_ok&quot;: false,
+    &quot;top_layer&quot;: &quot;temporal_tree&quot;
+  },
+  &quot;graph_second_pass&quot;: {
+    &quot;query&quot;: &quot;When did Gina leave Figma?&quot;,
+    &quot;intent&quot;: {
+      &quot;label&quot;: &quot;temporal&quot;,
+      &quot;rationale&quot;: &quot;Temporal words detected.&quot;
+    },
+    &quot;plan&quot;: {
+      &quot;family&quot;: &quot;temporal&quot;,
+      &quot;primary_reader&quot;: &quot;tree&quot;,
+      &quot;supporting_readers&quot;: [
+        &quot;graph&quot;,
+        &quot;atom&quot;
+      ],
+      &quot;must_have_layers&quot;: [
+        &quot;temporal_tree&quot;,
+        &quot;event&quot;
+      ],
+      &quot;answer_rule&quot;: &quot;Prefer chronology blocks; use event/fact as support.&quot;
+    },
+    &quot;hits&quot;: [
+      {
+        &quot;source&quot;: &quot;event:atom-004&quot;,
+        &quot;layer&quot;: &quot;event&quot;,
+        &quot;score&quot;: 0.88,
+        &quot;content&quot;: &quot;Gina left Figma&quot;,
+        &quot;story_time&quot;: &quot;2024-06-01&quot;
+      },
+      {
+        &quot;source&quot;: &quot;event:atom-005&quot;,
+        &quot;layer&quot;: &quot;event&quot;,
+        &quot;score&quot;: 0.88,
+        &quot;content&quot;: &quot;Gina plans_after leave Figma&quot;,
+        &quot;story_time&quot;: &quot;2024-06-03&quot;
+      },
+      {
+        &quot;source&quot;: &quot;fact:atom-004&quot;,
+        &quot;layer&quot;: &quot;fact&quot;,
+        &quot;score&quot;: 0.78,
+        &quot;content&quot;: &quot;Gina left Figma on 2024-06-01.&quot;,
+        &quot;story_time&quot;: &quot;2024-06-01&quot;
+      },
+      {
+        &quot;source&quot;: &quot;fact:atom-005&quot;,
+        &quot;layer&quot;: &quot;fact&quot;,
+        &quot;score&quot;: 0.78,
+        &quot;content&quot;: &quot;Gina plans to move to Lisbon after leaving Figma.&quot;,
+        &quot;story_time&quot;: &quot;2024-06-03&quot;
+      },
+      {
+        &quot;source&quot;: &quot;day:2024-06-01&quot;,
+        &quot;layer&quot;: &quot;temporal_tree&quot;,
+        &quot;score&quot;: 0.6,
+        &quot;content&quot;: &quot;- 2024-06-01: Gina left Figma on 2024-06-01.&quot;,
+        &quot;story_time&quot;: &quot;2024-06-01&quot;
+      },
+      {
+        &quot;source&quot;: &quot;day:2024-06-03&quot;,
+        &quot;layer&quot;: &quot;temporal_tree&quot;,
+        &quot;score&quot;: 0.6,
+        &quot;content&quot;: &quot;- 2024-06-03: Gina plans to move to Lisbon after leaving Figma.&quot;,
+        &quot;story_time&quot;: &quot;2024-06-03&quot;
+      }
+    ],
+    &quot;mode&quot;: &quot;graph_second_pass&quot;,
+    &quot;readiness&quot;: {
+      &quot;messages_persisted&quot;: true,
+      &quot;atoms_ready&quot;: true,
+      &quot;tree_ready&quot;: true,
+      &quot;graph_ready&quot;: true,
+      &quot;qa_ready&quot;: true
+    },
+    &quot;self_check&quot;: {
+      &quot;need_expand&quot;: false,
+      &quot;confidence&quot;: 1.0,
+      &quot;note&quot;: &quot;Primary evidence shape already sufficient.&quot;,
+      &quot;second_pass_triggered&quot;: true
+    },
+    &quot;decision&quot;: {
+      &quot;answer&quot;: &quot;Likely time evidence: 2024-06-01&quot;,
+      &quot;confidence&quot;: 1.0,
+      &quot;note&quot;: &quot;Graph second-pass added after self-check.&quot;
+    }
+  },
+  &quot;graph_second_pass_eval&quot;: {
+    &quot;keyword_ok&quot;: true,
+    &quot;required_layers&quot;: [
+      &quot;temporal_tree&quot;,
+      &quot;event&quot;
+    ],
+    &quot;present_layers&quot;: [
+      &quot;event&quot;,
+      &quot;fact&quot;,
+      &quot;temporal_tree&quot;
+    ],
+    &quot;coverage_ratio&quot;: 1.0,
+    &quot;contract_ok&quot;: true,
+    &quot;top_layer&quot;: &quot;event&quot;
+  }
+}</pre>
+    </div>
+  </div>
+</body>
+</html>

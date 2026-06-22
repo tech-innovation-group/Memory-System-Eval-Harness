@@ -1,0 +1,979 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Memory 100页文档</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --page: #ffffff;
+      --ink: #10233f;
+      --muted: #5f7188;
+      --line: #dbe4ef;
+      --accent: #24508a;
+      --accent-soft: #edf4fb;
+      --ok: #1d6d47;
+      --warn: #9a6708;
+      --danger: #b42318;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .shell {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 28px 20px 60px;
+    }
+
+    .screen-header {
+      margin-bottom: 24px;
+      padding: 22px 24px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    }
+
+    .screen-header h1 {
+      margin: 8px 0 10px;
+      font-size: 34px;
+      line-height: 1.15;
+    }
+
+    .screen-header p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .meta-card {
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+    }
+
+    .meta-card span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .meta-card strong {
+      display: block;
+      margin-top: 6px;
+      font-size: 15px;
+    }
+
+    .toc-card {
+      margin-bottom: 24px;
+      padding: 18px 20px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fff;
+    }
+
+    .toc-card h2 {
+      margin: 0 0 12px;
+      font-size: 20px;
+    }
+
+    .toc-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px 20px;
+    }
+
+    .toc-item {
+      padding: 8px 0;
+      border-bottom: 1px dashed #e5ebf2;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .print-pages {
+      display: grid;
+      gap: 20px;
+    }
+
+    .print-page {
+      min-height: 1122px;
+      padding: 56px 60px 54px;
+      border: 1px solid #d8e2ee;
+      border-radius: 10px;
+      background: var(--page);
+      box-shadow: 0 12px 32px rgba(16, 35, 63, 0.08);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .page-number {
+      position: absolute;
+      top: 28px;
+      right: 34px;
+      color: #8a97a8;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .page-kicker {
+      display: inline-flex;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .print-page h2 {
+      margin: 14px 0 8px;
+      font-size: 28px;
+      line-height: 1.18;
+    }
+
+    .print-page h3 {
+      margin: 20px 0 8px;
+      font-size: 18px;
+      line-height: 1.3;
+    }
+
+    .lead {
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    p {
+      margin: 10px 0;
+    }
+
+    ul, ol {
+      margin: 10px 0 0 18px;
+      padding: 0;
+    }
+
+    li {
+      margin: 7px 0;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 14px;
+    }
+
+    .info-box {
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fbfdff;
+    }
+
+    .info-box strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 15px;
+    }
+
+    .quote {
+      margin-top: 16px;
+      padding: 14px 16px;
+      border-left: 4px solid #bfd4ea;
+      background: #f7fbff;
+      color: #39536f;
+    }
+
+    .table {
+      width: 100%;
+      margin-top: 16px;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    .table th,
+    .table td {
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .table th {
+      background: #f7fbff;
+    }
+
+    .footer-note {
+      position: absolute;
+      left: 60px;
+      right: 60px;
+      bottom: 28px;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      color: #8190a3;
+      font-size: 12px;
+    }
+
+    @media (max-width: 980px) {
+      .meta-grid,
+      .toc-grid,
+      .two-col {
+        grid-template-columns: 1fr;
+      }
+
+      .print-page {
+        min-height: auto;
+        padding: 28px 24px 56px;
+      }
+
+      .footer-note {
+        left: 24px;
+        right: 24px;
+      }
+    }
+
+    @media print {
+      @page {
+        size: A4;
+        margin: 0;
+      }
+
+      body {
+        background: #fff;
+      }
+
+      .shell {
+        max-width: none;
+        padding: 0;
+      }
+
+      .screen-header,
+      .toc-card {
+        page-break-after: always;
+        break-after: page;
+        margin: 0;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
+
+      .print-pages {
+        gap: 0;
+      }
+
+      .print-page {
+        min-height: 297mm;
+        height: 297mm;
+        margin: 0;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        page-break-after: always;
+        break-after: page;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="screen-header">
+      <div class="page-kicker">Agent Memory Report</div>
+      <h1>Agent 记忆系统、图结构记忆与流线型记忆：<br>100页研究与工程文档</h1>
+      <p>面向项目改进、评测系统设计、开源选型、技术面试表达与路线规划的综合整理。输出格式为可直接打开和打印的 HTML/HTM 文档。</p>
+      <div class="meta-grid">
+        <div class="meta-card">
+          <span>页数</span>
+          <strong>100 页打印版</strong>
+        </div>
+        <div class="meta-card">
+          <span>主题</span>
+          <strong>Agent Memory / Graph / Timeline</strong>
+        </div>
+        <div class="meta-card">
+          <span>用途</span>
+          <strong>项目改进 + 面试准备</strong>
+        </div>
+        <div class="meta-card">
+          <span>日期</span>
+          <strong>2026-06-12</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="toc-card">
+      <h2>文档结构</h2>
+      <div class="toc-grid" id="tocGrid"></div>
+    </section>
+
+    <main class="print-pages" id="printPages"></main>
+  </div>
+
+  <script>
+    const topics = [
+      {
+        slug: "landscape",
+        title: "行业全景与问题定义",
+        summary: "界定什么是 agent memory，为什么它和传统 RAG、长上下文、缓存不是一回事。",
+        repo: "综合方法论页，不绑定单一仓库",
+        why: "适合用来统一术语、厘清系统边界，避免工程实现和论文表述错位。",
+        improve: [
+          "把 memory 区分为写入、组织、检索、压缩、验证五个子系统",
+          "用统一接口抽象不同后端，而不是把 memory 当成单一向量库",
+          "先定义评测口径，再做功能堆叠"
+        ],
+        interview: [
+          "说明 agent memory 与 chat history、RAG、context window 的差异",
+          "强调长期记忆系统必须可评测，而不只是能演示"
+        ]
+      },
+      {
+        slug: "agent-memory-failure-modes",
+        title: "Agent 记忆系统的主要失败模式",
+        summary: "整理长期记忆最常见的工程失败点：漏写、错写、召回错位、时间错乱、证据链缺失。",
+        repo: "适合映射到 OpenViking、Letta、Mem0、Graphiti 等任一系统",
+        why: "项目改进最有效的方式不是继续加 feature，而是先建立 failure taxonomy。",
+        improve: [
+          "区分 write failure、index failure、retrieval failure、answer usage failure",
+          "让 trace 能落到 evidence 粒度，而不是只看最终答对答错",
+          "给每个失败类型设计最小复现实验"
+        ],
+        interview: [
+          "面试里不要只说“准确率提高了”，要说“哪一类错误下降了”",
+          "把 failure mode 和修复策略一一对应，体现系统思维"
+        ]
+      },
+      {
+        slug: "evaluation-principles",
+        title: "评测原则与实验口径",
+        summary: "建立 memory 项目的实验纪律：统一模型、统一 prompt、统一 judge、统一数据切片。",
+        repo: "LoCoMo、LongMemEval、定制 harness 均适用",
+        why: "大多数 memory 项目结论不稳定，原因通常不是方法差，而是评测口径漂移。",
+        improve: [
+          "同一 answerer 对比不同 memory backend",
+          "拆开 evaluate retrieval 和 evaluate final answer",
+          "保留 prompt、model、dataset、judge 的版本快照"
+        ],
+        interview: [
+          "说明如何避免把 answer model 差异误判成 memory system 差异",
+          "强调 reproducibility 是 memory 项目可信度的底线"
+        ]
+      },
+      {
+        slug: "locomo-benchmark",
+        title: "LoCoMo：长时会话记忆 benchmark",
+        summary: "LoCoMo 适合作为 agent memory 的标准基座，尤其适合测时序、多跳和长程会话一致性。",
+        repo: "snap-research/locomo",
+        why: "它不是 memory system 本体，但非常适合作为你改进 memory 后端的统一评测入口。",
+        improve: [
+          "增加 backend adapter 层，让一个 benchmark 同时测多个记忆后端",
+          "补 evidence-level scoring，区分召回正确和答题正确",
+          "补导入、召回、回答、判分四段 trace"
+        ],
+        interview: [
+          "可以讲为什么 benchmark 比单一 demo 更有说服力",
+          "可以讲你如何用 benchmark 反向驱动系统设计"
+        ]
+      },
+      {
+        slug: "longmemeval",
+        title: "LongMemEval 与长上下文记忆评估",
+        summary: "把 LongMemEval 视为 LoCoMo 的补集，重点看长上下文记忆与持久记忆在测试上的差异。",
+        repo: "LongMemEval 相关实现 / 自建 harness",
+        why: "很多系统把“能处理长上下文”误认为“有长期记忆”，这是错误的。",
+        improve: [
+          "分离 context-window baseline 和 persistent-memory baseline",
+          "对比 no-memory、vector-only、graph-only、hybrid 四类系统",
+          "让测试覆盖单跳、多跳、时间推理和摘要一致性"
+        ],
+        interview: [
+          "面试时可以强调长上下文不是长期记忆的替代品",
+          "能讲清 persistent memory 的优势和成本"
+        ]
+      },
+      {
+        slug: "a-mem",
+        title: "A-MEM：Agentic Memory",
+        summary: "A-MEM 代表的是“记忆会自组织与演化”的方向，而不是单纯 append-only 记忆。",
+        repo: "agiresearch/A-mem",
+        why: "适合做结构创新，尤其适合在面试里讲动态 linking、memory evolution、importance update。",
+        improve: [
+          "加入 session-aware write batching，降低写入成本",
+          "补显式时间边和会话边，减少纯语义聚类误连",
+          "把 evolution 策略做成可 ablation 的模块"
+        ],
+        interview: [
+          "可以讲为什么简单向量库难以支撑 agentic memory",
+          "可以讲 memory growth、staleness、consolidation 的平衡"
+        ]
+      },
+      {
+        slug: "letta-memgpt",
+        title: "Letta / MemGPT：分层记忆运行时",
+        summary: "Letta 的价值不只在论文概念，而在于它有较完整的 stateful agent runtime 可以直接改造。",
+        repo: "letta-ai/letta",
+        why: "如果你需要一个能 demo、能接工具、能接评测的系统底座，Letta 很适合。",
+        improve: [
+          "把 archival memory 接成多后端可切换",
+          "引入 graph layer 作为 archival memory 的补充通道",
+          "增加 retrieval trace 和 answer usage trace"
+        ],
+        interview: [
+          "可以讲 working memory、archival memory、tool memory 的边界",
+          "可以讲为什么 runtime 设计影响 memory 的真实可用性"
+        ]
+      },
+      {
+        slug: "mem0",
+        title: "Mem0：工程化长期记忆层",
+        summary: "Mem0 的长处是工程可用性，不是最前沿结构，但很适合拿来做 hybrid memory 的生产基座。",
+        repo: "mem0ai/mem0",
+        why: "它的写入、抽取、检索路径都相对清楚，适合在其上加入 graph memory 或 timeline memory。",
+        improve: [
+          "增加 event node 和 temporal edge",
+          "将 extracted facts 与 source evidence 强绑定",
+          "把 memory consolidation 从单阶段变成多阶段"
+        ],
+        interview: [
+          "可以讲如何从 production memory layer 出发做结构增强",
+          "可以讲成本、稳定性、吞吐和效果的取舍"
+        ]
+      },
+      {
+        slug: "graphiti",
+        title: "Graphiti：时间感知知识图谱记忆",
+        summary: "Graphiti 是图结构记忆和流线型记忆结合得最明确的开源方向之一。",
+        repo: "getzep/graphiti",
+        why: "如果你要做 graph + timeline + retrieval 的混合系统，它是最直接的参考对象。",
+        improve: [
+          "把事件 ingest 做成更强的 session pipeline",
+          "增加图检索与时间检索的联合排序",
+          "增加 benchmark adapter 跑 LoCoMo / LongMemEval"
+        ],
+        interview: [
+          "可以讲为什么 temporal KG 比静态 KG 更适合 agent memory",
+          "可以讲 history-preserving relation update 的价值"
+        ]
+      },
+      {
+        slug: "cognee",
+        title: "Cognee：图、向量、文档混合记忆平台",
+        summary: "Cognee 更像 memory platform，不局限于单一图或单一向量，适合做混合后端实验。",
+        repo: "topoteretes/cognee",
+        why: "它天然适合作为多存储形态对比平台，尤其适合搭统一 memory interface。",
+        improve: [
+          "对会话事件加统一 schema",
+          "加入 memory routing，把 query 自动路由到 timeline/graph/vector",
+          "补粒度统一的 evidence return format"
+        ],
+        interview: [
+          "适合讲 multi-store architecture",
+          "适合讲为什么 retrieval layer 需要 orchestration，而不只是 index"
+        ]
+      },
+      {
+        slug: "memorybank",
+        title: "MemoryBank：长期记忆与遗忘机制",
+        summary: "MemoryBank 的关键点不是存得多，而是引入遗忘、重要度和长期演化的概念。",
+        repo: "zhongwanjun/MemoryBank-SiliconFriend",
+        why: "很适合拿来做“记忆更新与过期”这一层，而不是只做无限累积。",
+        improve: [
+          "用 importance、recency、reuse frequency 组合打分",
+          "把遗忘策略从阈值删除改成分层冷存储",
+          "让 summary memory 与 raw memory 可追溯"
+        ],
+        interview: [
+          "可以讲为什么长期记忆系统必须面对 memory bloat",
+          "可以讲 forgetting 不是缺陷，而是策略"
+        ]
+      },
+      {
+        slug: "longmem",
+        title: "LongMem：外部长期记忆增强语言模型",
+        summary: "LongMem 更偏 memory-augmented LM，而不是完整 agent runtime，但其思想值得用于 retrieval reader 设计。",
+        repo: "OpenBMB/LongMem",
+        why: "适合借鉴 memory reader、memory slot、长程 external context 的设计，不适合直接当 agent memory 成品。",
+        improve: [
+          "把它作为 retrieval reader baseline",
+          "比较 long-context cache 与 persistent memory 的效果边界",
+          "将其纳入统一评测而不是单独跑样例"
+        ],
+        interview: [
+          "可以讲 LM external memory 和 agent persistent memory 的差异",
+          "可以讲模型内部记忆与系统外部记忆的分工"
+        ]
+      },
+      {
+        slug: "arigraph",
+        title: "AriGraph：知识图谱世界模型与 episodic memory",
+        summary: "AriGraph 更偏研究原型，但它对“图结构 + episode”这件事的建模很贴近面试中会被追问的结构问题。",
+        repo: "论文原型方向，仓库可作为概念参考",
+        why: "适合借其 schema 思想，而不是直接当生产底座。",
+        improve: [
+          "将 episodic node 与 session summary 绑定",
+          "把 event graph 做成可回溯时间片",
+          "与 vector retriever 组合成 hybrid pipeline"
+        ],
+        interview: [
+          "适合讲 symbolic structure 与 neural retrieval 的互补关系",
+          "适合讲 world model 在 agent memory 中的用途和限制"
+        ]
+      },
+      {
+        slug: "openviking-baseline",
+        title: "OpenViking 现状与改造切入点",
+        summary: "OpenViking 作为你的实际工程语境，更像 memory runtime + benchmark workbench 的结合点。",
+        repo: "本地 OpenViking / LoCoMo Eval Web",
+        why: "最值得改造的不是页面，而是统一 memory contract、trace、评测和多后端对比能力。",
+        improve: [
+          "定义 MemoryBackend 接口",
+          "拆开 ingest、retrieve、answer、judge 四层",
+          "给每轮测试保存可复现实验配置"
+        ],
+        interview: [
+          "可以讲如何从现有系统抽象出可实验平台",
+          "可以讲你做的是基础设施，不是一次性脚本"
+        ]
+      },
+      {
+        slug: "hybrid-architecture",
+        title: "Hybrid Memory 架构总览",
+        summary: "最值得做的不是纯图或纯向量，而是 timeline + graph + vector 的混合检索结构。",
+        repo: "适合自己实现，也适合挂载到 Mem0 / Graphiti / Letta",
+        why: "这条路线工程价值和研究价值都高，而且容易在 benchmark 上讲出增益来源。",
+        improve: [
+          "query 先走时间过滤，再图扩展，再语义排序",
+          "统一返回 evidence schema",
+          "增加 retrieval explainability"
+        ],
+        interview: [
+          "可以讲为什么单一索引无法覆盖多类 memory query",
+          "可以讲 routing 和 ranking 的重要性"
+        ]
+      },
+      {
+        slug: "entity-extraction",
+        title: "实体抽取与别名归并",
+        summary: "图结构记忆的第一道工程门槛不是图数据库，而是 entity extraction 和 alias resolution。",
+        repo: "Graphiti / Cognee / 自研 schema 都适用",
+        why: "如果实体归并做不好，图会迅速脏掉，后续推理全是噪声。",
+        improve: [
+          "维护 canonical entity ID",
+          "把别名、代词、称谓变化统一回实体主键",
+          "让每个实体边都保留来源文本"
+        ],
+        interview: [
+          "可以讲为什么知识图谱质量受前置信息抽取支配",
+          "可以讲 entity resolution 在多轮会话中的难点"
+        ]
+      },
+      {
+        slug: "event-modeling",
+        title: "事件建模与时间线存储",
+        summary: "流线型记忆最核心的是 event modeling：谁在什么时间做了什么，和之前什么事件有关。",
+        repo: "适合自研，也适合补到 Graphiti / OpenViking 中",
+        why: "没有事件层，图会只有静态事实，无法支撑时间推理和会话演化。",
+        improve: [
+          "事件节点包括 actor、object、time、location、confidence",
+          "会话 turn 与 event node 双向映射",
+          "允许一个问句同时召回事件和摘要"
+        ],
+        interview: [
+          "可以讲为什么 event store 是 memory backbone",
+          "可以讲 timeline retrieval 和 entity retrieval 的差异"
+        ]
+      },
+      {
+        slug: "graph-schema",
+        title: "图 schema 设计",
+        summary: "图 schema 不该一开始就过度复杂，但必须能表达实体、事件、关系、时间和来源证据。",
+        repo: "图数据库项目通用",
+        why: "过简单的 schema 表达力不足，过复杂的 schema 写入代价高且难维护。",
+        improve: [
+          "最小可用 schema：Entity、Event、Episode、Summary、Source",
+          "边类型：participates_in、causes、mentions、summarizes、before_after",
+          "所有图边可回溯到 source turn"
+        ],
+        interview: [
+          "可以讲 schema evolution 如何控制复杂度",
+          "可以讲 why evidence trace matters"
+        ]
+      },
+      {
+        slug: "retrieval-router",
+        title: "检索路由器与查询规划",
+        summary: "真正高级的 memory system 会根据 query 类型决定先查 timeline、graph、vector 还是 summary。",
+        repo: "适合 OpenViking 做第一版 router",
+        why: "这能直接提升效果，也能让系统结构更可解释。",
+        improve: [
+          "按问句类型分类：事实、时间、人物关系、多跳、摘要",
+          "每类 query 走不同 retrieval plan",
+          "输出 route decision 方便 debug"
+        ],
+        interview: [
+          "可以讲 retrieval orchestration 而不是单次 search",
+          "可以讲 query planner 对效果和成本的影响"
+        ]
+      },
+      {
+        slug: "consolidation",
+        title: "记忆压缩、摘要与 consolidation",
+        summary: "长期记忆不是无限 append。你必须有 raw memory、summary memory、semantic abstraction 三层。",
+        repo: "A-MEM、MemoryBank、Letta、Mem0 都可参考",
+        why: "没有 consolidation，系统迟早爆炸；压得太狠，又会丢证据。",
+        improve: [
+          "分层保存 raw turn、session summary、cross-session summary",
+          "摘要永远绑定来源范围和版本号",
+          "允许 summary refresh，而不是覆盖原始记忆"
+        ],
+        interview: [
+          "可以讲压缩与可追溯性的张力",
+          "可以讲什么时候该 summarize，什么时候该保留 raw"
+        ]
+      },
+      {
+        slug: "evidence-format",
+        title: "Evidence 输出格式与可解释性",
+        summary: "优秀 memory system 不只是给答案，还要给证据格式，最好能解释召回路径。",
+        repo: "LoCoMo harness、OpenViking UI、Graphiti 结果层都适合做",
+        why: "没有 evidence，就无法知道是 recall 问题还是 reasoning 问题。",
+        improve: [
+          "统一 Evidence 对象：text、score、kind、timestamp、source IDs",
+          "支持 trace 到 turn、entity、event、summary",
+          "UI 上按 route 分组展示 evidence"
+        ],
+        interview: [
+          "可以讲 explainability 对调试的决定性作用",
+          "可以讲 evidence schema 让多后端可比"
+        ]
+      },
+      {
+        slug: "judge-design",
+        title: "判分系统与 LLM-as-judge 设计",
+        summary: "Agent memory 项目的 judge 必须克制，不然很容易把模糊正确判成对，把幻觉判成部分正确。",
+        repo: "LoCoMo judge、自研 local_judge、deepeval/promptfoo 思路均可参考",
+        why: "judge 一旦漂移，所有结论都会漂移。",
+        improve: [
+          "先 exact / semantic / LLM judge 分层",
+          "对时间题和关系题单独定规则",
+          "保留 judge prompt 和原始判断结果"
+        ],
+        interview: [
+          "可以讲为什么 judge 是 benchmark 的一部分",
+          "可以讲如何减少 LLM judge 的随机性"
+        ]
+      },
+      {
+        slug: "harness-architecture",
+        title: "统一评测平台架构",
+        summary: "一个像样的面试项目不该只有模型调用脚本，而应有 dataset、runner、adapter、judge、report 五层。",
+        repo: "OpenViking Eval Web 可作为落地点",
+        why: "这是把实验变成工程产品的关键步骤。",
+        improve: [
+          "DatasetLoader 负责样本与切片",
+          "MemoryBackendAdapter 负责接不同记忆后端",
+          "Judge + Report 负责最终结果归档"
+        ],
+        interview: [
+          "可以讲平台化思维而不是一次性实验",
+          "可以讲怎样让新后端接入只改一层"
+        ]
+      },
+      {
+        slug: "observability",
+        title: "可观测性、trace 与实验追踪",
+        summary: "没有 observability，memory 系统基本不可调。你需要看到写入、检索、排序、回答每一步。",
+        repo: "可接 Langfuse、Opik，也可自建",
+        why: "对 agent memory 来说，日志不是附属品，是主系统的一部分。",
+        improve: [
+          "每次 run 保存 config、prompt、model、judge、结果",
+          "每道题保存 retrieval trace",
+          "报告中按 error type 聚合"
+        ],
+        interview: [
+          "可以讲你如何把黑箱系统变成可解释系统",
+          "可以讲 trace 反向指导架构改进"
+        ]
+      },
+      {
+        slug: "production-concerns",
+        title: "生产化问题：成本、延迟、一致性",
+        summary: "工程里最难的不是 prototype，而是 memory write cost、query latency、schema drift 和 backfill。",
+        repo: "Mem0、Letta、Graphiti 都会遇到",
+        why: "如果你面试里只谈效果，不谈成本和稳定性，可信度会明显下降。",
+        improve: [
+          "区分在线写入和离线 consolidation",
+          "控制图写入频率和边膨胀",
+          "缓存 query planner 和 summary memory"
+        ],
+        interview: [
+          "可以讲系统上线后会遇到什么现实问题",
+          "可以讲 latency / accuracy / cost 的三角关系"
+        ]
+      },
+      {
+        slug: "security-privacy",
+        title: "安全、隐私与记忆边界",
+        summary: "长期记忆系统天然涉及隐私和持久化风险，必须定义什么能写、什么不能写、什么能删。",
+        repo: "企业化 memory system 通用议题",
+        why: "这是很多候选人完全不提，但面试官一问就容易失分的点。",
+        improve: [
+          "定义 memory class 和 retention policy",
+          "支持 selective delete 和 retention window",
+          "敏感信息写入前做过滤或脱敏"
+        ],
+        interview: [
+          "可以讲 memory is not just storage, it is policy",
+          "可以讲删除权和可追溯性的平衡"
+        ]
+      },
+      {
+        slug: "resume-project-packaging",
+        title: "如何把项目包装成面试作品",
+        summary: "要把工程产出变成面试优势，必须能讲问题、方法、实验、失败、修正和结果。",
+        repo: "围绕你自己的 OpenViking memory project 组织即可",
+        why: "真正决定面试效果的不是仓库本身，而是你能否把复杂系统讲清楚。",
+        improve: [
+          "准备 1 页系统图 + 1 页 benchmark 结果 + 1 页 case study",
+          "准备一个可跑 demo 和一个可复现实验脚本",
+          "把失败样例和修正前后对比做成亮点"
+        ],
+        interview: [
+          "STAR 结构不够，要能讲 architecture and tradeoffs",
+          "最好能拿 benchmark 图表和 trace 截图支撑"
+        ]
+      },
+      {
+        slug: "ninety-day-roadmap",
+        title: "90 天改造路线图",
+        summary: "给项目一个现实可执行的 90 天路线，而不是空泛的研究计划。",
+        repo: "适用于 OpenViking / hybrid memory 项目",
+        why: "面试里如果你能给出阶段性路线图，会非常像真正能落地的人。",
+        improve: [
+          "第 1 阶段：统一 adapter 与评测",
+          "第 2 阶段：引入 timeline + graph memory",
+          "第 3 阶段：做 retrieval router 与 report UI"
+        ],
+        interview: [
+          "可以讲 incremental delivery",
+          "可以讲你如何先拿 benchmark 改进，再做结构创新"
+        ]
+      }
+    ];
+
+    const pageModes = [
+      {
+        key: "overview",
+        label: "Overview",
+        build(topic, pageNo) {
+          return `
+            <div class="page-kicker">Page ${pageNo} · ${this.label}</div>
+            <h2>${topic.title}</h2>
+            <p class="lead">${topic.summary}</p>
+            <p>这一页的目标是先把主题放到 Agent Memory 的整体语境里。很多项目在 GitHub 页面上看起来像“一个向量检索增强器”，但如果要作为长期记忆系统讨论，它必须回答四个问题：写入什么、如何组织、怎么检索、如何验证。${topic.title} 之所以重要，通常不是因为它把某个算法做到极致，而是它说明了记忆系统在真实 agent 工作流里扮演的哪一段角色。</p>
+            <p>从项目改进角度看，最有效的方法往往不是继续叠更多模型，而是先找清楚当前主题在整个 memory pipeline 里负责哪一层。如果它负责组织，就不要拿它直接和 answer quality 混为一谈；如果它负责评测，就不要把它当成 production backend。这样拆开看，后面的设计和面试表达都会清楚很多。</p>
+            <div class="two-col">
+              <div class="info-box">
+                <strong>对应仓库 / 方向</strong>
+                <p>${topic.repo}</p>
+              </div>
+              <div class="info-box">
+                <strong>为什么值得纳入文档</strong>
+                <p>${topic.why}</p>
+              </div>
+            </div>
+            <h3>这一主题的标准提问</h3>
+            <ul>
+              <li>它解决的是写入、组织、检索、压缩、判分还是可观测性的哪一层？</li>
+              <li>它更偏研究原型，还是可作为工程基座？</li>
+              <li>它能否接入统一 benchmark 并支持多后端可比？</li>
+              <li>它的结果如何追溯到 evidence，而不是只给一个最终答案？</li>
+            </ul>
+          `;
+        }
+      },
+      {
+        key: "architecture",
+        label: "Architecture",
+        build(topic, pageNo) {
+          return `
+            <div class="page-kicker">Page ${pageNo} · ${this.label}</div>
+            <h2>${topic.title}：架构视角</h2>
+            <p class="lead">这一页从系统结构、数据流和接口边界看该主题的工程含义。</p>
+            <p>如果把 agent memory 看成一个可替换的子系统，那么最重要的不是具体数据库名字，而是它对外暴露的 contract 是否稳定。推荐至少分成 ingest、index、retrieve、summarize、trace 五类能力。${topic.title} 可以被放入其中一个或多个能力槽位，但必须避免一个模块同时承担全部责任，否则后期无法比较不同后端的真实贡献。</p>
+            <div class="quote">工程上最值得保留的不是“某个方法跑通了”，而是“这个方法能否以统一接口接进一个更大的 memory workbench”。</div>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>架构维度</th>
+                  <th>推荐做法</th>
+                  <th>常见问题</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>写入路径</td>
+                  <td>保留源 turn、session、summary 三层</td>
+                  <td>只写 summary，后续失去证据</td>
+                </tr>
+                <tr>
+                  <td>存储结构</td>
+                  <td>区分 timeline、graph、vector、fact</td>
+                  <td>所有信息混进一个索引</td>
+                </tr>
+                <tr>
+                  <td>检索接口</td>
+                  <td>返回 answer candidate 与 evidence</td>
+                  <td>只返回一段文本，无法解释</td>
+                </tr>
+                <tr>
+                  <td>实验追踪</td>
+                  <td>每次 run 固定 config 和 trace</td>
+                  <td>结果不可复现</td>
+                </tr>
+              </tbody>
+            </table>
+            <h3>适合在 OpenViking 中抽象的接口</h3>
+            <ul>
+              <li><code>reset_namespace(run_id, conversation_id)</code></li>
+              <li><code>ingest_turn(role, content, timestamp, metadata)</code></li>
+              <li><code>retrieve(query, top_k, filters)</code></li>
+              <li><code>answer(query, evidence[])</code></li>
+              <li><code>dump_trace()</code></li>
+            </ul>
+          `;
+        }
+      },
+      {
+        key: "improvement",
+        label: "Improvement",
+        build(topic, pageNo) {
+          return `
+            <div class="page-kicker">Page ${pageNo} · ${this.label}</div>
+            <h2>${topic.title}：可改进方向</h2>
+            <p class="lead">这一页专门讨论适合拿来改进、做实验和写到简历里的方向。</p>
+            <p>面试项目最忌讳的不是简单，而是“改造点说不清”。如果你只说“我把某个开源仓库跑起来了”，这不构成技术贡献。真正有价值的是把 ${topic.title} 变成一个有对照实验、有结构理由、有工程落地面的改造项目。改造点需要满足三个条件：能在 benchmark 上测、能在代码里定位、能在面试里讲清。</p>
+            <div class="two-col">
+              <div class="info-box">
+                <strong>推荐改造点</strong>
+                <ul>
+                  ${topic.improve.map(item => `<li>${item}</li>`).join("")}
+                </ul>
+              </div>
+              <div class="info-box">
+                <strong>建议保留的实验输出</strong>
+                <ul>
+                  <li>改造前后 retrieval recall 对比</li>
+                  <li>改造前后 answer accuracy 对比</li>
+                  <li>按错误类型分组的 case study</li>
+                  <li>一次完整 trace 截图或 HTML 报告</li>
+                </ul>
+              </div>
+            </div>
+            <h3>改造时要避免的坑</h3>
+            <ol>
+              <li>把 prompt 改动、模型替换和 memory 架构修改混在一次实验里。</li>
+              <li>没有统一 judge，导致效果结论不稳定。</li>
+              <li>只做 demo，不保留任何可复现实验脚本。</li>
+              <li>只优化最终答案，不看 evidence 是否真的变好。</li>
+            </ol>
+          `;
+        }
+      },
+      {
+        key: "interview",
+        label: "Interview",
+        build(topic, pageNo) {
+          return `
+            <div class="page-kicker">Page ${pageNo} · ${this.label}</div>
+            <h2>${topic.title}：面试表达</h2>
+            <p class="lead">这一页聚焦“你应该怎么讲”，而不是“系统还能怎么做”。</p>
+            <p>很多候选人在 memory 项目上失分，不是因为项目不够强，而是表达太像“调了几个 API”。正确讲法应该围绕问题定义、结构设计、实验验证和 tradeoff。${topic.title} 这一主题尤其适合拿来体现你是否具备系统抽象能力，以及是否能把研究概念落到工程边界。</p>
+            <div class="two-col">
+              <div class="info-box">
+                <strong>推荐讲法</strong>
+                <ul>
+                  ${topic.interview.map(item => `<li>${item}</li>`).join("")}
+                </ul>
+              </div>
+              <div class="info-box">
+                <strong>面试官可能追问</strong>
+                <ul>
+                  <li>为什么不用更长上下文直接解决？</li>
+                  <li>为什么不用纯向量库？</li>
+                  <li>怎么证明是 memory 改进而不是 prompt 改进？</li>
+                  <li>如果上线后成本太高，你怎么收敛？</li>
+                </ul>
+              </div>
+            </div>
+            <h3>一段建议回答模板</h3>
+            <p>“我把这个项目当成一个可评测的 agent memory 子系统，而不是简单的检索增强。我先把系统拆成写入、组织、检索和判分四层，然后用统一 benchmark 比较不同后端。这样做的好处是我能说明具体哪一类错误下降了，而不是只给一个模糊的准确率提升。”</p>
+            <div class="quote">面试里最强的信号不是你用了什么模型，而是你知道系统为什么会错，以及你如何证明它变好了。</div>
+          `;
+        }
+      }
+    ];
+
+    const renderTopics = topics.slice(0, 25);
+    const pages = [];
+    renderTopics.forEach((topic) => {
+      pageModes.forEach((mode) => {
+        pages.push({ topic, mode });
+      });
+    });
+
+    const tocItems = [];
+    renderTopics.forEach((topic, index) => {
+      const startPage = index * 4 + 1;
+      tocItems.push({
+        title: topic.title,
+        pages: `${startPage}-${startPage + 3}`
+      });
+    });
+
+    document.getElementById("tocGrid").innerHTML = tocItems.map((item) => `
+      <div class="toc-item"><strong>${item.title}</strong> · 第 ${item.pages} 页</div>
+    `).join("");
+
+    const printPages = document.getElementById("printPages");
+    printPages.innerHTML = pages.map((entry, index) => {
+      const pageNo = index + 1;
+      return `
+        <section class="print-page" id="page-${pageNo}">
+          <div class="page-number">${String(pageNo).padStart(3, "0")}</div>
+          ${entry.mode.build(entry.topic, pageNo)}
+          <div class="footer-note">
+            <span>Agent Memory / Graph Memory / Timeline Memory</span>
+            <span>${entry.topic.slug}</span>
+          </div>
+        </section>
+      `;
+    }).join("");
+  </script>
+</body>
+</html>

@@ -25,6 +25,7 @@ class EchoMemoryPlugin:
             PluginCapability("memory_browser", "List account-scoped EchoMemory sessions and stored artifacts."),
             PluginCapability("agent_workbench", "Build readonly chat context, retrieve relevant memory and manually commit chat sessions."),
             PluginCapability("locomo_task_build", "Build LoCoMo EchoMemory import and strict memory QA task commands."),
+            PluginCapability("generic_task_build", "Build LongMemEval/EvolvingEvents EchoMemory generic QA task commands."),
         ),
     )
 
@@ -93,3 +94,16 @@ class EchoMemoryPlugin:
         resolve_judge_token,
     ):
         return tasks.build_echomemory_qa_command(payload, run_dir, config, root, default_data, defaults, safe_path, resolve_judge_token)
+
+    def build_generic_qa_task(
+        self,
+        payload: dict[str, Any],
+        run_dir: Path,
+        config: Path,
+        root: Path,
+        default_data: Path,
+        defaults: dict[str, Any],
+        safe_path,
+        resolve_judge_token,
+    ):
+        return tasks.build_echomemory_generic_qa_command(payload, run_dir, config, root, default_data, defaults, safe_path, resolve_judge_token)

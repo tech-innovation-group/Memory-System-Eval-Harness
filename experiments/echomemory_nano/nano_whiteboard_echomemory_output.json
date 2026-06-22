@@ -1,0 +1,250 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "text": "Gina于2025-03-12加入了Figma。",
+      "created_at": "2025-03-12T10:00:00Z"
+    },
+    {
+      "role": "user",
+      "text": "Nora于2025-04-08帮助了Gina准备签证。",
+      "created_at": "2025-04-08T09:00:00Z"
+    },
+    {
+      "role": "user",
+      "text": "Gina于2025-05-01离开了Figma。",
+      "created_at": "2025-05-01T18:00:00Z"
+    },
+    {
+      "role": "user",
+      "text": "Gina在2025-05-03签了Lisbon lease。",
+      "created_at": "2025-05-03T14:00:00Z"
+    }
+  ],
+  "atoms": [
+    {
+      "kind": "event",
+      "subject": "Gina",
+      "predicate": "joined",
+      "obj": "Figma",
+      "story_time": "2025-03-12",
+      "mention_time": "2025-03-12T10:00:00Z",
+      "statement": "Gina于2025-03-12加入了Figma。"
+    },
+    {
+      "kind": "relation",
+      "subject": "Nora",
+      "predicate": "helped",
+      "obj": "Gina",
+      "story_time": "2025-04-08",
+      "mention_time": "2025-04-08T09:00:00Z",
+      "statement": "Nora于2025-04-08帮助了Gina准备签证。"
+    },
+    {
+      "kind": "event",
+      "subject": "Gina",
+      "predicate": "left",
+      "obj": "Figma",
+      "story_time": "2025-05-01",
+      "mention_time": "2025-05-01T18:00:00Z",
+      "statement": "Gina于2025-05-01离开了Figma。"
+    },
+    {
+      "kind": "event",
+      "subject": "Gina",
+      "predicate": "signed",
+      "obj": "Lisbon lease",
+      "story_time": "2025-05-03",
+      "mention_time": "2025-05-03T14:00:00Z",
+      "statement": "Gina在2025-05-03签了Lisbon lease。"
+    }
+  ],
+  "tree": {
+    "2025-03": {
+      "key": "2025-03",
+      "lines": [
+        "2025-03-12: Gina于2025-03-12加入了Figma。"
+      ]
+    },
+    "2025-04": {
+      "key": "2025-04",
+      "lines": [
+        "2025-04-08: Nora于2025-04-08帮助了Gina准备签证。"
+      ]
+    },
+    "2025-05": {
+      "key": "2025-05",
+      "lines": [
+        "2025-05-01: Gina于2025-05-01离开了Figma。",
+        "2025-05-03: Gina在2025-05-03签了Lisbon lease。"
+      ]
+    }
+  },
+  "graph_edges": [
+    {
+      "source": "Gina",
+      "relation": "joined",
+      "target": "Figma"
+    },
+    {
+      "source": "Gina",
+      "relation": "has_fact",
+      "target": "Gina于2025-03-12加入了Figma。"
+    },
+    {
+      "source": "Gina于2025-03-12加入了Figma。",
+      "relation": "happened_at",
+      "target": "2025-03-12"
+    },
+    {
+      "source": "Nora",
+      "relation": "helped",
+      "target": "Gina"
+    },
+    {
+      "source": "Nora",
+      "relation": "has_fact",
+      "target": "Nora于2025-04-08帮助了Gina准备签证。"
+    },
+    {
+      "source": "Gina",
+      "relation": "left",
+      "target": "Figma"
+    },
+    {
+      "source": "Gina",
+      "relation": "has_fact",
+      "target": "Gina于2025-05-01离开了Figma。"
+    },
+    {
+      "source": "Gina于2025-05-01离开了Figma。",
+      "relation": "happened_at",
+      "target": "2025-05-01"
+    },
+    {
+      "source": "Gina",
+      "relation": "signed",
+      "target": "Lisbon lease"
+    },
+    {
+      "source": "Gina",
+      "relation": "has_fact",
+      "target": "Gina在2025-05-03签了Lisbon lease。"
+    },
+    {
+      "source": "Gina在2025-05-03签了Lisbon lease。",
+      "relation": "happened_at",
+      "target": "2025-05-03"
+    }
+  ],
+  "queries": [
+    {
+      "query": "Gina什么时候离开Figma？",
+      "plan": "tree-first",
+      "hits": [
+        {
+          "layer": "graph",
+          "source": "Gina",
+          "score": 0.55,
+          "content": "Gina --joined--> Figma"
+        },
+        {
+          "layer": "graph",
+          "source": "Gina",
+          "score": 0.55,
+          "content": "Gina --has_fact--> Gina于2025-03-12加入了Figma。"
+        },
+        {
+          "layer": "graph",
+          "source": "Gina于2025-03-12加入了Figma。",
+          "score": 0.55,
+          "content": "Gina于2025-03-12加入了Figma。 --happened_at--> 2025-03-12"
+        },
+        {
+          "layer": "graph",
+          "source": "Gina",
+          "score": 0.55,
+          "content": "Gina --left--> Figma"
+        },
+        {
+          "layer": "graph",
+          "source": "Gina",
+          "score": 0.55,
+          "content": "Gina --has_fact--> Gina于2025-05-01离开了Figma。"
+        }
+      ]
+    },
+    {
+      "query": "谁帮助了Gina准备签证？",
+      "plan": "graph-first",
+      "hits": [
+        {
+          "layer": "tree",
+          "source": "2025-04",
+          "score": 0.717,
+          "content": "2025-04-08: Nora于2025-04-08帮助了Gina准备签证。"
+        },
+        {
+          "layer": "graph",
+          "source": "Nora",
+          "score": 0.667,
+          "content": "Nora --has_fact--> Nora于2025-04-08帮助了Gina准备签证。"
+        },
+        {
+          "layer": "tree",
+          "source": "2025-03",
+          "score": 0.383,
+          "content": "2025-03-12: Gina于2025-03-12加入了Figma。"
+        },
+        {
+          "layer": "tree",
+          "source": "2025-05",
+          "score": 0.383,
+          "content": "2025-05-01: Gina于2025-05-01离开了Figma。\n2025-05-03: Gina在2025-05-03签了Lisbon lease。"
+        },
+        {
+          "layer": "graph",
+          "source": "Gina",
+          "score": 0.333,
+          "content": "Gina --joined--> Figma"
+        }
+      ]
+    },
+    {
+      "query": "Gina签租约之前发生了什么？",
+      "plan": "tree-first",
+      "hits": [
+        {
+          "layer": "graph",
+          "source": "Gina",
+          "score": 0.3,
+          "content": "Gina --joined--> Figma"
+        },
+        {
+          "layer": "graph",
+          "source": "Gina",
+          "score": 0.3,
+          "content": "Gina --has_fact--> Gina于2025-03-12加入了Figma。"
+        },
+        {
+          "layer": "graph",
+          "source": "Gina于2025-03-12加入了Figma。",
+          "score": 0.3,
+          "content": "Gina于2025-03-12加入了Figma。 --happened_at--> 2025-03-12"
+        },
+        {
+          "layer": "graph",
+          "source": "Nora",
+          "score": 0.3,
+          "content": "Nora --helped--> Gina"
+        },
+        {
+          "layer": "graph",
+          "source": "Nora",
+          "score": 0.3,
+          "content": "Nora --has_fact--> Nora于2025-04-08帮助了Gina准备签证。"
+        }
+      ]
+    }
+  ]
+}

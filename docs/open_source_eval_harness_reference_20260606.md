@@ -206,18 +206,18 @@ HTML 报告应包含：
 
 当前代码可对应到：
 
-- 前端页面：`/Users/chx/locomo-eval-web/web/static/index.html`
-- 前端逻辑：`/Users/chx/locomo-eval-web/web/static/app.js`
-- 前端样式：`/Users/chx/locomo-eval-web/web/static/styles.css`
-- 后端入口：`/Users/chx/locomo-eval-web/server.py`
-- Adapter 基类：`/Users/chx/locomo-eval-web/memory/adapters/base.py`
-- Adapter 契约：`/Users/chx/locomo-eval-web/memory/adapters/contract.py`
-- Adapter Doctor：`/Users/chx/locomo-eval-web/scripts/adapter_doctor.py`
-- OpenViking adapter：`/Users/chx/locomo-eval-web/memory/adapters/openviking/`
-- EchoMemory adapter：`/Users/chx/locomo-eval-web/memory/adapters/echomemory/`
-- 报告导出：`/Users/chx/locomo-eval-web/memory/report_export.py`
-- LoCoMo 导入脚本：`/Users/chx/locomo-eval-web/scripts/openviking_locomo_import.py`
-- EchoMem 导入脚本：`/Users/chx/locomo-eval-web/scripts/echomemory_locomo_import.py`
+- 前端页面：`<repo-root>/web/static/index.html`
+- 前端逻辑：`<repo-root>/web/static/app.js`
+- 前端样式：`<repo-root>/web/static/styles.css`
+- 后端入口：`<repo-root>/server.py`
+- Adapter 基类：`<repo-root>/memory/adapters/base.py`
+- Adapter 契约：`<repo-root>/memory/adapters/contract.py`
+- Adapter Doctor：`<repo-root>/scripts/adapter_doctor.py`
+- OpenViking adapter：`<repo-root>/memory/adapters/openviking/`
+- EchoMemory adapter：`<repo-root>/memory/adapters/echomemory/`
+- 报告导出：`<repo-root>/memory/report_export.py`
+- LoCoMo 导入脚本：`<repo-root>/scripts/openviking_locomo_import.py`
+- EchoMem 导入脚本：`<repo-root>/scripts/echomemory_locomo_import.py`
 
 ## 建议优先级
 

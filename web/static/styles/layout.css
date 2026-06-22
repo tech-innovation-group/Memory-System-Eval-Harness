@@ -1,0 +1,34 @@
+/* layout.css — App shell grid and main content area */
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  background: var(--bg);
+}
+
+.app-shell .app-content,
+.app-shell .app-sidebar,
+.app-shell .account-topbar,
+.app-shell .workflow-guide,
+.app-shell .panel {
+  min-width: 0;
+}
+
+.app-content {
+  display: grid;
+  gap: 16px;
+  justify-self: stretch;
+  max-width: 1500px;
+  width: 100%;
+  min-width: 0;
+  margin: 0 auto;
+  padding: 20px 28px 42px;
+  overflow-x: clip;
+}

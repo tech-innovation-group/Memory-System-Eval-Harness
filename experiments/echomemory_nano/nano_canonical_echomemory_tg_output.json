@@ -1,0 +1,901 @@
+{
+  "system_name": "CanonicalEchoMemoryTG",
+  "what_this_demo_shows": [
+    "append-only message stream",
+    "story-time normalization",
+    "query-time anchored temporal retrieval",
+    "temporal_tree + graph-backed retrieval",
+    "qa_ready gating",
+    "graph-first retrieval for temporal/relational questions"
+  ],
+  "readiness_before_hot": {
+    "messages_persisted": true,
+    "atoms_ready": false,
+    "graph_ready": false,
+    "organized_ready": false,
+    "qa_ready": false
+  },
+  "readiness_after_hot": {
+    "messages_persisted": true,
+    "atoms_ready": true,
+    "graph_ready": false,
+    "organized_ready": false,
+    "qa_ready": false
+  },
+  "readiness_after_cold": {
+    "messages_persisted": true,
+    "atoms_ready": true,
+    "graph_ready": true,
+    "organized_ready": true,
+    "qa_ready": true
+  },
+  "pre_ready_result": {
+    "query": "When did Jon start learning marketing and analytics tools?",
+    "plan": {
+      "intent": "temporal",
+      "target_layers": [
+        "temporal_tree",
+        "event",
+        "fact",
+        "organized"
+      ],
+      "graph_first": true,
+      "prefer_event": true,
+      "prefer_fact": false,
+      "notes": "Temporal question: prefer anchored temporal tree and story-time carrying event nodes."
+    },
+    "readiness": {
+      "messages_persisted": true,
+      "atoms_ready": false,
+      "graph_ready": false,
+      "organized_ready": false,
+      "qa_ready": false
+    },
+    "allowed_to_answer": false,
+    "hits": [],
+    "answer_sketch": "",
+    "note": "qa_ready=false: messages are persisted, but memory is not fully consolidated yet."
+  },
+  "after_hot_result": {
+    "query": "When did Jon start learning marketing and analytics tools?",
+    "plan": {
+      "intent": "temporal",
+      "target_layers": [
+        "temporal_tree",
+        "event",
+        "fact",
+        "organized"
+      ],
+      "graph_first": true,
+      "prefer_event": true,
+      "prefer_fact": false,
+      "notes": "Temporal question: prefer anchored temporal tree and story-time carrying event nodes."
+    },
+    "readiness": {
+      "messages_persisted": true,
+      "atoms_ready": true,
+      "graph_ready": false,
+      "organized_ready": false,
+      "qa_ready": false
+    },
+    "allowed_to_answer": false,
+    "hits": [],
+    "answer_sketch": "",
+    "note": "qa_ready=false: messages are persisted, but memory is not fully consolidated yet."
+  },
+  "queries_after_cold": [
+    {
+      "query": "When did Jon start learning marketing and analytics tools?",
+      "plan": {
+        "intent": "temporal",
+        "target_layers": [
+          "temporal_tree",
+          "event",
+          "fact",
+          "organized"
+        ],
+        "graph_first": true,
+        "prefer_event": true,
+        "prefer_fact": false,
+        "notes": "Temporal question: prefer anchored temporal tree and story-time carrying event nodes."
+      },
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "graph_ready": true,
+        "organized_ready": true,
+        "qa_ready": true
+      },
+      "allowed_to_answer": true,
+      "hits": [
+        {
+          "source": "event:atom-003",
+          "layer": "event",
+          "score": 0.8166666666666667,
+          "content": "Jon / started_learning / marketing_and_analytics_tools\nstatement=Jon started learning marketing and analytics tools in July 2023.\nevent_time=2023-07"
+        },
+        {
+          "source": "year:2023",
+          "layer": "temporal_tree",
+          "score": 0.7777777777777778,
+          "content": "level=year\nkey=2023\n- 2023-01-19: Jon lost his banker job yesterday and decided to start a studio.\n- 2023-04: Jon opened his studio in April 2023 after months of preparation.\n- 2023-04: Jon started expanding his studio social media presence in April 2023.\n- 2023-06-19: Jon visited Rome on 2023-06-19.\n- 2023-07: Jon started learning marketing and analytics tools in July 2023.\n- 2023-07-23: Jon and Gina both lost their jobs and later started businesses.\n- 2023-07-23: Jon and Gina both lost their jobs and later started businesses."
+        },
+        {
+          "source": "day:2023-07-01",
+          "layer": "temporal_tree",
+          "score": 0.6666666666666666,
+          "content": "level=day\nkey=2023-07-01\n- 2023-07: Jon started learning marketing and analytics tools in July 2023."
+        },
+        {
+          "source": "month:2023-07",
+          "layer": "temporal_tree",
+          "score": 0.6666666666666666,
+          "content": "level=month\nkey=2023-07\n- 2023-07: Jon started learning marketing and analytics tools in July 2023.\n- 2023-07-23: Jon and Gina both lost their jobs and later started businesses.\n- 2023-07-23: Jon and Gina both lost their jobs and later started businesses."
+        },
+        {
+          "source": "fact:atom-003",
+          "layer": "fact",
+          "score": 0.6666666666666666,
+          "content": "statement=Jon started learning marketing and analytics tools in July 2023.\nsubject=Jon\npredicate=started_learning\nobject=marketing_and_analytics_tools\nmention_time=2023-07-10\nevent_time=2023-07\ntime_confidence=0.95"
+        },
+        {
+          "source": "event:atom-000",
+          "layer": "event",
+          "score": 0.4833333333333333,
+          "content": "unknown / mentions / Jon lost his banker job yesterday and decided to\nstatement=Jon lost his banker job yesterday and decided to start a studio.\nevent_time=2023-01-19"
+        },
+        {
+          "source": "event:atom-004",
+          "layer": "event",
+          "score": 0.37222222222222223,
+          "content": "Jon / shared_experience_with / Gina\nstatement=Jon and Gina both lost their jobs and later started businesses.\nevent_time=2023-07-23"
+        },
+        {
+          "source": "event:atom-005",
+          "layer": "event",
+          "score": 0.37222222222222223,
+          "content": "Jon / shared_business_transition_with / Gina\nstatement=Jon and Gina both lost their jobs and later started businesses.\nevent_time=2023-07-23"
+        }
+      ],
+      "answer_sketch": "Use top evidence: Jon / started_learning / marketing_and_analytics_tools | statement=Jon started learning marketing and analytics tools in July 2023. | event_time=2023-07",
+      "note": ""
+    },
+    {
+      "query": "What did Jon and Gina both have in common?",
+      "plan": {
+        "intent": "factual",
+        "target_layers": [
+          "fact",
+          "organized",
+          "event"
+        ],
+        "graph_first": false,
+        "prefer_event": false,
+        "prefer_fact": true,
+        "notes": "General factual question: start from fact layer."
+      },
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "graph_ready": true,
+        "organized_ready": true,
+        "qa_ready": true
+      },
+      "allowed_to_answer": true,
+      "hits": [
+        {
+          "source": "event:atom-004",
+          "layer": "event",
+          "score": 0.5944444444444444,
+          "content": "Jon / shared_experience_with / Gina\nstatement=Jon and Gina both lost their jobs and later started businesses.\nevent_time=2023-07-23"
+        },
+        {
+          "source": "event:atom-005",
+          "layer": "event",
+          "score": 0.5944444444444444,
+          "content": "Jon / shared_business_transition_with / Gina\nstatement=Jon and Gina both lost their jobs and later started businesses.\nevent_time=2023-07-23"
+        },
+        {
+          "source": "month:2023-07",
+          "layer": "temporal_tree",
+          "score": 0.5555555555555556,
+          "content": "level=month\nkey=2023-07\n- 2023-07: Jon started learning marketing and analytics tools in July 2023.\n- 2023-07-23: Jon and Gina both lost their jobs and later started businesses.\n- 2023-07-23: Jon and Gina both lost their jobs and later started businesses."
+        },
+        {
+          "source": "year:2023",
+          "layer": "temporal_tree",
+          "score": 0.5555555555555556,
+          "content": "level=year\nkey=2023\n- 2023-01-19: Jon lost his banker job yesterday and decided to start a studio.\n- 2023-04: Jon opened his studio in April 2023 after months of preparation.\n- 2023-04: Jon started expanding his studio social media presence in April 2023.\n- 2023-06-19: Jon visited Rome on 2023-06-19.\n- 2023-07: Jon started learning marketing and analytics tools in July 2023.\n- 2023-07-23: Jon and Gina both lost their jobs and later started businesses.\n- 2023-07-23: Jon and Gina both lost their jobs and later started businesses."
+        },
+        {
+          "source": "event:atom-003",
+          "layer": "event",
+          "score": 0.4833333333333333,
+          "content": "Jon / started_learning / marketing_and_analytics_tools\nstatement=Jon started learning marketing and analytics tools in July 2023.\nevent_time=2023-07"
+        },
+        {
+          "source": "day:2023-07-23",
+          "layer": "temporal_tree",
+          "score": 0.4444444444444444,
+          "content": "level=day\nkey=2023-07-23\n- 2023-07-23: Jon and Gina both lost their jobs and later started businesses.\n- 2023-07-23: Jon and Gina both lost their jobs and later started businesses."
+        },
+        {
+          "source": "fact:atom-004",
+          "layer": "fact",
+          "score": 0.4444444444444444,
+          "content": "statement=Jon and Gina both lost their jobs and later started businesses.\nsubject=Jon\npredicate=shared_experience_with\nobject=Gina\nmention_time=2023-07-23\nevent_time=2023-07-23\ntime_confidence=0.95"
+        },
+        {
+          "source": "fact:atom-005",
+          "layer": "fact",
+          "score": 0.4444444444444444,
+          "content": "statement=Jon and Gina both lost their jobs and later started businesses.\nsubject=Jon\npredicate=shared_business_transition_with\nobject=Gina\nmention_time=2023-07-23\nevent_time=2023-07-23\ntime_confidence=0.95"
+        }
+      ],
+      "answer_sketch": "Use top evidence: Jon / shared_experience_with / Gina | statement=Jon and Gina both lost their jobs and later started businesses. | event_time=2023-07-23",
+      "note": ""
+    },
+    {
+      "query": "When was Jon in Rome?",
+      "plan": {
+        "intent": "temporal",
+        "target_layers": [
+          "temporal_tree",
+          "event",
+          "fact",
+          "organized"
+        ],
+        "graph_first": true,
+        "prefer_event": true,
+        "prefer_fact": false,
+        "notes": "Temporal question: prefer anchored temporal tree and story-time carrying event nodes."
+      },
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "graph_ready": true,
+        "organized_ready": true,
+        "qa_ready": true
+      },
+      "allowed_to_answer": true,
+      "hits": [
+        {
+          "source": "year:2023",
+          "layer": "temporal_tree",
+          "score": 0.6,
+          "content": "level=year\nkey=2023\n- 2023-01-19: Jon lost his banker job yesterday and decided to start a studio.\n- 2023-04: Jon opened his studio in April 2023 after months of preparation.\n- 2023-04: Jon started expanding his studio social media presence in April 2023.\n- 2023-06-19: Jon visited Rome on 2023-06-19.\n- 2023-07: Jon started learning marketing and analytics tools in July 2023.\n- 2023-07-23: Jon and Gina both lost their jobs and later started businesses.\n- 2023-07-23: Jon and Gina both lost their jobs and later started businesses."
+        },
+        {
+          "source": "event:atom-001",
+          "layer": "event",
+          "score": 0.55,
+          "content": "Jon / opened / studio\nstatement=Jon opened his studio in April 2023 after months of preparation.\nevent_time=2023-04"
+        },
+        {
+          "source": "event:atom-002",
+          "layer": "event",
+          "score": 0.55,
+          "content": "Jon / started_expanding_social_media / studio_social_media\nstatement=Jon started expanding his studio social media presence in April 2023.\nevent_time=2023-04"
+        },
+        {
+          "source": "event:atom-003",
+          "layer": "event",
+          "score": 0.55,
+          "content": "Jon / started_learning / marketing_and_analytics_tools\nstatement=Jon started learning marketing and analytics tools in July 2023.\nevent_time=2023-07"
+        },
+        {
+          "source": "event:atom-006",
+          "layer": "event",
+          "score": 0.55,
+          "content": "Jon / visited / Rome\nstatement=Jon visited Rome on 2023-06-19.\nevent_time=2023-06-19"
+        },
+        {
+          "source": "day:2023-04-01",
+          "layer": "temporal_tree",
+          "score": 0.4,
+          "content": "level=day\nkey=2023-04-01\n- 2023-04: Jon opened his studio in April 2023 after months of preparation.\n- 2023-04: Jon started expanding his studio social media presence in April 2023."
+        },
+        {
+          "source": "day:2023-06-19",
+          "layer": "temporal_tree",
+          "score": 0.4,
+          "content": "level=day\nkey=2023-06-19\n- 2023-06-19: Jon visited Rome on 2023-06-19."
+        },
+        {
+          "source": "day:2023-07-01",
+          "layer": "temporal_tree",
+          "score": 0.4,
+          "content": "level=day\nkey=2023-07-01\n- 2023-07: Jon started learning marketing and analytics tools in July 2023."
+        }
+      ],
+      "answer_sketch": "Use top evidence: level=year | key=2023 | - 2023-01-19: Jon lost his banker job yesterday and decided to start a studio. | - 2023-04: Jon opened his studio in April 2023 after months of preparation. | - 2023-04: Jon started expanding his studio social media presence in April 2023. | - 2023-06-19: Jon visited Rome on 2023-06-19. | - 2023-07: Jon started learning marketing and analytics tools in July 2023. | - 2023-07-23: Jon and Gina both lost their jobs and later started businesses. | - 2023-07-23: Jon and Gina both lost their jobs and later started businesses.",
+      "note": ""
+    },
+    {
+      "query": "What happened yesterday?",
+      "plan": {
+        "intent": "temporal",
+        "target_layers": [
+          "temporal_tree",
+          "event",
+          "fact",
+          "organized"
+        ],
+        "graph_first": true,
+        "prefer_event": true,
+        "prefer_fact": false,
+        "notes": "Temporal question: prefer anchored temporal tree and story-time carrying event nodes."
+      },
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "graph_ready": true,
+        "organized_ready": true,
+        "qa_ready": true
+      },
+      "allowed_to_answer": true,
+      "hits": [
+        {
+          "source": "month:2023-01",
+          "layer": "temporal_tree",
+          "score": 1.1333333333333333,
+          "content": "level=month\nkey=2023-01\n- 2023-01-19: Jon lost his banker job yesterday and decided to start a studio."
+        },
+        {
+          "source": "year:2023",
+          "layer": "temporal_tree",
+          "score": 0.9833333333333334,
+          "content": "level=year\nkey=2023\n- 2023-01-19: Jon lost his banker job yesterday and decided to start a studio.\n- 2023-04: Jon opened his studio in April 2023 after months of preparation.\n- 2023-04: Jon started expanding his studio social media presence in April 2023.\n- 2023-06-19: Jon visited Rome on 2023-06-19.\n- 2023-07: Jon started learning marketing and analytics tools in July 2023.\n- 2023-07-23: Jon and Gina both lost their jobs and later started businesses.\n- 2023-07-23: Jon and Gina both lost their jobs and later started businesses."
+        },
+        {
+          "source": "event:atom-000",
+          "layer": "event",
+          "score": 0.4833333333333333,
+          "content": "unknown / mentions / Jon lost his banker job yesterday and decided to\nstatement=Jon lost his banker job yesterday and decided to start a studio.\nevent_time=2023-01-19"
+        },
+        {
+          "source": "day:2023-01-19",
+          "layer": "temporal_tree",
+          "score": 0.3333333333333333,
+          "content": "level=day\nkey=2023-01-19\n- 2023-01-19: Jon lost his banker job yesterday and decided to start a studio."
+        },
+        {
+          "source": "fact:atom-000",
+          "layer": "fact",
+          "score": 0.3333333333333333,
+          "content": "statement=Jon lost his banker job yesterday and decided to start a studio.\nsubject=unknown\npredicate=mentions\nobject=Jon lost his banker job yesterday and decided to\nmention_time=2023-01-20\nevent_time=2023-01-19\ntime_confidence=0.20"
+        },
+        {
+          "source": "org:unknown",
+          "layer": "organized",
+          "score": 0.3333333333333333,
+          "content": "2023-01-19: unknown mentions Jon lost his banker job yesterday and decided to"
+        },
+        {
+          "source": "event:atom-001",
+          "layer": "event",
+          "score": 0.15,
+          "content": "Jon / opened / studio\nstatement=Jon opened his studio in April 2023 after months of preparation.\nevent_time=2023-04"
+        },
+        {
+          "source": "event:atom-002",
+          "layer": "event",
+          "score": 0.15,
+          "content": "Jon / started_expanding_social_media / studio_social_media\nstatement=Jon started expanding his studio social media presence in April 2023.\nevent_time=2023-04"
+        }
+      ],
+      "answer_sketch": "Use top evidence: level=month | key=2023-01 | - 2023-01-19: Jon lost his banker job yesterday and decided to start a studio.",
+      "note": ""
+    }
+  ],
+  "atoms": [
+    {
+      "atom_id": "atom-000",
+      "atom_type": "fact",
+      "subject": "unknown",
+      "predicate": "mentions",
+      "object": "Jon lost his banker job yesterday and decided to",
+      "statement": "Jon lost his banker job yesterday and decided to start a studio.",
+      "mention_time": "2023-01-20",
+      "event_time_start": "2023-01-19",
+      "event_time_end": "2023-01-19",
+      "time_confidence": 0.2
+    },
+    {
+      "atom_id": "atom-001",
+      "atom_type": "event",
+      "subject": "Jon",
+      "predicate": "opened",
+      "object": "studio",
+      "statement": "Jon opened his studio in April 2023 after months of preparation.",
+      "mention_time": "2023-04-20",
+      "event_time_start": "2023-04",
+      "event_time_end": "2023-04",
+      "time_confidence": 0.95
+    },
+    {
+      "atom_id": "atom-002",
+      "atom_type": "event",
+      "subject": "Jon",
+      "predicate": "started_expanding_social_media",
+      "object": "studio_social_media",
+      "statement": "Jon started expanding his studio social media presence in April 2023.",
+      "mention_time": "2023-04-25",
+      "event_time_start": "2023-04",
+      "event_time_end": "2023-04",
+      "time_confidence": 0.95
+    },
+    {
+      "atom_id": "atom-003",
+      "atom_type": "event",
+      "subject": "Jon",
+      "predicate": "started_learning",
+      "object": "marketing_and_analytics_tools",
+      "statement": "Jon started learning marketing and analytics tools in July 2023.",
+      "mention_time": "2023-07-10",
+      "event_time_start": "2023-07",
+      "event_time_end": "2023-07",
+      "time_confidence": 0.95
+    },
+    {
+      "atom_id": "atom-004",
+      "atom_type": "relation",
+      "subject": "Jon",
+      "predicate": "shared_experience_with",
+      "object": "Gina",
+      "statement": "Jon and Gina both lost their jobs and later started businesses.",
+      "mention_time": "2023-07-23",
+      "event_time_start": "2023-07-23",
+      "event_time_end": "2023-07-23",
+      "time_confidence": 0.95
+    },
+    {
+      "atom_id": "atom-005",
+      "atom_type": "relation",
+      "subject": "Jon",
+      "predicate": "shared_business_transition_with",
+      "object": "Gina",
+      "statement": "Jon and Gina both lost their jobs and later started businesses.",
+      "mention_time": "2023-07-23",
+      "event_time_start": "2023-07-23",
+      "event_time_end": "2023-07-23",
+      "time_confidence": 0.95
+    },
+    {
+      "atom_id": "atom-006",
+      "atom_type": "event",
+      "subject": "Jon",
+      "predicate": "visited",
+      "object": "Rome",
+      "statement": "Jon visited Rome on 2023-06-19.",
+      "mention_time": "2023-06-20",
+      "event_time_start": "2023-06-19",
+      "event_time_end": "2023-06-19",
+      "time_confidence": 0.95
+    }
+  ],
+  "nodes": [
+    {
+      "node_id": "fact:atom-000",
+      "node_type": "fact",
+      "content": "statement=Jon lost his banker job yesterday and decided to start a studio.\nsubject=unknown\npredicate=mentions\nobject=Jon lost his banker job yesterday and decided to\nmention_time=2023-01-20\nevent_time=2023-01-19\ntime_confidence=0.20",
+      "source_atom_id": "atom-000",
+      "event_time": "2023-01-19"
+    },
+    {
+      "node_id": "event:atom-000",
+      "node_type": "event",
+      "content": "unknown / mentions / Jon lost his banker job yesterday and decided to\nstatement=Jon lost his banker job yesterday and decided to start a studio.\nevent_time=2023-01-19",
+      "source_atom_id": "atom-000",
+      "event_time": "2023-01-19"
+    },
+    {
+      "node_id": "fact:atom-001",
+      "node_type": "fact",
+      "content": "statement=Jon opened his studio in April 2023 after months of preparation.\nsubject=Jon\npredicate=opened\nobject=studio\nmention_time=2023-04-20\nevent_time=2023-04\ntime_confidence=0.95",
+      "source_atom_id": "atom-001",
+      "event_time": "2023-04"
+    },
+    {
+      "node_id": "event:atom-001",
+      "node_type": "event",
+      "content": "Jon / opened / studio\nstatement=Jon opened his studio in April 2023 after months of preparation.\nevent_time=2023-04",
+      "source_atom_id": "atom-001",
+      "event_time": "2023-04"
+    },
+    {
+      "node_id": "entity:Jon",
+      "node_type": "entity",
+      "content": "name=Jon",
+      "source_atom_id": "atom-001",
+      "event_time": ""
+    },
+    {
+      "node_id": "fact:atom-002",
+      "node_type": "fact",
+      "content": "statement=Jon started expanding his studio social media presence in April 2023.\nsubject=Jon\npredicate=started_expanding_social_media\nobject=studio_social_media\nmention_time=2023-04-25\nevent_time=2023-04\ntime_confidence=0.95",
+      "source_atom_id": "atom-002",
+      "event_time": "2023-04"
+    },
+    {
+      "node_id": "event:atom-002",
+      "node_type": "event",
+      "content": "Jon / started_expanding_social_media / studio_social_media\nstatement=Jon started expanding his studio social media presence in April 2023.\nevent_time=2023-04",
+      "source_atom_id": "atom-002",
+      "event_time": "2023-04"
+    },
+    {
+      "node_id": "fact:atom-003",
+      "node_type": "fact",
+      "content": "statement=Jon started learning marketing and analytics tools in July 2023.\nsubject=Jon\npredicate=started_learning\nobject=marketing_and_analytics_tools\nmention_time=2023-07-10\nevent_time=2023-07\ntime_confidence=0.95",
+      "source_atom_id": "atom-003",
+      "event_time": "2023-07"
+    },
+    {
+      "node_id": "event:atom-003",
+      "node_type": "event",
+      "content": "Jon / started_learning / marketing_and_analytics_tools\nstatement=Jon started learning marketing and analytics tools in July 2023.\nevent_time=2023-07",
+      "source_atom_id": "atom-003",
+      "event_time": "2023-07"
+    },
+    {
+      "node_id": "fact:atom-004",
+      "node_type": "fact",
+      "content": "statement=Jon and Gina both lost their jobs and later started businesses.\nsubject=Jon\npredicate=shared_experience_with\nobject=Gina\nmention_time=2023-07-23\nevent_time=2023-07-23\ntime_confidence=0.95",
+      "source_atom_id": "atom-004",
+      "event_time": "2023-07-23"
+    },
+    {
+      "node_id": "event:atom-004",
+      "node_type": "event",
+      "content": "Jon / shared_experience_with / Gina\nstatement=Jon and Gina both lost their jobs and later started businesses.\nevent_time=2023-07-23",
+      "source_atom_id": "atom-004",
+      "event_time": "2023-07-23"
+    },
+    {
+      "node_id": "entity:Gina",
+      "node_type": "entity",
+      "content": "name=Gina",
+      "source_atom_id": "atom-004",
+      "event_time": ""
+    },
+    {
+      "node_id": "fact:atom-005",
+      "node_type": "fact",
+      "content": "statement=Jon and Gina both lost their jobs and later started businesses.\nsubject=Jon\npredicate=shared_business_transition_with\nobject=Gina\nmention_time=2023-07-23\nevent_time=2023-07-23\ntime_confidence=0.95",
+      "source_atom_id": "atom-005",
+      "event_time": "2023-07-23"
+    },
+    {
+      "node_id": "event:atom-005",
+      "node_type": "event",
+      "content": "Jon / shared_business_transition_with / Gina\nstatement=Jon and Gina both lost their jobs and later started businesses.\nevent_time=2023-07-23",
+      "source_atom_id": "atom-005",
+      "event_time": "2023-07-23"
+    },
+    {
+      "node_id": "fact:atom-006",
+      "node_type": "fact",
+      "content": "statement=Jon visited Rome on 2023-06-19.\nsubject=Jon\npredicate=visited\nobject=Rome\nmention_time=2023-06-20\nevent_time=2023-06-19\ntime_confidence=0.95",
+      "source_atom_id": "atom-006",
+      "event_time": "2023-06-19"
+    },
+    {
+      "node_id": "event:atom-006",
+      "node_type": "event",
+      "content": "Jon / visited / Rome\nstatement=Jon visited Rome on 2023-06-19.\nevent_time=2023-06-19",
+      "source_atom_id": "atom-006",
+      "event_time": "2023-06-19"
+    },
+    {
+      "node_id": "entity:Rome",
+      "node_type": "entity",
+      "content": "name=Rome",
+      "source_atom_id": "atom-006",
+      "event_time": ""
+    }
+  ],
+  "edges": [
+    {
+      "edge_id": "event:atom-000:evidence_of:fact:atom-000",
+      "source_id": "event:atom-000",
+      "target_id": "fact:atom-000",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "event:atom-001:evidence_of:fact:atom-001",
+      "source_id": "event:atom-001",
+      "target_id": "fact:atom-001",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "entity:Jon:has_fact:atom-001",
+      "source_id": "entity:Jon",
+      "target_id": "fact:atom-001",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-001:involves:Jon",
+      "source_id": "event:atom-001",
+      "target_id": "entity:Jon",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "event:atom-002:evidence_of:fact:atom-002",
+      "source_id": "event:atom-002",
+      "target_id": "fact:atom-002",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "entity:Jon:has_fact:atom-002",
+      "source_id": "entity:Jon",
+      "target_id": "fact:atom-002",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-002:involves:Jon",
+      "source_id": "event:atom-002",
+      "target_id": "entity:Jon",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "event:atom-003:evidence_of:fact:atom-003",
+      "source_id": "event:atom-003",
+      "target_id": "fact:atom-003",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "entity:Jon:has_fact:atom-003",
+      "source_id": "entity:Jon",
+      "target_id": "fact:atom-003",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-003:involves:Jon",
+      "source_id": "event:atom-003",
+      "target_id": "entity:Jon",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "event:atom-004:evidence_of:fact:atom-004",
+      "source_id": "event:atom-004",
+      "target_id": "fact:atom-004",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "entity:Jon:has_fact:atom-004",
+      "source_id": "entity:Jon",
+      "target_id": "fact:atom-004",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-004:involves:Jon",
+      "source_id": "event:atom-004",
+      "target_id": "entity:Jon",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "entity:Gina:has_fact:atom-004",
+      "source_id": "entity:Gina",
+      "target_id": "fact:atom-004",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-004:involves:Gina",
+      "source_id": "event:atom-004",
+      "target_id": "entity:Gina",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "event:atom-005:evidence_of:fact:atom-005",
+      "source_id": "event:atom-005",
+      "target_id": "fact:atom-005",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "entity:Jon:has_fact:atom-005",
+      "source_id": "entity:Jon",
+      "target_id": "fact:atom-005",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-005:involves:Jon",
+      "source_id": "event:atom-005",
+      "target_id": "entity:Jon",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "entity:Gina:has_fact:atom-005",
+      "source_id": "entity:Gina",
+      "target_id": "fact:atom-005",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-005:involves:Gina",
+      "source_id": "event:atom-005",
+      "target_id": "entity:Gina",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "event:atom-006:evidence_of:fact:atom-006",
+      "source_id": "event:atom-006",
+      "target_id": "fact:atom-006",
+      "relation_type": "evidence_of"
+    },
+    {
+      "edge_id": "entity:Jon:has_fact:atom-006",
+      "source_id": "entity:Jon",
+      "target_id": "fact:atom-006",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-006:involves:Jon",
+      "source_id": "event:atom-006",
+      "target_id": "entity:Jon",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "entity:Rome:has_fact:atom-006",
+      "source_id": "entity:Rome",
+      "target_id": "fact:atom-006",
+      "relation_type": "has_fact"
+    },
+    {
+      "edge_id": "event:atom-006:involves:Rome",
+      "source_id": "event:atom-006",
+      "target_id": "entity:Rome",
+      "relation_type": "involves"
+    },
+    {
+      "edge_id": "event:atom-000:temporal_next:event:atom-001",
+      "source_id": "event:atom-000",
+      "target_id": "event:atom-001",
+      "relation_type": "temporal_next"
+    },
+    {
+      "edge_id": "event:atom-001:temporal_next:event:atom-002",
+      "source_id": "event:atom-001",
+      "target_id": "event:atom-002",
+      "relation_type": "temporal_next"
+    },
+    {
+      "edge_id": "event:atom-002:temporal_next:event:atom-006",
+      "source_id": "event:atom-002",
+      "target_id": "event:atom-006",
+      "relation_type": "temporal_next"
+    },
+    {
+      "edge_id": "event:atom-006:temporal_next:event:atom-003",
+      "source_id": "event:atom-006",
+      "target_id": "event:atom-003",
+      "relation_type": "temporal_next"
+    },
+    {
+      "edge_id": "event:atom-003:temporal_next:event:atom-004",
+      "source_id": "event:atom-003",
+      "target_id": "event:atom-004",
+      "relation_type": "temporal_next"
+    },
+    {
+      "edge_id": "event:atom-004:temporal_next:event:atom-005",
+      "source_id": "event:atom-004",
+      "target_id": "event:atom-005",
+      "relation_type": "temporal_next"
+    }
+  ],
+  "temporal_blocks": [
+    {
+      "block_id": "day:2023-01-19",
+      "level": "day",
+      "key": "2023-01-19",
+      "content": "- 2023-01-19: Jon lost his banker job yesterday and decided to start a studio.",
+      "derived_from": [
+        "atom-000"
+      ]
+    },
+    {
+      "block_id": "day:2023-04-01",
+      "level": "day",
+      "key": "2023-04-01",
+      "content": "- 2023-04: Jon opened his studio in April 2023 after months of preparation.\n- 2023-04: Jon started expanding his studio social media presence in April 2023.",
+      "derived_from": [
+        "atom-001",
+        "atom-002"
+      ]
+    },
+    {
+      "block_id": "day:2023-06-19",
+      "level": "day",
+      "key": "2023-06-19",
+      "content": "- 2023-06-19: Jon visited Rome on 2023-06-19.",
+      "derived_from": [
+        "atom-006"
+      ]
+    },
+    {
+      "block_id": "day:2023-07-01",
+      "level": "day",
+      "key": "2023-07-01",
+      "content": "- 2023-07: Jon started learning marketing and analytics tools in July 2023.",
+      "derived_from": [
+        "atom-003"
+      ]
+    },
+    {
+      "block_id": "day:2023-07-23",
+      "level": "day",
+      "key": "2023-07-23",
+      "content": "- 2023-07-23: Jon and Gina both lost their jobs and later started businesses.\n- 2023-07-23: Jon and Gina both lost their jobs and later started businesses.",
+      "derived_from": [
+        "atom-004",
+        "atom-005"
+      ]
+    },
+    {
+      "block_id": "month:2023-01",
+      "level": "month",
+      "key": "2023-01",
+      "content": "- 2023-01-19: Jon lost his banker job yesterday and decided to start a studio.",
+      "derived_from": [
+        "atom-000"
+      ]
+    },
+    {
+      "block_id": "month:2023-04",
+      "level": "month",
+      "key": "2023-04",
+      "content": "- 2023-04: Jon opened his studio in April 2023 after months of preparation.\n- 2023-04: Jon started expanding his studio social media presence in April 2023.",
+      "derived_from": [
+        "atom-001",
+        "atom-002"
+      ]
+    },
+    {
+      "block_id": "month:2023-06",
+      "level": "month",
+      "key": "2023-06",
+      "content": "- 2023-06-19: Jon visited Rome on 2023-06-19.",
+      "derived_from": [
+        "atom-006"
+      ]
+    },
+    {
+      "block_id": "month:2023-07",
+      "level": "month",
+      "key": "2023-07",
+      "content": "- 2023-07: Jon started learning marketing and analytics tools in July 2023.\n- 2023-07-23: Jon and Gina both lost their jobs and later started businesses.\n- 2023-07-23: Jon and Gina both lost their jobs and later started businesses.",
+      "derived_from": [
+        "atom-003",
+        "atom-004",
+        "atom-005"
+      ]
+    },
+    {
+      "block_id": "year:2023",
+      "level": "year",
+      "key": "2023",
+      "content": "- 2023-01-19: Jon lost his banker job yesterday and decided to start a studio.\n- 2023-04: Jon opened his studio in April 2023 after months of preparation.\n- 2023-04: Jon started expanding his studio social media presence in April 2023.\n- 2023-06-19: Jon visited Rome on 2023-06-19.\n- 2023-07: Jon started learning marketing and analytics tools in July 2023.\n- 2023-07-23: Jon and Gina both lost their jobs and later started businesses.\n- 2023-07-23: Jon and Gina both lost their jobs and later started businesses.",
+      "derived_from": [
+        "atom-000",
+        "atom-001",
+        "atom-002",
+        "atom-006",
+        "atom-003",
+        "atom-004",
+        "atom-005"
+      ]
+    }
+  ],
+  "organized_summaries": [
+    {
+      "summary_id": "org:unknown",
+      "subject": "unknown",
+      "content": "2023-01-19: unknown mentions Jon lost his banker job yesterday and decided to"
+    },
+    {
+      "summary_id": "org:Jon",
+      "subject": "Jon",
+      "content": "2023-04: Jon opened studio; 2023-04: Jon started_expanding_social_media studio_social_media; 2023-06-19: Jon visited Rome; 2023-07: Jon started_learning marketing_and_analytics_tools"
+    }
+  ]
+}

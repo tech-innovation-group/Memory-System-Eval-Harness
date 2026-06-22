@@ -32,13 +32,13 @@ Generated: 2026-05-31 08:45 CST
 
 ## Important Paths
 
-- Date-alias 100 CSV: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_datealias_100/local_agent/local_agent_results.csv`
-- Date-alias 100 report: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_datealias_100/report.md`
-- 20-row date-alias Judge report: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_datealias_20/report.md`
-- Numeric-alias 100 CSV: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_numericalias_100/local_agent/local_agent_results.csv`
-- 20-row numeric-alias Judge report: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_numericalias_judge_smoke_20/report.md`
-- 50-row numeric-alias Judge report: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_numericalias_judge_smoke_50/report.md`
-- Acronym-alias 100 CSV: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_acronym_100/local_agent/local_agent_results.csv`
-- 50-row acronym-alias Judge report: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_acronym_judge_smoke_50/report.md`
-- Aggregate 100 CSV: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_aggregate_100/local_agent/local_agent_results.csv`
-- Aggregate new-fix Judge report: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_aggregate_newfix_judge/report.md`
+- Date-alias 100 CSV: `<repo-root>/runs/manual_longmemeval_datealias_100/local_agent/local_agent_results.csv`
+- Date-alias 100 report: `<repo-root>/runs/manual_longmemeval_datealias_100/report.md`
+- 20-row date-alias Judge report: `<repo-root>/runs/manual_longmemeval_datealias_20/report.md`
+- Numeric-alias 100 CSV: `<repo-root>/runs/manual_longmemeval_numericalias_100/local_agent/local_agent_results.csv`
+- 20-row numeric-alias Judge report: `<repo-root>/runs/manual_longmemeval_numericalias_judge_smoke_20/report.md`
+- 50-row numeric-alias Judge report: `<repo-root>/runs/manual_longmemeval_numericalias_judge_smoke_50/report.md`
+- Acronym-alias 100 CSV: `<repo-root>/runs/manual_longmemeval_acronym_100/local_agent/local_agent_results.csv`
+- 50-row acronym-alias Judge report: `<repo-root>/runs/manual_longmemeval_acronym_judge_smoke_50/report.md`
+- Aggregate 100 CSV: `<repo-root>/runs/manual_longmemeval_aggregate_100/local_agent/local_agent_results.csv`
+- Aggregate new-fix Judge report: `<repo-root>/runs/manual_longmemeval_aggregate_newfix_judge/report.md`

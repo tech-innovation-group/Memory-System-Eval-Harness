@@ -40,6 +40,11 @@ DASHSCOPE_COMPAT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 ECHOMEMORY_VIKINGBOAT_TOOL_SET = "vikingboat_default"
 
 
+def normalize_retrieval_mode(value: Any) -> str:
+    # Keep the custom EchoMemory agent aligned with real SDK search retrieval.
+    return "search"
+
+
 def looks_like_echomem_root(path: Path) -> bool:
     return (
         ((path / "packages" / "echomem" / "src").exists() and (path / "packages" / "echofs" / "src").exists())
@@ -52,12 +57,31 @@ def discover_echomem_root(raw_root: str = "") -> Path:
         raw_root,
         os.environ.get("ECHOMEM_ROOT"),
         os.environ.get("ECHOMEMORY_ROOT"),
-        str(Path.home() / "Code" / "echomemory" / "echo_memory_v006"),
+        str(Path.home() / "Code" / "echomemory" / "echo_memory_v010"),
         str(Path.home() / "Code" / "echomemory" / "echo_memory"),
+        str(Path.cwd() / "echo_memory_v010"),
+        str(Path.cwd().parent / "echo_memory_v010"),
+        str(Path.cwd() / "echo_memory"),
+        str(Path.cwd().parent / "echo_memory"),
+        str(Path.cwd() / "echo_memory_v007_tag"),
+        str(Path.cwd() / "echo_memory_v007"),
+        str(Path.cwd().parent / "echo_memory_v007_tag"),
+        str(Path.cwd().parent / "echo_memory_v007"),
         str(DEFAULT_ECHOMEM_ROOT),
+        str(Path.home() / "Code" / "echomemory" / "echo_memory_v006"),
+        str(Path.home() / "Code" / "echomemory" / "echo_memory_v007_tag"),
+        str(Path.home() / "Code" / "echomemory" / "echo_memory_v007"),
     ]
     seen: set[str] = set()
-    fallback = Path(str(raw_root or DEFAULT_ECHOMEM_ROOT)).expanduser()
+    fallback = Path(
+        str(
+            raw_root
+            or os.environ.get("ECHOMEM_ROOT")
+            or os.environ.get("ECHOMEMORY_ROOT")
+            or (Path.home() / "Code" / "echomemory" / "echo_memory_v010")
+            or (Path.home() / "Code" / "echomemory" / "echo_memory")
+        )
+    ).expanduser()
     for candidate in candidates:
         if not candidate:
             continue
@@ -243,7 +267,13 @@ def resolve_settings(payload: dict[str, Any], defaults: dict[str, Any]) -> dict[
         "echomemRoot",
         default=os.environ.get("ECHOMEM_ROOT") or str(DEFAULT_ECHOMEM_ROOT),
     )
-    raw_tool_set = str(payload.get("tool_set") or defaults.get("tool_set") or VIKINGBOT_TOOL_SET)
+    raw_tool_set = str(
+        payload.get("tool_set")
+        or payload.get("openviking_tool_set")
+        or defaults.get("tool_set")
+        or defaults.get("openviking_tool_set")
+        or VIKINGBOT_TOOL_SET
+    )
     normalized_tool_set = ECHOMEMORY_VIKINGBOAT_TOOL_SET if raw_tool_set == VIKINGBOT_TOOL_SET else raw_tool_set
     return {
         "account": account,
@@ -252,10 +282,10 @@ def resolve_settings(payload: dict[str, Any], defaults: dict[str, Any]) -> dict[
         "user_id": payload_value(payload, defaults, "user_id", "em_user_id", "ov_user_id", default="default") or "default",
         "agent_id": payload_value(payload, defaults, "agent_id", "em_agent_id", "ov_agent_id", default="default") or "default",
         "top_k": max(1, int(payload.get("top_k") or VIKINGBOT_INITIAL_SEARCH_LIMIT)),
-        "retrieval_mode": str(payload.get("retrieval_mode") or "both"),
+        "retrieval_mode": normalize_retrieval_mode(payload.get("retrieval_mode") or "search"),
         "runtime_dir": Path(payload.get("runtime_dir") or ROOT / ".tmp" / "echomemory_agent").expanduser(),
         "model_env": resolve_model_env(payload, defaults),
-        "vikingboat_tool_loop": str(payload.get("vikingboat_tool_loop", defaults.get("vikingboat_tool_loop", "true"))).strip().lower() not in {"0", "false", "no", "off"},
+        "vikingboat_tool_loop": False,
         "tool_set": normalized_tool_set,
         "tool_search_limit": max(1, int(payload.get("tool_search_limit") or defaults.get("tool_search_limit") or VIKINGBOT_TOOL_SEARCH_LIMIT)),
         "tool_min_score": float(payload.get("tool_min_score") or defaults.get("tool_min_score") or VIKINGBOT_TOOL_MIN_SCORE),
@@ -415,19 +445,11 @@ async def retrieve(settings: dict[str, Any], query: str) -> dict[str, Any]:
         }
 
     context = ctx(settings["account"], settings["user_id"], settings["agent_id"])
-    mode = settings["retrieval_mode"]
     if not query:
         return {"items": [], "user_memory": [], "agent_memory": [], "query_plan": [], "errors": [], "degraded": False}
     try:
-        if mode in {"find", "both"}:
-            found = await sdk.find(query, ctx=context)
-            items.extend(normalize_context_item(item) for item in found)
-    except Exception as exc:
-        errors.append(f"find: {exc}")
-    try:
-        if mode in {"search", "both"}:
-            result = await sdk.search(query, ctx=context, budget={"max_results": settings["top_k"]})
-            items.extend(normalize_context_item(item) for item in getattr(result, "items", []))
+        result = await sdk.search(query, ctx=context, budget={"max_results": settings["top_k"]})
+        items.extend(normalize_context_item(item) for item in getattr(result, "items", []))
     except Exception as exc:
         errors.append(f"search: {exc}")
 

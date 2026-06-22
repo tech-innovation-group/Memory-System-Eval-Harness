@@ -1,0 +1,1719 @@
+{
+  "summary": [
+    {
+      "mode": "naive_no_hint + lexical",
+      "grouping_mode": "naive_no_hint",
+      "selection_mode": "lexical",
+      "correct": 5,
+      "total": 16,
+      "accuracy": 0.3125,
+      "cluster_count": 13,
+      "purity": 1.0,
+      "dossiers": {
+        "found_apartment": {
+          "gold_topics": [
+            "apartment_lease"
+          ],
+          "atom_count": 1,
+          "summary": "TopicKey: found_apartment\nSpan: 2026-03-01 -> 2026-03-01\nKey updates:\n- We found an apartment on Rua Augusta 14"
+        },
+        "landlord_ask": {
+          "gold_topics": [
+            "apartment_lease"
+          ],
+          "atom_count": 1,
+          "summary": "TopicKey: landlord_ask\nSpan: 2026-03-01 -> 2026-03-01\nKey updates:\n- The landlord asked for a signed lease draft"
+        },
+        "rental_screenshot": {
+          "gold_topics": [
+            "apartment_lease"
+          ],
+          "atom_count": 1,
+          "summary": "TopicKey: rental_screenshot\nSpan: 2026-03-05 -> 2026-03-05\nKey updates:\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20"
+        },
+        "handover_slipp": {
+          "gold_topics": [
+            "apartment_lease"
+          ],
+          "atom_count": 1,
+          "summary": "TopicKey: handover_slipp\nSpan: 2026-03-12 -> 2026-03-12\nKey updates:\n- The handover plan slipped by a week, so the move-in moved to 2026-03-27"
+        },
+        "maya_start": {
+          "gold_topics": [
+            "visa_process"
+          ],
+          "atom_count": 1,
+          "summary": "TopicKey: maya_start\nSpan: 2026-03-02 -> 2026-03-02\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements"
+        },
+        "consular_case": {
+          "gold_topics": [
+            "visa_process"
+          ],
+          "atom_count": 1,
+          "summary": "TopicKey: consular_case\nSpan: 2026-03-09 -> 2026-03-09\nKey updates:\n- The consular case was delayed because an extra residence document was requested"
+        },
+        "immigration_approval": {
+          "gold_topics": [
+            "visa_process"
+          ],
+          "atom_count": 1,
+          "summary": "TopicKey: immigration_approval\nSpan: 2026-03-18 -> 2026-03-18\nKey updates:\n- The immigration approval arrived after Maya submitted the missing residence document"
+        },
+        "plann_beta": {
+          "gold_topics": [
+            "product_launch"
+          ],
+          "atom_count": 1,
+          "summary": "TopicKey: plann_beta\nSpan: 2026-03-03 -> 2026-03-03\nKey updates:\n- The team planned the beta launch for 2026-04-10"
+        },
+        "payment_bug": {
+          "gold_topics": [
+            "product_launch"
+          ],
+          "atom_count": 1,
+          "summary": "TopicKey: payment_bug\nSpan: 2026-03-11 -> 2026-03-11\nKey updates:\n- A payment bug pushed the release schedule back to 2026-04-24"
+        },
+        "rollout_confirm": {
+          "gold_topics": [
+            "product_launch"
+          ],
+          "atom_count": 1,
+          "summary": "TopicKey: rollout_confirm\nSpan: 2026-03-19 -> 2026-03-19\nKey updates:\n- The rollout date was confirmed for 2026-04-24 after the billing fix landed"
+        },
+        "mother_mov": {
+          "gold_topics": [
+            "family_support"
+          ],
+          "atom_count": 1,
+          "summary": "TopicKey: mother_mov\nSpan: 2026-03-04 -> 2026-03-04\nKey updates:\n- My mother moved in to help with childcare after the baby was born"
+        },
+        "babysitter_shift": {
+          "gold_topics": [
+            "family_support"
+          ],
+          "atom_count": 1,
+          "summary": "TopicKey: babysitter_shift\nSpan: 2026-03-10 -> 2026-03-10\nKey updates:\n- The babysitter plan shifted to include my mother on weekdays"
+        },
+        "kept_care": {
+          "gold_topics": [
+            "family_support"
+          ],
+          "atom_count": 1,
+          "summary": "TopicKey: kept_care\nSpan: 2026-03-21 -> 2026-03-21\nKey updates:\n- We kept the care arrangement because the work schedule became more intense"
+        }
+      },
+      "runs": [
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "lease_1",
+          "question": "How did the apartment lease situation evolve?",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "landlord_ask",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: landlord_ask\nSpan: 2026-03-01 -> 2026-03-01\nKey updates:\n- The landlord asked for a signed lease draft",
+          "success": false
+        },
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "lease_2",
+          "question": "What changed over time in the rental paperwork situation?",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "rental_screenshot",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: rental_screenshot\nSpan: 2026-03-05 -> 2026-03-05\nKey updates:\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20",
+          "success": false
+        },
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "lease_3",
+          "question": "Give the move-in timeline for the housing handover.",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "handover_slipp",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: handover_slipp\nSpan: 2026-03-12 -> 2026-03-12\nKey updates:\n- The handover plan slipped by a week, so the move-in moved to 2026-03-27",
+          "success": true
+        },
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "lease_4",
+          "question": "What is the latest state of the housing arrangement?",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "rental_screenshot",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: rental_screenshot\nSpan: 2026-03-05 -> 2026-03-05\nKey updates:\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20",
+          "success": false
+        },
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "visa_1",
+          "question": "What is the latest status of the visa process?",
+          "gold_topic": "visa_process",
+          "selected_dossier": "rental_screenshot",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: rental_screenshot\nSpan: 2026-03-05 -> 2026-03-05\nKey updates:\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20",
+          "success": false
+        },
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "visa_2",
+          "question": "How did the consular case develop?",
+          "gold_topic": "visa_process",
+          "selected_dossier": "consular_case",
+          "selected_gold_topics": [
+            "visa_process"
+          ],
+          "answer": "TopicKey: consular_case\nSpan: 2026-03-09 -> 2026-03-09\nKey updates:\n- The consular case was delayed because an extra residence document was requested",
+          "success": false
+        },
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "visa_3",
+          "question": "What happened over time in Maya's immigration approval case?",
+          "gold_topic": "visa_process",
+          "selected_dossier": "immigration_approval",
+          "selected_gold_topics": [
+            "visa_process"
+          ],
+          "answer": "TopicKey: immigration_approval\nSpan: 2026-03-18 -> 2026-03-18\nKey updates:\n- The immigration approval arrived after Maya submitted the missing residence document",
+          "success": true
+        },
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "visa_4",
+          "question": "Summarize the residence-document / visa timeline.",
+          "gold_topic": "visa_process",
+          "selected_dossier": "immigration_approval",
+          "selected_gold_topics": [
+            "visa_process"
+          ],
+          "answer": "TopicKey: immigration_approval\nSpan: 2026-03-18 -> 2026-03-18\nKey updates:\n- The immigration approval arrived after Maya submitted the missing residence document",
+          "success": true
+        },
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "launch_1",
+          "question": "How did the product launch change over time?",
+          "gold_topic": "product_launch",
+          "selected_dossier": "plann_beta",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: plann_beta\nSpan: 2026-03-03 -> 2026-03-03\nKey updates:\n- The team planned the beta launch for 2026-04-10",
+          "success": false
+        },
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "launch_2",
+          "question": "What changed in the rollout plan?",
+          "gold_topic": "product_launch",
+          "selected_dossier": "rollout_confirm",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: rollout_confirm\nSpan: 2026-03-19 -> 2026-03-19\nKey updates:\n- The rollout date was confirmed for 2026-04-24 after the billing fix landed",
+          "success": false
+        },
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "launch_3",
+          "question": "Give the release schedule timeline.",
+          "gold_topic": "product_launch",
+          "selected_dossier": "payment_bug",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: payment_bug\nSpan: 2026-03-11 -> 2026-03-11\nKey updates:\n- A payment bug pushed the release schedule back to 2026-04-24",
+          "success": true
+        },
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "launch_4",
+          "question": "What is the latest state of the beta launch?",
+          "gold_topic": "product_launch",
+          "selected_dossier": "plann_beta",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: plann_beta\nSpan: 2026-03-03 -> 2026-03-03\nKey updates:\n- The team planned the beta launch for 2026-04-10",
+          "success": false
+        },
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "care_1",
+          "question": "How did the childcare arrangement evolve?",
+          "gold_topic": "family_support",
+          "selected_dossier": "mother_mov",
+          "selected_gold_topics": [
+            "family_support"
+          ],
+          "answer": "TopicKey: mother_mov\nSpan: 2026-03-04 -> 2026-03-04\nKey updates:\n- My mother moved in to help with childcare after the baby was born",
+          "success": false
+        },
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "care_2",
+          "question": "What changed over time in the babysitter plan?",
+          "gold_topic": "family_support",
+          "selected_dossier": "babysitter_shift",
+          "selected_gold_topics": [
+            "family_support"
+          ],
+          "answer": "TopicKey: babysitter_shift\nSpan: 2026-03-10 -> 2026-03-10\nKey updates:\n- The babysitter plan shifted to include my mother on weekdays",
+          "success": true
+        },
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "care_3",
+          "question": "Give the care-arrangement timeline.",
+          "gold_topic": "family_support",
+          "selected_dossier": "kept_care",
+          "selected_gold_topics": [
+            "family_support"
+          ],
+          "answer": "TopicKey: kept_care\nSpan: 2026-03-21 -> 2026-03-21\nKey updates:\n- We kept the care arrangement because the work schedule became more intense",
+          "success": false
+        },
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "care_4",
+          "question": "What is the latest status of the family support arrangement?",
+          "gold_topic": "family_support",
+          "selected_dossier": "rental_screenshot",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: rental_screenshot\nSpan: 2026-03-05 -> 2026-03-05\nKey updates:\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20",
+          "success": false
+        }
+      ],
+      "family_totals": {
+        "apartment_lease": {
+          "count": 4,
+          "correct": 1
+        },
+        "visa_process": {
+          "count": 4,
+          "correct": 2
+        },
+        "product_launch": {
+          "count": 4,
+          "correct": 1
+        },
+        "family_support": {
+          "count": 4,
+          "correct": 1
+        }
+      }
+    },
+    {
+      "mode": "canonicalized_no_hint + lexical",
+      "grouping_mode": "canonicalized_no_hint",
+      "selection_mode": "lexical",
+      "correct": 14,
+      "total": 16,
+      "accuracy": 0.875,
+      "cluster_count": 5,
+      "purity": 1.0,
+      "dossiers": {
+        "housing_augusta": {
+          "gold_topics": [
+            "apartment_lease"
+          ],
+          "atom_count": 4,
+          "summary": "TopicKey: housing_augusta\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20\n- The handover plan slipped by a week, so the move-in moved to 2026-03-27"
+        },
+        "visa_case_maya": {
+          "gold_topics": [
+            "visa_process"
+          ],
+          "atom_count": 3,
+          "summary": "TopicKey: visa_case_maya\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consular case was delayed because an extra residence document was requested\n- The immigration approval arrived after Maya submitted the missing residence document"
+        },
+        "release_plan_back": {
+          "gold_topics": [
+            "product_launch"
+          ],
+          "atom_count": 3,
+          "summary": "TopicKey: release_plan_back\nSpan: 2026-03-03 -> 2026-03-19\nKey updates:\n- The team planned the beta launch for 2026-04-10\n- A payment bug pushed the release schedule back to 2026-04-24\n- The rollout date was confirmed for 2026-04-24 after the billing fix landed"
+        },
+        "care_plan_family_support": {
+          "gold_topics": [
+            "family_support"
+          ],
+          "atom_count": 2,
+          "summary": "TopicKey: care_plan_family_support\nSpan: 2026-03-04 -> 2026-03-10\nKey updates:\n- My mother moved in to help with childcare after the baby was born\n- The babysitter plan shifted to include my mother on weekdays"
+        },
+        "arrangement_became": {
+          "gold_topics": [
+            "family_support"
+          ],
+          "atom_count": 1,
+          "summary": "TopicKey: arrangement_became\nSpan: 2026-03-21 -> 2026-03-21\nKey updates:\n- We kept the care arrangement because the work schedule became more intense"
+        }
+      },
+      "runs": [
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "lease_1",
+          "question": "How did the apartment lease situation evolve?",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "housing_augusta",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: housing_augusta\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20\n- The handover plan slipped by a week, so the move-in moved to 2026-03-27",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "lease_2",
+          "question": "What changed over time in the rental paperwork situation?",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "housing_augusta",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: housing_augusta\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20\n- The handover plan slipped by a week, so the move-in moved to 2026-03-27",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "lease_3",
+          "question": "Give the move-in timeline for the housing handover.",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "housing_augusta",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: housing_augusta\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20\n- The handover plan slipped by a week, so the move-in moved to 2026-03-27",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "lease_4",
+          "question": "What is the latest state of the housing arrangement?",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "housing_augusta",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: housing_augusta\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20\n- The handover plan slipped by a week, so the move-in moved to 2026-03-27",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "visa_1",
+          "question": "What is the latest status of the visa process?",
+          "gold_topic": "visa_process",
+          "selected_dossier": "visa_case_maya",
+          "selected_gold_topics": [
+            "visa_process"
+          ],
+          "answer": "TopicKey: visa_case_maya\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consular case was delayed because an extra residence document was requested\n- The immigration approval arrived after Maya submitted the missing residence document",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "visa_2",
+          "question": "How did the consular case develop?",
+          "gold_topic": "visa_process",
+          "selected_dossier": "visa_case_maya",
+          "selected_gold_topics": [
+            "visa_process"
+          ],
+          "answer": "TopicKey: visa_case_maya\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consular case was delayed because an extra residence document was requested\n- The immigration approval arrived after Maya submitted the missing residence document",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "visa_3",
+          "question": "What happened over time in Maya's immigration approval case?",
+          "gold_topic": "visa_process",
+          "selected_dossier": "visa_case_maya",
+          "selected_gold_topics": [
+            "visa_process"
+          ],
+          "answer": "TopicKey: visa_case_maya\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consular case was delayed because an extra residence document was requested\n- The immigration approval arrived after Maya submitted the missing residence document",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "visa_4",
+          "question": "Summarize the residence-document / visa timeline.",
+          "gold_topic": "visa_process",
+          "selected_dossier": "visa_case_maya",
+          "selected_gold_topics": [
+            "visa_process"
+          ],
+          "answer": "TopicKey: visa_case_maya\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consular case was delayed because an extra residence document was requested\n- The immigration approval arrived after Maya submitted the missing residence document",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "launch_1",
+          "question": "How did the product launch change over time?",
+          "gold_topic": "product_launch",
+          "selected_dossier": "release_plan_back",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: release_plan_back\nSpan: 2026-03-03 -> 2026-03-19\nKey updates:\n- The team planned the beta launch for 2026-04-10\n- A payment bug pushed the release schedule back to 2026-04-24\n- The rollout date was confirmed for 2026-04-24 after the billing fix landed",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "launch_2",
+          "question": "What changed in the rollout plan?",
+          "gold_topic": "product_launch",
+          "selected_dossier": "release_plan_back",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: release_plan_back\nSpan: 2026-03-03 -> 2026-03-19\nKey updates:\n- The team planned the beta launch for 2026-04-10\n- A payment bug pushed the release schedule back to 2026-04-24\n- The rollout date was confirmed for 2026-04-24 after the billing fix landed",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "launch_3",
+          "question": "Give the release schedule timeline.",
+          "gold_topic": "product_launch",
+          "selected_dossier": "release_plan_back",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: release_plan_back\nSpan: 2026-03-03 -> 2026-03-19\nKey updates:\n- The team planned the beta launch for 2026-04-10\n- A payment bug pushed the release schedule back to 2026-04-24\n- The rollout date was confirmed for 2026-04-24 after the billing fix landed",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "launch_4",
+          "question": "What is the latest state of the beta launch?",
+          "gold_topic": "product_launch",
+          "selected_dossier": "release_plan_back",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: release_plan_back\nSpan: 2026-03-03 -> 2026-03-19\nKey updates:\n- The team planned the beta launch for 2026-04-10\n- A payment bug pushed the release schedule back to 2026-04-24\n- The rollout date was confirmed for 2026-04-24 after the billing fix landed",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "care_1",
+          "question": "How did the childcare arrangement evolve?",
+          "gold_topic": "family_support",
+          "selected_dossier": "arrangement_became",
+          "selected_gold_topics": [
+            "family_support"
+          ],
+          "answer": "TopicKey: arrangement_became\nSpan: 2026-03-21 -> 2026-03-21\nKey updates:\n- We kept the care arrangement because the work schedule became more intense",
+          "success": false
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "care_2",
+          "question": "What changed over time in the babysitter plan?",
+          "gold_topic": "family_support",
+          "selected_dossier": "care_plan_family_support",
+          "selected_gold_topics": [
+            "family_support"
+          ],
+          "answer": "TopicKey: care_plan_family_support\nSpan: 2026-03-04 -> 2026-03-10\nKey updates:\n- My mother moved in to help with childcare after the baby was born\n- The babysitter plan shifted to include my mother on weekdays",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "care_3",
+          "question": "Give the care-arrangement timeline.",
+          "gold_topic": "family_support",
+          "selected_dossier": "arrangement_became",
+          "selected_gold_topics": [
+            "family_support"
+          ],
+          "answer": "TopicKey: arrangement_became\nSpan: 2026-03-21 -> 2026-03-21\nKey updates:\n- We kept the care arrangement because the work schedule became more intense",
+          "success": false
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "care_4",
+          "question": "What is the latest status of the family support arrangement?",
+          "gold_topic": "family_support",
+          "selected_dossier": "care_plan_family_support",
+          "selected_gold_topics": [
+            "family_support"
+          ],
+          "answer": "TopicKey: care_plan_family_support\nSpan: 2026-03-04 -> 2026-03-10\nKey updates:\n- My mother moved in to help with childcare after the baby was born\n- The babysitter plan shifted to include my mother on weekdays",
+          "success": true
+        }
+      ],
+      "family_totals": {
+        "apartment_lease": {
+          "count": 4,
+          "correct": 4
+        },
+        "visa_process": {
+          "count": 4,
+          "correct": 4
+        },
+        "product_launch": {
+          "count": 4,
+          "correct": 4
+        },
+        "family_support": {
+          "count": 4,
+          "correct": 2
+        }
+      }
+    },
+    {
+      "mode": "canonicalized_no_hint + longitudinal",
+      "grouping_mode": "canonicalized_no_hint",
+      "selection_mode": "longitudinal",
+      "correct": 16,
+      "total": 16,
+      "accuracy": 1.0,
+      "cluster_count": 5,
+      "purity": 1.0,
+      "dossiers": {
+        "housing_augusta": {
+          "gold_topics": [
+            "apartment_lease"
+          ],
+          "atom_count": 4,
+          "summary": "TopicKey: housing_augusta\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20\n- The handover plan slipped by a week, so the move-in moved to 2026-03-27"
+        },
+        "visa_case_maya": {
+          "gold_topics": [
+            "visa_process"
+          ],
+          "atom_count": 3,
+          "summary": "TopicKey: visa_case_maya\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consular case was delayed because an extra residence document was requested\n- The immigration approval arrived after Maya submitted the missing residence document"
+        },
+        "release_plan_back": {
+          "gold_topics": [
+            "product_launch"
+          ],
+          "atom_count": 3,
+          "summary": "TopicKey: release_plan_back\nSpan: 2026-03-03 -> 2026-03-19\nKey updates:\n- The team planned the beta launch for 2026-04-10\n- A payment bug pushed the release schedule back to 2026-04-24\n- The rollout date was confirmed for 2026-04-24 after the billing fix landed"
+        },
+        "care_plan_family_support": {
+          "gold_topics": [
+            "family_support"
+          ],
+          "atom_count": 2,
+          "summary": "TopicKey: care_plan_family_support\nSpan: 2026-03-04 -> 2026-03-10\nKey updates:\n- My mother moved in to help with childcare after the baby was born\n- The babysitter plan shifted to include my mother on weekdays"
+        },
+        "arrangement_became": {
+          "gold_topics": [
+            "family_support"
+          ],
+          "atom_count": 1,
+          "summary": "TopicKey: arrangement_became\nSpan: 2026-03-21 -> 2026-03-21\nKey updates:\n- We kept the care arrangement because the work schedule became more intense"
+        }
+      },
+      "runs": [
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "lease_1",
+          "question": "How did the apartment lease situation evolve?",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "housing_augusta",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: housing_augusta\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20\n- The handover plan slipped by a week, so the move-in moved to 2026-03-27",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "lease_2",
+          "question": "What changed over time in the rental paperwork situation?",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "housing_augusta",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: housing_augusta\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20\n- The handover plan slipped by a week, so the move-in moved to 2026-03-27",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "lease_3",
+          "question": "Give the move-in timeline for the housing handover.",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "housing_augusta",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: housing_augusta\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20\n- The handover plan slipped by a week, so the move-in moved to 2026-03-27",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "lease_4",
+          "question": "What is the latest state of the housing arrangement?",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "housing_augusta",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: housing_augusta\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20\n- The handover plan slipped by a week, so the move-in moved to 2026-03-27",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "visa_1",
+          "question": "What is the latest status of the visa process?",
+          "gold_topic": "visa_process",
+          "selected_dossier": "visa_case_maya",
+          "selected_gold_topics": [
+            "visa_process"
+          ],
+          "answer": "TopicKey: visa_case_maya\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consular case was delayed because an extra residence document was requested\n- The immigration approval arrived after Maya submitted the missing residence document",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "visa_2",
+          "question": "How did the consular case develop?",
+          "gold_topic": "visa_process",
+          "selected_dossier": "visa_case_maya",
+          "selected_gold_topics": [
+            "visa_process"
+          ],
+          "answer": "TopicKey: visa_case_maya\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consular case was delayed because an extra residence document was requested\n- The immigration approval arrived after Maya submitted the missing residence document",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "visa_3",
+          "question": "What happened over time in Maya's immigration approval case?",
+          "gold_topic": "visa_process",
+          "selected_dossier": "visa_case_maya",
+          "selected_gold_topics": [
+            "visa_process"
+          ],
+          "answer": "TopicKey: visa_case_maya\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consular case was delayed because an extra residence document was requested\n- The immigration approval arrived after Maya submitted the missing residence document",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "visa_4",
+          "question": "Summarize the residence-document / visa timeline.",
+          "gold_topic": "visa_process",
+          "selected_dossier": "visa_case_maya",
+          "selected_gold_topics": [
+            "visa_process"
+          ],
+          "answer": "TopicKey: visa_case_maya\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consular case was delayed because an extra residence document was requested\n- The immigration approval arrived after Maya submitted the missing residence document",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "launch_1",
+          "question": "How did the product launch change over time?",
+          "gold_topic": "product_launch",
+          "selected_dossier": "release_plan_back",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: release_plan_back\nSpan: 2026-03-03 -> 2026-03-19\nKey updates:\n- The team planned the beta launch for 2026-04-10\n- A payment bug pushed the release schedule back to 2026-04-24\n- The rollout date was confirmed for 2026-04-24 after the billing fix landed",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "launch_2",
+          "question": "What changed in the rollout plan?",
+          "gold_topic": "product_launch",
+          "selected_dossier": "release_plan_back",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: release_plan_back\nSpan: 2026-03-03 -> 2026-03-19\nKey updates:\n- The team planned the beta launch for 2026-04-10\n- A payment bug pushed the release schedule back to 2026-04-24\n- The rollout date was confirmed for 2026-04-24 after the billing fix landed",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "launch_3",
+          "question": "Give the release schedule timeline.",
+          "gold_topic": "product_launch",
+          "selected_dossier": "release_plan_back",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: release_plan_back\nSpan: 2026-03-03 -> 2026-03-19\nKey updates:\n- The team planned the beta launch for 2026-04-10\n- A payment bug pushed the release schedule back to 2026-04-24\n- The rollout date was confirmed for 2026-04-24 after the billing fix landed",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "launch_4",
+          "question": "What is the latest state of the beta launch?",
+          "gold_topic": "product_launch",
+          "selected_dossier": "release_plan_back",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: release_plan_back\nSpan: 2026-03-03 -> 2026-03-19\nKey updates:\n- The team planned the beta launch for 2026-04-10\n- A payment bug pushed the release schedule back to 2026-04-24\n- The rollout date was confirmed for 2026-04-24 after the billing fix landed",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "care_1",
+          "question": "How did the childcare arrangement evolve?",
+          "gold_topic": "family_support",
+          "selected_dossier": "care_plan_family_support",
+          "selected_gold_topics": [
+            "family_support"
+          ],
+          "answer": "TopicKey: care_plan_family_support\nSpan: 2026-03-04 -> 2026-03-10\nKey updates:\n- My mother moved in to help with childcare after the baby was born\n- The babysitter plan shifted to include my mother on weekdays",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "care_2",
+          "question": "What changed over time in the babysitter plan?",
+          "gold_topic": "family_support",
+          "selected_dossier": "care_plan_family_support",
+          "selected_gold_topics": [
+            "family_support"
+          ],
+          "answer": "TopicKey: care_plan_family_support\nSpan: 2026-03-04 -> 2026-03-10\nKey updates:\n- My mother moved in to help with childcare after the baby was born\n- The babysitter plan shifted to include my mother on weekdays",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "care_3",
+          "question": "Give the care-arrangement timeline.",
+          "gold_topic": "family_support",
+          "selected_dossier": "care_plan_family_support",
+          "selected_gold_topics": [
+            "family_support"
+          ],
+          "answer": "TopicKey: care_plan_family_support\nSpan: 2026-03-04 -> 2026-03-10\nKey updates:\n- My mother moved in to help with childcare after the baby was born\n- The babysitter plan shifted to include my mother on weekdays",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "care_4",
+          "question": "What is the latest status of the family support arrangement?",
+          "gold_topic": "family_support",
+          "selected_dossier": "care_plan_family_support",
+          "selected_gold_topics": [
+            "family_support"
+          ],
+          "answer": "TopicKey: care_plan_family_support\nSpan: 2026-03-04 -> 2026-03-10\nKey updates:\n- My mother moved in to help with childcare after the baby was born\n- The babysitter plan shifted to include my mother on weekdays",
+          "success": true
+        }
+      ],
+      "family_totals": {
+        "apartment_lease": {
+          "count": 4,
+          "correct": 4
+        },
+        "visa_process": {
+          "count": 4,
+          "correct": 4
+        },
+        "product_launch": {
+          "count": 4,
+          "correct": 4
+        },
+        "family_support": {
+          "count": 4,
+          "correct": 4
+        }
+      }
+    }
+  ],
+  "cases": [
+    {
+      "qid": "lease_1",
+      "question": "How did the apartment lease situation evolve?",
+      "gold_topic": "apartment_lease",
+      "runs": [
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "lease_1",
+          "question": "How did the apartment lease situation evolve?",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "landlord_ask",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: landlord_ask\nSpan: 2026-03-01 -> 2026-03-01\nKey updates:\n- The landlord asked for a signed lease draft",
+          "success": false
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "lease_1",
+          "question": "How did the apartment lease situation evolve?",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "housing_augusta",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: housing_augusta\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20\n- The handover plan slipped by a week, so the move-in moved to 2026-03-27",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "lease_1",
+          "question": "How did the apartment lease situation evolve?",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "housing_augusta",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: housing_augusta\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20\n- The handover plan slipped by a week, so the move-in moved to 2026-03-27",
+          "success": true
+        }
+      ]
+    },
+    {
+      "qid": "lease_2",
+      "question": "What changed over time in the rental paperwork situation?",
+      "gold_topic": "apartment_lease",
+      "runs": [
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "lease_2",
+          "question": "What changed over time in the rental paperwork situation?",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "rental_screenshot",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: rental_screenshot\nSpan: 2026-03-05 -> 2026-03-05\nKey updates:\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20",
+          "success": false
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "lease_2",
+          "question": "What changed over time in the rental paperwork situation?",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "housing_augusta",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: housing_augusta\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20\n- The handover plan slipped by a week, so the move-in moved to 2026-03-27",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "lease_2",
+          "question": "What changed over time in the rental paperwork situation?",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "housing_augusta",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: housing_augusta\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20\n- The handover plan slipped by a week, so the move-in moved to 2026-03-27",
+          "success": true
+        }
+      ]
+    },
+    {
+      "qid": "lease_3",
+      "question": "Give the move-in timeline for the housing handover.",
+      "gold_topic": "apartment_lease",
+      "runs": [
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "lease_3",
+          "question": "Give the move-in timeline for the housing handover.",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "handover_slipp",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: handover_slipp\nSpan: 2026-03-12 -> 2026-03-12\nKey updates:\n- The handover plan slipped by a week, so the move-in moved to 2026-03-27",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "lease_3",
+          "question": "Give the move-in timeline for the housing handover.",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "housing_augusta",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: housing_augusta\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20\n- The handover plan slipped by a week, so the move-in moved to 2026-03-27",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "lease_3",
+          "question": "Give the move-in timeline for the housing handover.",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "housing_augusta",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: housing_augusta\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20\n- The handover plan slipped by a week, so the move-in moved to 2026-03-27",
+          "success": true
+        }
+      ]
+    },
+    {
+      "qid": "lease_4",
+      "question": "What is the latest state of the housing arrangement?",
+      "gold_topic": "apartment_lease",
+      "runs": [
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "lease_4",
+          "question": "What is the latest state of the housing arrangement?",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "rental_screenshot",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: rental_screenshot\nSpan: 2026-03-05 -> 2026-03-05\nKey updates:\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20",
+          "success": false
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "lease_4",
+          "question": "What is the latest state of the housing arrangement?",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "housing_augusta",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: housing_augusta\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20\n- The handover plan slipped by a week, so the move-in moved to 2026-03-27",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "lease_4",
+          "question": "What is the latest state of the housing arrangement?",
+          "gold_topic": "apartment_lease",
+          "selected_dossier": "housing_augusta",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: housing_augusta\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20\n- The handover plan slipped by a week, so the move-in moved to 2026-03-27",
+          "success": true
+        }
+      ]
+    },
+    {
+      "qid": "visa_1",
+      "question": "What is the latest status of the visa process?",
+      "gold_topic": "visa_process",
+      "runs": [
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "visa_1",
+          "question": "What is the latest status of the visa process?",
+          "gold_topic": "visa_process",
+          "selected_dossier": "rental_screenshot",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: rental_screenshot\nSpan: 2026-03-05 -> 2026-03-05\nKey updates:\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20",
+          "success": false
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "visa_1",
+          "question": "What is the latest status of the visa process?",
+          "gold_topic": "visa_process",
+          "selected_dossier": "visa_case_maya",
+          "selected_gold_topics": [
+            "visa_process"
+          ],
+          "answer": "TopicKey: visa_case_maya\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consular case was delayed because an extra residence document was requested\n- The immigration approval arrived after Maya submitted the missing residence document",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "visa_1",
+          "question": "What is the latest status of the visa process?",
+          "gold_topic": "visa_process",
+          "selected_dossier": "visa_case_maya",
+          "selected_gold_topics": [
+            "visa_process"
+          ],
+          "answer": "TopicKey: visa_case_maya\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consular case was delayed because an extra residence document was requested\n- The immigration approval arrived after Maya submitted the missing residence document",
+          "success": true
+        }
+      ]
+    },
+    {
+      "qid": "visa_2",
+      "question": "How did the consular case develop?",
+      "gold_topic": "visa_process",
+      "runs": [
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "visa_2",
+          "question": "How did the consular case develop?",
+          "gold_topic": "visa_process",
+          "selected_dossier": "consular_case",
+          "selected_gold_topics": [
+            "visa_process"
+          ],
+          "answer": "TopicKey: consular_case\nSpan: 2026-03-09 -> 2026-03-09\nKey updates:\n- The consular case was delayed because an extra residence document was requested",
+          "success": false
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "visa_2",
+          "question": "How did the consular case develop?",
+          "gold_topic": "visa_process",
+          "selected_dossier": "visa_case_maya",
+          "selected_gold_topics": [
+            "visa_process"
+          ],
+          "answer": "TopicKey: visa_case_maya\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consular case was delayed because an extra residence document was requested\n- The immigration approval arrived after Maya submitted the missing residence document",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "visa_2",
+          "question": "How did the consular case develop?",
+          "gold_topic": "visa_process",
+          "selected_dossier": "visa_case_maya",
+          "selected_gold_topics": [
+            "visa_process"
+          ],
+          "answer": "TopicKey: visa_case_maya\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consular case was delayed because an extra residence document was requested\n- The immigration approval arrived after Maya submitted the missing residence document",
+          "success": true
+        }
+      ]
+    },
+    {
+      "qid": "visa_3",
+      "question": "What happened over time in Maya's immigration approval case?",
+      "gold_topic": "visa_process",
+      "runs": [
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "visa_3",
+          "question": "What happened over time in Maya's immigration approval case?",
+          "gold_topic": "visa_process",
+          "selected_dossier": "immigration_approval",
+          "selected_gold_topics": [
+            "visa_process"
+          ],
+          "answer": "TopicKey: immigration_approval\nSpan: 2026-03-18 -> 2026-03-18\nKey updates:\n- The immigration approval arrived after Maya submitted the missing residence document",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "visa_3",
+          "question": "What happened over time in Maya's immigration approval case?",
+          "gold_topic": "visa_process",
+          "selected_dossier": "visa_case_maya",
+          "selected_gold_topics": [
+            "visa_process"
+          ],
+          "answer": "TopicKey: visa_case_maya\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consular case was delayed because an extra residence document was requested\n- The immigration approval arrived after Maya submitted the missing residence document",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "visa_3",
+          "question": "What happened over time in Maya's immigration approval case?",
+          "gold_topic": "visa_process",
+          "selected_dossier": "visa_case_maya",
+          "selected_gold_topics": [
+            "visa_process"
+          ],
+          "answer": "TopicKey: visa_case_maya\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consular case was delayed because an extra residence document was requested\n- The immigration approval arrived after Maya submitted the missing residence document",
+          "success": true
+        }
+      ]
+    },
+    {
+      "qid": "visa_4",
+      "question": "Summarize the residence-document / visa timeline.",
+      "gold_topic": "visa_process",
+      "runs": [
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "visa_4",
+          "question": "Summarize the residence-document / visa timeline.",
+          "gold_topic": "visa_process",
+          "selected_dossier": "immigration_approval",
+          "selected_gold_topics": [
+            "visa_process"
+          ],
+          "answer": "TopicKey: immigration_approval\nSpan: 2026-03-18 -> 2026-03-18\nKey updates:\n- The immigration approval arrived after Maya submitted the missing residence document",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "visa_4",
+          "question": "Summarize the residence-document / visa timeline.",
+          "gold_topic": "visa_process",
+          "selected_dossier": "visa_case_maya",
+          "selected_gold_topics": [
+            "visa_process"
+          ],
+          "answer": "TopicKey: visa_case_maya\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consular case was delayed because an extra residence document was requested\n- The immigration approval arrived after Maya submitted the missing residence document",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "visa_4",
+          "question": "Summarize the residence-document / visa timeline.",
+          "gold_topic": "visa_process",
+          "selected_dossier": "visa_case_maya",
+          "selected_gold_topics": [
+            "visa_process"
+          ],
+          "answer": "TopicKey: visa_case_maya\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consular case was delayed because an extra residence document was requested\n- The immigration approval arrived after Maya submitted the missing residence document",
+          "success": true
+        }
+      ]
+    },
+    {
+      "qid": "launch_1",
+      "question": "How did the product launch change over time?",
+      "gold_topic": "product_launch",
+      "runs": [
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "launch_1",
+          "question": "How did the product launch change over time?",
+          "gold_topic": "product_launch",
+          "selected_dossier": "plann_beta",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: plann_beta\nSpan: 2026-03-03 -> 2026-03-03\nKey updates:\n- The team planned the beta launch for 2026-04-10",
+          "success": false
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "launch_1",
+          "question": "How did the product launch change over time?",
+          "gold_topic": "product_launch",
+          "selected_dossier": "release_plan_back",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: release_plan_back\nSpan: 2026-03-03 -> 2026-03-19\nKey updates:\n- The team planned the beta launch for 2026-04-10\n- A payment bug pushed the release schedule back to 2026-04-24\n- The rollout date was confirmed for 2026-04-24 after the billing fix landed",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "launch_1",
+          "question": "How did the product launch change over time?",
+          "gold_topic": "product_launch",
+          "selected_dossier": "release_plan_back",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: release_plan_back\nSpan: 2026-03-03 -> 2026-03-19\nKey updates:\n- The team planned the beta launch for 2026-04-10\n- A payment bug pushed the release schedule back to 2026-04-24\n- The rollout date was confirmed for 2026-04-24 after the billing fix landed",
+          "success": true
+        }
+      ]
+    },
+    {
+      "qid": "launch_2",
+      "question": "What changed in the rollout plan?",
+      "gold_topic": "product_launch",
+      "runs": [
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "launch_2",
+          "question": "What changed in the rollout plan?",
+          "gold_topic": "product_launch",
+          "selected_dossier": "rollout_confirm",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: rollout_confirm\nSpan: 2026-03-19 -> 2026-03-19\nKey updates:\n- The rollout date was confirmed for 2026-04-24 after the billing fix landed",
+          "success": false
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "launch_2",
+          "question": "What changed in the rollout plan?",
+          "gold_topic": "product_launch",
+          "selected_dossier": "release_plan_back",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: release_plan_back\nSpan: 2026-03-03 -> 2026-03-19\nKey updates:\n- The team planned the beta launch for 2026-04-10\n- A payment bug pushed the release schedule back to 2026-04-24\n- The rollout date was confirmed for 2026-04-24 after the billing fix landed",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "launch_2",
+          "question": "What changed in the rollout plan?",
+          "gold_topic": "product_launch",
+          "selected_dossier": "release_plan_back",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: release_plan_back\nSpan: 2026-03-03 -> 2026-03-19\nKey updates:\n- The team planned the beta launch for 2026-04-10\n- A payment bug pushed the release schedule back to 2026-04-24\n- The rollout date was confirmed for 2026-04-24 after the billing fix landed",
+          "success": true
+        }
+      ]
+    },
+    {
+      "qid": "launch_3",
+      "question": "Give the release schedule timeline.",
+      "gold_topic": "product_launch",
+      "runs": [
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "launch_3",
+          "question": "Give the release schedule timeline.",
+          "gold_topic": "product_launch",
+          "selected_dossier": "payment_bug",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: payment_bug\nSpan: 2026-03-11 -> 2026-03-11\nKey updates:\n- A payment bug pushed the release schedule back to 2026-04-24",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "launch_3",
+          "question": "Give the release schedule timeline.",
+          "gold_topic": "product_launch",
+          "selected_dossier": "release_plan_back",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: release_plan_back\nSpan: 2026-03-03 -> 2026-03-19\nKey updates:\n- The team planned the beta launch for 2026-04-10\n- A payment bug pushed the release schedule back to 2026-04-24\n- The rollout date was confirmed for 2026-04-24 after the billing fix landed",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "launch_3",
+          "question": "Give the release schedule timeline.",
+          "gold_topic": "product_launch",
+          "selected_dossier": "release_plan_back",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: release_plan_back\nSpan: 2026-03-03 -> 2026-03-19\nKey updates:\n- The team planned the beta launch for 2026-04-10\n- A payment bug pushed the release schedule back to 2026-04-24\n- The rollout date was confirmed for 2026-04-24 after the billing fix landed",
+          "success": true
+        }
+      ]
+    },
+    {
+      "qid": "launch_4",
+      "question": "What is the latest state of the beta launch?",
+      "gold_topic": "product_launch",
+      "runs": [
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "launch_4",
+          "question": "What is the latest state of the beta launch?",
+          "gold_topic": "product_launch",
+          "selected_dossier": "plann_beta",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: plann_beta\nSpan: 2026-03-03 -> 2026-03-03\nKey updates:\n- The team planned the beta launch for 2026-04-10",
+          "success": false
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "launch_4",
+          "question": "What is the latest state of the beta launch?",
+          "gold_topic": "product_launch",
+          "selected_dossier": "release_plan_back",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: release_plan_back\nSpan: 2026-03-03 -> 2026-03-19\nKey updates:\n- The team planned the beta launch for 2026-04-10\n- A payment bug pushed the release schedule back to 2026-04-24\n- The rollout date was confirmed for 2026-04-24 after the billing fix landed",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "launch_4",
+          "question": "What is the latest state of the beta launch?",
+          "gold_topic": "product_launch",
+          "selected_dossier": "release_plan_back",
+          "selected_gold_topics": [
+            "product_launch"
+          ],
+          "answer": "TopicKey: release_plan_back\nSpan: 2026-03-03 -> 2026-03-19\nKey updates:\n- The team planned the beta launch for 2026-04-10\n- A payment bug pushed the release schedule back to 2026-04-24\n- The rollout date was confirmed for 2026-04-24 after the billing fix landed",
+          "success": true
+        }
+      ]
+    },
+    {
+      "qid": "care_1",
+      "question": "How did the childcare arrangement evolve?",
+      "gold_topic": "family_support",
+      "runs": [
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "care_1",
+          "question": "How did the childcare arrangement evolve?",
+          "gold_topic": "family_support",
+          "selected_dossier": "mother_mov",
+          "selected_gold_topics": [
+            "family_support"
+          ],
+          "answer": "TopicKey: mother_mov\nSpan: 2026-03-04 -> 2026-03-04\nKey updates:\n- My mother moved in to help with childcare after the baby was born",
+          "success": false
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "care_1",
+          "question": "How did the childcare arrangement evolve?",
+          "gold_topic": "family_support",
+          "selected_dossier": "arrangement_became",
+          "selected_gold_topics": [
+            "family_support"
+          ],
+          "answer": "TopicKey: arrangement_became\nSpan: 2026-03-21 -> 2026-03-21\nKey updates:\n- We kept the care arrangement because the work schedule became more intense",
+          "success": false
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "care_1",
+          "question": "How did the childcare arrangement evolve?",
+          "gold_topic": "family_support",
+          "selected_dossier": "care_plan_family_support",
+          "selected_gold_topics": [
+            "family_support"
+          ],
+          "answer": "TopicKey: care_plan_family_support\nSpan: 2026-03-04 -> 2026-03-10\nKey updates:\n- My mother moved in to help with childcare after the baby was born\n- The babysitter plan shifted to include my mother on weekdays",
+          "success": true
+        }
+      ]
+    },
+    {
+      "qid": "care_2",
+      "question": "What changed over time in the babysitter plan?",
+      "gold_topic": "family_support",
+      "runs": [
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "care_2",
+          "question": "What changed over time in the babysitter plan?",
+          "gold_topic": "family_support",
+          "selected_dossier": "babysitter_shift",
+          "selected_gold_topics": [
+            "family_support"
+          ],
+          "answer": "TopicKey: babysitter_shift\nSpan: 2026-03-10 -> 2026-03-10\nKey updates:\n- The babysitter plan shifted to include my mother on weekdays",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "care_2",
+          "question": "What changed over time in the babysitter plan?",
+          "gold_topic": "family_support",
+          "selected_dossier": "care_plan_family_support",
+          "selected_gold_topics": [
+            "family_support"
+          ],
+          "answer": "TopicKey: care_plan_family_support\nSpan: 2026-03-04 -> 2026-03-10\nKey updates:\n- My mother moved in to help with childcare after the baby was born\n- The babysitter plan shifted to include my mother on weekdays",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "care_2",
+          "question": "What changed over time in the babysitter plan?",
+          "gold_topic": "family_support",
+          "selected_dossier": "care_plan_family_support",
+          "selected_gold_topics": [
+            "family_support"
+          ],
+          "answer": "TopicKey: care_plan_family_support\nSpan: 2026-03-04 -> 2026-03-10\nKey updates:\n- My mother moved in to help with childcare after the baby was born\n- The babysitter plan shifted to include my mother on weekdays",
+          "success": true
+        }
+      ]
+    },
+    {
+      "qid": "care_3",
+      "question": "Give the care-arrangement timeline.",
+      "gold_topic": "family_support",
+      "runs": [
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "care_3",
+          "question": "Give the care-arrangement timeline.",
+          "gold_topic": "family_support",
+          "selected_dossier": "kept_care",
+          "selected_gold_topics": [
+            "family_support"
+          ],
+          "answer": "TopicKey: kept_care\nSpan: 2026-03-21 -> 2026-03-21\nKey updates:\n- We kept the care arrangement because the work schedule became more intense",
+          "success": false
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "care_3",
+          "question": "Give the care-arrangement timeline.",
+          "gold_topic": "family_support",
+          "selected_dossier": "arrangement_became",
+          "selected_gold_topics": [
+            "family_support"
+          ],
+          "answer": "TopicKey: arrangement_became\nSpan: 2026-03-21 -> 2026-03-21\nKey updates:\n- We kept the care arrangement because the work schedule became more intense",
+          "success": false
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "care_3",
+          "question": "Give the care-arrangement timeline.",
+          "gold_topic": "family_support",
+          "selected_dossier": "care_plan_family_support",
+          "selected_gold_topics": [
+            "family_support"
+          ],
+          "answer": "TopicKey: care_plan_family_support\nSpan: 2026-03-04 -> 2026-03-10\nKey updates:\n- My mother moved in to help with childcare after the baby was born\n- The babysitter plan shifted to include my mother on weekdays",
+          "success": true
+        }
+      ]
+    },
+    {
+      "qid": "care_4",
+      "question": "What is the latest status of the family support arrangement?",
+      "gold_topic": "family_support",
+      "runs": [
+        {
+          "mode": "naive_no_hint + lexical",
+          "grouping_mode": "naive_no_hint",
+          "selection_mode": "lexical",
+          "qid": "care_4",
+          "question": "What is the latest status of the family support arrangement?",
+          "gold_topic": "family_support",
+          "selected_dossier": "rental_screenshot",
+          "selected_gold_topics": [
+            "apartment_lease"
+          ],
+          "answer": "TopicKey: rental_screenshot\nSpan: 2026-03-05 -> 2026-03-05\nKey updates:\n- The rental paperwork screenshot showed Rua Augusta 14 and a move-in date of 2026-03-20",
+          "success": false
+        },
+        {
+          "mode": "canonicalized_no_hint + lexical",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "lexical",
+          "qid": "care_4",
+          "question": "What is the latest status of the family support arrangement?",
+          "gold_topic": "family_support",
+          "selected_dossier": "care_plan_family_support",
+          "selected_gold_topics": [
+            "family_support"
+          ],
+          "answer": "TopicKey: care_plan_family_support\nSpan: 2026-03-04 -> 2026-03-10\nKey updates:\n- My mother moved in to help with childcare after the baby was born\n- The babysitter plan shifted to include my mother on weekdays",
+          "success": true
+        },
+        {
+          "mode": "canonicalized_no_hint + longitudinal",
+          "grouping_mode": "canonicalized_no_hint",
+          "selection_mode": "longitudinal",
+          "qid": "care_4",
+          "question": "What is the latest status of the family support arrangement?",
+          "gold_topic": "family_support",
+          "selected_dossier": "care_plan_family_support",
+          "selected_gold_topics": [
+            "family_support"
+          ],
+          "answer": "TopicKey: care_plan_family_support\nSpan: 2026-03-04 -> 2026-03-10\nKey updates:\n- My mother moved in to help with childcare after the baby was born\n- The babysitter plan shifted to include my mother on weekdays",
+          "success": true
+        }
+      ]
+    }
+  ]
+}

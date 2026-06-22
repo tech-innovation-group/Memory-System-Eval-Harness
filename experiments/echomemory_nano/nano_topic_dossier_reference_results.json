@@ -1,0 +1,836 @@
+{
+  "readiness": {
+    "persisted": true,
+    "atoms_ready": true,
+    "dossier_ready": true,
+    "tree_ready": true,
+    "graph_ready": true,
+    "qa_ready": true
+  },
+  "observations": [
+    {
+      "obs_id": "obs-000",
+      "role": "user",
+      "modality": "text",
+      "content": "Topic: apartment lease We found an apartment on Rua Augusta 14.",
+      "mention_time": "2026-03-01T10:00:00+00:00",
+      "write_time": "2026-03-01T10:00:00+00:00",
+      "event_time": "2026-03-01",
+      "topic_hint": "apartment lease",
+      "caption": "",
+      "ocr": ""
+    },
+    {
+      "obs_id": "obs-001",
+      "role": "user",
+      "modality": "text",
+      "content": "The landlord asked for a signed lease draft.",
+      "mention_time": "2026-03-02T10:00:00+00:00",
+      "write_time": "2026-03-02T10:00:00+00:00",
+      "event_time": "2026-03-02",
+      "topic_hint": "apartment lease",
+      "caption": "",
+      "ocr": ""
+    },
+    {
+      "obs_id": "obs-002",
+      "role": "user",
+      "modality": "image",
+      "content": "lease screenshot\nRua Augusta 14 move-in 2026-03-20",
+      "mention_time": "2026-03-05T10:00:00+00:00",
+      "write_time": "2026-03-05T10:00:00+00:00",
+      "event_time": "2026-03-20",
+      "topic_hint": "apartment lease",
+      "caption": "lease screenshot",
+      "ocr": "Rua Augusta 14 move-in 2026-03-20"
+    },
+    {
+      "obs_id": "obs-003",
+      "role": "user",
+      "modality": "text",
+      "content": "The landlord delayed the handover by one week, so the move-in moved to 2026-03-27.",
+      "mention_time": "2026-03-12T10:00:00+00:00",
+      "write_time": "2026-03-12T10:00:00+00:00",
+      "event_time": "2026-03-27",
+      "topic_hint": "apartment lease",
+      "caption": "",
+      "ocr": ""
+    },
+    {
+      "obs_id": "obs-004",
+      "role": "user",
+      "modality": "text",
+      "content": "Topic: visa process Maya started the visa paperwork and Nora helped collect the financial statements.",
+      "mention_time": "2026-03-02T11:00:00+00:00",
+      "write_time": "2026-03-02T11:00:00+00:00",
+      "event_time": "2026-03-02",
+      "topic_hint": "visa process",
+      "caption": "",
+      "ocr": ""
+    },
+    {
+      "obs_id": "obs-005",
+      "role": "user",
+      "modality": "text",
+      "content": "The consulate requested an extra residence document, so the visa process was delayed.",
+      "mention_time": "2026-03-18T11:00:00+00:00",
+      "write_time": "2026-03-18T11:00:00+00:00",
+      "event_time": "2026-03-18",
+      "topic_hint": "visa process",
+      "caption": "",
+      "ocr": ""
+    },
+    {
+      "obs_id": "obs-006",
+      "role": "user",
+      "modality": "text",
+      "content": "The visa was approved after Maya submitted the missing residence document.",
+      "mention_time": "2026-03-18T12:00:00+00:00",
+      "write_time": "2026-03-18T12:00:00+00:00",
+      "event_time": "2026-03-18",
+      "topic_hint": "visa process",
+      "caption": "",
+      "ocr": ""
+    }
+  ],
+  "atoms": [
+    {
+      "atom_id": "atom-000",
+      "atom_type": "fact",
+      "topic": "apartment lease",
+      "statement": "Topic: apartment lease We found an apartment on Rua Augusta 14",
+      "event_time": "2026-03-01",
+      "mention_time": "2026-03-01T10:00:00+00:00",
+      "write_time": "2026-03-01T10:00:00+00:00",
+      "source_obs_id": "obs-000",
+      "entities": [
+        "Topic",
+        "We",
+        "Rua",
+        "Augusta"
+      ]
+    },
+    {
+      "atom_id": "atom-001",
+      "atom_type": "event",
+      "topic": "apartment lease",
+      "statement": "The landlord asked for a signed lease draft",
+      "event_time": "2026-03-02",
+      "mention_time": "2026-03-02T10:00:00+00:00",
+      "write_time": "2026-03-02T10:00:00+00:00",
+      "source_obs_id": "obs-001",
+      "entities": [
+        "The"
+      ]
+    },
+    {
+      "atom_id": "atom-002",
+      "atom_type": "image_evidence",
+      "topic": "apartment lease",
+      "statement": "lease screenshot\nRua Augusta 14 move-in 2026-03-20",
+      "event_time": "2026-03-20",
+      "mention_time": "2026-03-05T10:00:00+00:00",
+      "write_time": "2026-03-05T10:00:00+00:00",
+      "source_obs_id": "obs-002",
+      "entities": [
+        "Rua",
+        "Augusta"
+      ]
+    },
+    {
+      "atom_id": "atom-003",
+      "atom_type": "event",
+      "topic": "apartment lease",
+      "statement": "The landlord delayed the handover by one week, so the move-in moved to 2026-03-27",
+      "event_time": "2026-03-27",
+      "mention_time": "2026-03-12T10:00:00+00:00",
+      "write_time": "2026-03-12T10:00:00+00:00",
+      "source_obs_id": "obs-003",
+      "entities": [
+        "The"
+      ]
+    },
+    {
+      "atom_id": "atom-004",
+      "atom_type": "relation",
+      "topic": "visa process",
+      "statement": "Topic: visa process Maya started the visa paperwork and Nora helped collect the financial statements",
+      "event_time": "2026-03-02",
+      "mention_time": "2026-03-02T11:00:00+00:00",
+      "write_time": "2026-03-02T11:00:00+00:00",
+      "source_obs_id": "obs-004",
+      "entities": [
+        "Topic",
+        "Maya",
+        "Nora"
+      ]
+    },
+    {
+      "atom_id": "atom-005",
+      "atom_type": "event",
+      "topic": "visa process",
+      "statement": "The consulate requested an extra residence document, so the visa process was delayed",
+      "event_time": "2026-03-18",
+      "mention_time": "2026-03-18T11:00:00+00:00",
+      "write_time": "2026-03-18T11:00:00+00:00",
+      "source_obs_id": "obs-005",
+      "entities": [
+        "The"
+      ]
+    },
+    {
+      "atom_id": "atom-006",
+      "atom_type": "event",
+      "topic": "visa process",
+      "statement": "The visa was approved after Maya submitted the missing residence document",
+      "event_time": "2026-03-18",
+      "mention_time": "2026-03-18T12:00:00+00:00",
+      "write_time": "2026-03-18T12:00:00+00:00",
+      "source_obs_id": "obs-006",
+      "entities": [
+        "The",
+        "Maya"
+      ]
+    }
+  ],
+  "dossiers": {
+    "apartment lease": {
+      "topic": "apartment lease",
+      "summary": "Topic: apartment lease\nSpan: 2026-03-01 -> 2026-03-27\nKey updates:\n- Topic: apartment lease We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- lease screenshot\nRua Augusta 14 move-in 2026-03-20\n- The landlord delayed the handover by one week, so the move-in moved to 2026-03-27",
+      "start_time": "2026-03-01",
+      "end_time": "2026-03-27",
+      "atom_ids": [
+        "atom-000",
+        "atom-001",
+        "atom-002",
+        "atom-003"
+      ],
+      "entities": [
+        "Topic",
+        "We",
+        "Rua",
+        "Augusta",
+        "The"
+      ],
+      "timeline": [
+        "2026-03-01: Topic: apartment lease We found an apartment on Rua Augusta 14",
+        "2026-03-02: The landlord asked for a signed lease draft",
+        "2026-03-20: lease screenshot\nRua Augusta 14 move-in 2026-03-20",
+        "2026-03-27: The landlord delayed the handover by one week, so the move-in moved to 2026-03-27"
+      ]
+    },
+    "visa process": {
+      "topic": "visa process",
+      "summary": "Topic: visa process\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Topic: visa process Maya started the visa paperwork and Nora helped collect the financial statements\n- The consulate requested an extra residence document, so the visa process was delayed\n- The visa was approved after Maya submitted the missing residence document",
+      "start_time": "2026-03-02",
+      "end_time": "2026-03-18",
+      "atom_ids": [
+        "atom-004",
+        "atom-005",
+        "atom-006"
+      ],
+      "entities": [
+        "Topic",
+        "Maya",
+        "Nora",
+        "The"
+      ],
+      "timeline": [
+        "2026-03-02: Topic: visa process Maya started the visa paperwork and Nora helped collect the financial statements",
+        "2026-03-18: The consulate requested an extra residence document, so the visa process was delayed",
+        "2026-03-18: The visa was approved after Maya submitted the missing residence document"
+      ]
+    }
+  },
+  "temporal_tree": {
+    "2026": [
+      "atom-000:Topic: apartment lease We found an apartment on Rua Augusta 14",
+      "atom-001:The landlord asked for a signed lease draft",
+      "atom-002:lease screenshot\nRua Augusta 14 move-in 2026-03-20",
+      "atom-003:The landlord delayed the handover by one week, so the move-in moved to 2026-03-27",
+      "atom-004:Topic: visa process Maya started the visa paperwork and Nora helped collect the financial statements",
+      "atom-005:The consulate requested an extra residence document, so the visa process was delayed",
+      "atom-006:The visa was approved after Maya submitted the missing residence document"
+    ],
+    "2026-03": [
+      "atom-000:Topic: apartment lease We found an apartment on Rua Augusta 14",
+      "atom-001:The landlord asked for a signed lease draft",
+      "atom-002:lease screenshot\nRua Augusta 14 move-in 2026-03-20",
+      "atom-003:The landlord delayed the handover by one week, so the move-in moved to 2026-03-27",
+      "atom-004:Topic: visa process Maya started the visa paperwork and Nora helped collect the financial statements",
+      "atom-005:The consulate requested an extra residence document, so the visa process was delayed",
+      "atom-006:The visa was approved after Maya submitted the missing residence document"
+    ],
+    "2026-03-01": [
+      "atom-000:Topic: apartment lease We found an apartment on Rua Augusta 14"
+    ],
+    "2026-03-02": [
+      "atom-001:The landlord asked for a signed lease draft",
+      "atom-004:Topic: visa process Maya started the visa paperwork and Nora helped collect the financial statements"
+    ],
+    "2026-03-20": [
+      "atom-002:lease screenshot\nRua Augusta 14 move-in 2026-03-20"
+    ],
+    "2026-03-27": [
+      "atom-003:The landlord delayed the handover by one week, so the move-in moved to 2026-03-27"
+    ],
+    "2026-03-18": [
+      "atom-005:The consulate requested an extra residence document, so the visa process was delayed",
+      "atom-006:The visa was approved after Maya submitted the missing residence document"
+    ]
+  },
+  "graph": {
+    "nodes": [
+      {
+        "id": "atom:atom-000",
+        "type": "fact",
+        "topic": "apartment lease"
+      },
+      {
+        "id": "topic:apartment lease",
+        "type": "topic"
+      },
+      {
+        "id": "entity:Topic",
+        "type": "entity"
+      },
+      {
+        "id": "entity:We",
+        "type": "entity"
+      },
+      {
+        "id": "entity:Rua",
+        "type": "entity"
+      },
+      {
+        "id": "entity:Augusta",
+        "type": "entity"
+      },
+      {
+        "id": "atom:atom-001",
+        "type": "event",
+        "topic": "apartment lease"
+      },
+      {
+        "id": "topic:apartment lease",
+        "type": "topic"
+      },
+      {
+        "id": "entity:The",
+        "type": "entity"
+      },
+      {
+        "id": "atom:atom-002",
+        "type": "image_evidence",
+        "topic": "apartment lease"
+      },
+      {
+        "id": "image:atom-002",
+        "type": "image_evidence",
+        "topic": "apartment lease"
+      },
+      {
+        "id": "topic:apartment lease",
+        "type": "topic"
+      },
+      {
+        "id": "entity:Rua",
+        "type": "entity"
+      },
+      {
+        "id": "entity:Augusta",
+        "type": "entity"
+      },
+      {
+        "id": "atom:atom-003",
+        "type": "event",
+        "topic": "apartment lease"
+      },
+      {
+        "id": "topic:apartment lease",
+        "type": "topic"
+      },
+      {
+        "id": "entity:The",
+        "type": "entity"
+      },
+      {
+        "id": "atom:atom-004",
+        "type": "relation",
+        "topic": "visa process"
+      },
+      {
+        "id": "topic:visa process",
+        "type": "topic"
+      },
+      {
+        "id": "entity:Topic",
+        "type": "entity"
+      },
+      {
+        "id": "entity:Maya",
+        "type": "entity"
+      },
+      {
+        "id": "entity:Nora",
+        "type": "entity"
+      },
+      {
+        "id": "atom:atom-005",
+        "type": "event",
+        "topic": "visa process"
+      },
+      {
+        "id": "topic:visa process",
+        "type": "topic"
+      },
+      {
+        "id": "entity:The",
+        "type": "entity"
+      },
+      {
+        "id": "atom:atom-006",
+        "type": "event",
+        "topic": "visa process"
+      },
+      {
+        "id": "topic:visa process",
+        "type": "topic"
+      },
+      {
+        "id": "entity:The",
+        "type": "entity"
+      },
+      {
+        "id": "entity:Maya",
+        "type": "entity"
+      }
+    ],
+    "edges": [
+      {
+        "source": "topic:apartment lease",
+        "target": "atom:atom-000",
+        "type": "has_atom"
+      },
+      {
+        "source": "entity:Topic",
+        "target": "atom:atom-000",
+        "type": "mentions"
+      },
+      {
+        "source": "entity:We",
+        "target": "atom:atom-000",
+        "type": "mentions"
+      },
+      {
+        "source": "entity:Rua",
+        "target": "atom:atom-000",
+        "type": "mentions"
+      },
+      {
+        "source": "entity:Augusta",
+        "target": "atom:atom-000",
+        "type": "mentions"
+      },
+      {
+        "source": "topic:apartment lease",
+        "target": "atom:atom-001",
+        "type": "has_atom"
+      },
+      {
+        "source": "entity:The",
+        "target": "atom:atom-001",
+        "type": "mentions"
+      },
+      {
+        "source": "image:atom-002",
+        "target": "atom:atom-002",
+        "type": "evidence_of"
+      },
+      {
+        "source": "topic:apartment lease",
+        "target": "atom:atom-002",
+        "type": "has_atom"
+      },
+      {
+        "source": "entity:Rua",
+        "target": "atom:atom-002",
+        "type": "mentions"
+      },
+      {
+        "source": "entity:Augusta",
+        "target": "atom:atom-002",
+        "type": "mentions"
+      },
+      {
+        "source": "topic:apartment lease",
+        "target": "atom:atom-003",
+        "type": "has_atom"
+      },
+      {
+        "source": "entity:The",
+        "target": "atom:atom-003",
+        "type": "mentions"
+      },
+      {
+        "source": "topic:visa process",
+        "target": "atom:atom-004",
+        "type": "has_atom"
+      },
+      {
+        "source": "entity:Topic",
+        "target": "atom:atom-004",
+        "type": "mentions"
+      },
+      {
+        "source": "entity:Maya",
+        "target": "atom:atom-004",
+        "type": "mentions"
+      },
+      {
+        "source": "entity:Nora",
+        "target": "atom:atom-004",
+        "type": "mentions"
+      },
+      {
+        "source": "topic:visa process",
+        "target": "atom:atom-005",
+        "type": "has_atom"
+      },
+      {
+        "source": "entity:The",
+        "target": "atom:atom-005",
+        "type": "mentions"
+      },
+      {
+        "source": "topic:visa process",
+        "target": "atom:atom-006",
+        "type": "has_atom"
+      },
+      {
+        "source": "entity:The",
+        "target": "atom:atom-006",
+        "type": "mentions"
+      },
+      {
+        "source": "entity:Maya",
+        "target": "atom:atom-006",
+        "type": "mentions"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "qid": "q1",
+      "query": "How did the apartment lease situation evolve?",
+      "result": {
+        "query": "How did the apartment lease situation evolve?",
+        "plan": {
+          "family": "longitudinal",
+          "primary_reader": "topic_dossier",
+          "supporting_readers": [
+            "temporal_tree",
+            "graph"
+          ],
+          "required_evidence": [
+            "topic_dossier",
+            "fact"
+          ],
+          "reason": "longitudinal queries need a middle-layer topic object first"
+        },
+        "readiness": {
+          "persisted": true,
+          "atoms_ready": true,
+          "dossier_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "allowed_to_answer": true,
+        "missing": [],
+        "hits": [
+          {
+            "reader": "topic_dossier",
+            "topic": "apartment lease",
+            "score": 0.549,
+            "content": "Topic: apartment lease\nSpan: 2026-03-01 -> 2026-03-27\nKey updates:\n- Topic: apartment lease We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- lease screenshot\nRua Augusta 14 move-in 2026-03-20\n- The landlord delayed the handover by one week, so the move-in moved to 2026-03-27",
+            "atom_ids": [
+              "atom-000",
+              "atom-001",
+              "atom-002",
+              "atom-003"
+            ],
+            "timeline": [
+              "2026-03-01: Topic: apartment lease We found an apartment on Rua Augusta 14",
+              "2026-03-02: The landlord asked for a signed lease draft",
+              "2026-03-20: lease screenshot\nRua Augusta 14 move-in 2026-03-20",
+              "2026-03-27: The landlord delayed the handover by one week, so the move-in moved to 2026-03-27"
+            ]
+          },
+          {
+            "reader": "topic_dossier",
+            "topic": "visa process",
+            "score": 0.263,
+            "content": "Topic: visa process\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Topic: visa process Maya started the visa paperwork and Nora helped collect the financial statements\n- The consulate requested an extra residence document, so the visa process was delayed\n- The visa was approved after Maya submitted the missing residence document",
+            "atom_ids": [
+              "atom-004",
+              "atom-005",
+              "atom-006"
+            ],
+            "timeline": [
+              "2026-03-02: Topic: visa process Maya started the visa paperwork and Nora helped collect the financial statements",
+              "2026-03-18: The consulate requested an extra residence document, so the visa process was delayed",
+              "2026-03-18: The visa was approved after Maya submitted the missing residence document"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "qid": "q2",
+      "query": "What is the latest status of the visa process?",
+      "result": {
+        "query": "What is the latest status of the visa process?",
+        "plan": {
+          "family": "longitudinal",
+          "primary_reader": "topic_dossier",
+          "supporting_readers": [
+            "temporal_tree",
+            "graph"
+          ],
+          "required_evidence": [
+            "topic_dossier",
+            "fact"
+          ],
+          "reason": "longitudinal queries need a middle-layer topic object first"
+        },
+        "readiness": {
+          "persisted": true,
+          "atoms_ready": true,
+          "dossier_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "allowed_to_answer": true,
+        "missing": [],
+        "hits": [
+          {
+            "reader": "topic_dossier",
+            "topic": "visa process",
+            "score": 0.495,
+            "content": "Topic: visa process\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Topic: visa process Maya started the visa paperwork and Nora helped collect the financial statements\n- The consulate requested an extra residence document, so the visa process was delayed\n- The visa was approved after Maya submitted the missing residence document",
+            "atom_ids": [
+              "atom-004",
+              "atom-005",
+              "atom-006"
+            ],
+            "timeline": [
+              "2026-03-02: Topic: visa process Maya started the visa paperwork and Nora helped collect the financial statements",
+              "2026-03-18: The consulate requested an extra residence document, so the visa process was delayed",
+              "2026-03-18: The visa was approved after Maya submitted the missing residence document"
+            ]
+          },
+          {
+            "reader": "topic_dossier",
+            "topic": "apartment lease",
+            "score": 0.245,
+            "content": "Topic: apartment lease\nSpan: 2026-03-01 -> 2026-03-27\nKey updates:\n- Topic: apartment lease We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- lease screenshot\nRua Augusta 14 move-in 2026-03-20\n- The landlord delayed the handover by one week, so the move-in moved to 2026-03-27",
+            "atom_ids": [
+              "atom-000",
+              "atom-001",
+              "atom-002",
+              "atom-003"
+            ],
+            "timeline": [
+              "2026-03-01: Topic: apartment lease We found an apartment on Rua Augusta 14",
+              "2026-03-02: The landlord asked for a signed lease draft",
+              "2026-03-20: lease screenshot\nRua Augusta 14 move-in 2026-03-20",
+              "2026-03-27: The landlord delayed the handover by one week, so the move-in moved to 2026-03-27"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "qid": "q3",
+      "query": "What address was shown in the lease screenshot?",
+      "result": {
+        "query": "What address was shown in the lease screenshot?",
+        "plan": {
+          "family": "visual",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "temporal_tree",
+            "topic_dossier"
+          ],
+          "required_evidence": [
+            "image_evidence",
+            "fact"
+          ],
+          "reason": "visual queries need first-class image evidence"
+        },
+        "readiness": {
+          "persisted": true,
+          "atoms_ready": true,
+          "dossier_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "allowed_to_answer": false,
+        "missing": [
+          "image_evidence"
+        ],
+        "hits": [
+          {
+            "reader": "topic_dossier",
+            "topic": "apartment lease",
+            "score": 0.55,
+            "content": "Topic: apartment lease\nSpan: 2026-03-01 -> 2026-03-27\nKey updates:\n- Topic: apartment lease We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- lease screenshot\nRua Augusta 14 move-in 2026-03-20\n- The landlord delayed the handover by one week, so the move-in moved to 2026-03-27",
+            "atom_ids": [
+              "atom-000",
+              "atom-001",
+              "atom-002",
+              "atom-003"
+            ],
+            "timeline": [
+              "2026-03-01: Topic: apartment lease We found an apartment on Rua Augusta 14",
+              "2026-03-02: The landlord asked for a signed lease draft",
+              "2026-03-20: lease screenshot\nRua Augusta 14 move-in 2026-03-20",
+              "2026-03-27: The landlord delayed the handover by one week, so the move-in moved to 2026-03-27"
+            ]
+          },
+          {
+            "reader": "topic_dossier",
+            "topic": "visa process",
+            "score": 0.3,
+            "content": "Topic: visa process\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Topic: visa process Maya started the visa paperwork and Nora helped collect the financial statements\n- The consulate requested an extra residence document, so the visa process was delayed\n- The visa was approved after Maya submitted the missing residence document",
+            "atom_ids": [
+              "atom-004",
+              "atom-005",
+              "atom-006"
+            ],
+            "timeline": [
+              "2026-03-02: Topic: visa process Maya started the visa paperwork and Nora helped collect the financial statements",
+              "2026-03-18: The consulate requested an extra residence document, so the visa process was delayed",
+              "2026-03-18: The visa was approved after Maya submitted the missing residence document"
+            ]
+          },
+          {
+            "reader": "graph",
+            "topic": "",
+            "score": 0.235,
+            "content": "entity:The",
+            "node_type": "entity"
+          },
+          {
+            "reader": "graph",
+            "topic": "",
+            "score": 0.235,
+            "content": "entity:The",
+            "node_type": "entity"
+          },
+          {
+            "reader": "graph",
+            "topic": "",
+            "score": 0.235,
+            "content": "entity:The",
+            "node_type": "entity"
+          },
+          {
+            "reader": "graph",
+            "topic": "",
+            "score": 0.235,
+            "content": "entity:The",
+            "node_type": "entity"
+          },
+          {
+            "reader": "temporal_tree",
+            "topic": "2026",
+            "score": 0.05,
+            "content": "atom-000:Topic: apartment lease We found an apartment on Rua Augusta 14\natom-001:The landlord asked for a signed lease draft\natom-002:lease screenshot\nRua Augusta 14 move-in 2026-03-20\natom-003:The landlord delayed the handover by one week, so the move-in moved to 2026-03-27"
+          },
+          {
+            "reader": "temporal_tree",
+            "topic": "2026-03",
+            "score": 0.05,
+            "content": "atom-000:Topic: apartment lease We found an apartment on Rua Augusta 14\natom-001:The landlord asked for a signed lease draft\natom-002:lease screenshot\nRua Augusta 14 move-in 2026-03-20\natom-003:The landlord delayed the handover by one week, so the move-in moved to 2026-03-27"
+          },
+          {
+            "reader": "temporal_tree",
+            "topic": "2026-03-01",
+            "score": 0.05,
+            "content": "atom-000:Topic: apartment lease We found an apartment on Rua Augusta 14"
+          },
+          {
+            "reader": "temporal_tree",
+            "topic": "2026-03-02",
+            "score": 0.05,
+            "content": "atom-001:The landlord asked for a signed lease draft\natom-004:Topic: visa process Maya started the visa paperwork and Nora helped collect the financial statements"
+          }
+        ]
+      }
+    },
+    {
+      "qid": "q4",
+      "query": "Who helped collect the financial statements?",
+      "result": {
+        "query": "Who helped collect the financial statements?",
+        "plan": {
+          "family": "relational",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "temporal_tree",
+            "topic_dossier"
+          ],
+          "required_evidence": [
+            "graph",
+            "path_grounding"
+          ],
+          "reason": "relation-heavy queries need graph path grounding"
+        },
+        "readiness": {
+          "persisted": true,
+          "atoms_ready": true,
+          "dossier_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "allowed_to_answer": true,
+        "missing": [],
+        "hits": [
+          {
+            "reader": "graph",
+            "topic": "",
+            "score": 0.277,
+            "content": "entity:The",
+            "node_type": "entity"
+          },
+          {
+            "reader": "graph",
+            "topic": "",
+            "score": 0.277,
+            "content": "entity:The",
+            "node_type": "entity"
+          },
+          {
+            "reader": "graph",
+            "topic": "",
+            "score": 0.277,
+            "content": "entity:The",
+            "node_type": "entity"
+          },
+          {
+            "reader": "graph",
+            "topic": "",
+            "score": 0.277,
+            "content": "entity:The",
+            "node_type": "entity"
+          }
+        ]
+      }
+    }
+  ]
+}

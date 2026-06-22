@@ -1,288 +1,243 @@
-# LoCoMo Memory Eval Workbench
+# MemoryBench Eval Workbench
 
-Local-first memory evaluation workbench for **LoCoMo + OpenViking** and
-**LoCoMo + EchoMem/EchoMemory**.
+Local-first memory evaluation workbench for `OpenViking` and `EchoMemory`.
 
-It imports conversations into a memory backend, verifies `commit_session`,
-runs memory-grounded QA, judges answers, and exports evidence-rich HTML
-reports. The goal is not just to show an accuracy number, but to explain
-whether storage, retrieval, context construction, model generation, or Judge
-caused the result.
+This repository is used to:
 
-## Why This Exists
+- run real memory-backed benchmark flows
+- inspect import / retrieval / answer / judge artifacts
+- compare backend behavior on the same dataset protocol
+- generate HTML reports that are shareable after redaction
 
-Memory-system evaluation is often hard to reproduce because the important
-state is scattered across scripts, workspaces, logs, model calls, and local
-memory files. This workbench makes the full chain inspectable:
+Current active benchmark focus:
 
-- dataset validation and category counts
-- OpenViking or EchoMem account/workspace isolation
-- conversation import and commit integrity
-- relevant-memory evidence for every QA row
-- answer model output, Judge output, token usage, and runtime
-- retryable failures, pending Judge rows, wrong-answer clusters, and run diff
-- safe handoff checks before sharing the project with another tester
+- `LoCoMo`
+- `LongMemEval`
+- `EvolvingEvents`
 
-The product roadmap is available at
-[`web/static/product-roadmap.html`](web/static/product-roadmap.html).
+## Current Status
 
-## Current Scope
+This repo is no longer just a LoCoMo demo shell.
 
-This release intentionally keeps the memory-backend surface small. The active
-handoff target is MemoryBench Agent with OpenViking as the reproducible
-baseline and EchoMem/EchoMemory as the external memory-system integration path.
-No additional backend is required for the current LoCoMo handoff.
+Today it contains:
 
-1. **OpenViking baseline**
-   - HTTP service integration
-   - workspace/account/session isolation
-   - `commit_session` import path
-   - relevant-memory retrieval and memory browsing
+- a stable `OpenViking` service-backed path
+- a stable `EchoMemory` local-SDK path
+- dataset registry and UI pages for multiple benchmarks
+- real run history and report export support
+- platform-side diagnostics for long-running EchoMemory tasks
 
-2. **EchoMem / EchoMemory**
-   - local SDK/runtime integration
-   - account-scoped workspace
-   - `create_session`, `add_message`, `commit_session`
-   - `find` / `search` retrieval evidence
-   - external fork and graph-memory module contract checks
+What is already verified with real runs:
 
-Other benchmark pages exist as dataset registry or future-runner surfaces, but
-the polished end-to-end flow is Custom Agent + LoCoMo first.
+- `EvolvingEvents sample` on `EchoMemory 0.1.0`
+- `LongMemEval full` single-sample and subset runs on `EchoMemory 0.1.0`
 
-## Public Surface Contract
+What is still limited by external state or backend behavior:
 
-The public UI surface is governed by `web/ui_contract.json`. For the current
-handoff, the only public static files are:
+- `EvolvingEvents full` is registered, but the real full dataset file is not bundled in this repo
+- `LongMemEval full` long samples can stall in EchoMemory 0.1.0 post-import atom extraction / indexing
 
-- `web/static/index.html`
-- `web/static/app.js`
-- `web/static/styles.css`
-- `web/static/product-roadmap.html`
+So the platform is real, but not every benchmark is already complete at full scale.
 
-Other HTML files under `web/static/` are experiment history or generated
-reports. They are useful for internal analysis, but they are not product
-entrypoints and should not be presented as shipped features.
+## Backend Model
 
-## 5-Minute Smoke Test
+There are only two memory backends in the current public surface:
+
+- `OpenViking`
+- `EchoMemory`
+
+Their integration modes are different:
+
+### OpenViking
+
+- connected through a service URL and port
+- the platform calls backend HTTP APIs
+
+### EchoMemory
+
+- not connected by service port
+- the platform uses a local EchoMemory source tree plus SDK/runtime
+
+EchoMemory integration depends on:
+
+- `ECHOMEM_ROOT`
+- `ECHOMEM_PYTHON` or `$ECHOMEM_ROOT/.venv/bin/python`
+- workspace
+- account
+- user id
+- agent id
+
+The platform expects these SDK/runtime capabilities to remain compatible:
+
+- `open_runtime(...)`
+- `EchoMemSDK(...)`
+- `create_session(...)`
+- `add_message(...)`
+- `commit_session(...)`
+- `find(...)`
+- `search(...)`
+
+If a custom EchoMemory fork keeps those interfaces and returns normal evidence fields, external users usually only need to change configuration, not platform code.
+
+## Dataset Support Matrix
+
+### Bundled and directly runnable
+
+- `dataset/locomo10.json`
+- `dataset/longmemeval.sample.json`
+- `dataset/evolvingevents.sample.json`
+
+### Canonical full-data slots
+
+- `dataset/full/locomo.json`
+- `dataset/full/longmemeval_s_cleaned.json`
+- `dataset/full/evolvingevents.json`
+
+Current repo reality:
+
+- `dataset/full/longmemeval_s_cleaned.json` exists
+- `dataset/full/evolvingevents.json` does not exist yet
+- if `dataset/full/locomo.json` exists, UI and server will prefer it automatically
+
+## EchoMemory 0.1.0 Benchmark Notes
+
+`EchoMemory 0.1.0` is verified from the local source tree metadata, not guessed.
+
+Real benchmark evidence already generated in this repo:
+
+- report:
+  - `generated-reports/echomemory_v010_longmemeval_evolvingevents_20260615.html`
+- EvolvingEvents sample successful run:
+  - `runs/echomemory_generic_qa_20260615_155307_567cd6/`
+- LongMemEval single full-sample run:
+  - `runs/echomemory_generic_qa_20260615_130316_1b05ee/`
+- LongMemEval long-sample bottleneck reproduction:
+  - `runs/echomemory_generic_qa_20260615_155532_1df346/`
+
+Judge alignment for those runs uses:
+
+- question
+- gold answer
+- generated answer
+
+and does not feed retrieved memory into the judge path.
+
+## Quick Start
 
 ```bash
 cd locomo-eval-web
-# Choose one template: env.example for OpenViking baseline, env.echomem.example for EchoMem.
-cp env.example .env.local
-# Edit .env.local with your own local paths and API keys.
+cp env.echomem.example .env.local
+# edit .env.local locally
 source .env.local
 ./preflight.sh
 ./start.sh
 ```
 
-Open the UI:
+Then open:
 
 ```text
-http://127.0.0.1:19181/
+http://127.0.0.1:${LOCOMO_EVAL_PORT:-19181}/
 ```
 
 Recommended first route:
 
-1. Open `README / 交付说明`.
-2. Run `交付驾驶舱`, `GitHub Launch Kit`, and `外部验收矩阵`.
-3. Open `系统配置` and confirm OpenViking baseline or EchoMem integration status.
-4. Open `LoCoMo评测`.
-5. Validate the bundled `dataset/locomo10.json`.
-6. Import one conversation, such as `conv-30`.
-7. Run one QA, then 10 QA, then Judge.
-8. Generate and inspect the HTML report.
+1. Open `README`
+2. Open `系统配置`
+3. Select backend and confirm model settings
+4. Open the benchmark page you actually want to run
+5. Validate dataset path
+6. Run a small sample first
+7. Judge current result
+8. Export HTML report
 
-## Configuration
+## Realistic First Runs
 
-Use `.env.local` for local secrets and paths. Do not commit or share it.
+### EchoMemory + LongMemEval
 
-Important variables:
+Start with:
 
-- `LOCOMO_EVAL_HOST` / `LOCOMO_EVAL_PORT`
-- `LOCOMO_DATA`
-- `OPENVIKING_SOURCE`
-- `LOCOMO_EVAL_OPENVIKING_URL`
-- `LOCOMO_EVAL_OPENVIKING_WORKSPACE`
-- `ECHOMEM_ROOT`
-- `ECHOMEM_WORKSPACE`
-- `ECHOMEM_ACCOUNT`
-- `ECHOMEM_USER_ID`
-- `ECHOMEM_AGENT_ID`
-- `ECHOMEM_CHAT_BASE_URL`
-- `ECHOMEM_CHAT_MODEL`
-- `ECHOMEM_CHAT_API_KEY`
-- `JUDGE_BASE_URL`
-- `JUDGE_MODEL`
-- `JUDGE_TOKEN`
+- a tiny selected question set
+- or one known sample
 
-The repository includes `env.echomem.example` and `env.example` with
-placeholder values only.
+Do not start with all rows on first boot.
 
-LoCoMo dataset defaults:
+Reason:
 
-- bundled smoke dataset: `dataset/locomo10.json`
-- canonical full dataset slot: `dataset/full/locomo.json`
+- long samples can trigger slow `atom_extraction`
+- long samples can stay in `commit:indexing`
+- this is currently a backend-side bottleneck the platform now exposes more honestly
 
-If `dataset/full/locomo.json` exists, the server and UI prefer it automatically.
-Otherwise they fall back to `dataset/locomo10.json`.
+### EchoMemory + EvolvingEvents
 
-## EchoMem Fork Integration
+Use the bundled sample first.
 
-If you are testing a custom EchoMem fork or adding a graph-memory module, keep
-the platform-facing contract stable. The platform should not need dataset-flow
-changes for graph memory; graph retrieval should surface through the same
-evidence structure.
+If you want a formal full run, place the converted file at:
 
-- `open_runtime(config_path)`
-- `EchoMemSDK.create_session(...)`
-- `EchoMemSDK.add_message(...)`
-- `EchoMemSDK.commit_session(...)`
-- `EchoMemSDK.find(query, ctx=...)`
-- `EchoMemSDK.search(query, ctx=..., budget={"max_results": top_k})`
-
-Evidence returned by retrieval should include:
-
-- `content`
-- `uri` or `source_uri`
-- `score` or `confidence`
-- `memory_type`
-- `evidence_uri`
-- `trace`
-
-Run the contract checks before a benchmark:
-
-```bash
-python3 scripts/adapter_doctor.py --format markdown --strict
-curl -s http://127.0.0.1:19181/api/echomem-contract | python3 -m json.tool | head -120
+```text
+dataset/full/evolvingevents.json
 ```
 
-## OpenViking Baseline
+The conversion helper is:
 
-OpenViking is treated as the baseline memory backend. The platform calls the
-backend service rather than reimplementing memory extraction or retrieval.
-EchoMem/EchoMemory is the external system under test for handoff runs.
+```bash
+python3 scripts/prepare_evolvingevents_full.py \
+  --chunks /path/to/chunks.json \
+  --qa /path/to/qa_pairs.json \
+  --out dataset/full/evolvingevents.json
+```
 
-The important reproducibility fields are:
+## Reports and Runs
 
-- OpenViking URL
-- workspace
-- account
-- user id
-- agent id
-- session id
-- top-k
-- prompt mode
-- answer model
-- Judge model
+Each run writes artifacts under `runs/<run_id>/`.
 
-Use a fresh workspace or account for formal runs to avoid memory pollution.
-
-## Report Artifacts
-
-Each run writes artifacts under `runs/<run_id>/`. Do not publish raw run
-folders without reviewing them first.
-
-Typical artifacts:
+Typical files:
 
 - `manifest.json`
 - `config_snapshot.json`
 - `run.log`
 - result CSV
-- `relevant_memory.json`
-- `summary.json`
 - `judge_summary.json`
-- `report.html`
+- `summary.json`
 
-The HTML report should make these questions answerable:
+Generated HTML reports live under:
 
-- Was memory imported completely?
-- Which memory evidence was retrieved?
-- Did the answer model see useful context?
-- Was Judge complete or pending?
-- Are failures caused by storage, retrieval, context, model/API, or Judge?
-- How does this run differ from a previous run?
+- `generated-reports/`
 
-## Public Handoff Safety
-
-Before sending this project to another tester or publishing it:
-
-```bash
-./preflight.sh
-curl -s http://127.0.0.1:19181/api/handoff-audit | python3 -m json.tool | head -160
-curl -s http://127.0.0.1:19181/api/github-launch-kit | python3 -m json.tool | head -120
-```
+## Open-Source Handoff Rules
 
 Do not share:
 
-- files ignored by `.gitignore` or `export-ignore` rules in `.gitattributes`
 - `.env.local`
 - `judge.conf`
-- real API keys or screenshots containing tokens
 - raw `runs/`
-- OpenViking or EchoMem workspaces
-- private logs, model responses, or unredacted reports
-- historical static reports such as `web/static/*.html` other than
-  `index.html` and `product-roadmap.html`
-- `dist/`, `outputs/`, or old local packages
+- private workspaces
+- real API keys
+- screenshots containing tokens
 
-Share:
+Do share:
 
 - source code
-- `.gitignore` and `.gitattributes`, so generated artifacts and local secrets stay outside public handoff
-- `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, and `PUBLICATION_CHECKLIST.md`
-- core static UI files: `web/static/index.html`, `web/static/app.js`,
-  `web/static/styles.css`, and `web/static/product-roadmap.html`
-- `dataset/locomo10.json`
+- `env.example`
 - `env.echomem.example`
 - redacted demo reports
-- Issue templates
-- this README and the handoff README
-
-## Developer Checks
-
-```bash
-python3 -m py_compile server.py memory/runs.py memory/report_export.py memory/reports.py
-node --check web/static/app.js
-node --check static/app.js
-./preflight.sh
-```
-
-After changing the core files in `web/static`, mirror them to `static`:
-
-```bash
-cp web/static/index.html static/index.html
-cp web/static/app.js static/app.js
-cp web/static/styles.css static/styles.css
-cp web/static/product-roadmap.html static/product-roadmap.html
-```
-
-## Open Source Collaboration
-
-- Use [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening PRs.
-- Use [`SECURITY.md`](SECURITY.md) for vulnerability or secret-leak reports.
-- Use [`PUBLICATION_CHECKLIST.md`](PUBLICATION_CHECKLIST.md) before publishing or sending the project to another tester.
-- Pull requests use [`.github/pull_request_template.md`](.github/pull_request_template.md) and CI runs [`.github/workflows/preflight.yml`](.github/workflows/preflight.yml).
-- The current license is [`MIT`](LICENSE).
+- this README
+- `README_ECHOMEM_LOCOMO_HANDOFF.md`
 
 ## Useful Files
 
-- [`server.py`](server.py)
-- [`preflight.sh`](preflight.sh)
-- [`.gitignore`](.gitignore)
-- [`.gitattributes`](.gitattributes)
-- [`LICENSE`](LICENSE)
-- [`CONTRIBUTING.md`](CONTRIBUTING.md)
-- [`SECURITY.md`](SECURITY.md)
-- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
-- [`PUBLICATION_CHECKLIST.md`](PUBLICATION_CHECKLIST.md)
-- [`.github/pull_request_template.md`](.github/pull_request_template.md)
-- [`.github/workflows/preflight.yml`](.github/workflows/preflight.yml)
-- [`HARNESS_SPEC.md`](HARNESS_SPEC.md)
-- [`README_ECHOMEM_LOCOMO_HANDOFF.md`](README_ECHOMEM_LOCOMO_HANDOFF.md)
-- [`memory/adapters/contract.py`](memory/adapters/contract.py)
-- [`scripts/openviking_locomo_import.py`](scripts/openviking_locomo_import.py)
-- [`scripts/openviking_memory_qa.py`](scripts/openviking_memory_qa.py)
-- [`scripts/echomemory_locomo_import.py`](scripts/echomemory_locomo_import.py)
-- [`scripts/echomemory_memory_qa.py`](scripts/echomemory_memory_qa.py)
-- [`scripts/local_judge.py`](scripts/local_judge.py)
-- [`scripts/generate_html_report.py`](scripts/generate_html_report.py)
+- `README_ECHOMEM_LOCOMO_HANDOFF.md`
+- `docs/echomem_test_guide.md`
+- `server.py`
+- `scripts/echomemory_generic_qa.py`
+- `scripts/prepare_evolvingevents_full.py`
+- `scripts/render_echomemory_v010_benchmark_report.py`
+- `memory/runs.py`
+- `dataset/manifest.json`
+
+## Verification
+
+```bash
+python3 -m py_compile server.py memory/runs.py scripts/echomemory_generic_qa.py scripts/prepare_evolvingevents_full.py
+node --check web/static/app.js
+./preflight.sh
+```

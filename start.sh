@@ -7,7 +7,10 @@ PORT="${LOCOMO_EVAL_PORT:-19181}"
 
 cd "$ROOT"
 
-DEFAULT_ECHOMEM_ROOT="$HOME/Code/echomemory/echo_memory_v006"
+DEFAULT_ECHOMEM_ROOT="$HOME/Code/echomemory/echo_memory"
+if [[ ! -d "$DEFAULT_ECHOMEM_ROOT" ]]; then
+  DEFAULT_ECHOMEM_ROOT="$HOME/Code/echomemory/echo_memory_v007_tag"
+fi
 PYTHON_BIN="${PYTHON_BIN:-}"
 if [[ -n "${PYTHON_BIN}" ]]; then
   :

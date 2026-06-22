@@ -18,7 +18,7 @@
 
 服务端分发逻辑：
 
-- [server.py](/Users/chx/locomo-eval-web/server.py)
+- [server.py](../server.py)
 - 通过 `memory_backend` 选择插件
 - 插件暴露统一能力：
   - `agent_context(payload, defaults)`
@@ -28,11 +28,11 @@
 插件实现：
 
 - OpenViking:
-  - [memory/plugins/openviking/plugin.py](/Users/chx/locomo-eval-web/memory/plugins/openviking/plugin.py)
-  - [memory/plugins/openviking/agent.py](/Users/chx/locomo-eval-web/memory/plugins/openviking/agent.py)
+  - [memory/plugins/openviking/plugin.py](../memory/plugins/openviking/plugin.py)
+  - [memory/plugins/openviking/agent.py](../memory/plugins/openviking/agent.py)
 - EchoMemory:
-  - [memory/plugins/echomemory/plugin.py](/Users/chx/locomo-eval-web/memory/plugins/echomemory/plugin.py)
-  - [memory/plugins/echomemory/agent.py](/Users/chx/locomo-eval-web/memory/plugins/echomemory/agent.py)
+  - [memory/plugins/echomemory/plugin.py](../memory/plugins/echomemory/plugin.py)
+  - [memory/plugins/echomemory/agent.py](../memory/plugins/echomemory/agent.py)
 
 结论：架构层面已经支持 EchoMemory 作为“当前自定义 Agent”的后端，不需要另起一套前端入口。
 
@@ -68,7 +68,7 @@ OpenViking 当前是“插件 + 统一 Agent API”的标准实现：
 EchoMemory 当前已经接上了同样三类接口：
 
 1. `agent_context`
-   - 文件：[memory/plugins/echomemory/agent.py](/Users/chx/locomo-eval-web/memory/plugins/echomemory/agent.py)
+   - 文件：[memory/plugins/echomemory/agent.py](../memory/plugins/echomemory/agent.py)
    - 当前通过 EchoMemory local SDK 执行 `find/search`
    - 支持拆分：
      - `user_memory`
@@ -141,7 +141,7 @@ EchoMemory 当前工作台更接近：
 
 可直接复用的现有能力：
 
-- [scripts/echomemory_memory_qa.py](/Users/chx/locomo-eval-web/scripts/echomemory_memory_qa.py)
+- [scripts/echomemory_memory_qa.py](../scripts/echomemory_memory_qa.py)
   - `--prompt-mode vikingboat_compat`
   - `--vikingboat-tool-loop`
   - `--tool-set vikingboat_default`
@@ -227,18 +227,18 @@ EchoMemory 当前工作台更接近：
 
 ### 必改文件
 
-- [memory/plugins/echomemory/agent.py](/Users/chx/locomo-eval-web/memory/plugins/echomemory/agent.py)
+- [memory/plugins/echomemory/agent.py](../memory/plugins/echomemory/agent.py)
   - 把 `chat()` 从 single-shot 改为 tool-loop
 
-- [web/static/app.js](/Users/chx/locomo-eval-web/web/static/app.js)
+- [web/static/app.js](../web/static/app.js)
   - 工作台配置面板里显示 EchoMemory 与 OpenViking 共用的 Agent 参数
 
 ### 可复用文件
 
-- [scripts/echomemory_memory_qa.py](/Users/chx/locomo-eval-web/scripts/echomemory_memory_qa.py)
+- [scripts/echomemory_memory_qa.py](../scripts/echomemory_memory_qa.py)
   - 可直接复用其 tool-loop 和 vikingboat compat prompt 逻辑
 
-- [memory/plugins/echomemory/tasks.py](/Users/chx/locomo-eval-web/memory/plugins/echomemory/tasks.py)
+- [memory/plugins/echomemory/tasks.py](../memory/plugins/echomemory/tasks.py)
   - 已经把 EchoMemory QA 对齐到了 VikingBoat 兼容参数
 
 ## 八、最终落地后的目标状态

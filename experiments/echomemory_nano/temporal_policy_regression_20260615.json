@@ -1,0 +1,32 @@
+{
+  "summary": {
+    "passed": 3,
+    "total": 3
+  },
+  "cases": [
+    {
+      "case_id": "policy1",
+      "title": "Temporal query without query-time anchor should not look answerable",
+      "expectation": "weak / consider_unknown",
+      "observed": "weak / consider_unknown",
+      "passed": true,
+      "notes": "Policy should explicitly flag missing query-time anchor for relative-time questions."
+    },
+    {
+      "case_id": "policy2",
+      "title": "Temporal query with anchor but mention-time-only evidence should ask for story-time evidence",
+      "expectation": "caution / prefer_story_time_evidence",
+      "observed": "caution / prefer_story_time_evidence",
+      "passed": true,
+      "notes": "Policy should distinguish retrospective mention from actual event occurrence."
+    },
+    {
+      "case_id": "policy3",
+      "title": "Temporal query with anchor and event-time evidence can be answerable",
+      "expectation": "ok / answerable",
+      "observed": "ok / answerable",
+      "passed": true,
+      "notes": "Once both the query-time anchor and story-time evidence are present, policy can stay calm."
+    }
+  ]
+}

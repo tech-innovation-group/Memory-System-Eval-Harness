@@ -11,7 +11,7 @@ from typing import Any
 from . import graph_report as graph_report_service
 from . import reports as report_service
 from . import runs as run_service
-from .adapters import get_adapter
+from .plugins.service import plugin_service
 from .tasking import redacted_command
 
 
@@ -22,6 +22,24 @@ def read_json(path: Path) -> Any:
 def format_score(summary: dict[str, Any]) -> str:
     accuracy = summary.get("accuracy")
     return "待 Judge" if accuracy is None else f"{accuracy * 100:.1f}%"
+
+
+def format_metric_percent(value: Any, fallback: str = "-") -> str:
+    if value in (None, "", "-"):
+        return fallback
+    try:
+        return f"{float(value) * 100:.1f}%"
+    except (TypeError, ValueError):
+        return fallback
+
+
+def format_metric_seconds(value: Any, fallback: str = "-") -> str:
+    if value in (None, "", "-"):
+        return fallback
+    try:
+        return f"{float(value):.2f}s"
+    except (TypeError, ValueError):
+        return fallback
 
 
 def csv_rows_limited(path: Path, limit: int = 10000) -> list[dict[str, str]]:
@@ -503,8 +521,8 @@ def context_composition(summary: dict[str, Any], summary_json: dict[str, Any], c
         ("Long-term memory hits", summary_value(summary, summary_json, "memory_hit_total")),
         ("Avg long-term memory hits", summary_value(summary, summary_json, "avg_memory_hit_count", "avg_retrieval_count")),
         ("Session archive hits", summary_value(summary, summary_json, "archive_fallback_total")),
-        ("Retrieval tokens est total", summary_value(summary, summary_json, "retrieval_tokens_est_total", "retrieval_tokens_est")),
-        ("Injection tokens est total", summary_value(summary, summary_json, "total_injection_tokens_est")),
+        ("Retrieval tokens est total", "n/a"),
+        ("Injection tokens est total", "n/a"),
         ("Answer tokens total", summary_value(summary, summary_json, "answer_total_tokens")),
     ]
 
@@ -583,7 +601,8 @@ def latest_import_integrity(
                 sample=sample,
             )
         try:
-            result = get_adapter("echomemory").import_integrity(
+            result = plugin_service.import_integrity(
+                "echomemory",
                 Path(workspace).expanduser(),
                 account,
                 runs_root,
@@ -958,6 +977,20 @@ def export_report(run_dir: Path, active_run_ids: set[str] | None = None) -> dict
     if exact_match is None:
         exact_match = summary_json.get("exact_match_rate")
     exact_match_text = "n/a" if exact_match is None else f"{exact_match * 100:.1f}%"
+    official_metric_name = str(summary.get("official_metric") or summary_json.get("official_metric") or "").strip()
+    official_metric_scope = str(summary.get("official_metric_scope") or summary_json.get("official_metric_scope") or "").strip()
+    official_score_raw = summary.get("official_score") if summary.get("official_score") is not None else summary_json.get("official_score")
+    official_score_text = format_metric_percent(official_score_raw)
+    official_answer_em_raw = summary.get("official_answer_em") if summary.get("official_answer_em") is not None else summary_json.get("official_answer_em")
+    official_answer_f1_raw = summary.get("official_answer_f1") if summary.get("official_answer_f1") is not None else summary_json.get("official_answer_f1")
+    official_answer_em_text = format_metric_percent(official_answer_em_raw)
+    official_answer_f1_text = format_metric_percent(official_answer_f1_raw)
+    avg_memory_injection_time_text = format_metric_seconds(summary.get("avg_memory_injection_time_s", summary_json.get("avg_memory_injection_time_s")))
+    total_memory_injection_time_text = format_metric_seconds(summary.get("total_memory_injection_time_s", summary_json.get("total_memory_injection_time_s")))
+    avg_qa_time_text = format_metric_seconds(summary.get("avg_qa_time_s", summary_json.get("avg_qa_time_s", summary.get("avg_time"))))
+    total_qa_time_text = format_metric_seconds(summary.get("total_qa_time_s", summary_json.get("total_qa_time_s")))
+    avg_end_to_end_time_text = format_metric_seconds(summary.get("avg_end_to_end_time_s", summary_json.get("avg_end_to_end_time_s")))
+    total_end_to_end_time_text = format_metric_seconds(summary.get("total_end_to_end_time_s", summary_json.get("total_end_to_end_time_s")))
 
     context_items = context_composition(summary, summary_json, config, current_backend)
     context_lines = [f"- {label}: `{value}`" for label, value in context_items]
@@ -974,8 +1007,14 @@ def export_report(run_dir: Path, active_run_ids: set[str] | None = None) -> dict
         ("Answer completion tokens", summary_value(summary, summary_json, "answer_completion_tokens")),
         ("Answer total tokens", summary_value(summary, summary_json, "answer_total_tokens")),
         ("Retrieval tokens est", summary_value(summary, summary_json, "retrieval_tokens_est_total", "retrieval_tokens_est")),
-        ("Total injection tokens est", summary_value(summary, summary_json, "total_injection_tokens_est")),
-        ("Avg injection tokens est", summary_value(summary, summary_json, "avg_injection_tokens_est")),
+        ("Total injection tokens est", summary_value(summary, summary_json, "total_injection_tokens_est", "retrieval_tokens_est_total", "retrieval_tokens_est")),
+        ("Avg injection tokens est", summary_value(summary, summary_json, "avg_injection_tokens_est", "avg_retrieval_tokens_est")),
+        ("Total memory injection time", summary_value(summary, summary_json, "total_memory_injection_time_s")),
+        ("Avg memory injection time", summary_value(summary, summary_json, "avg_memory_injection_time_s")),
+        ("Total QA time", summary_value(summary, summary_json, "total_qa_time_s")),
+        ("Avg QA time", summary_value(summary, summary_json, "avg_qa_time_s", "avg_time")),
+        ("Total end-to-end time", summary_value(summary, summary_json, "total_end_to_end_time_s")),
+        ("Avg end-to-end time", summary_value(summary, summary_json, "avg_end_to_end_time_s")),
     ]
     model_health_items = [
         ("Model OK rows", summary_value(summary, summary_json, "model_ok_count")),
@@ -1283,6 +1322,10 @@ def export_report(run_dir: Path, active_run_ids: set[str] | None = None) -> dict
         ("答案模型", config_value(config, "answer_model", "model")),
         ("Judge", f"{graded_rows}/{result_rows_text} 已判 · {correct_rows} 对 / {wrong_rows} 错"),
         ("准确率", formal_score),
+        ("官方指标", f"{official_metric_name or '-'} · {official_score_text}"),
+        ("答案 EM / F1", f"{official_answer_em_text} / {official_answer_f1_text}"),
+        ("平均注入 / QA / 端到端", f"{avg_memory_injection_time_text} / {avg_qa_time_text} / {avg_end_to_end_time_text}"),
+        ("总注入 / QA / 端到端", f"{total_memory_injection_time_text} / {total_qa_time_text} / {total_end_to_end_time_text}"),
         ("检索参数", retrieval_config_text),
     ]
     overview_cards_html = "".join(
@@ -1451,11 +1494,20 @@ def export_report(run_dir: Path, active_run_ids: set[str] | None = None) -> dict
         f"- Created: `{record.get('created_at')}`",
         f"- Duration: `{duration_s if duration_s is not None else '-'}` seconds",
         f"- Formal Judge score: `{format_score(summary)}`",
+        f"- Official metric: `{official_metric_name or '-'} · {official_score_text}`",
+        f"- Official metric scope: `{official_metric_scope or '-'}`",
+        f"- HotpotQA answer EM / F1: `{official_answer_em_text}` / `{official_answer_f1_text}`",
         f"- Rows: `{summary.get('rows', '-')}`",
         f"- Graded: `{summary.get('graded', '-')}`",
         f"- Pending Judge: `{(summary.get('result_counts') or {}).get('UNSCORED', 0)}`",
         f"- Exact match reference: `{summary.get('simple_correct', summary_json.get('exact_match_count', '-'))}/{summary.get('rows', summary_json.get('count', '-'))} · {exact_match_text}`",
         f"- Avg time/question: `{round(summary.get('avg_time'), 2) if summary.get('avg_time') is not None else '-'}` seconds",
+        f"- Avg memory injection time: `{avg_memory_injection_time_text}`",
+        f"- Total memory injection time: `{total_memory_injection_time_text}`",
+        f"- Avg QA time: `{avg_qa_time_text}`",
+        f"- Total QA time: `{total_qa_time_text}`",
+        f"- Avg end-to-end time: `{avg_end_to_end_time_text}`",
+        f"- Total end-to-end time: `{total_end_to_end_time_text}`",
         "",
         "## 本次评测说明",
         "",
@@ -1541,8 +1593,8 @@ def export_report(run_dir: Path, active_run_ids: set[str] | None = None) -> dict
         f"- Answer empty/unknown rows: `{summary.get('answer_empty_or_unknown_count', summary_json.get('answer_empty_or_unknown_count', '-'))}`",
         f"- Unknown response rows: `{summary.get('unknown_response_count', summary_json.get('unknown_response_count', '-'))}`",
         f"- Empty response rows: `{summary.get('empty_response_count', summary_json.get('empty_response_count', '-'))}`",
-        f"- Total injection tokens est: `{summary.get('total_injection_tokens_est', summary_json.get('total_injection_tokens_est', '-'))}`",
-        f"- Avg injection tokens est: `{summary.get('avg_injection_tokens_est', summary_json.get('avg_injection_tokens_est', '-'))}`",
+        "- Total injection tokens est: `n/a`",
+        "- Avg injection tokens est: `n/a`",
         "",
         "## Failure Attribution",
         "",
@@ -1665,7 +1717,7 @@ def export_report(run_dir: Path, active_run_ids: set[str] | None = None) -> dict
     if pending_examples:
         for row_index, row in pending_examples:
             lines += [
-                f"- `{row.get('question_id') or '-'}` · `{row.get('sample_id') or '-'}` · C{row.get('category') or '-'} · tokens `{row.get('injection_tokens_est') or '-'}`",
+                f"- `{row.get('question_id') or '-'}` · `{row.get('sample_id') or '-'}` · C{row.get('category') or '-'}`",
                 f"  - CSV row index: `{row_index}`",
                 f"  - Detail query: `path={output_file}&index={row_index}`",
                 f"  - Question: {compact_text(row.get('question'), 300)}",
@@ -1747,7 +1799,7 @@ def export_report(run_dir: Path, active_run_ids: set[str] | None = None) -> dict
             f"<article class='example-card pending'><strong>{html.escape(str(row.get('question_id') or '-'))} · C{html.escape(str(row.get('category') or '-'))}</strong>"
             f"<p><b>Q</b> {html.escape(compact_text(row.get('question'), 220))}</p>"
             f"<p><b>Agent</b> {html.escape(compact_text(row.get('response'), 260))}</p>"
-            f"<small>row {row_index} · tokens {html.escape(str(row.get('injection_tokens_est') or '-'))}</small></article>"
+            f"<small>row {row_index}</small></article>"
         )
     failed_examples_html = []
     for row_index, row in failed_examples[:6]:

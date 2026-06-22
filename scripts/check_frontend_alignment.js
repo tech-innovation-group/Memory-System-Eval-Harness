@@ -33,6 +33,7 @@ function assert(condition, message) {
 }
 
 const source = [
+  "const RETRIEVAL_COUNT_LABEL = '召回条数';",
   "function escapeHtml(value) { return String(value ?? ''); }",
   "function reportBoolLabel(value) { const text = String(value ?? '').trim().toLowerCase(); if (text === 'native' || text === 'native_vikingbot_cli') return 'native'; if (value === true || value === 'true') return 'on'; if (value === false || value === 'false') return 'off'; return '-'; }",
   "function runAuditChip(label, status = 'ok', detail = '') { return { label, status, detail }; }",
@@ -135,7 +136,7 @@ assert(indexText.includes("runAccountIsolation"), "Account isolation gate should
 assert(appText.includes("/api/account-isolation"), "frontend should call the Account isolation gate API");
 assert(appText.includes("renderAccountIsolationGate"), "frontend should render Account isolation gate results");
 
-assert(contractSidebar.length === 9, "ui_contract sidebar must contain the nine requested task entries");
+assert(contractSidebar.length === 10, "ui_contract sidebar must contain the ten requested task entries");
 assert(JSON.stringify(contractBackendIds) === JSON.stringify(["echomemory", "openviking"]), "ui_contract must expose only OpenViking and EchoMemory");
 assert(
   JSON.stringify(contractPublicStatic) === JSON.stringify([
@@ -155,15 +156,15 @@ const navMatches = [
 ].map((match) => [match[1], match[2].replace(/<[^>]*>/g, "").trim()]);
 assert(
   JSON.stringify(navMatches) === JSON.stringify(contractSidebar),
-  `sidebar nav must stay as the nine requested task entries; got ${JSON.stringify(navMatches)}`
+  `sidebar nav must stay as the ten requested task entries; got ${JSON.stringify(navMatches)}`
 );
 
 const retiredBackendPattern = new RegExp(["h", "i", "g", "o"].join(""), "i");
 const retiredLocomoLabel = ["LoCoMo", "工作台"].join(" ");
 assert(!retiredBackendPattern.test(indexText + appText + roadmapText), "active UI must not mention retired backend names");
 assert(
-  roadmapText.includes("左侧导航固定为九个任务入口"),
-  "roadmap should describe the fixed nine-entry sidebar instead of adding extra navigation items"
+  roadmapText.includes("左侧导航固定为十个任务入口"),
+  "roadmap should describe the fixed ten-entry sidebar instead of adding extra navigation items"
 );
 assert(
   roadmapText.includes("不可妥协约束"),

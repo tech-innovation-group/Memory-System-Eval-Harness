@@ -1,0 +1,355 @@
+{
+  "repeats": 2000,
+  "aggregate": {
+    "flat_text": {
+      "avg_mean_us": 56.186,
+      "avg_p95_us": 58.59,
+      "avg_reader_count": 1,
+      "avg_hits_returned": 5.333,
+      "avg_coverage_ratio": 0.0,
+      "contract_ok_cases": 0,
+      "second_pass_cases": 0,
+      "cases": 6
+    },
+    "dual_backbone": {
+      "avg_mean_us": 85.658,
+      "avg_p95_us": 89.736,
+      "avg_reader_count": 1,
+      "avg_hits_returned": 5.5,
+      "avg_coverage_ratio": 0.75,
+      "contract_ok_cases": 3,
+      "second_pass_cases": 0,
+      "cases": 6
+    },
+    "contract_aware": {
+      "avg_mean_us": 116.97,
+      "avg_p95_us": 122.111,
+      "avg_reader_count": 1.5,
+      "avg_hits_returned": 6,
+      "avg_coverage_ratio": 0.833,
+      "contract_ok_cases": 4,
+      "second_pass_cases": 3,
+      "cases": 6
+    }
+  },
+  "cases": [
+    {
+      "case_id": "c1_temporal_absolute",
+      "query": "When did Aria sign the Riverside lease?",
+      "note": "Story time should beat mention time.",
+      "variants": {
+        "flat_text": {
+          "variant": "flat_text",
+          "hits_returned": 6,
+          "unique_layers": [
+            "flat_text"
+          ],
+          "coverage_ratio": 0.0,
+          "contract_ok": false,
+          "second_pass_readers": [],
+          "reader_count": 1,
+          "mean_us": 58.703,
+          "median_us": 58.334,
+          "p95_us": 61.042
+        },
+        "dual_backbone": {
+          "variant": "dual_backbone",
+          "hits_returned": 6,
+          "unique_layers": [
+            "temporal_tree"
+          ],
+          "coverage_ratio": 0.5,
+          "contract_ok": false,
+          "second_pass_readers": [],
+          "reader_count": 1,
+          "mean_us": 88.56,
+          "median_us": 88.375,
+          "p95_us": 90.875
+        },
+        "contract_aware": {
+          "variant": "contract_aware",
+          "hits_returned": 8,
+          "unique_layers": [
+            "entity",
+            "event",
+            "fact",
+            "temporal_tree"
+          ],
+          "coverage_ratio": 1.0,
+          "contract_ok": true,
+          "second_pass_readers": [
+            "graph"
+          ],
+          "reader_count": 2,
+          "mean_us": 162.548,
+          "median_us": 162.167,
+          "p95_us": 166.459
+        }
+      }
+    },
+    {
+      "case_id": "c2_temporal_relative",
+      "query": "What happened yesterday?",
+      "note": "Relative time should use query anchor.",
+      "variants": {
+        "flat_text": {
+          "variant": "flat_text",
+          "hits_returned": 2,
+          "unique_layers": [
+            "flat_text"
+          ],
+          "coverage_ratio": 0.0,
+          "contract_ok": false,
+          "second_pass_readers": [],
+          "reader_count": 1,
+          "mean_us": 34.304,
+          "median_us": 34.167,
+          "p95_us": 35.0
+        },
+        "dual_backbone": {
+          "variant": "dual_backbone",
+          "hits_returned": 3,
+          "unique_layers": [
+            "temporal_tree"
+          ],
+          "coverage_ratio": 0.5,
+          "contract_ok": false,
+          "second_pass_readers": [],
+          "reader_count": 1,
+          "mean_us": 65.242,
+          "median_us": 64.792,
+          "p95_us": 68.334
+        },
+        "contract_aware": {
+          "variant": "contract_aware",
+          "hits_returned": 4,
+          "unique_layers": [
+            "fact",
+            "temporal_tree"
+          ],
+          "coverage_ratio": 0.5,
+          "contract_ok": false,
+          "second_pass_readers": [
+            "graph"
+          ],
+          "reader_count": 2,
+          "mean_us": 113.999,
+          "median_us": 113.666,
+          "p95_us": 115.916
+        }
+      }
+    },
+    {
+      "case_id": "c3_relational",
+      "query": "Who helped Aria with the visa checklist?",
+      "note": "Relation query should be graph-first.",
+      "variants": {
+        "flat_text": {
+          "variant": "flat_text",
+          "hits_returned": 6,
+          "unique_layers": [
+            "flat_text"
+          ],
+          "coverage_ratio": 0.0,
+          "contract_ok": false,
+          "second_pass_readers": [],
+          "reader_count": 1,
+          "mean_us": 59.783,
+          "median_us": 59.416,
+          "p95_us": 61.709
+        },
+        "dual_backbone": {
+          "variant": "dual_backbone",
+          "hits_returned": 6,
+          "unique_layers": [
+            "entity",
+            "event",
+            "fact"
+          ],
+          "coverage_ratio": 0.5,
+          "contract_ok": false,
+          "second_pass_readers": [],
+          "reader_count": 1,
+          "mean_us": 95.881,
+          "median_us": 94.25,
+          "p95_us": 101.625
+        },
+        "contract_aware": {
+          "variant": "contract_aware",
+          "hits_returned": 6,
+          "unique_layers": [
+            "entity",
+            "event",
+            "fact"
+          ],
+          "coverage_ratio": 0.5,
+          "contract_ok": false,
+          "second_pass_readers": [
+            "graph"
+          ],
+          "reader_count": 2,
+          "mean_us": 156.996,
+          "median_us": 156.625,
+          "p95_us": 165.75
+        }
+      }
+    },
+    {
+      "case_id": "c4_plan",
+      "query": "What does Aria plan to do after joining Orchard Labs?",
+      "note": "Plan query should keep event/fact support.",
+      "variants": {
+        "flat_text": {
+          "variant": "flat_text",
+          "hits_returned": 6,
+          "unique_layers": [
+            "flat_text"
+          ],
+          "coverage_ratio": 0.0,
+          "contract_ok": false,
+          "second_pass_readers": [],
+          "reader_count": 1,
+          "mean_us": 63.439,
+          "median_us": 62.875,
+          "p95_us": 67.292
+        },
+        "dual_backbone": {
+          "variant": "dual_backbone",
+          "hits_returned": 6,
+          "unique_layers": [
+            "entity",
+            "event",
+            "fact"
+          ],
+          "coverage_ratio": 1.0,
+          "contract_ok": true,
+          "second_pass_readers": [],
+          "reader_count": 1,
+          "mean_us": 102.87,
+          "median_us": 102.291,
+          "p95_us": 108.25
+        },
+        "contract_aware": {
+          "variant": "contract_aware",
+          "hits_returned": 6,
+          "unique_layers": [
+            "entity",
+            "event",
+            "fact"
+          ],
+          "coverage_ratio": 1.0,
+          "contract_ok": true,
+          "second_pass_readers": [],
+          "reader_count": 1,
+          "mean_us": 105.178,
+          "median_us": 104.75,
+          "p95_us": 111.75
+        }
+      }
+    },
+    {
+      "case_id": "c5_visual",
+      "query": "What address was shown in the lease screenshot?",
+      "note": "Visual evidence should be first-class.",
+      "variants": {
+        "flat_text": {
+          "variant": "flat_text",
+          "hits_returned": 6,
+          "unique_layers": [
+            "flat_text"
+          ],
+          "coverage_ratio": 0.0,
+          "contract_ok": false,
+          "second_pass_readers": [],
+          "reader_count": 1,
+          "mean_us": 61.686,
+          "median_us": 61.417,
+          "p95_us": 64.292
+        },
+        "dual_backbone": {
+          "variant": "dual_backbone",
+          "hits_returned": 6,
+          "unique_layers": [
+            "entity",
+            "event",
+            "fact",
+            "image_evidence"
+          ],
+          "coverage_ratio": 1.0,
+          "contract_ok": true,
+          "second_pass_readers": [],
+          "reader_count": 1,
+          "mean_us": 96.145,
+          "median_us": 95.834,
+          "p95_us": 100.583
+        },
+        "contract_aware": {
+          "variant": "contract_aware",
+          "hits_returned": 6,
+          "unique_layers": [
+            "entity",
+            "event",
+            "fact",
+            "image_evidence"
+          ],
+          "coverage_ratio": 1.0,
+          "contract_ok": true,
+          "second_pass_readers": [],
+          "reader_count": 1,
+          "mean_us": 97.308,
+          "median_us": 96.666,
+          "p95_us": 102.625
+        }
+      }
+    },
+    {
+      "case_id": "c6_general",
+      "query": "Where did Aria join in February?",
+      "note": "General factual query should still work.",
+      "variants": {
+        "flat_text": {
+          "variant": "flat_text",
+          "hits_returned": 6,
+          "unique_layers": [
+            "flat_text"
+          ],
+          "coverage_ratio": 0.0,
+          "contract_ok": false,
+          "second_pass_readers": [],
+          "reader_count": 1,
+          "mean_us": 59.202,
+          "median_us": 58.833,
+          "p95_us": 62.208
+        },
+        "dual_backbone": {
+          "variant": "dual_backbone",
+          "hits_returned": 6,
+          "unique_layers": [
+            "fact"
+          ],
+          "coverage_ratio": 1.0,
+          "contract_ok": true,
+          "second_pass_readers": [],
+          "reader_count": 1,
+          "mean_us": 65.25,
+          "median_us": 64.417,
+          "p95_us": 68.75
+        },
+        "contract_aware": {
+          "variant": "contract_aware",
+          "hits_returned": 6,
+          "unique_layers": [
+            "fact"
+          ],
+          "coverage_ratio": 1.0,
+          "contract_ok": true,
+          "second_pass_readers": [],
+          "reader_count": 1,
+          "mean_us": 65.79,
+          "median_us": 65.083,
+          "p95_us": 70.166
+        }
+      }
+    }
+  ]
+}

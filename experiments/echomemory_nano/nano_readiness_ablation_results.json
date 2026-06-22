@@ -1,0 +1,833 @@
+{
+  "turns": [
+    {
+      "role": "user",
+      "text": "Yesterday Jon lost his job at the bank.",
+      "created_at": "2025-05-10"
+    },
+    {
+      "role": "user",
+      "text": "Two days ago Gina visited Rome for a design fair.",
+      "created_at": "2025-05-15"
+    },
+    {
+      "role": "user",
+      "text": "Maya introduced Jon to Lena.",
+      "created_at": "2025-05-18"
+    }
+  ],
+  "rows": [
+    {
+      "case_id": "readiness_pre_cold",
+      "stage": "before_cold_path",
+      "system": "baseline",
+      "query": "When did Jon lose his job?",
+      "expected": "status should be not_ready",
+      "judge_note": "This checks whether a system treats persisted messages as immediately answerable, or waits until memory is QA-ready.",
+      "answer": {
+        "query": "When did Jon lose his job?",
+        "status": "ok",
+        "answer": "2025-05-10",
+        "hits": [
+          {
+            "score": 3.0,
+            "node_id": "atom-000-00",
+            "node_type": "event",
+            "story_time": "2025-05-10",
+            "created_at": "2025-05-10",
+            "content": "Yesterday Jon lost his job at the bank."
+          },
+          {
+            "score": 1.0,
+            "node_id": "atom-002-03",
+            "node_type": "relation",
+            "story_time": "2025-05-18",
+            "created_at": "2025-05-18",
+            "content": "Maya introduced Jon to Lena."
+          }
+        ],
+        "plan": {
+          "intent": "temporal",
+          "target_layers": [
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer story-time carrying event nodes."
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_extracted": true,
+          "graph_built": false,
+          "qa_ready": false
+        },
+        "note": ""
+      },
+      "ok": false
+    },
+    {
+      "case_id": "readiness_pre_cold",
+      "stage": "before_cold_path",
+      "system": "temporal_graph",
+      "query": "When did Jon lose his job?",
+      "expected": "status should be not_ready",
+      "judge_note": "This checks whether a system treats persisted messages as immediately answerable, or waits until memory is QA-ready.",
+      "answer": {
+        "query": "When did Jon lose his job?",
+        "status": "ok",
+        "answer": "2025-05-09",
+        "hits": [
+          {
+            "score": 3.0,
+            "node_id": "atom-000-00",
+            "node_type": "event",
+            "story_time": "2025-05-09",
+            "created_at": "2025-05-10",
+            "content": "Yesterday Jon lost his job at the bank."
+          },
+          {
+            "score": 1.0,
+            "node_id": "atom-002-03",
+            "node_type": "relation",
+            "story_time": "2025-05-18",
+            "created_at": "2025-05-18",
+            "content": "Maya introduced Jon to Lena."
+          }
+        ],
+        "plan": {
+          "intent": "temporal",
+          "target_layers": [
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer story-time carrying event nodes."
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_extracted": true,
+          "graph_built": false,
+          "qa_ready": false
+        },
+        "note": ""
+      },
+      "ok": false
+    },
+    {
+      "case_id": "readiness_pre_cold",
+      "stage": "before_cold_path",
+      "system": "full",
+      "query": "When did Jon lose his job?",
+      "expected": "status should be not_ready",
+      "judge_note": "This checks whether a system treats persisted messages as immediately answerable, or waits until memory is QA-ready.",
+      "answer": {
+        "query": "When did Jon lose his job?",
+        "status": "not_ready",
+        "answer": "not_ready",
+        "hits": [],
+        "plan": {
+          "intent": "temporal",
+          "target_layers": [
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer story-time carrying event nodes."
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_extracted": true,
+          "graph_built": false,
+          "qa_ready": false
+        },
+        "note": "Memory is persisted but not QA-ready yet; cold consolidation has not finished."
+      },
+      "ok": true
+    },
+    {
+      "case_id": "temporal_date_job",
+      "stage": "after_cold_path",
+      "system": "baseline",
+      "query": "When did Jon lose his job?",
+      "expected": "2025-05-09",
+      "judge_note": "Baseline tends to confuse write time with story time; improved systems should recover the resolved story date.",
+      "answer": {
+        "query": "When did Jon lose his job?",
+        "status": "ok",
+        "answer": "2025-05-10",
+        "hits": [
+          {
+            "score": 3.0,
+            "node_id": "atom-000-00",
+            "node_type": "event",
+            "story_time": "2025-05-10",
+            "created_at": "2025-05-10",
+            "content": "Yesterday Jon lost his job at the bank."
+          },
+          {
+            "score": 1.0,
+            "node_id": "atom-002-03",
+            "node_type": "relation",
+            "story_time": "2025-05-18",
+            "created_at": "2025-05-18",
+            "content": "Maya introduced Jon to Lena."
+          }
+        ],
+        "plan": {
+          "intent": "temporal",
+          "target_layers": [
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer story-time carrying event nodes."
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_extracted": true,
+          "graph_built": true,
+          "qa_ready": true
+        },
+        "note": ""
+      },
+      "ok": false
+    },
+    {
+      "case_id": "temporal_date_job",
+      "stage": "after_cold_path",
+      "system": "temporal_graph",
+      "query": "When did Jon lose his job?",
+      "expected": "2025-05-09",
+      "judge_note": "Baseline tends to confuse write time with story time; improved systems should recover the resolved story date.",
+      "answer": {
+        "query": "When did Jon lose his job?",
+        "status": "ok",
+        "answer": "2025-05-09",
+        "hits": [
+          {
+            "score": 5.0,
+            "node_id": "event:atom-000-00",
+            "node_type": "event",
+            "story_time": "2025-05-09",
+            "created_at": "2025-05-10",
+            "content": "statement=Yesterday Jon lost his job at the bank.\nstory_time=2025-05-09\nparticipants=Jon, job"
+          },
+          {
+            "score": 3.0,
+            "node_id": "event:atom-002-03",
+            "node_type": "event",
+            "story_time": "2025-05-18",
+            "created_at": "2025-05-18",
+            "content": "statement=Maya introduced Jon to Lena.\nstory_time=2025-05-18\nparticipants=Maya, Jon->Lena"
+          },
+          {
+            "score": 3.0,
+            "node_id": "fact:atom-000-00",
+            "node_type": "fact",
+            "story_time": "2025-05-09",
+            "created_at": "2025-05-10",
+            "content": "statement=Yesterday Jon lost his job at the bank.\nsubject=Jon\npredicate=lost_job\nobject=job\nstory_time=2025-05-09\ncreated_at=2025-05-10"
+          },
+          {
+            "score": 1.0,
+            "node_id": "fact:atom-002-03",
+            "node_type": "fact",
+            "story_time": "2025-05-18",
+            "created_at": "2025-05-18",
+            "content": "statement=Maya introduced Jon to Lena.\nsubject=Maya\npredicate=introduced_to\nobject=Jon->Lena\nstory_time=2025-05-18\ncreated_at=2025-05-18"
+          },
+          {
+            "score": 3.0,
+            "node_id": "entity:Jon",
+            "node_type": "entity",
+            "story_time": "2025-05-09",
+            "created_at": "2025-05-10",
+            "content": "name=Jon\nfirst_seen=Yesterday Jon lost his job at the bank."
+          }
+        ],
+        "plan": {
+          "intent": "temporal",
+          "target_layers": [
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer story-time carrying event nodes."
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_extracted": true,
+          "graph_built": true,
+          "qa_ready": true
+        },
+        "note": ""
+      },
+      "ok": true
+    },
+    {
+      "case_id": "temporal_date_job",
+      "stage": "after_cold_path",
+      "system": "full",
+      "query": "When did Jon lose his job?",
+      "expected": "2025-05-09",
+      "judge_note": "Baseline tends to confuse write time with story time; improved systems should recover the resolved story date.",
+      "answer": {
+        "query": "When did Jon lose his job?",
+        "status": "ok",
+        "answer": "2025-05-09",
+        "hits": [
+          {
+            "score": 5.0,
+            "node_id": "event:atom-000-00",
+            "node_type": "event",
+            "story_time": "2025-05-09",
+            "created_at": "2025-05-10",
+            "content": "statement=Yesterday Jon lost his job at the bank.\nstory_time=2025-05-09\nparticipants=Jon, job"
+          },
+          {
+            "score": 3.0,
+            "node_id": "event:atom-002-03",
+            "node_type": "event",
+            "story_time": "2025-05-18",
+            "created_at": "2025-05-18",
+            "content": "statement=Maya introduced Jon to Lena.\nstory_time=2025-05-18\nparticipants=Maya, Jon->Lena"
+          },
+          {
+            "score": 3.0,
+            "node_id": "fact:atom-000-00",
+            "node_type": "fact",
+            "story_time": "2025-05-09",
+            "created_at": "2025-05-10",
+            "content": "statement=Yesterday Jon lost his job at the bank.\nsubject=Jon\npredicate=lost_job\nobject=job\nstory_time=2025-05-09\ncreated_at=2025-05-10"
+          },
+          {
+            "score": 1.0,
+            "node_id": "fact:atom-002-03",
+            "node_type": "fact",
+            "story_time": "2025-05-18",
+            "created_at": "2025-05-18",
+            "content": "statement=Maya introduced Jon to Lena.\nsubject=Maya\npredicate=introduced_to\nobject=Jon->Lena\nstory_time=2025-05-18\ncreated_at=2025-05-18"
+          },
+          {
+            "score": 3.0,
+            "node_id": "entity:Jon",
+            "node_type": "entity",
+            "story_time": "2025-05-09",
+            "created_at": "2025-05-10",
+            "content": "name=Jon\nfirst_seen=Yesterday Jon lost his job at the bank."
+          }
+        ],
+        "plan": {
+          "intent": "temporal",
+          "target_layers": [
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer story-time carrying event nodes."
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_extracted": true,
+          "graph_built": true,
+          "qa_ready": true
+        },
+        "note": ""
+      },
+      "ok": true
+    },
+    {
+      "case_id": "temporal_date_rome",
+      "stage": "after_cold_path",
+      "system": "baseline",
+      "query": "When did Gina visit Rome?",
+      "expected": "2025-05-13",
+      "judge_note": "A second relative-time case to show this is not a one-off rule.",
+      "answer": {
+        "query": "When did Gina visit Rome?",
+        "status": "ok",
+        "answer": "2025-05-15",
+        "hits": [
+          {
+            "score": 2.0,
+            "node_id": "atom-001-01",
+            "node_type": "event",
+            "story_time": "2025-05-15",
+            "created_at": "2025-05-15",
+            "content": "Two days ago Gina visited Rome for a design fair."
+          }
+        ],
+        "plan": {
+          "intent": "temporal",
+          "target_layers": [
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer story-time carrying event nodes."
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_extracted": true,
+          "graph_built": true,
+          "qa_ready": true
+        },
+        "note": ""
+      },
+      "ok": false
+    },
+    {
+      "case_id": "temporal_date_rome",
+      "stage": "after_cold_path",
+      "system": "temporal_graph",
+      "query": "When did Gina visit Rome?",
+      "expected": "2025-05-13",
+      "judge_note": "A second relative-time case to show this is not a one-off rule.",
+      "answer": {
+        "query": "When did Gina visit Rome?",
+        "status": "ok",
+        "answer": "2025-05-13",
+        "hits": [
+          {
+            "score": 4.0,
+            "node_id": "event:atom-001-01",
+            "node_type": "event",
+            "story_time": "2025-05-13",
+            "created_at": "2025-05-15",
+            "content": "statement=Two days ago Gina visited Rome for a design fair.\nstory_time=2025-05-13\nparticipants=Gina, Rome"
+          },
+          {
+            "score": 2.0,
+            "node_id": "fact:atom-001-01",
+            "node_type": "fact",
+            "story_time": "2025-05-13",
+            "created_at": "2025-05-15",
+            "content": "statement=Two days ago Gina visited Rome for a design fair.\nsubject=Gina\npredicate=visited\nobject=Rome\nstory_time=2025-05-13\ncreated_at=2025-05-15"
+          },
+          {
+            "score": 2.0,
+            "node_id": "entity:Gina",
+            "node_type": "entity",
+            "story_time": "2025-05-13",
+            "created_at": "2025-05-15",
+            "content": "name=Gina\nfirst_seen=Two days ago Gina visited Rome for a design fair."
+          },
+          {
+            "score": 2.0,
+            "node_id": "entity:Rome",
+            "node_type": "entity",
+            "story_time": "2025-05-13",
+            "created_at": "2025-05-15",
+            "content": "name=Rome\nfirst_seen=Two days ago Gina visited Rome for a design fair."
+          }
+        ],
+        "plan": {
+          "intent": "temporal",
+          "target_layers": [
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer story-time carrying event nodes."
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_extracted": true,
+          "graph_built": true,
+          "qa_ready": true
+        },
+        "note": ""
+      },
+      "ok": true
+    },
+    {
+      "case_id": "temporal_date_rome",
+      "stage": "after_cold_path",
+      "system": "full",
+      "query": "When did Gina visit Rome?",
+      "expected": "2025-05-13",
+      "judge_note": "A second relative-time case to show this is not a one-off rule.",
+      "answer": {
+        "query": "When did Gina visit Rome?",
+        "status": "ok",
+        "answer": "2025-05-13",
+        "hits": [
+          {
+            "score": 4.0,
+            "node_id": "event:atom-001-01",
+            "node_type": "event",
+            "story_time": "2025-05-13",
+            "created_at": "2025-05-15",
+            "content": "statement=Two days ago Gina visited Rome for a design fair.\nstory_time=2025-05-13\nparticipants=Gina, Rome"
+          },
+          {
+            "score": 2.0,
+            "node_id": "fact:atom-001-01",
+            "node_type": "fact",
+            "story_time": "2025-05-13",
+            "created_at": "2025-05-15",
+            "content": "statement=Two days ago Gina visited Rome for a design fair.\nsubject=Gina\npredicate=visited\nobject=Rome\nstory_time=2025-05-13\ncreated_at=2025-05-15"
+          },
+          {
+            "score": 2.0,
+            "node_id": "entity:Gina",
+            "node_type": "entity",
+            "story_time": "2025-05-13",
+            "created_at": "2025-05-15",
+            "content": "name=Gina\nfirst_seen=Two days ago Gina visited Rome for a design fair."
+          },
+          {
+            "score": 2.0,
+            "node_id": "entity:Rome",
+            "node_type": "entity",
+            "story_time": "2025-05-13",
+            "created_at": "2025-05-15",
+            "content": "name=Rome\nfirst_seen=Two days ago Gina visited Rome for a design fair."
+          }
+        ],
+        "plan": {
+          "intent": "temporal",
+          "target_layers": [
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer story-time carrying event nodes."
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_extracted": true,
+          "graph_built": true,
+          "qa_ready": true
+        },
+        "note": ""
+      },
+      "ok": true
+    },
+    {
+      "case_id": "temporal_chain_before_intro",
+      "stage": "after_cold_path",
+      "system": "baseline",
+      "query": "What happened before Maya introduced Jon to Lena?",
+      "expected": "Gina visited Rome on 2025-05-13",
+      "judge_note": "This is the graph-specific case: the answer should come from the temporal_next chain, not just token overlap.",
+      "answer": {
+        "query": "What happened before Maya introduced Jon to Lena?",
+        "status": "ok",
+        "answer": "2025-05-18",
+        "hits": [
+          {
+            "score": 5.0,
+            "node_id": "atom-002-03",
+            "node_type": "relation",
+            "story_time": "2025-05-18",
+            "created_at": "2025-05-18",
+            "content": "Maya introduced Jon to Lena."
+          },
+          {
+            "score": 1.0,
+            "node_id": "atom-000-00",
+            "node_type": "event",
+            "story_time": "2025-05-10",
+            "created_at": "2025-05-10",
+            "content": "Yesterday Jon lost his job at the bank."
+          }
+        ],
+        "plan": {
+          "intent": "temporal",
+          "target_layers": [
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer story-time carrying event nodes."
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_extracted": true,
+          "graph_built": true,
+          "qa_ready": true
+        },
+        "note": ""
+      },
+      "ok": false
+    },
+    {
+      "case_id": "temporal_chain_before_intro",
+      "stage": "after_cold_path",
+      "system": "temporal_graph",
+      "query": "What happened before Maya introduced Jon to Lena?",
+      "expected": "Gina visited Rome on 2025-05-13",
+      "judge_note": "This is the graph-specific case: the answer should come from the temporal_next chain, not just token overlap.",
+      "answer": {
+        "query": "What happened before Maya introduced Jon to Lena?",
+        "status": "ok",
+        "answer": "2025-05-13",
+        "hits": [
+          {
+            "score": 5.0,
+            "node_id": "event:atom-001-01",
+            "node_type": "event",
+            "story_time": "2025-05-13",
+            "created_at": "2025-05-15",
+            "content": "statement=Two days ago Gina visited Rome for a design fair.\nstory_time=2025-05-13\nparticipants=Gina, Rome"
+          }
+        ],
+        "plan": {
+          "intent": "temporal",
+          "target_layers": [
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer story-time carrying event nodes."
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_extracted": true,
+          "graph_built": true,
+          "qa_ready": true
+        },
+        "note": ""
+      },
+      "ok": true
+    },
+    {
+      "case_id": "temporal_chain_before_intro",
+      "stage": "after_cold_path",
+      "system": "full",
+      "query": "What happened before Maya introduced Jon to Lena?",
+      "expected": "Gina visited Rome on 2025-05-13",
+      "judge_note": "This is the graph-specific case: the answer should come from the temporal_next chain, not just token overlap.",
+      "answer": {
+        "query": "What happened before Maya introduced Jon to Lena?",
+        "status": "ok",
+        "answer": "2025-05-13",
+        "hits": [
+          {
+            "score": 5.0,
+            "node_id": "event:atom-001-01",
+            "node_type": "event",
+            "story_time": "2025-05-13",
+            "created_at": "2025-05-15",
+            "content": "statement=Two days ago Gina visited Rome for a design fair.\nstory_time=2025-05-13\nparticipants=Gina, Rome"
+          }
+        ],
+        "plan": {
+          "intent": "temporal",
+          "target_layers": [
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer story-time carrying event nodes."
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_extracted": true,
+          "graph_built": true,
+          "qa_ready": true
+        },
+        "note": ""
+      },
+      "ok": true
+    },
+    {
+      "case_id": "relation_intro",
+      "stage": "after_cold_path",
+      "system": "baseline",
+      "query": "Who introduced Jon to Lena?",
+      "expected": "Maya",
+      "judge_note": "A sanity check that the improved system still handles direct relation questions.",
+      "answer": {
+        "query": "Who introduced Jon to Lena?",
+        "status": "ok",
+        "answer": "Maya introduced Jon to Lena.",
+        "hits": [
+          {
+            "score": 4.0,
+            "node_id": "atom-002-03",
+            "node_type": "relation",
+            "story_time": "2025-05-18",
+            "created_at": "2025-05-18",
+            "content": "Maya introduced Jon to Lena."
+          },
+          {
+            "score": 1.0,
+            "node_id": "atom-000-00",
+            "node_type": "event",
+            "story_time": "2025-05-10",
+            "created_at": "2025-05-10",
+            "content": "Yesterday Jon lost his job at the bank."
+          }
+        ],
+        "plan": {
+          "intent": "relational",
+          "target_layers": [
+            "relation",
+            "entity",
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer relation/entity path for people-company linkage questions."
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_extracted": true,
+          "graph_built": true,
+          "qa_ready": true
+        },
+        "note": ""
+      },
+      "ok": true
+    },
+    {
+      "case_id": "relation_intro",
+      "stage": "after_cold_path",
+      "system": "temporal_graph",
+      "query": "Who introduced Jon to Lena?",
+      "expected": "Maya",
+      "judge_note": "A sanity check that the improved system still handles direct relation questions.",
+      "answer": {
+        "query": "Who introduced Jon to Lena?",
+        "status": "ok",
+        "answer": "Maya introduced_to Jon->Lena",
+        "hits": [
+          {
+            "score": 6.0,
+            "node_id": "relation:atom-002-03",
+            "node_type": "relation",
+            "story_time": "2025-05-18",
+            "created_at": "2025-05-18",
+            "content": "relation=Maya introduced_to Jon->Lena\nstatement=Maya introduced Jon to Lena.\nstory_time=2025-05-18"
+          },
+          {
+            "score": 6.0,
+            "node_id": "entity:Jon->Lena",
+            "node_type": "entity",
+            "story_time": "2025-05-18",
+            "created_at": "2025-05-18",
+            "content": "name=Jon->Lena\nfirst_seen=Maya introduced Jon to Lena."
+          },
+          {
+            "score": 6.0,
+            "node_id": "entity:Maya",
+            "node_type": "entity",
+            "story_time": "2025-05-18",
+            "created_at": "2025-05-18",
+            "content": "name=Maya\nfirst_seen=Maya introduced Jon to Lena."
+          },
+          {
+            "score": 3.0,
+            "node_id": "entity:Jon",
+            "node_type": "entity",
+            "story_time": "2025-05-09",
+            "created_at": "2025-05-10",
+            "content": "name=Jon\nfirst_seen=Yesterday Jon lost his job at the bank."
+          },
+          {
+            "score": 3.0,
+            "node_id": "entity:job",
+            "node_type": "entity",
+            "story_time": "2025-05-09",
+            "created_at": "2025-05-10",
+            "content": "name=job\nfirst_seen=Yesterday Jon lost his job at the bank."
+          }
+        ],
+        "plan": {
+          "intent": "relational",
+          "target_layers": [
+            "relation",
+            "entity",
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer relation/entity path for people-company linkage questions."
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_extracted": true,
+          "graph_built": true,
+          "qa_ready": true
+        },
+        "note": ""
+      },
+      "ok": true
+    },
+    {
+      "case_id": "relation_intro",
+      "stage": "after_cold_path",
+      "system": "full",
+      "query": "Who introduced Jon to Lena?",
+      "expected": "Maya",
+      "judge_note": "A sanity check that the improved system still handles direct relation questions.",
+      "answer": {
+        "query": "Who introduced Jon to Lena?",
+        "status": "ok",
+        "answer": "Maya introduced_to Jon->Lena",
+        "hits": [
+          {
+            "score": 6.0,
+            "node_id": "relation:atom-002-03",
+            "node_type": "relation",
+            "story_time": "2025-05-18",
+            "created_at": "2025-05-18",
+            "content": "relation=Maya introduced_to Jon->Lena\nstatement=Maya introduced Jon to Lena.\nstory_time=2025-05-18"
+          },
+          {
+            "score": 6.0,
+            "node_id": "entity:Jon->Lena",
+            "node_type": "entity",
+            "story_time": "2025-05-18",
+            "created_at": "2025-05-18",
+            "content": "name=Jon->Lena\nfirst_seen=Maya introduced Jon to Lena."
+          },
+          {
+            "score": 6.0,
+            "node_id": "entity:Maya",
+            "node_type": "entity",
+            "story_time": "2025-05-18",
+            "created_at": "2025-05-18",
+            "content": "name=Maya\nfirst_seen=Maya introduced Jon to Lena."
+          },
+          {
+            "score": 3.0,
+            "node_id": "entity:Jon",
+            "node_type": "entity",
+            "story_time": "2025-05-09",
+            "created_at": "2025-05-10",
+            "content": "name=Jon\nfirst_seen=Yesterday Jon lost his job at the bank."
+          },
+          {
+            "score": 3.0,
+            "node_id": "entity:job",
+            "node_type": "entity",
+            "story_time": "2025-05-09",
+            "created_at": "2025-05-10",
+            "content": "name=job\nfirst_seen=Yesterday Jon lost his job at the bank."
+          }
+        ],
+        "plan": {
+          "intent": "relational",
+          "target_layers": [
+            "relation",
+            "entity",
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer relation/entity path for people-company linkage questions."
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_extracted": true,
+          "graph_built": true,
+          "qa_ready": true
+        },
+        "note": ""
+      },
+      "ok": true
+    }
+  ],
+  "summary": {
+    "baseline": {
+      "correct": 1,
+      "total": 5
+    },
+    "temporal_graph": {
+      "correct": 4,
+      "total": 5
+    },
+    "full": {
+      "correct": 5,
+      "total": 5
+    }
+  }
+}

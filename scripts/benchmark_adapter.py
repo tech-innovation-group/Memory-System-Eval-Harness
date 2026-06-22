@@ -544,6 +544,23 @@ def collect_longmemeval_documents(item: dict[str, Any]) -> list[dict[str, str]]:
     return documents
 
 
+def collect_evolvingevents_events(item: dict[str, Any]) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    raw_events = item.get("events") or item.get("timeline") or []
+    if not isinstance(raw_events, list):
+        return rows
+    for raw in raw_events:
+        if isinstance(raw, dict):
+            event_time = str(raw.get("timestamp") or raw.get("time") or raw.get("date") or "").strip()
+            text = str(raw.get("event") or raw.get("text") or raw.get("description") or raw.get("content") or "").strip()
+        else:
+            event_time = ""
+            text = str(raw).strip()
+        if text:
+            rows.append({"time": event_time, "text": text})
+    return rows
+
+
 def longmemeval_jobs(data: Any, limit: int | None, sample_filter: str = "all") -> tuple[list[Job], list[dict[str, Any]]]:
     jobs: list[Job] = []
     plans: list[dict[str, Any]] = []
@@ -761,7 +778,10 @@ def generic_job_plan(fmt: str, raw: Any, index: int, sample_filter: str = "all")
     question = str(pick(item, QUESTION_KEYS) or "")
     answer = str(pick(item, ANSWER_KEYS) or "")
     query_time = str(pick(item, TIME_KEYS) or "")
-    events = collect_events(item)
+    if fmt == "evolvingevents":
+        events = collect_evolvingevents_events(item)
+    else:
+        events = collect_events(item)
     if not events:
         for key, value in item.items():
             if str(key).lower() not in QUESTION_KEYS + ANSWER_KEYS:

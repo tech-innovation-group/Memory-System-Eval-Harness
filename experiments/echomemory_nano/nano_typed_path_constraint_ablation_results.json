@@ -1,0 +1,344 @@
+{
+  "summary": {
+    "cases": 3,
+    "naive_correct": 0,
+    "typed_correct": 3,
+    "typed_fixed_cases": [
+      "introducer_maya_leo",
+      "referrer_aria_ivy",
+      "connector_elena_chen"
+    ]
+  },
+  "cases": [
+    {
+      "case_id": "introducer_maya_leo",
+      "query": "Who introduced Maya to Leo?",
+      "note": "Shared company is a high-salience distractor; introducer semantics should still pick a person bridge with introduced edges.",
+      "naive": {
+        "mode": "naive_shared_neighbor",
+        "answer_bridge": "studiox",
+        "answer_label": "StudioX",
+        "trace": [
+          "studiox-[employs]->maya",
+          "studiox-[employs]->leo"
+        ],
+        "candidates": [
+          {
+            "bridge_id": "studiox",
+            "bridge_label": "StudioX",
+            "bridge_type": "company",
+            "salience": 0.92,
+            "path": [
+              "studiox-[employs]->maya",
+              "studiox-[employs]->leo"
+            ],
+            "relation_types": [
+              "employs"
+            ]
+          },
+          {
+            "bridge_id": "nia",
+            "bridge_label": "Nia",
+            "bridge_type": "person",
+            "salience": 0.61,
+            "path": [
+              "nia-[introduced]->maya",
+              "nia-[introduced]->leo"
+            ],
+            "relation_types": [
+              "introduced"
+            ]
+          }
+        ]
+      },
+      "naive_judge": {
+        "expected_bridge": "nia",
+        "predicted_bridge": "studiox",
+        "passed": false
+      },
+      "typed": {
+        "mode": "typed_path_constraint",
+        "answer_bridge": "nia",
+        "answer_label": "Nia",
+        "trace": [
+          "nia-[introduced]->maya",
+          "nia-[introduced]->leo"
+        ],
+        "candidates": [
+          {
+            "bridge_id": "studiox",
+            "bridge_label": "StudioX",
+            "bridge_type": "company",
+            "salience": 0.92,
+            "path": [
+              "studiox-[employs]->maya",
+              "studiox-[employs]->leo"
+            ],
+            "relation_types": [
+              "employs"
+            ]
+          },
+          {
+            "bridge_id": "nia",
+            "bridge_label": "Nia",
+            "bridge_type": "person",
+            "salience": 0.61,
+            "path": [
+              "nia-[introduced]->maya",
+              "nia-[introduced]->leo"
+            ],
+            "relation_types": [
+              "introduced"
+            ]
+          }
+        ],
+        "filtered_candidates": [
+          {
+            "bridge_id": "nia",
+            "bridge_label": "Nia",
+            "bridge_type": "person",
+            "salience": 0.61,
+            "path": [
+              "nia-[introduced]->maya",
+              "nia-[introduced]->leo"
+            ],
+            "relation_types": [
+              "introduced"
+            ]
+          }
+        ],
+        "required_bridge_types": [
+          "person"
+        ],
+        "required_relation_types": [
+          "introduced"
+        ]
+      },
+      "typed_judge": {
+        "expected_bridge": "nia",
+        "predicted_bridge": "nia",
+        "passed": true
+      }
+    },
+    {
+      "case_id": "referrer_aria_ivy",
+      "query": "Who referred Aria to Lawyer Ivy?",
+      "note": "A busy channel links both endpoints, but relation semantics ask for a referrer, not a co-mentioned venue.",
+      "naive": {
+        "mode": "naive_shared_neighbor",
+        "answer_bridge": "slack",
+        "answer_label": "Residency Slack",
+        "trace": [
+          "slack-[discussed]->aria",
+          "slack-[discussed]->ivy"
+        ],
+        "candidates": [
+          {
+            "bridge_id": "slack",
+            "bridge_label": "Residency Slack",
+            "bridge_type": "channel",
+            "salience": 0.88,
+            "path": [
+              "slack-[discussed]->aria",
+              "slack-[discussed]->ivy"
+            ],
+            "relation_types": [
+              "discussed"
+            ]
+          },
+          {
+            "bridge_id": "priya",
+            "bridge_label": "Priya",
+            "bridge_type": "person",
+            "salience": 0.59,
+            "path": [
+              "priya-[referred]->aria",
+              "priya-[referred]->ivy"
+            ],
+            "relation_types": [
+              "referred"
+            ]
+          }
+        ]
+      },
+      "naive_judge": {
+        "expected_bridge": "priya",
+        "predicted_bridge": "slack",
+        "passed": false
+      },
+      "typed": {
+        "mode": "typed_path_constraint",
+        "answer_bridge": "priya",
+        "answer_label": "Priya",
+        "trace": [
+          "priya-[referred]->aria",
+          "priya-[referred]->ivy"
+        ],
+        "candidates": [
+          {
+            "bridge_id": "slack",
+            "bridge_label": "Residency Slack",
+            "bridge_type": "channel",
+            "salience": 0.88,
+            "path": [
+              "slack-[discussed]->aria",
+              "slack-[discussed]->ivy"
+            ],
+            "relation_types": [
+              "discussed"
+            ]
+          },
+          {
+            "bridge_id": "priya",
+            "bridge_label": "Priya",
+            "bridge_type": "person",
+            "salience": 0.59,
+            "path": [
+              "priya-[referred]->aria",
+              "priya-[referred]->ivy"
+            ],
+            "relation_types": [
+              "referred"
+            ]
+          }
+        ],
+        "filtered_candidates": [
+          {
+            "bridge_id": "priya",
+            "bridge_label": "Priya",
+            "bridge_type": "person",
+            "salience": 0.59,
+            "path": [
+              "priya-[referred]->aria",
+              "priya-[referred]->ivy"
+            ],
+            "relation_types": [
+              "referred"
+            ]
+          }
+        ],
+        "required_bridge_types": [
+          "person"
+        ],
+        "required_relation_types": [
+          "referred"
+        ]
+      },
+      "typed_judge": {
+        "expected_bridge": "priya",
+        "predicted_bridge": "priya",
+        "passed": true
+      }
+    },
+    {
+      "case_id": "connector_elena_chen",
+      "query": "Who connected Elena with Investor Chen?",
+      "note": "Community membership creates an easy false path; typed constraints should keep the bridge role human and relation-specific.",
+      "naive": {
+        "mode": "naive_shared_neighbor",
+        "answer_bridge": "hub",
+        "answer_label": "Startup Hub",
+        "trace": [
+          "hub-[hosts]->elena",
+          "hub-[hosts]->chen"
+        ],
+        "candidates": [
+          {
+            "bridge_id": "hub",
+            "bridge_label": "Startup Hub",
+            "bridge_type": "community",
+            "salience": 0.91,
+            "path": [
+              "hub-[hosts]->elena",
+              "hub-[hosts]->chen"
+            ],
+            "relation_types": [
+              "hosts"
+            ]
+          },
+          {
+            "bridge_id": "marco",
+            "bridge_label": "Marco",
+            "bridge_type": "person",
+            "salience": 0.63,
+            "path": [
+              "marco-[connected]->elena",
+              "marco-[connected]->chen"
+            ],
+            "relation_types": [
+              "connected"
+            ]
+          }
+        ]
+      },
+      "naive_judge": {
+        "expected_bridge": "marco",
+        "predicted_bridge": "hub",
+        "passed": false
+      },
+      "typed": {
+        "mode": "typed_path_constraint",
+        "answer_bridge": "marco",
+        "answer_label": "Marco",
+        "trace": [
+          "marco-[connected]->elena",
+          "marco-[connected]->chen"
+        ],
+        "candidates": [
+          {
+            "bridge_id": "hub",
+            "bridge_label": "Startup Hub",
+            "bridge_type": "community",
+            "salience": 0.91,
+            "path": [
+              "hub-[hosts]->elena",
+              "hub-[hosts]->chen"
+            ],
+            "relation_types": [
+              "hosts"
+            ]
+          },
+          {
+            "bridge_id": "marco",
+            "bridge_label": "Marco",
+            "bridge_type": "person",
+            "salience": 0.63,
+            "path": [
+              "marco-[connected]->elena",
+              "marco-[connected]->chen"
+            ],
+            "relation_types": [
+              "connected"
+            ]
+          }
+        ],
+        "filtered_candidates": [
+          {
+            "bridge_id": "marco",
+            "bridge_label": "Marco",
+            "bridge_type": "person",
+            "salience": 0.63,
+            "path": [
+              "marco-[connected]->elena",
+              "marco-[connected]->chen"
+            ],
+            "relation_types": [
+              "connected"
+            ]
+          }
+        ],
+        "required_bridge_types": [
+          "person"
+        ],
+        "required_relation_types": [
+          "connected"
+        ]
+      },
+      "typed_judge": {
+        "expected_bridge": "marco",
+        "predicted_bridge": "marco",
+        "passed": true
+      }
+    }
+  ]
+}

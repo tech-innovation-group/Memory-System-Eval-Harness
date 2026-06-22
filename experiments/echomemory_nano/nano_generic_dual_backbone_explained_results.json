@@ -1,0 +1,836 @@
+{
+  "readiness": {
+    "messages_persisted": true,
+    "atoms_ready": true,
+    "tree_ready": true,
+    "graph_ready": true,
+    "qa_ready": true
+  },
+  "observations": [
+    {
+      "obs_id": "obs-000",
+      "role": "user",
+      "modality": "text",
+      "content": "Maya signed the Riverside lease on 2026-03-03, but I only mentioned it after returning from travel.",
+      "mention_time": "2026-03-10T09:00:00Z",
+      "write_time": "2026-03-10T09:00:00Z",
+      "event_time": "2026-03-03",
+      "caption": "",
+      "ocr": ""
+    },
+    {
+      "obs_id": "obs-001",
+      "role": "user",
+      "modality": "text",
+      "content": "Nora helped Maya prepare the visa checklist on 2026-04-02.",
+      "mention_time": "2026-04-03T09:00:00Z",
+      "write_time": "2026-04-03T09:00:00Z",
+      "event_time": "2026-04-02",
+      "caption": "",
+      "ocr": ""
+    },
+    {
+      "obs_id": "obs-002",
+      "role": "user",
+      "modality": "text",
+      "content": "Maya presented the keynote deck yesterday.",
+      "mention_time": "2026-05-10T08:00:00Z",
+      "write_time": "2026-05-10T08:00:00Z",
+      "event_time": "2026-05-09",
+      "caption": "",
+      "ocr": ""
+    },
+    {
+      "obs_id": "obs-003",
+      "role": "user",
+      "modality": "text",
+      "content": "Maya had the investor board review last week.",
+      "mention_time": "2026-05-18T09:00:00Z",
+      "write_time": "2026-05-18T09:00:00Z",
+      "event_time": "2026-05-11",
+      "caption": "",
+      "ocr": ""
+    },
+    {
+      "obs_id": "obs-004",
+      "role": "user",
+      "modality": "image",
+      "content": "Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon",
+      "mention_time": "2026-03-10T09:05:00Z",
+      "write_time": "2026-03-10T09:05:00Z",
+      "event_time": "2026-03-10",
+      "caption": "Lease document screenshot",
+      "ocr": "Riverside Lease Agreement Rua Augusta 14 Lisbon"
+    }
+  ],
+  "atoms": [
+    {
+      "atom_id": "atom-000",
+      "atom_type": "event",
+      "subject": "Maya",
+      "predicate": "signed",
+      "obj": "Riverside lease",
+      "statement": "Maya signed the Riverside lease on 2026-03-03, but I only mentioned it after returning from travel.",
+      "event_time": "2026-03-03",
+      "mention_time": "2026-03-10T09:00:00Z",
+      "write_time": "2026-03-10T09:00:00Z",
+      "source_obs_id": "obs-000"
+    },
+    {
+      "atom_id": "atom-001",
+      "atom_type": "relation",
+      "subject": "Nora",
+      "predicate": "helped",
+      "obj": "Maya::visa checklist",
+      "statement": "Nora helped Maya prepare the visa checklist on 2026-04-02.",
+      "event_time": "2026-04-02",
+      "mention_time": "2026-04-03T09:00:00Z",
+      "write_time": "2026-04-03T09:00:00Z",
+      "source_obs_id": "obs-001"
+    },
+    {
+      "atom_id": "atom-002",
+      "atom_type": "event",
+      "subject": "Maya",
+      "predicate": "presented",
+      "obj": "keynote deck",
+      "statement": "Maya presented the keynote deck yesterday.",
+      "event_time": "2026-05-09",
+      "mention_time": "2026-05-10T08:00:00Z",
+      "write_time": "2026-05-10T08:00:00Z",
+      "source_obs_id": "obs-002"
+    },
+    {
+      "atom_id": "atom-003",
+      "atom_type": "event",
+      "subject": "Maya",
+      "predicate": "had",
+      "obj": "investor board review",
+      "statement": "Maya had the investor board review last week.",
+      "event_time": "2026-05-11",
+      "mention_time": "2026-05-18T09:00:00Z",
+      "write_time": "2026-05-18T09:00:00Z",
+      "source_obs_id": "obs-003"
+    },
+    {
+      "atom_id": "atom-004",
+      "atom_type": "image_evidence",
+      "subject": "image_observation",
+      "predicate": "shows",
+      "obj": "Riverside Lease Agreement Rua Augusta 14 Lisbon",
+      "statement": "Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon",
+      "event_time": "2026-03-10",
+      "mention_time": "2026-03-10T09:05:00Z",
+      "write_time": "2026-03-10T09:05:00Z",
+      "source_obs_id": "obs-004"
+    }
+  ],
+  "temporal_blocks": [
+    {
+      "block_id": "day:2026-03-03",
+      "level": "day",
+      "key": "2026-03-03",
+      "content": "- 2026-03-03: Maya signed the Riverside lease on 2026-03-03, but I only mentioned it after returning from travel.",
+      "source_refs": [
+        "atom-000"
+      ]
+    },
+    {
+      "block_id": "day:2026-03-10",
+      "level": "day",
+      "key": "2026-03-10",
+      "content": "- 2026-03-10: Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon",
+      "source_refs": [
+        "atom-004"
+      ]
+    },
+    {
+      "block_id": "day:2026-04-02",
+      "level": "day",
+      "key": "2026-04-02",
+      "content": "- 2026-04-02: Nora helped Maya prepare the visa checklist on 2026-04-02.",
+      "source_refs": [
+        "atom-001"
+      ]
+    },
+    {
+      "block_id": "day:2026-05-09",
+      "level": "day",
+      "key": "2026-05-09",
+      "content": "- 2026-05-09: Maya presented the keynote deck yesterday.",
+      "source_refs": [
+        "atom-002"
+      ]
+    },
+    {
+      "block_id": "day:2026-05-11",
+      "level": "day",
+      "key": "2026-05-11",
+      "content": "- 2026-05-11: Maya had the investor board review last week.",
+      "source_refs": [
+        "atom-003"
+      ]
+    }
+  ],
+  "graph_edges": [
+    {
+      "edge_id": "atom-000:fact",
+      "source_id": "Maya",
+      "target_id": "Riverside lease",
+      "relation_type": "signed",
+      "evidence": "Maya signed the Riverside lease on 2026-03-03, but I only mentioned it after returning from travel."
+    },
+    {
+      "edge_id": "atom-000:time",
+      "source_id": "Maya signed the Riverside lease on 2026-03-03, b",
+      "target_id": "2026-03-03",
+      "relation_type": "happened_at",
+      "evidence": "atom-000"
+    },
+    {
+      "edge_id": "atom-001:fact",
+      "source_id": "Nora",
+      "target_id": "Maya::visa checklist",
+      "relation_type": "helped",
+      "evidence": "Nora helped Maya prepare the visa checklist on 2026-04-02."
+    },
+    {
+      "edge_id": "atom-001:time",
+      "source_id": "Nora helped Maya prepare the visa checklist on 2",
+      "target_id": "2026-04-02",
+      "relation_type": "happened_at",
+      "evidence": "atom-001"
+    },
+    {
+      "edge_id": "atom-002:fact",
+      "source_id": "Maya",
+      "target_id": "keynote deck",
+      "relation_type": "presented",
+      "evidence": "Maya presented the keynote deck yesterday."
+    },
+    {
+      "edge_id": "atom-002:time",
+      "source_id": "Maya presented the keynote deck yesterday.",
+      "target_id": "2026-05-09",
+      "relation_type": "happened_at",
+      "evidence": "atom-002"
+    },
+    {
+      "edge_id": "atom-003:fact",
+      "source_id": "Maya",
+      "target_id": "investor board review",
+      "relation_type": "had",
+      "evidence": "Maya had the investor board review last week."
+    },
+    {
+      "edge_id": "atom-003:time",
+      "source_id": "Maya had the investor board review last week.",
+      "target_id": "2026-05-11",
+      "relation_type": "happened_at",
+      "evidence": "atom-003"
+    },
+    {
+      "edge_id": "atom-004:fact",
+      "source_id": "image_observation",
+      "target_id": "Riverside Lease Agreement Rua Augusta 14 Lisbon",
+      "relation_type": "shows",
+      "evidence": "Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon"
+    },
+    {
+      "edge_id": "atom-004:time",
+      "source_id": "Lease document screenshot\nRiverside Lease Agreem",
+      "target_id": "2026-03-10",
+      "relation_type": "happened_at",
+      "evidence": "atom-004"
+    },
+    {
+      "edge_id": "atom-004:image",
+      "source_id": "image_evidence",
+      "target_id": "Riverside Lease Agreement Rua Augusta 14 Lisbon",
+      "relation_type": "shows",
+      "evidence": "Lease document screenshot\nRiverside Lease Agreement Rua Augusta 14 Lisbon"
+    }
+  ],
+  "queries": [
+    {
+      "query": "When did Maya sign the lease?",
+      "query_time": "2026-03-10T10:00:00Z",
+      "why": "temporal question should prefer tree first and preserve event_time",
+      "result": {
+        "query": "When did Maya sign the lease?",
+        "query_time": "2026-03-10T10:00:00Z",
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "temporal_tree",
+          "supporting_readers": [
+            "graph"
+          ],
+          "required_layers": [
+            "temporal_tree",
+            "event",
+            "event_time"
+          ],
+          "note": "chronology-heavy queries should enter via time structure first"
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "allowed_to_answer": true,
+        "readers_used": [
+          "temporal_tree",
+          "graph"
+        ],
+        "second_pass_readers": [
+          "graph"
+        ],
+        "coverage": {
+          "required": [
+            "temporal_tree",
+            "event",
+            "event_time"
+          ],
+          "present_layers": [
+            "fact",
+            "graph",
+            "image_evidence",
+            "temporal_tree"
+          ],
+          "matched": [
+            "temporal_tree",
+            "event_time"
+          ],
+          "missing": [
+            "event"
+          ],
+          "coverage_ratio": 0.667,
+          "contract_ok": false
+        },
+        "hits": [
+          {
+            "layer": "temporal_tree",
+            "source": "day:2026-03-03",
+            "score": 0.58,
+            "content": "- 2026-03-03: Maya signed the Riverside lease on 2026-03-03, but I only mentioned it after returning from travel.",
+            "event_time": "2026-03-03",
+            "trace": {
+              "event_time": "2026-03-03",
+              "source_refs": [
+                "atom-000"
+              ]
+            }
+          },
+          {
+            "layer": "fact",
+            "source": "atom-000:time",
+            "score": 0.53,
+            "content": "Maya signed the Riverside lease on 2026-03-03, b --happened_at--> 2026-03-03 | atom-000",
+            "event_time": "2026-03-03",
+            "trace": {
+              "path_edge_ids": [
+                "atom-000:time"
+              ],
+              "event_time": "2026-03-03"
+            }
+          },
+          {
+            "layer": "graph",
+            "source": "atom-000:fact",
+            "score": 0.53,
+            "content": "Maya --signed--> Riverside lease | Maya signed the Riverside lease on 2026-03-03, but I only mentioned it after returning from travel.",
+            "event_time": "",
+            "trace": {
+              "path_edge_ids": [
+                "atom-000:fact"
+              ],
+              "event_time": ""
+            }
+          },
+          {
+            "layer": "temporal_tree",
+            "source": "day:2026-05-11",
+            "score": 0.413,
+            "content": "- 2026-05-11: Maya had the investor board review last week.",
+            "event_time": "2026-05-11",
+            "trace": {
+              "event_time": "2026-05-11",
+              "source_refs": [
+                "atom-003"
+              ]
+            }
+          },
+          {
+            "layer": "temporal_tree",
+            "source": "day:2026-05-09",
+            "score": 0.413,
+            "content": "- 2026-05-09: Maya presented the keynote deck yesterday.",
+            "event_time": "2026-05-09",
+            "trace": {
+              "event_time": "2026-05-09",
+              "source_refs": [
+                "atom-002"
+              ]
+            }
+          },
+          {
+            "layer": "temporal_tree",
+            "source": "day:2026-04-02",
+            "score": 0.413,
+            "content": "- 2026-04-02: Nora helped Maya prepare the visa checklist on 2026-04-02.",
+            "event_time": "2026-04-02",
+            "trace": {
+              "event_time": "2026-04-02",
+              "source_refs": [
+                "atom-001"
+              ]
+            }
+          },
+          {
+            "layer": "fact",
+            "source": "atom-003:time",
+            "score": 0.363,
+            "content": "Maya had the investor board review last week. --happened_at--> 2026-05-11 | atom-003",
+            "event_time": "2026-05-11",
+            "trace": {
+              "path_edge_ids": [
+                "atom-003:time"
+              ],
+              "event_time": "2026-05-11"
+            }
+          },
+          {
+            "layer": "fact",
+            "source": "atom-002:time",
+            "score": 0.363,
+            "content": "Maya presented the keynote deck yesterday. --happened_at--> 2026-05-09 | atom-002",
+            "event_time": "2026-05-09",
+            "trace": {
+              "path_edge_ids": [
+                "atom-002:time"
+              ],
+              "event_time": "2026-05-09"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "query": "Who helped Maya with the visa checklist?",
+      "query_time": "2026-04-04T10:00:00Z",
+      "why": "relational question should require graph-style support and path grounding",
+      "result": {
+        "query": "Who helped Maya with the visa checklist?",
+        "query_time": "2026-04-04T10:00:00Z",
+        "plan": {
+          "family": "relational",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "temporal_tree"
+          ],
+          "required_layers": [
+            "graph",
+            "fact",
+            "path_grounding"
+          ],
+          "note": "relation-heavy queries need graph evidence and path grounding"
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "allowed_to_answer": true,
+        "readers_used": [
+          "graph"
+        ],
+        "second_pass_readers": [],
+        "coverage": {
+          "required": [
+            "graph",
+            "fact",
+            "path_grounding"
+          ],
+          "present_layers": [
+            "fact",
+            "graph"
+          ],
+          "matched": [
+            "graph",
+            "fact",
+            "path_grounding"
+          ],
+          "missing": [],
+          "coverage_ratio": 1.0,
+          "contract_ok": true
+        },
+        "hits": [
+          {
+            "layer": "fact",
+            "source": "atom-001:time",
+            "score": 0.794,
+            "content": "Nora helped Maya prepare the visa checklist on 2 --happened_at--> 2026-04-02 | atom-001",
+            "event_time": "2026-04-02",
+            "trace": {
+              "path_edge_ids": [
+                "atom-001:time"
+              ],
+              "event_time": "2026-04-02"
+            }
+          },
+          {
+            "layer": "graph",
+            "source": "atom-001:fact",
+            "score": 0.794,
+            "content": "Nora --helped--> Maya::visa checklist | Nora helped Maya prepare the visa checklist on 2026-04-02.",
+            "event_time": "",
+            "trace": {
+              "path_edge_ids": [
+                "atom-001:fact"
+              ],
+              "event_time": ""
+            }
+          },
+          {
+            "layer": "fact",
+            "source": "atom-003:time",
+            "score": 0.366,
+            "content": "Maya had the investor board review last week. --happened_at--> 2026-05-11 | atom-003",
+            "event_time": "2026-05-11",
+            "trace": {
+              "path_edge_ids": [
+                "atom-003:time"
+              ],
+              "event_time": "2026-05-11"
+            }
+          },
+          {
+            "layer": "fact",
+            "source": "atom-002:time",
+            "score": 0.366,
+            "content": "Maya presented the keynote deck yesterday. --happened_at--> 2026-05-09 | atom-002",
+            "event_time": "2026-05-09",
+            "trace": {
+              "path_edge_ids": [
+                "atom-002:time"
+              ],
+              "event_time": "2026-05-09"
+            }
+          },
+          {
+            "layer": "fact",
+            "source": "atom-000:time",
+            "score": 0.366,
+            "content": "Maya signed the Riverside lease on 2026-03-03, b --happened_at--> 2026-03-03 | atom-000",
+            "event_time": "2026-03-03",
+            "trace": {
+              "path_edge_ids": [
+                "atom-000:time"
+              ],
+              "event_time": "2026-03-03"
+            }
+          },
+          {
+            "layer": "graph",
+            "source": "atom-000:fact",
+            "score": 0.366,
+            "content": "Maya --signed--> Riverside lease | Maya signed the Riverside lease on 2026-03-03, but I only mentioned it after returning from travel.",
+            "event_time": "",
+            "trace": {
+              "path_edge_ids": [
+                "atom-000:fact"
+              ],
+              "event_time": ""
+            }
+          },
+          {
+            "layer": "graph",
+            "source": "atom-002:fact",
+            "score": 0.366,
+            "content": "Maya --presented--> keynote deck | Maya presented the keynote deck yesterday.",
+            "event_time": "",
+            "trace": {
+              "path_edge_ids": [
+                "atom-002:fact"
+              ],
+              "event_time": ""
+            }
+          },
+          {
+            "layer": "graph",
+            "source": "atom-003:fact",
+            "score": 0.366,
+            "content": "Maya --had--> investor board review | Maya had the investor board review last week.",
+            "event_time": "",
+            "trace": {
+              "path_edge_ids": [
+                "atom-003:fact"
+              ],
+              "event_time": ""
+            }
+          }
+        ]
+      }
+    },
+    {
+      "query": "What happened yesterday?",
+      "query_time": "2026-05-10T21:00:00Z",
+      "why": "relative-time question should resolve against query anchor, not write time",
+      "result": {
+        "query": "What happened yesterday?",
+        "query_time": "2026-05-10T21:00:00Z",
+        "plan": {
+          "family": "temporal",
+          "primary_reader": "temporal_tree",
+          "supporting_readers": [
+            "graph"
+          ],
+          "required_layers": [
+            "temporal_tree",
+            "event",
+            "event_time"
+          ],
+          "note": "chronology-heavy queries should enter via time structure first"
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "allowed_to_answer": true,
+        "readers_used": [
+          "temporal_tree",
+          "graph"
+        ],
+        "second_pass_readers": [
+          "graph"
+        ],
+        "coverage": {
+          "required": [
+            "temporal_tree",
+            "event",
+            "event_time"
+          ],
+          "present_layers": [
+            "fact",
+            "graph",
+            "temporal_tree"
+          ],
+          "matched": [
+            "temporal_tree",
+            "event_time"
+          ],
+          "missing": [
+            "event"
+          ],
+          "coverage_ratio": 0.667,
+          "contract_ok": false
+        },
+        "hits": [
+          {
+            "layer": "temporal_tree",
+            "source": "day:2026-05-09",
+            "score": 0.713,
+            "content": "- 2026-05-09: Maya presented the keynote deck yesterday.",
+            "event_time": "2026-05-09",
+            "trace": {
+              "event_time": "2026-05-09",
+              "source_refs": [
+                "atom-002"
+              ]
+            }
+          },
+          {
+            "layer": "fact",
+            "source": "atom-002:time",
+            "score": 0.363,
+            "content": "Maya presented the keynote deck yesterday. --happened_at--> 2026-05-09 | atom-002",
+            "event_time": "2026-05-09",
+            "trace": {
+              "path_edge_ids": [
+                "atom-002:time"
+              ],
+              "event_time": "2026-05-09"
+            }
+          },
+          {
+            "layer": "graph",
+            "source": "atom-002:fact",
+            "score": 0.363,
+            "content": "Maya --presented--> keynote deck | Maya presented the keynote deck yesterday.",
+            "event_time": "",
+            "trace": {
+              "path_edge_ids": [
+                "atom-002:fact"
+              ],
+              "event_time": ""
+            }
+          }
+        ]
+      }
+    },
+    {
+      "query": "What address was shown in the screenshot?",
+      "query_time": "2026-03-11T08:00:00Z",
+      "why": "visual question should require image_evidence, not only plain OCR text overlap",
+      "result": {
+        "query": "What address was shown in the screenshot?",
+        "query_time": "2026-03-11T08:00:00Z",
+        "plan": {
+          "family": "visual",
+          "primary_reader": "graph",
+          "supporting_readers": [
+            "temporal_tree"
+          ],
+          "required_layers": [
+            "image_evidence",
+            "fact"
+          ],
+          "note": "visual queries need first-class image evidence, not only OCR-like text"
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_ready": true,
+          "tree_ready": true,
+          "graph_ready": true,
+          "qa_ready": true
+        },
+        "allowed_to_answer": true,
+        "readers_used": [
+          "graph"
+        ],
+        "second_pass_readers": [],
+        "coverage": {
+          "required": [
+            "image_evidence",
+            "fact"
+          ],
+          "present_layers": [
+            "fact",
+            "graph",
+            "image_evidence"
+          ],
+          "matched": [
+            "image_evidence",
+            "fact"
+          ],
+          "missing": [],
+          "coverage_ratio": 1.0,
+          "contract_ok": true
+        },
+        "hits": [
+          {
+            "layer": "fact",
+            "source": "atom-003:time",
+            "score": 0.223,
+            "content": "Maya had the investor board review last week. --happened_at--> 2026-05-11 | atom-003",
+            "event_time": "2026-05-11",
+            "trace": {
+              "path_edge_ids": [
+                "atom-003:time"
+              ],
+              "event_time": "2026-05-11"
+            }
+          },
+          {
+            "layer": "fact",
+            "source": "atom-002:time",
+            "score": 0.223,
+            "content": "Maya presented the keynote deck yesterday. --happened_at--> 2026-05-09 | atom-002",
+            "event_time": "2026-05-09",
+            "trace": {
+              "path_edge_ids": [
+                "atom-002:time"
+              ],
+              "event_time": "2026-05-09"
+            }
+          },
+          {
+            "layer": "fact",
+            "source": "atom-001:time",
+            "score": 0.223,
+            "content": "Nora helped Maya prepare the visa checklist on 2 --happened_at--> 2026-04-02 | atom-001",
+            "event_time": "2026-04-02",
+            "trace": {
+              "path_edge_ids": [
+                "atom-001:time"
+              ],
+              "event_time": "2026-04-02"
+            }
+          },
+          {
+            "layer": "fact",
+            "source": "atom-004:time",
+            "score": 0.223,
+            "content": "Lease document screenshot\nRiverside Lease Agreem --happened_at--> 2026-03-10 | atom-004",
+            "event_time": "2026-03-10",
+            "trace": {
+              "path_edge_ids": [
+                "atom-004:time"
+              ],
+              "event_time": "2026-03-10"
+            }
+          },
+          {
+            "layer": "fact",
+            "source": "atom-000:time",
+            "score": 0.223,
+            "content": "Maya signed the Riverside lease on 2026-03-03, b --happened_at--> 2026-03-03 | atom-000",
+            "event_time": "2026-03-03",
+            "trace": {
+              "path_edge_ids": [
+                "atom-000:time"
+              ],
+              "event_time": "2026-03-03"
+            }
+          },
+          {
+            "layer": "graph",
+            "source": "atom-000:fact",
+            "score": 0.223,
+            "content": "Maya --signed--> Riverside lease | Maya signed the Riverside lease on 2026-03-03, but I only mentioned it after returning from travel.",
+            "event_time": "",
+            "trace": {
+              "path_edge_ids": [
+                "atom-000:fact"
+              ],
+              "event_time": ""
+            }
+          },
+          {
+            "layer": "graph",
+            "source": "atom-001:fact",
+            "score": 0.223,
+            "content": "Nora --helped--> Maya::visa checklist | Nora helped Maya prepare the visa checklist on 2026-04-02.",
+            "event_time": "",
+            "trace": {
+              "path_edge_ids": [
+                "atom-001:fact"
+              ],
+              "event_time": ""
+            }
+          },
+          {
+            "layer": "graph",
+            "source": "atom-002:fact",
+            "score": 0.223,
+            "content": "Maya --presented--> keynote deck | Maya presented the keynote deck yesterday.",
+            "event_time": "",
+            "trace": {
+              "path_edge_ids": [
+                "atom-002:fact"
+              ],
+              "event_time": ""
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

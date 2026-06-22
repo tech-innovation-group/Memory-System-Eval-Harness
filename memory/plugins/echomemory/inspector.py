@@ -32,6 +32,32 @@ def count_files(path: Path) -> int:
     return sum(1 for item in path.rglob("*") if item.is_file()) if path.exists() else 0
 
 
+def structured_atom_entries(account_root: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    structured_root = account_root / "memory" / ".structured"
+    atom_dir = structured_root / "atoms"
+    if atom_dir.exists():
+        for path in sorted(atom_dir.glob("*.json")):
+            try:
+                data = read_json(path)
+            except Exception:
+                continue
+            if isinstance(data, dict):
+                rows.append(data)
+    atom_json = structured_root / "atoms.json"
+    if atom_json.exists():
+        try:
+            payload = read_json(atom_json)
+        except Exception:
+            payload = {}
+        atoms = payload.get("atoms") if isinstance(payload, dict) else payload
+        if isinstance(atoms, dict):
+            rows.extend(item for item in atoms.values() if isinstance(item, dict))
+        elif isinstance(atoms, list):
+            rows.extend(item for item in atoms if isinstance(item, dict))
+    return rows
+
+
 def compact(text: Any, limit: int = 420) -> str:
     value = re.sub(r"\s+", " ", str(text or "")).strip()
     return value if len(value) <= limit else value[: max(0, limit - 3)] + "..."
@@ -159,14 +185,8 @@ def expected_sample_terms(sample_record: dict[str, Any]) -> list[dict[str, Any]]
 def sample_memory_texts(account_root: Path) -> tuple[str, str]:
     atom_texts: list[str] = []
     memory_texts: list[str] = []
-    atom_root = account_root / "memory" / ".structured" / "atoms"
-    if atom_root.exists():
-        for path in sorted(atom_root.glob("*.json")):
-            try:
-                data = read_json(path)
-            except Exception:
-                continue
-            atom_texts.append(str(data.get("statement") or data.get("content") or ""))
+    for item in structured_atom_entries(account_root):
+        atom_texts.append(str(item.get("statement") or item.get("content") or ""))
     for pattern in [
         account_root / "memory" / "events",
         account_root / "memory" / "entities",
@@ -531,7 +551,6 @@ def session_record_checks(workspace: Path, account: str, records: list[dict[str,
                 atom_flush.get("complete")
                 or commit_artifacts.get("atom_last_extracted_turn_id_ok")
                 or session_cursor_ok
-                or (commit_complete and session.get("retrieval_ready_after_commit"))
             )
             if not commit_complete:
                 totals["incomplete_commits"] += 1
@@ -699,7 +718,7 @@ def import_integrity(
     vector_root = account_root.parent / "system" / "vector_index"
     abstract_count = sum(1 for row in sessions if Path(str(row.get("session_path") or "")) .joinpath("abstract.md").exists())
     overview_count = sum(1 for row in sessions if Path(str(row.get("session_path") or "")) .joinpath("overview.md").exists())
-    atom_count = count_files(memory_root / ".structured" / "atoms")
+    atom_count = len(structured_atom_entries(account_root)) or count_files(memory_root / ".structured" / "atoms")
     graph_count = count_files(memory_root / ".graph")
     episode_count = count_files(memory_root / ".episodes" / "episodes")
     vector_count = count_files(vector_root)
@@ -749,7 +768,7 @@ def import_integrity(
 
     failed = [item for item in checks if item["level"] == "fail" or (item["ok"] is False and item["level"] != "warn")]
     warnings = [item for item in checks if item["level"] == "warn" and not item["ok"]]
-    current_complete = bool(sessions) and totals["incomplete_commits"] == 0 and totals["expected"] == totals["submitted"] and retrieval_layers_ready
+    current_complete = bool(sessions) and totals["incomplete_commits"] == 0 and totals["incomplete_atom_flush"] == 0 and totals["expected"] == totals["submitted"] and retrieval_layers_ready
     if summary_running:
         status = "running"
     else:

@@ -40,8 +40,8 @@ JUDGE_MODEL=gpt-5.5
 ANSWER_MODEL=gpt-5.5
 
 # OpenViking 配置
-OPENVIKING_WORKSPACE=/Users/chx/openviking_workspace
-OPENVIKING_URL=http://127.0.0.1:1933
+OPENVIKING_WORKSPACE=<openviking-workspace>
+OPENVIKING_URL=<OPENVIKING_BASE_URL>
 
 # LoCoMo 数据
 LOCOMO_DATA=dataset/locomo10.json
@@ -51,7 +51,7 @@ LOCOMO_DATA=dataset/locomo10.json
 
 ```bash
 # 检查服务是否运行
-curl http://127.0.0.1:1933/health
+curl <OPENVIKING_BASE_URL>/health
 
 # 预期输出
 {"status": "ok", "version": "0.3.14"}
@@ -71,17 +71,17 @@ python server.py --port 1933
 ### 步骤 1：导入数据到 OpenViking
 
 ```bash
-cd /Users/chx/locomo-eval-web
+cd <repo-root>
 
 # 导入 conv-30 到 OpenViking
-/Users/chx/jiuwenclaw/bin/python3.12 scripts/benchmark_adapter.py \
+<python-bin> scripts/benchmark_adapter.py \
   --dataset dataset/locomo10.json \
   --format auto \
-  --out-dir /Users/chx/locomo-eval-web/runs/echomem_ov_import \
+  --out-dir <repo-root>/runs/echomem_ov_import \
   --mode execute \
   --allow-writes \
   --memory-mode isolated_instance \
-  --ov-base-url http://localhost:1933 \
+  --ov-base-url <OPENVIKING_BASE_URL> \
   --namespace echomem_gpt55_test \
   --sample conv-30
 ```
@@ -107,7 +107,7 @@ cd /Users/chx/locomo-eval-web
 **等待 commit 完成**：
 ```bash
 # 检查 commit 状态
-curl http://localhost:1933/api/v1/workspace/status
+curl <OPENVIKING_BASE_URL>/api/v1/workspace/status
 
 # 等待 pending_commits = 0
 ```
@@ -118,13 +118,13 @@ curl http://localhost:1933/api/v1/workspace/status
 
 ```bash
 # 10 题测试（使用 GPT-5.5）
-/Users/chx/jiuwenclaw/bin/python3.12 scripts/run_vikingbot_eval.py \
+<python-bin> scripts/run_vikingbot_eval.py \
   --dataset dataset/locomo10.json \
-  --out-dir /Users/chx/locomo-eval-web/runs/echomem_vikingbot_gpt55_10q \
+  --out-dir <repo-root>/runs/echomem_vikingbot_gpt55_10q \
   --sample conv-30 \
   --random-count 10 \
-  --openviking-url http://localhost:1933 \
-  --workspace /Users/chx/openviking_workspace \
+  --openviking-url <OPENVIKING_BASE_URL> \
+  --workspace <openviking-workspace> \
   --account default \
   --answer-base-url https://api.openai.com/v1 \
   --answer-model gpt-5.5 \
@@ -162,13 +162,13 @@ curl http://localhost:1933/api/v1/workspace/status
 
 ```bash
 # 查看 CSV 结果
-head -5 /Users/chx/locomo-eval-web/runs/echomem_vikingbot_gpt55_10q/vikingbot_eval.csv
+head -5 <repo-root>/runs/echomem_vikingbot_gpt55_10q/vikingbot_eval.csv
 
 # 查看摘要
-cat /Users/chx/locomo-eval-web/runs/echomem_vikingbot_gpt55_10q/summary.json
+cat <repo-root>/runs/echomem_vikingbot_gpt55_10q/summary.json
 
 # 统计准确率
-/Users/chx/jiuwenclaw/bin/python3.12 -c "
+<python-bin> -c "
 import csv
 with open('runs/echomem_vikingbot_gpt55_10q/vikingbot_eval.csv', 'r', encoding='utf-8') as f:
     reader = csv.DictReader(f)
@@ -187,13 +187,13 @@ with open('runs/echomem_vikingbot_gpt55_10q/vikingbot_eval.csv', 'r', encoding='
 
 ```bash
 # 1. Local Agent 基线（已完成）
-# 结果: /Users/chx/locomo-eval-web/runs/echomem_test_10q/
+# 结果: <repo-root>/runs/echomem_test_10q/
 
 # 2. OpenViking + GPT-5.5（刚完成）
-# 结果: /Users/chx/locomo-eval-web/runs/echomem_vikingbot_gpt55_10q/
+# 结果: <repo-root>/runs/echomem_vikingbot_gpt55_10q/
 
 # 3. 对比分析
-/Users/chx/jiuwenclaw/bin/python3.12 -c "
+<python-bin> -c "
 import csv
 import json
 
@@ -238,25 +238,25 @@ print(f'速度比: 1000x 慢')
 
 ```bash
 # 使用 GPT-4o
-/Users/chx/jiuwenclaw/bin/python3.12 scripts/run_vikingbot_eval.py \
+<python-bin> scripts/run_vikingbot_eval.py \
   --dataset dataset/locomo10.json \
-  --out-dir /Users/chx/locomo-eval-web/runs/echomem_vikingbot_gpt4o_10q \
+  --out-dir <repo-root>/runs/echomem_vikingbot_gpt4o_10q \
   --sample conv-30 \
   --random-count 10 \
-  --openviking-url http://localhost:1933 \
-  --workspace /Users/chx/openviking_workspace \
+  --openviking-url <OPENVIKING_BASE_URL> \
+  --workspace <openviking-workspace> \
   --answer-base-url https://api.openai.com/v1 \
   --answer-model gpt-4o \
   --answer-token $OPENAI_API_KEY
 
 # 使用 Claude Opus 4
-/Users/chx/jiuwenclaw/bin/python3.12 scripts/run_vikingbot_eval.py \
+<python-bin> scripts/run_vikingbot_eval.py \
   --dataset dataset/locomo10.json \
-  --out-dir /Users/chx/locomo-eval-web/runs/echomem_vikingbot_claude_10q \
+  --out-dir <repo-root>/runs/echomem_vikingbot_claude_10q \
   --sample conv-30 \
   --random-count 10 \
-  --openviking-url http://localhost:1933 \
-  --workspace /Users/chx/openviking_workspace \
+  --openviking-url <OPENVIKING_BASE_URL> \
+  --workspace <openviking-workspace> \
   --answer-base-url https://api.anthropic.com/v1 \
   --answer-model claude-opus-4 \
   --answer-token $ANTHROPIC_API_KEY
@@ -269,11 +269,11 @@ print(f'速度比: 1000x 慢')
 ### 启动 Web 服务
 
 ```bash
-cd /Users/chx/locomo-eval-web
+cd <repo-root>
 ./start.sh
 ```
 
-访问：`http://127.0.0.1:19181/`
+访问：`<WEB_BASE_URL>/`
 
 ### UI 配置步骤
 
@@ -286,8 +286,8 @@ cd /Users/chx/locomo-eval-web
    - API Token: 输入你的 OpenAI API key
 
 3. **配置 OpenViking**
-   - OpenViking URL: `http://localhost:1933`
-   - Workspace: `/Users/chx/openviking_workspace`
+   - OpenViking URL: `<OPENVIKING_BASE_URL>`
+   - Workspace: `<openviking-workspace>`
    - Account: `default`
 
 4. **运行测试**
@@ -334,7 +334,7 @@ cd /Users/chx/locomo-eval-web
 
 ```bash
 # 检查服务
-curl http://localhost:1933/health
+curl <OPENVIKING_BASE_URL>/health
 
 # 如果失败，启动服务
 cd /path/to/openviking
@@ -355,10 +355,10 @@ curl https://api.openai.com/v1/models \
 
 ```bash
 # 检查 workspace 权限
-ls -la /Users/chx/openviking_workspace/viking/default/
+ls -la <openviking-workspace>
 
 # 检查 namespace
-curl http://localhost:1933/api/v1/namespaces
+curl <OPENVIKING_BASE_URL>/api/v1/namespaces
 ```
 
 ### 问题 4: GPT-5.5 不可用
@@ -435,12 +435,12 @@ curl http://localhost:1933/api/v1/namespaces
 
 ```bash
 # 测试完整 conv-30 (199 题)
-/Users/chx/jiuwenclaw/bin/python3.12 scripts/run_vikingbot_eval.py \
+<python-bin> scripts/run_vikingbot_eval.py \
   --dataset dataset/locomo10.json \
-  --out-dir /Users/chx/locomo-eval-web/runs/echomem_vikingbot_gpt55_conv30_full \
+  --out-dir <repo-root>/runs/echomem_vikingbot_gpt55_conv30_full \
   --sample conv-30 \
-  --openviking-url http://localhost:1933 \
-  --workspace /Users/chx/openviking_workspace \
+  --openviking-url <OPENVIKING_BASE_URL> \
+  --workspace <openviking-workspace> \
   --answer-model gpt-5.5 \
   --answer-token $OPENAI_API_KEY
 
@@ -452,11 +452,11 @@ curl http://localhost:1933/api/v1/namespaces
 
 ```bash
 # 全量测试
-/Users/chx/jiuwenclaw/bin/python3.12 scripts/run_vikingbot_eval.py \
+<python-bin> scripts/run_vikingbot_eval.py \
   --dataset dataset/locomo10.json \
-  --out-dir /Users/chx/locomo-eval-web/runs/echomem_vikingbot_gpt55_full_1540 \
-  --openviking-url http://localhost:1933 \
-  --workspace /Users/chx/openviking_workspace \
+  --out-dir <repo-root>/runs/echomem_vikingbot_gpt55_full_1540 \
+  --openviking-url <OPENVIKING_BASE_URL> \
+  --workspace <openviking-workspace> \
   --answer-model gpt-5.5 \
   --answer-token $OPENAI_API_KEY
 
@@ -482,9 +482,9 @@ curl http://localhost:1933/api/v1/namespaces
 
 ## 📚 相关文档
 
-- [EchoMem 测试指南](/Users/chx/locomo-eval-web/docs/echomem_test_guide.md)
-- [Local Agent 原理](/Users/chx/locomo-eval-web/docs/local_agent_no_llm_explained.md)
-- [外部测试方案](/Users/chx/locomo-eval-web/docs/external_tester_handoff_plan.md)
+- [EchoMem 测试指南](./echomem_test_guide.md)
+- [Local Agent 原理](./local_agent_no_llm_explained.md)
+- [外部测试方案](./external_tester_handoff_plan.md)
 
 ---
 

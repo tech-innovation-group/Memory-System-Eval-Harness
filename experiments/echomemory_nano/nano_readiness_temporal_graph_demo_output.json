@@ -1,0 +1,884 @@
+{
+  "turns": [
+    {
+      "role": "user",
+      "text": "Yesterday Jon lost his job at the bank.",
+      "created_at": "2025-05-10"
+    },
+    {
+      "role": "user",
+      "text": "Two days ago Gina visited Rome for a design fair.",
+      "created_at": "2025-05-15"
+    },
+    {
+      "role": "user",
+      "text": "Maya introduced Jon to Lena.",
+      "created_at": "2025-05-18"
+    }
+  ],
+  "before_cold_path": {
+    "query": "When did Jon lose his job?",
+    "status": "not_ready",
+    "answer": "not_ready",
+    "hits": [],
+    "plan": {
+      "intent": "temporal",
+      "target_layers": [
+        "event",
+        "fact"
+      ],
+      "notes": "Prefer story-time carrying event nodes."
+    },
+    "readiness": {
+      "messages_persisted": true,
+      "atoms_extracted": true,
+      "graph_built": false,
+      "qa_ready": false
+    },
+    "note": "Memory is persisted but not QA-ready yet; cold consolidation has not finished."
+  },
+  "systems": {
+    "baseline": {
+      "config": {
+        "temporal_normalize": false,
+        "graph_first": false,
+        "readiness_gate": false
+      },
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_extracted": true,
+        "graph_built": true,
+        "qa_ready": true
+      },
+      "turns": [
+        {
+          "turn_id": "turn-000",
+          "role": "user",
+          "text": "Yesterday Jon lost his job at the bank.",
+          "created_at": "2025-05-10"
+        },
+        {
+          "turn_id": "turn-001",
+          "role": "user",
+          "text": "Two days ago Gina visited Rome for a design fair.",
+          "created_at": "2025-05-15"
+        },
+        {
+          "turn_id": "turn-002",
+          "role": "user",
+          "text": "Maya introduced Jon to Lena.",
+          "created_at": "2025-05-18"
+        }
+      ],
+      "atoms": [
+        {
+          "atom_id": "atom-000-00",
+          "atom_type": "event",
+          "subject": "Jon",
+          "predicate": "lost_job",
+          "object": "job",
+          "statement": "Yesterday Jon lost his job at the bank.",
+          "story_time": "2025-05-10",
+          "created_at": "2025-05-10"
+        },
+        {
+          "atom_id": "atom-001-01",
+          "atom_type": "event",
+          "subject": "Gina",
+          "predicate": "visited",
+          "object": "Rome",
+          "statement": "Two days ago Gina visited Rome for a design fair.",
+          "story_time": "2025-05-15",
+          "created_at": "2025-05-15"
+        },
+        {
+          "atom_id": "atom-002-03",
+          "atom_type": "relation",
+          "subject": "Maya",
+          "predicate": "introduced_to",
+          "object": "Jon->Lena",
+          "statement": "Maya introduced Jon to Lena.",
+          "story_time": "2025-05-18",
+          "created_at": "2025-05-18"
+        }
+      ],
+      "nodes": [
+        {
+          "node_id": "fact:atom-000-00",
+          "node_type": "fact",
+          "content": "statement=Yesterday Jon lost his job at the bank.\nsubject=Jon\npredicate=lost_job\nobject=job\nstory_time=2025-05-10\ncreated_at=2025-05-10",
+          "source_atom_id": "atom-000-00",
+          "story_time": "2025-05-10"
+        },
+        {
+          "node_id": "event:atom-000-00",
+          "node_type": "event",
+          "content": "statement=Yesterday Jon lost his job at the bank.\nstory_time=2025-05-10\nparticipants=Jon, job",
+          "source_atom_id": "atom-000-00",
+          "story_time": "2025-05-10"
+        },
+        {
+          "node_id": "entity:Jon",
+          "node_type": "entity",
+          "content": "name=Jon\nfirst_seen=Yesterday Jon lost his job at the bank.",
+          "source_atom_id": "atom-000-00",
+          "story_time": "2025-05-10"
+        },
+        {
+          "node_id": "entity:job",
+          "node_type": "entity",
+          "content": "name=job\nfirst_seen=Yesterday Jon lost his job at the bank.",
+          "source_atom_id": "atom-000-00",
+          "story_time": "2025-05-10"
+        },
+        {
+          "node_id": "fact:atom-001-01",
+          "node_type": "fact",
+          "content": "statement=Two days ago Gina visited Rome for a design fair.\nsubject=Gina\npredicate=visited\nobject=Rome\nstory_time=2025-05-15\ncreated_at=2025-05-15",
+          "source_atom_id": "atom-001-01",
+          "story_time": "2025-05-15"
+        },
+        {
+          "node_id": "event:atom-001-01",
+          "node_type": "event",
+          "content": "statement=Two days ago Gina visited Rome for a design fair.\nstory_time=2025-05-15\nparticipants=Gina, Rome",
+          "source_atom_id": "atom-001-01",
+          "story_time": "2025-05-15"
+        },
+        {
+          "node_id": "entity:Gina",
+          "node_type": "entity",
+          "content": "name=Gina\nfirst_seen=Two days ago Gina visited Rome for a design fair.",
+          "source_atom_id": "atom-001-01",
+          "story_time": "2025-05-15"
+        },
+        {
+          "node_id": "entity:Rome",
+          "node_type": "entity",
+          "content": "name=Rome\nfirst_seen=Two days ago Gina visited Rome for a design fair.",
+          "source_atom_id": "atom-001-01",
+          "story_time": "2025-05-15"
+        },
+        {
+          "node_id": "fact:atom-002-03",
+          "node_type": "fact",
+          "content": "statement=Maya introduced Jon to Lena.\nsubject=Maya\npredicate=introduced_to\nobject=Jon->Lena\nstory_time=2025-05-18\ncreated_at=2025-05-18",
+          "source_atom_id": "atom-002-03",
+          "story_time": "2025-05-18"
+        },
+        {
+          "node_id": "event:atom-002-03",
+          "node_type": "event",
+          "content": "statement=Maya introduced Jon to Lena.\nstory_time=2025-05-18\nparticipants=Maya, Jon->Lena",
+          "source_atom_id": "atom-002-03",
+          "story_time": "2025-05-18"
+        },
+        {
+          "node_id": "entity:Maya",
+          "node_type": "entity",
+          "content": "name=Maya\nfirst_seen=Maya introduced Jon to Lena.",
+          "source_atom_id": "atom-002-03",
+          "story_time": "2025-05-18"
+        },
+        {
+          "node_id": "entity:Jon->Lena",
+          "node_type": "entity",
+          "content": "name=Jon->Lena\nfirst_seen=Maya introduced Jon to Lena.",
+          "source_atom_id": "atom-002-03",
+          "story_time": "2025-05-18"
+        },
+        {
+          "node_id": "relation:atom-002-03",
+          "node_type": "relation",
+          "content": "relation=Maya introduced_to Jon->Lena\nstatement=Maya introduced Jon to Lena.\nstory_time=2025-05-18",
+          "source_atom_id": "atom-002-03",
+          "story_time": "2025-05-18"
+        }
+      ],
+      "edges": [
+        {
+          "edge_id": "event:atom-000-00:evidence_of:fact:atom-000-00",
+          "source_id": "event:atom-000-00",
+          "target_id": "fact:atom-000-00",
+          "relation_type": "evidence_of"
+        },
+        {
+          "edge_id": "entity:Jon:has_fact:atom-000-00",
+          "source_id": "entity:Jon",
+          "target_id": "fact:atom-000-00",
+          "relation_type": "has_fact"
+        },
+        {
+          "edge_id": "event:atom-000-00:involves:Jon",
+          "source_id": "event:atom-000-00",
+          "target_id": "entity:Jon",
+          "relation_type": "involves"
+        },
+        {
+          "edge_id": "entity:job:has_fact:atom-000-00",
+          "source_id": "entity:job",
+          "target_id": "fact:atom-000-00",
+          "relation_type": "has_fact"
+        },
+        {
+          "edge_id": "event:atom-000-00:involves:job",
+          "source_id": "event:atom-000-00",
+          "target_id": "entity:job",
+          "relation_type": "involves"
+        },
+        {
+          "edge_id": "event:atom-001-01:evidence_of:fact:atom-001-01",
+          "source_id": "event:atom-001-01",
+          "target_id": "fact:atom-001-01",
+          "relation_type": "evidence_of"
+        },
+        {
+          "edge_id": "entity:Gina:has_fact:atom-001-01",
+          "source_id": "entity:Gina",
+          "target_id": "fact:atom-001-01",
+          "relation_type": "has_fact"
+        },
+        {
+          "edge_id": "event:atom-001-01:involves:Gina",
+          "source_id": "event:atom-001-01",
+          "target_id": "entity:Gina",
+          "relation_type": "involves"
+        },
+        {
+          "edge_id": "entity:Rome:has_fact:atom-001-01",
+          "source_id": "entity:Rome",
+          "target_id": "fact:atom-001-01",
+          "relation_type": "has_fact"
+        },
+        {
+          "edge_id": "event:atom-001-01:involves:Rome",
+          "source_id": "event:atom-001-01",
+          "target_id": "entity:Rome",
+          "relation_type": "involves"
+        },
+        {
+          "edge_id": "event:atom-002-03:evidence_of:fact:atom-002-03",
+          "source_id": "event:atom-002-03",
+          "target_id": "fact:atom-002-03",
+          "relation_type": "evidence_of"
+        },
+        {
+          "edge_id": "entity:Maya:has_fact:atom-002-03",
+          "source_id": "entity:Maya",
+          "target_id": "fact:atom-002-03",
+          "relation_type": "has_fact"
+        },
+        {
+          "edge_id": "event:atom-002-03:involves:Maya",
+          "source_id": "event:atom-002-03",
+          "target_id": "entity:Maya",
+          "relation_type": "involves"
+        },
+        {
+          "edge_id": "entity:Jon->Lena:has_fact:atom-002-03",
+          "source_id": "entity:Jon->Lena",
+          "target_id": "fact:atom-002-03",
+          "relation_type": "has_fact"
+        },
+        {
+          "edge_id": "event:atom-002-03:involves:Jon->Lena",
+          "source_id": "event:atom-002-03",
+          "target_id": "entity:Jon->Lena",
+          "relation_type": "involves"
+        },
+        {
+          "edge_id": "entity:Maya:relation:atom-002-03",
+          "source_id": "entity:Maya",
+          "target_id": "relation:atom-002-03",
+          "relation_type": "participates_in_relation"
+        },
+        {
+          "edge_id": "entity:Jon->Lena:relation:atom-002-03",
+          "source_id": "entity:Jon->Lena",
+          "target_id": "relation:atom-002-03",
+          "relation_type": "participates_in_relation"
+        },
+        {
+          "edge_id": "event:atom-000-00:temporal_next:event:atom-001-01",
+          "source_id": "event:atom-000-00",
+          "target_id": "event:atom-001-01",
+          "relation_type": "temporal_next"
+        },
+        {
+          "edge_id": "event:atom-001-01:temporal_next:event:atom-002-03",
+          "source_id": "event:atom-001-01",
+          "target_id": "event:atom-002-03",
+          "relation_type": "temporal_next"
+        }
+      ]
+    },
+    "improved": {
+      "config": {
+        "temporal_normalize": true,
+        "graph_first": true,
+        "readiness_gate": true
+      },
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_extracted": true,
+        "graph_built": true,
+        "qa_ready": true
+      },
+      "turns": [
+        {
+          "turn_id": "turn-000",
+          "role": "user",
+          "text": "Yesterday Jon lost his job at the bank.",
+          "created_at": "2025-05-10"
+        },
+        {
+          "turn_id": "turn-001",
+          "role": "user",
+          "text": "Two days ago Gina visited Rome for a design fair.",
+          "created_at": "2025-05-15"
+        },
+        {
+          "turn_id": "turn-002",
+          "role": "user",
+          "text": "Maya introduced Jon to Lena.",
+          "created_at": "2025-05-18"
+        }
+      ],
+      "atoms": [
+        {
+          "atom_id": "atom-000-00",
+          "atom_type": "event",
+          "subject": "Jon",
+          "predicate": "lost_job",
+          "object": "job",
+          "statement": "Yesterday Jon lost his job at the bank.",
+          "story_time": "2025-05-09",
+          "created_at": "2025-05-10"
+        },
+        {
+          "atom_id": "atom-001-01",
+          "atom_type": "event",
+          "subject": "Gina",
+          "predicate": "visited",
+          "object": "Rome",
+          "statement": "Two days ago Gina visited Rome for a design fair.",
+          "story_time": "2025-05-13",
+          "created_at": "2025-05-15"
+        },
+        {
+          "atom_id": "atom-002-03",
+          "atom_type": "relation",
+          "subject": "Maya",
+          "predicate": "introduced_to",
+          "object": "Jon->Lena",
+          "statement": "Maya introduced Jon to Lena.",
+          "story_time": "2025-05-18",
+          "created_at": "2025-05-18"
+        }
+      ],
+      "nodes": [
+        {
+          "node_id": "fact:atom-000-00",
+          "node_type": "fact",
+          "content": "statement=Yesterday Jon lost his job at the bank.\nsubject=Jon\npredicate=lost_job\nobject=job\nstory_time=2025-05-09\ncreated_at=2025-05-10",
+          "source_atom_id": "atom-000-00",
+          "story_time": "2025-05-09"
+        },
+        {
+          "node_id": "event:atom-000-00",
+          "node_type": "event",
+          "content": "statement=Yesterday Jon lost his job at the bank.\nstory_time=2025-05-09\nparticipants=Jon, job",
+          "source_atom_id": "atom-000-00",
+          "story_time": "2025-05-09"
+        },
+        {
+          "node_id": "entity:Jon",
+          "node_type": "entity",
+          "content": "name=Jon\nfirst_seen=Yesterday Jon lost his job at the bank.",
+          "source_atom_id": "atom-000-00",
+          "story_time": "2025-05-09"
+        },
+        {
+          "node_id": "entity:job",
+          "node_type": "entity",
+          "content": "name=job\nfirst_seen=Yesterday Jon lost his job at the bank.",
+          "source_atom_id": "atom-000-00",
+          "story_time": "2025-05-09"
+        },
+        {
+          "node_id": "fact:atom-001-01",
+          "node_type": "fact",
+          "content": "statement=Two days ago Gina visited Rome for a design fair.\nsubject=Gina\npredicate=visited\nobject=Rome\nstory_time=2025-05-13\ncreated_at=2025-05-15",
+          "source_atom_id": "atom-001-01",
+          "story_time": "2025-05-13"
+        },
+        {
+          "node_id": "event:atom-001-01",
+          "node_type": "event",
+          "content": "statement=Two days ago Gina visited Rome for a design fair.\nstory_time=2025-05-13\nparticipants=Gina, Rome",
+          "source_atom_id": "atom-001-01",
+          "story_time": "2025-05-13"
+        },
+        {
+          "node_id": "entity:Gina",
+          "node_type": "entity",
+          "content": "name=Gina\nfirst_seen=Two days ago Gina visited Rome for a design fair.",
+          "source_atom_id": "atom-001-01",
+          "story_time": "2025-05-13"
+        },
+        {
+          "node_id": "entity:Rome",
+          "node_type": "entity",
+          "content": "name=Rome\nfirst_seen=Two days ago Gina visited Rome for a design fair.",
+          "source_atom_id": "atom-001-01",
+          "story_time": "2025-05-13"
+        },
+        {
+          "node_id": "fact:atom-002-03",
+          "node_type": "fact",
+          "content": "statement=Maya introduced Jon to Lena.\nsubject=Maya\npredicate=introduced_to\nobject=Jon->Lena\nstory_time=2025-05-18\ncreated_at=2025-05-18",
+          "source_atom_id": "atom-002-03",
+          "story_time": "2025-05-18"
+        },
+        {
+          "node_id": "event:atom-002-03",
+          "node_type": "event",
+          "content": "statement=Maya introduced Jon to Lena.\nstory_time=2025-05-18\nparticipants=Maya, Jon->Lena",
+          "source_atom_id": "atom-002-03",
+          "story_time": "2025-05-18"
+        },
+        {
+          "node_id": "entity:Maya",
+          "node_type": "entity",
+          "content": "name=Maya\nfirst_seen=Maya introduced Jon to Lena.",
+          "source_atom_id": "atom-002-03",
+          "story_time": "2025-05-18"
+        },
+        {
+          "node_id": "entity:Jon->Lena",
+          "node_type": "entity",
+          "content": "name=Jon->Lena\nfirst_seen=Maya introduced Jon to Lena.",
+          "source_atom_id": "atom-002-03",
+          "story_time": "2025-05-18"
+        },
+        {
+          "node_id": "relation:atom-002-03",
+          "node_type": "relation",
+          "content": "relation=Maya introduced_to Jon->Lena\nstatement=Maya introduced Jon to Lena.\nstory_time=2025-05-18",
+          "source_atom_id": "atom-002-03",
+          "story_time": "2025-05-18"
+        }
+      ],
+      "edges": [
+        {
+          "edge_id": "event:atom-000-00:evidence_of:fact:atom-000-00",
+          "source_id": "event:atom-000-00",
+          "target_id": "fact:atom-000-00",
+          "relation_type": "evidence_of"
+        },
+        {
+          "edge_id": "entity:Jon:has_fact:atom-000-00",
+          "source_id": "entity:Jon",
+          "target_id": "fact:atom-000-00",
+          "relation_type": "has_fact"
+        },
+        {
+          "edge_id": "event:atom-000-00:involves:Jon",
+          "source_id": "event:atom-000-00",
+          "target_id": "entity:Jon",
+          "relation_type": "involves"
+        },
+        {
+          "edge_id": "entity:job:has_fact:atom-000-00",
+          "source_id": "entity:job",
+          "target_id": "fact:atom-000-00",
+          "relation_type": "has_fact"
+        },
+        {
+          "edge_id": "event:atom-000-00:involves:job",
+          "source_id": "event:atom-000-00",
+          "target_id": "entity:job",
+          "relation_type": "involves"
+        },
+        {
+          "edge_id": "event:atom-001-01:evidence_of:fact:atom-001-01",
+          "source_id": "event:atom-001-01",
+          "target_id": "fact:atom-001-01",
+          "relation_type": "evidence_of"
+        },
+        {
+          "edge_id": "entity:Gina:has_fact:atom-001-01",
+          "source_id": "entity:Gina",
+          "target_id": "fact:atom-001-01",
+          "relation_type": "has_fact"
+        },
+        {
+          "edge_id": "event:atom-001-01:involves:Gina",
+          "source_id": "event:atom-001-01",
+          "target_id": "entity:Gina",
+          "relation_type": "involves"
+        },
+        {
+          "edge_id": "entity:Rome:has_fact:atom-001-01",
+          "source_id": "entity:Rome",
+          "target_id": "fact:atom-001-01",
+          "relation_type": "has_fact"
+        },
+        {
+          "edge_id": "event:atom-001-01:involves:Rome",
+          "source_id": "event:atom-001-01",
+          "target_id": "entity:Rome",
+          "relation_type": "involves"
+        },
+        {
+          "edge_id": "event:atom-002-03:evidence_of:fact:atom-002-03",
+          "source_id": "event:atom-002-03",
+          "target_id": "fact:atom-002-03",
+          "relation_type": "evidence_of"
+        },
+        {
+          "edge_id": "entity:Maya:has_fact:atom-002-03",
+          "source_id": "entity:Maya",
+          "target_id": "fact:atom-002-03",
+          "relation_type": "has_fact"
+        },
+        {
+          "edge_id": "event:atom-002-03:involves:Maya",
+          "source_id": "event:atom-002-03",
+          "target_id": "entity:Maya",
+          "relation_type": "involves"
+        },
+        {
+          "edge_id": "entity:Jon->Lena:has_fact:atom-002-03",
+          "source_id": "entity:Jon->Lena",
+          "target_id": "fact:atom-002-03",
+          "relation_type": "has_fact"
+        },
+        {
+          "edge_id": "event:atom-002-03:involves:Jon->Lena",
+          "source_id": "event:atom-002-03",
+          "target_id": "entity:Jon->Lena",
+          "relation_type": "involves"
+        },
+        {
+          "edge_id": "entity:Maya:relation:atom-002-03",
+          "source_id": "entity:Maya",
+          "target_id": "relation:atom-002-03",
+          "relation_type": "participates_in_relation"
+        },
+        {
+          "edge_id": "entity:Jon->Lena:relation:atom-002-03",
+          "source_id": "entity:Jon->Lena",
+          "target_id": "relation:atom-002-03",
+          "relation_type": "participates_in_relation"
+        },
+        {
+          "edge_id": "event:atom-000-00:temporal_next:event:atom-001-01",
+          "source_id": "event:atom-000-00",
+          "target_id": "event:atom-001-01",
+          "relation_type": "temporal_next"
+        },
+        {
+          "edge_id": "event:atom-001-01:temporal_next:event:atom-002-03",
+          "source_id": "event:atom-001-01",
+          "target_id": "event:atom-002-03",
+          "relation_type": "temporal_next"
+        }
+      ]
+    }
+  },
+  "answers_after_cold_path": {
+    "baseline": {
+      "When did Jon lose his job?": {
+        "query": "When did Jon lose his job?",
+        "status": "ok",
+        "answer": "2025-05-10",
+        "hits": [
+          {
+            "score": 3.0,
+            "node_id": "atom-000-00",
+            "node_type": "event",
+            "story_time": "2025-05-10",
+            "created_at": "2025-05-10",
+            "content": "Yesterday Jon lost his job at the bank."
+          },
+          {
+            "score": 1.0,
+            "node_id": "atom-002-03",
+            "node_type": "relation",
+            "story_time": "2025-05-18",
+            "created_at": "2025-05-18",
+            "content": "Maya introduced Jon to Lena."
+          }
+        ],
+        "plan": {
+          "intent": "temporal",
+          "target_layers": [
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer story-time carrying event nodes."
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_extracted": true,
+          "graph_built": true,
+          "qa_ready": true
+        },
+        "note": ""
+      },
+      "When did Gina visit Rome?": {
+        "query": "When did Gina visit Rome?",
+        "status": "ok",
+        "answer": "2025-05-15",
+        "hits": [
+          {
+            "score": 2.0,
+            "node_id": "atom-001-01",
+            "node_type": "event",
+            "story_time": "2025-05-15",
+            "created_at": "2025-05-15",
+            "content": "Two days ago Gina visited Rome for a design fair."
+          }
+        ],
+        "plan": {
+          "intent": "temporal",
+          "target_layers": [
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer story-time carrying event nodes."
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_extracted": true,
+          "graph_built": true,
+          "qa_ready": true
+        },
+        "note": ""
+      },
+      "Who introduced Jon to Lena?": {
+        "query": "Who introduced Jon to Lena?",
+        "status": "ok",
+        "answer": "Maya introduced Jon to Lena.",
+        "hits": [
+          {
+            "score": 4.0,
+            "node_id": "atom-002-03",
+            "node_type": "relation",
+            "story_time": "2025-05-18",
+            "created_at": "2025-05-18",
+            "content": "Maya introduced Jon to Lena."
+          },
+          {
+            "score": 1.0,
+            "node_id": "atom-000-00",
+            "node_type": "event",
+            "story_time": "2025-05-10",
+            "created_at": "2025-05-10",
+            "content": "Yesterday Jon lost his job at the bank."
+          }
+        ],
+        "plan": {
+          "intent": "relational",
+          "target_layers": [
+            "relation",
+            "entity",
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer relation/entity path for people-company linkage questions."
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_extracted": true,
+          "graph_built": true,
+          "qa_ready": true
+        },
+        "note": ""
+      }
+    },
+    "improved": {
+      "When did Jon lose his job?": {
+        "query": "When did Jon lose his job?",
+        "status": "ok",
+        "answer": "2025-05-09",
+        "hits": [
+          {
+            "score": 5.0,
+            "node_id": "event:atom-000-00",
+            "node_type": "event",
+            "story_time": "2025-05-09",
+            "created_at": "2025-05-10",
+            "content": "statement=Yesterday Jon lost his job at the bank.\nstory_time=2025-05-09\nparticipants=Jon, job"
+          },
+          {
+            "score": 3.0,
+            "node_id": "event:atom-002-03",
+            "node_type": "event",
+            "story_time": "2025-05-18",
+            "created_at": "2025-05-18",
+            "content": "statement=Maya introduced Jon to Lena.\nstory_time=2025-05-18\nparticipants=Maya, Jon->Lena"
+          },
+          {
+            "score": 3.0,
+            "node_id": "fact:atom-000-00",
+            "node_type": "fact",
+            "story_time": "2025-05-09",
+            "created_at": "2025-05-10",
+            "content": "statement=Yesterday Jon lost his job at the bank.\nsubject=Jon\npredicate=lost_job\nobject=job\nstory_time=2025-05-09\ncreated_at=2025-05-10"
+          },
+          {
+            "score": 1.0,
+            "node_id": "fact:atom-002-03",
+            "node_type": "fact",
+            "story_time": "2025-05-18",
+            "created_at": "2025-05-18",
+            "content": "statement=Maya introduced Jon to Lena.\nsubject=Maya\npredicate=introduced_to\nobject=Jon->Lena\nstory_time=2025-05-18\ncreated_at=2025-05-18"
+          },
+          {
+            "score": 3.0,
+            "node_id": "entity:Jon",
+            "node_type": "entity",
+            "story_time": "2025-05-09",
+            "created_at": "2025-05-10",
+            "content": "name=Jon\nfirst_seen=Yesterday Jon lost his job at the bank."
+          }
+        ],
+        "plan": {
+          "intent": "temporal",
+          "target_layers": [
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer story-time carrying event nodes."
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_extracted": true,
+          "graph_built": true,
+          "qa_ready": true
+        },
+        "note": ""
+      },
+      "When did Gina visit Rome?": {
+        "query": "When did Gina visit Rome?",
+        "status": "ok",
+        "answer": "2025-05-13",
+        "hits": [
+          {
+            "score": 4.0,
+            "node_id": "event:atom-001-01",
+            "node_type": "event",
+            "story_time": "2025-05-13",
+            "created_at": "2025-05-15",
+            "content": "statement=Two days ago Gina visited Rome for a design fair.\nstory_time=2025-05-13\nparticipants=Gina, Rome"
+          },
+          {
+            "score": 2.0,
+            "node_id": "fact:atom-001-01",
+            "node_type": "fact",
+            "story_time": "2025-05-13",
+            "created_at": "2025-05-15",
+            "content": "statement=Two days ago Gina visited Rome for a design fair.\nsubject=Gina\npredicate=visited\nobject=Rome\nstory_time=2025-05-13\ncreated_at=2025-05-15"
+          },
+          {
+            "score": 2.0,
+            "node_id": "entity:Gina",
+            "node_type": "entity",
+            "story_time": "2025-05-13",
+            "created_at": "2025-05-15",
+            "content": "name=Gina\nfirst_seen=Two days ago Gina visited Rome for a design fair."
+          },
+          {
+            "score": 2.0,
+            "node_id": "entity:Rome",
+            "node_type": "entity",
+            "story_time": "2025-05-13",
+            "created_at": "2025-05-15",
+            "content": "name=Rome\nfirst_seen=Two days ago Gina visited Rome for a design fair."
+          }
+        ],
+        "plan": {
+          "intent": "temporal",
+          "target_layers": [
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer story-time carrying event nodes."
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_extracted": true,
+          "graph_built": true,
+          "qa_ready": true
+        },
+        "note": ""
+      },
+      "Who introduced Jon to Lena?": {
+        "query": "Who introduced Jon to Lena?",
+        "status": "ok",
+        "answer": "Maya introduced_to Jon->Lena",
+        "hits": [
+          {
+            "score": 6.0,
+            "node_id": "relation:atom-002-03",
+            "node_type": "relation",
+            "story_time": "2025-05-18",
+            "created_at": "2025-05-18",
+            "content": "relation=Maya introduced_to Jon->Lena\nstatement=Maya introduced Jon to Lena.\nstory_time=2025-05-18"
+          },
+          {
+            "score": 6.0,
+            "node_id": "entity:Jon->Lena",
+            "node_type": "entity",
+            "story_time": "2025-05-18",
+            "created_at": "2025-05-18",
+            "content": "name=Jon->Lena\nfirst_seen=Maya introduced Jon to Lena."
+          },
+          {
+            "score": 6.0,
+            "node_id": "entity:Maya",
+            "node_type": "entity",
+            "story_time": "2025-05-18",
+            "created_at": "2025-05-18",
+            "content": "name=Maya\nfirst_seen=Maya introduced Jon to Lena."
+          },
+          {
+            "score": 3.0,
+            "node_id": "entity:Jon",
+            "node_type": "entity",
+            "story_time": "2025-05-09",
+            "created_at": "2025-05-10",
+            "content": "name=Jon\nfirst_seen=Yesterday Jon lost his job at the bank."
+          },
+          {
+            "score": 3.0,
+            "node_id": "entity:job",
+            "node_type": "entity",
+            "story_time": "2025-05-09",
+            "created_at": "2025-05-10",
+            "content": "name=job\nfirst_seen=Yesterday Jon lost his job at the bank."
+          }
+        ],
+        "plan": {
+          "intent": "relational",
+          "target_layers": [
+            "relation",
+            "entity",
+            "event",
+            "fact"
+          ],
+          "notes": "Prefer relation/entity path for people-company linkage questions."
+        },
+        "readiness": {
+          "messages_persisted": true,
+          "atoms_extracted": true,
+          "graph_built": true,
+          "qa_ready": true
+        },
+        "note": ""
+      }
+    }
+  }
+}

@@ -1,0 +1,208 @@
+{
+  "with_hints": {
+    "summary": {
+      "use_topic_hints": true,
+      "topic_count": 3,
+      "answer_correct": 5,
+      "contract_ok": 5,
+      "cases": 5,
+      "topics": [
+        "apartment_lease",
+        "product_launch",
+        "visa_process"
+      ]
+    },
+    "rows": [
+      {
+        "case_id": "temporal_1",
+        "family": "temporal",
+        "query": "When did Maya start the visa paperwork?",
+        "expected_keywords": [
+          "2026-03-02"
+        ],
+        "answer": "2026-03-02",
+        "answer_ok": true,
+        "contract_ok": true,
+        "topic_count": 3,
+        "topics": [
+          "apartment_lease",
+          "product_launch",
+          "visa_process"
+        ]
+      },
+      {
+        "case_id": "relational_1",
+        "family": "relational",
+        "query": "Who helped Maya with the visa paperwork?",
+        "expected_keywords": [
+          "Nora",
+          "Maya"
+        ],
+        "answer": "Maya, Nora",
+        "answer_ok": true,
+        "contract_ok": true,
+        "topic_count": 3,
+        "topics": [
+          "apartment_lease",
+          "product_launch",
+          "visa_process"
+        ]
+      },
+      {
+        "case_id": "longitudinal_1",
+        "family": "longitudinal",
+        "query": "How did the apartment lease situation evolve?",
+        "expected_keywords": [
+          "Rua Augusta 14",
+          "2026-03-27"
+        ],
+        "answer": "2026-03-01: Maya found an apartment on Rua Augusta 14 on 2026-03-01\n2026-03-20: Maya showed the lease screenshot with move-in date 2026-03-20\n2026-03-20: Lease contract screenshot\nRua Augusta 14 move-in 2026-03-20\n2026-03-27: The landlord delayed the handover and the move-in shifted to 2026-03-27",
+        "answer_ok": true,
+        "contract_ok": true,
+        "topic_count": 3,
+        "topics": [
+          "apartment_lease",
+          "product_launch",
+          "visa_process"
+        ]
+      },
+      {
+        "case_id": "visual_1",
+        "family": "visual",
+        "query": "What was shown in the lease screenshot?",
+        "expected_keywords": [
+          "Rua Augusta 14"
+        ],
+        "answer": "Rua Augusta 14 move-in 2026-03-20",
+        "answer_ok": true,
+        "contract_ok": true,
+        "topic_count": 3,
+        "topics": [
+          "apartment_lease",
+          "product_launch",
+          "visa_process"
+        ]
+      },
+      {
+        "case_id": "readiness_1",
+        "family": "readiness",
+        "query": "Can you answer now?",
+        "expected_keywords": [
+          "ready"
+        ],
+        "answer": "ready",
+        "answer_ok": true,
+        "contract_ok": true,
+        "topic_count": 3,
+        "topics": [
+          "apartment_lease",
+          "product_launch",
+          "visa_process"
+        ]
+      }
+    ]
+  },
+  "without_hints": {
+    "summary": {
+      "use_topic_hints": false,
+      "topic_count": 3,
+      "answer_correct": 5,
+      "contract_ok": 5,
+      "cases": 5,
+      "topics": [
+        "apartment",
+        "launch_start",
+        "move-in_delay"
+      ]
+    },
+    "rows": [
+      {
+        "case_id": "temporal_1",
+        "family": "temporal",
+        "query": "When did Maya start the visa paperwork?",
+        "expected_keywords": [
+          "2026-03-02"
+        ],
+        "answer": "2026-03-02",
+        "answer_ok": true,
+        "contract_ok": true,
+        "topic_count": 3,
+        "topics": [
+          "apartment",
+          "launch_start",
+          "move-in_delay"
+        ]
+      },
+      {
+        "case_id": "relational_1",
+        "family": "relational",
+        "query": "Who helped Maya with the visa paperwork?",
+        "expected_keywords": [
+          "Nora",
+          "Maya"
+        ],
+        "answer": "Maya, Nora",
+        "answer_ok": true,
+        "contract_ok": true,
+        "topic_count": 3,
+        "topics": [
+          "apartment",
+          "launch_start",
+          "move-in_delay"
+        ]
+      },
+      {
+        "case_id": "longitudinal_1",
+        "family": "longitudinal",
+        "query": "How did the apartment lease situation evolve?",
+        "expected_keywords": [
+          "Rua Augusta 14",
+          "2026-03-27"
+        ],
+        "answer": "2026-03-20: Maya showed the lease screenshot with move-in date 2026-03-20\n2026-03-20: Lease contract screenshot\nRua Augusta 14 move-in 2026-03-20\n2026-03-27: The landlord delayed the handover and the move-in shifted to 2026-03-27",
+        "answer_ok": true,
+        "contract_ok": true,
+        "topic_count": 3,
+        "topics": [
+          "apartment",
+          "launch_start",
+          "move-in_delay"
+        ]
+      },
+      {
+        "case_id": "visual_1",
+        "family": "visual",
+        "query": "What was shown in the lease screenshot?",
+        "expected_keywords": [
+          "Rua Augusta 14"
+        ],
+        "answer": "Rua Augusta 14 move-in 2026-03-20",
+        "answer_ok": true,
+        "contract_ok": true,
+        "topic_count": 3,
+        "topics": [
+          "apartment",
+          "launch_start",
+          "move-in_delay"
+        ]
+      },
+      {
+        "case_id": "readiness_1",
+        "family": "readiness",
+        "query": "Can you answer now?",
+        "expected_keywords": [
+          "ready"
+        ],
+        "answer": "ready",
+        "answer_ok": true,
+        "contract_ok": true,
+        "topic_count": 3,
+        "topics": [
+          "apartment",
+          "launch_start",
+          "move-in_delay"
+        ]
+      }
+    ]
+  }
+}

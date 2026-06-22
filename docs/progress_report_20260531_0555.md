@@ -6,7 +6,7 @@
 ## 已完成改动
 - 检查到 `judge.conf` 已配置 Judge Base URL、模型 `gpt-5.5` 和 API key。
 - 复制 LongMemEval 100 题结果的前 3 行到独立 run：
-  - `/Users/chx/locomo-eval-web/runs/manual_longmemeval_judge_smoke_3/local_agent/local_agent_results.csv`
+  - `<repo-root>/runs/manual_longmemeval_judge_smoke_3/local_agent/local_agent_results.csv`
 - 对独立 3 行副本执行 formal Judge：
   - rows: 3
   - graded: 3
@@ -16,8 +16,8 @@
   - pending: 0
 - 原始 LongMemEval 100 行 CSV 未被修改，仍保持 100 行 pending，便于后续分批正式 Judge。
 - 为 smoke run 写入 manifest 并导出 Markdown report：
-  - `/Users/chx/locomo-eval-web/runs/manual_longmemeval_judge_smoke_3/manifest.json`
-  - `/Users/chx/locomo-eval-web/runs/manual_longmemeval_judge_smoke_3/report.md`
+  - `<repo-root>/runs/manual_longmemeval_judge_smoke_3/manifest.json`
+  - `<repo-root>/runs/manual_longmemeval_judge_smoke_3/report.md`
 - `scripts/local_judge.py` 增加重试和更清晰错误：
   - HTTP 错误显示状态码和响应片段。
   - 空响应显示 `empty judge API response`。

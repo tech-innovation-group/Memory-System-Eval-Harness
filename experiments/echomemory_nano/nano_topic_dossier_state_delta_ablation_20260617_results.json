@@ -1,0 +1,173 @@
+{
+  "cases": [
+    {
+      "qid": "sd1",
+      "question": "Which city does Maya currently live in now?",
+      "query_time": "2026-04-15",
+      "expected_keywords": [
+        "Seattle"
+      ],
+      "family": "latest_state",
+      "why": "Current-state questions should not be hijacked by a later retrospective mention of an older state."
+    },
+    {
+      "qid": "sd2",
+      "question": "What did Maya prefer on 2026-03-10?",
+      "query_time": "2026-03-10",
+      "expected_keywords": [
+        "tea"
+      ],
+      "family": "as_of_state",
+      "why": "A useful middle layer should answer as-of questions, not only current-state snapshots."
+    },
+    {
+      "qid": "sd3",
+      "question": "What is Maya's latest preference now?",
+      "query_time": "2026-04-12",
+      "expected_keywords": [
+        "coffee"
+      ],
+      "family": "latest_state",
+      "why": "Latest-state queries should use an explicit active slot instead of scanning timeline text."
+    },
+    {
+      "qid": "sd4",
+      "question": "How did Project Alpha change over time?",
+      "query_time": "2026-05-20",
+      "expected_keywords": [
+        "pilot_planned",
+        "delayed",
+        "launched"
+      ],
+      "family": "evolution",
+      "why": "State-delta should preserve evolution quality rather than improving latest-state at the cost of longitudinal recall."
+    }
+  ],
+  "summary": [
+    {
+      "variant": "timeline_only_dossier",
+      "correct": 1,
+      "total": 4,
+      "accuracy": 0.25,
+      "runs": [
+        {
+          "qid": "sd1",
+          "question": "Which city does Maya currently live in now?",
+          "topic": "housing",
+          "family": "latest_state",
+          "answer": "Boston",
+          "passed": false,
+          "why": "Current-state questions should not be hijacked by a later retrospective mention of an older state."
+        },
+        {
+          "qid": "sd2",
+          "question": "What did Maya prefer on 2026-03-10?",
+          "topic": "preferences",
+          "family": "as_of_state",
+          "answer": "coffee",
+          "passed": false,
+          "why": "A useful middle layer should answer as-of questions, not only current-state snapshots."
+        },
+        {
+          "qid": "sd3",
+          "question": "What is Maya's latest preference now?",
+          "topic": "preferences",
+          "family": "latest_state",
+          "answer": "coffee",
+          "passed": true,
+          "why": "Latest-state queries should use an explicit active slot instead of scanning timeline text."
+        },
+        {
+          "qid": "sd4",
+          "question": "How did Project Alpha change over time?",
+          "topic": "project_status",
+          "family": "evolution",
+          "answer": "2026-05-01 (written 2026-04-20): Project Alpha was planned for pilot on 2026-05-01.\n2026-05-08 (written 2026-05-08): Project Alpha was delayed on 2026-05-08 because vendor testing slipped.\n2026-05-18 (written 2026-05-18): Project Alpha recovered and launched on 2026-05-18.",
+          "passed": false,
+          "why": "State-delta should preserve evolution quality rather than improving latest-state at the cost of longitudinal recall."
+        }
+      ]
+    },
+    {
+      "variant": "state_delta_dossier",
+      "correct": 4,
+      "total": 4,
+      "accuracy": 1.0,
+      "runs": [
+        {
+          "qid": "sd1",
+          "question": "Which city does Maya currently live in now?",
+          "topic": "housing",
+          "family": "latest_state",
+          "answer": "Seattle",
+          "passed": true,
+          "why": "Current-state questions should not be hijacked by a later retrospective mention of an older state."
+        },
+        {
+          "qid": "sd2",
+          "question": "What did Maya prefer on 2026-03-10?",
+          "topic": "preferences",
+          "family": "as_of_state",
+          "answer": "tea",
+          "passed": true,
+          "why": "A useful middle layer should answer as-of questions, not only current-state snapshots."
+        },
+        {
+          "qid": "sd3",
+          "question": "What is Maya's latest preference now?",
+          "topic": "preferences",
+          "family": "latest_state",
+          "answer": "coffee",
+          "passed": true,
+          "why": "Latest-state queries should use an explicit active slot instead of scanning timeline text."
+        },
+        {
+          "qid": "sd4",
+          "question": "How did Project Alpha change over time?",
+          "topic": "project_status",
+          "family": "evolution",
+          "answer": "2026-05-01 -> pilot_planned [superseded]\n2026-05-08 -> delayed [superseded]\n2026-05-18 -> launched [active]",
+          "passed": true,
+          "why": "State-delta should preserve evolution quality rather than improving latest-state at the cost of longitudinal recall."
+        }
+      ]
+    }
+  ],
+  "state_delta_snapshot": {
+    "housing": {
+      "latest_state": {
+        "Maya.lives_in": "Seattle"
+      },
+      "state_history": {
+        "Maya.lives_in": [
+          "2026-02-01 -> Boston [superseded]",
+          "2026-02-01 -> Boston [superseded]",
+          "2026-03-15 -> Seattle [active]"
+        ]
+      }
+    },
+    "preferences": {
+      "latest_state": {
+        "Maya.prefers": "coffee"
+      },
+      "state_history": {
+        "Maya.prefers": [
+          "2026-03-01 -> tea [superseded]",
+          "2026-04-10 -> coffee [active]"
+        ]
+      }
+    },
+    "project_status": {
+      "latest_state": {
+        "Alpha.status": "launched"
+      },
+      "state_history": {
+        "Alpha.status": [
+          "2026-05-01 -> pilot_planned [superseded]",
+          "2026-05-08 -> delayed [superseded]",
+          "2026-05-18 -> launched [active]"
+        ]
+      }
+    }
+  }
+}

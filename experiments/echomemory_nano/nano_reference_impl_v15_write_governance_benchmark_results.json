@@ -1,0 +1,179 @@
+{
+  "summary": {
+    "v14_correct": 0,
+    "v15_correct": 4,
+    "cases": 4,
+    "improved_cases": [
+      "wgq1",
+      "wgq2",
+      "wgq3",
+      "wgq4"
+    ]
+  },
+  "rows": [
+    {
+      "case_id": "wgq1",
+      "title": "Newer state should become the current answer",
+      "query": "Where does Ava live now?",
+      "query_time": "2025-03-10",
+      "expected": "Seattle",
+      "why": "Current-state questions should follow the newest valid state, not blend all past states.",
+      "v14": {
+        "answer": "Ava lives in Boston on 2025-01-10",
+        "ok": false,
+        "plan": {
+          "family": "general",
+          "primary_reader": "atom",
+          "supporting_readers": [
+            "topic_dossier"
+          ],
+          "required_layers": [
+            "fact"
+          ],
+          "reason": "General factual query."
+        },
+        "missing_layers": []
+      },
+      "v15": {
+        "answer": "Seattle",
+        "ok": true,
+        "plan": {
+          "family": "state",
+          "primary_reader": "atom",
+          "supporting_readers": [
+            "temporal_tree",
+            "topic_dossier"
+          ],
+          "required_layers": [
+            "fact"
+          ],
+          "reason": "State / as-of query."
+        },
+        "missing_layers": []
+      }
+    },
+    {
+      "case_id": "wgq2",
+      "title": "Older retrospective mention should not overwrite the current state",
+      "query": "Where does Ava live now?",
+      "query_time": "2025-04-02",
+      "expected": "Seattle",
+      "why": "Write-time latest is unsafe when a later message talks about an older story-time state.",
+      "v14": {
+        "answer": "Ava moved to Seattle on 2025-03-01",
+        "ok": false,
+        "plan": {
+          "family": "general",
+          "primary_reader": "atom",
+          "supporting_readers": [
+            "topic_dossier"
+          ],
+          "required_layers": [
+            "fact"
+          ],
+          "reason": "General factual query."
+        },
+        "missing_layers": []
+      },
+      "v15": {
+        "answer": "Seattle",
+        "ok": true,
+        "plan": {
+          "family": "state",
+          "primary_reader": "atom",
+          "supporting_readers": [
+            "temporal_tree",
+            "topic_dossier"
+          ],
+          "required_layers": [
+            "fact"
+          ],
+          "reason": "State / as-of query."
+        },
+        "missing_layers": []
+      }
+    },
+    {
+      "case_id": "wgq3",
+      "title": "Preference query should support as-of answering",
+      "query": "What does Nora prefer?",
+      "query_time": "2025-02-10",
+      "expected": "tea",
+      "why": "A memory system should answer as-of questions, not always the final snapshot.",
+      "v14": {
+        "answer": "Nora prefers tea on 2025-01-15",
+        "ok": false,
+        "plan": {
+          "family": "general",
+          "primary_reader": "atom",
+          "supporting_readers": [
+            "topic_dossier"
+          ],
+          "required_layers": [
+            "fact"
+          ],
+          "reason": "General factual query."
+        },
+        "missing_layers": []
+      },
+      "v15": {
+        "answer": "tea",
+        "ok": true,
+        "plan": {
+          "family": "state",
+          "primary_reader": "atom",
+          "supporting_readers": [
+            "temporal_tree",
+            "topic_dossier"
+          ],
+          "required_layers": [
+            "fact"
+          ],
+          "reason": "State / as-of query."
+        },
+        "missing_layers": []
+      }
+    },
+    {
+      "case_id": "wgq4",
+      "title": "Same-time disagreement should surface conflict",
+      "query": "What is Kai's badge number?",
+      "query_time": "2025-03-03",
+      "expected": "unknown_conflict",
+      "why": "Conflicting same-time evidence should not collapse into a confident single answer.",
+      "v14": {
+        "answer": "Kai badge number 3142 on 2025-03-01",
+        "ok": false,
+        "plan": {
+          "family": "general",
+          "primary_reader": "atom",
+          "supporting_readers": [
+            "topic_dossier"
+          ],
+          "required_layers": [
+            "fact"
+          ],
+          "reason": "General factual query."
+        },
+        "missing_layers": []
+      },
+      "v15": {
+        "answer": "unknown_conflict",
+        "ok": true,
+        "plan": {
+          "family": "state",
+          "primary_reader": "atom",
+          "supporting_readers": [
+            "temporal_tree",
+            "topic_dossier"
+          ],
+          "required_layers": [
+            "fact"
+          ],
+          "reason": "State / as-of query."
+        },
+        "missing_layers": []
+      }
+    }
+  ]
+}

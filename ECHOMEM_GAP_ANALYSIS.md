@@ -5,7 +5,7 @@ This file tracks the current EchoMemory integration after the platform was moved
 ## Scope
 
 - Required EchoMemory source: `version_0.0.5`
-- Default source path: `/Users/chx/Code/echomemory/echo_memory`
+- Default source path: `<echomem-root>`
 - Current project: `locomo-eval-web`
 - Goal: keep OpenViking as the baseline backend, and use EchoMemory `version_0.0.5` as the only EchoMemory integration path.
 

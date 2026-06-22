@@ -9,8 +9,8 @@
       window.location.replace("http://127.0.0.1:19181/");
     }
   </script>
-  <link rel="stylesheet" href="/styles.css?v=20260611uixlate13">
-</head>
+  <link rel="stylesheet" href="/styles.css?v=20260622importedmemorypaths02">
+  </head>
 <body>
   <main class="app-shell">
     <aside class="app-sidebar">
@@ -28,60 +28,50 @@
           <button class="nav-item" data-view="hotpotQaView">HotpotQA 评测</button>
           <button class="nav-item" data-view="proAgentBenchView">ProAgentBench 评测</button>
           <button class="nav-item" data-view="tauBenchView">Tau2-bench 评测</button>
-          <button class="nav-item" data-view="chenmoView">ChenMo 评测</button>
           <button class="nav-item" data-view="systemConfigView" title="支持当前账户动态切换 OpenViking / EchoMemory 后端">系统配置</button>
-          <button class="nav-item" data-view="readmeView" title="外部接入说明、文字版操作指南与安全外发边界">README</button>
         </div>
       </nav>
       <div class="sidebar-status" id="connectionStatus">准备中</div>
     </aside>
 
     <section class="app-content">
-      <section class="account-topbar" aria-label="空间与配置">
-        <div class="account-control">
-          <div class="account-picker-row">
-            <span class="label">账户名</span>
-            <select id="accountSelect" aria-label="当前空间"></select>
+      <section class="workspace-strip" aria-label="当前用户与后端">
+        <div class="workspace-primary">
+          <div class="workspace-account-control" title="当前账户">
+            <span class="workspace-card-label">当前账户</span>
+            <span class="workspace-account-value" id="accountDisplayName">default</span>
+            <span class="workspace-account-caret" aria-hidden="true"></span>
+            <select id="accountSelect" aria-label="当前账户"><option value="default">default</option></select>
           </div>
+          <button class="workspace-backend-link openviking" id="globalBackendBadge" type="button" data-view-jump="systemConfigView" title="记忆后端；点击到系统配置切换">
+            <span class="workspace-card-label">记忆后端</span>
+            <strong id="globalBackendLabel">OpenViking</strong>
+            <span class="workspace-card-note" id="globalBackendHint">点击到系统配置切换</span>
+          </button>
         </div>
-        <button class="account-backend-pill openviking" id="globalBackendBadge" type="button" data-view-jump="systemConfigView" title="当前记忆后端；点击到系统配置切换">
-          <span>记忆后端</span>
-          <strong id="globalBackendLabel">OpenViking</strong>
-        </button>
-        <div class="account-scope">
-          <div class="account-readiness" id="accountReadiness" hidden>
-            <span class="readiness-chip muted">目录状态读取中</span>
-          </div>
-          <div class="account-path-grid" aria-label="当前账户路径">
-            <code id="accountWorkspaceLabel">记忆空间：-</code>
-            <code id="accountVikingRootLabel">存储目录：-</code>
-          </div>
-          <div class="account-run-note" id="accountRunNote">
-            <span>注：关网页可继续看进度；关服务会中断运行中任务</span>
-          </div>
-          <a class="global-task-chip" id="globalTaskChip" href="/?ui_refresh=20260611uixlate13&view=runsView" hidden>暂无运行任务</a>
-          <p class="account-action-status" id="accountActionStatus"></p>
-        </div>
-        <div class="account-create-row" id="accountCreateRow" aria-label="账户管理">
-          <input id="accountNameInput" spellcheck="false" placeholder="新账户名称" hidden aria-hidden="true">
-          <button class="secondary" id="createAccount" title="创建一个独立评测账户">新建账户</button>
-          <button class="danger" id="deleteAccount">删除账户</button>
+        <div class="workspace-actions" id="accountCreateRow" aria-label="账户管理">
+          <input id="accountNameInput" spellcheck="false" placeholder="账户名称" hidden aria-hidden="true">
+          <button class="secondary workspace-action workspace-action-create" id="createAccount" title="新建一个独立评测账户" aria-label="新建账户">
+            <span class="workspace-action-icon" aria-hidden="true">＋</span>
+            <span class="workspace-action-label">创建账户</span>
+          </button>
+          <button class="danger workspace-action workspace-action-delete" id="deleteAccount" title="删除当前评测账户" aria-label="删除账户">×</button>
         </div>
       </section>
 
-      <header class="view-hero">
-        <div>
-          <span class="label">当前页面</span>
-          <h1 id="viewTitle">记忆导入</h1>
-          <p id="viewSubtitle">选择数据、导入 conv、检查完整性。</p>
+      <div class="workspace-status-strip" id="accountTaskRow" aria-label="运行任务" hidden>
+        <div class="workspace-status-strip-body">
+          <a class="global-task-chip workspace-task-chip" id="globalTaskChip" href="/?ui_refresh=20260621clarity01&view=runsView" hidden></a>
+          <p class="account-action-status" id="accountActionStatus"></p>
         </div>
-      </header>
+      </div>
+      <section class="workspace-benchmark-banner" id="globalBenchmarkBanner" hidden></section>
 
       <nav class="locomo-flow-grid" id="locomoFlowNav" aria-label="当前数据集评测流程">
         <button class="flow-card active" type="button" data-view-jump="openvikingView">
           <span>1</span>
           <strong>记忆导入</strong>
-          <small>校验数据集、导入 conv、检查完整性</small>
+          <small>读取数据、导入 conv、检查完整性</small>
         </button>
         <button class="flow-card" type="button" data-view-jump="evalView">
           <span>2</span>
@@ -93,54 +83,16 @@
           <strong>判分</strong>
           <small>检查结果文件并判分当前结果</small>
         </button>
-        <button class="flow-card" type="button" data-view-jump="runsView">
+          <button class="flow-card" type="button" data-view-jump="runsView">
           <span>4</span>
           <strong>导出报告</strong>
-          <small>选择任务并生成 HTML 报告</small>
+          <small>选择任务并生成评测报告</small>
         </button>
       </nav>
 
-      <section class="workflow-guide" id="workflowGuide" aria-label="LoCoMo 主流程进度" hidden>
-        <button class="workflow-step pending" type="button" data-view-jump="openvikingView" data-status="pending">
-          <span>1</span>
-          <div>
-            <strong>数据集</strong>
-            <p>先选数据文件</p>
-          </div>
-        </button>
-        <button class="workflow-step pending" type="button" data-workflow-key="import" data-view-jump="openvikingView" data-status="pending">
-          <span>2</span>
-          <div>
-            <strong>记忆导入</strong>
-            <p>导入长期记忆</p>
-          </div>
-        </button>
-        <button class="workflow-step pending" type="button" data-workflow-key="qa" data-view-jump="evalView" data-status="pending">
-          <span>3</span>
-          <div>
-            <strong>问答测试</strong>
-            <p>选择题目开始</p>
-          </div>
-        </button>
-        <button class="workflow-step pending" type="button" data-workflow-key="judge" data-view-jump="judgeView" data-status="pending">
-          <span>4</span>
-          <div>
-            <strong>判分</strong>
-            <p>先做预检</p>
-          </div>
-        </button>
-        <button class="workflow-step pending" type="button" data-workflow-key="report" data-view-jump="runsView" data-status="pending">
-          <span>5</span>
-          <div>
-            <strong>报告分析</strong>
-            <p>判分后分析</p>
-          </div>
-        </button>
-      </section>
-
       <section class="locomo-command-center" id="locomoOverviewPanel" aria-label="LoCoMo 评测总览" hidden></section>
 
-      <section class="view-panel" id="workbenchView" data-title="记忆导入" data-subtitle="选择数据、导入 conv、检查完整性。">
+      <section class="view-panel" id="workbenchView" data-title="导入控制台" data-subtitle="选择数据、导入 conv、检查完整性。">
         <div class="locomo-workbench-summary" id="locomoWorkbenchSummary" aria-label="当前 LoCoMo 评测状态" hidden></div>
         <div class="locomo-task-track" id="locomoWorkbenchTrack" aria-label="LoCoMo 四块任务轨道" hidden></div>
       </section>
@@ -155,99 +107,20 @@
         </div>
         <div class="dataset-cards" id="datasetCards"></div>
         <div class="quick-test-status">
-          <p>LoCoMo 数据集路径、校验和题目分布已经归入“记忆导入”块。</p>
+          <p>LoCoMo 数据集路径和题目分布已经归入“记忆导入”块。</p>
         </div>
       </article>
       </section>
 
-      <section class="panel view-panel" id="chenmoView" data-title="ChenMo 评测" data-subtitle="ChenMo 长期记忆与推理评测：查看适配、全量结果和报告。">
-        <div class="benchmark-hero">
+      <section class="view-panel active" id="openvikingView" data-title="LoCoMo 评测" data-subtitle="读取数据、导入 conv、检查完整性。">
+        <article class="panel import-console">
+        <div class="workbench-stage-hero">
           <div>
-            <span class="label">ChenMo 评测</span>
-            <h2>ChenMo</h2>
-            <p>ChenMo 数据入口保留校验和题目浏览；正式全量结果需要基于 EchoMemory version_0.0.6 重新运行后再展示。</p>
+            <h2>导入对话</h2>
+            <p>读取后写入所选对话。</p>
           </div>
           <div class="panel-actions">
-            <button class="secondary" id="chenmoValidate">校验数据集</button>
-            <button class="primary alt" id="chenmoOpenRun">查看全量结果</button>
-            <button class="secondary" data-view-jump="runsView">查看任务/报告</button>
-            <button class="secondary" id="chenmoExportReport">生成报告</button>
-          </div>
-        </div>
-        <div class="benchmark-dataset-grid" id="chenmoDatasetCards">
-          <p>正在读取 ChenMo 数据集配置。</p>
-        </div>
-        <div class="result-kpis" id="chenmoKpis"></div>
-        <div class="dataset-category-panel" id="chenmoCategoryPanel"></div>
-        <div class="quick-test-status" id="chenmoStatus">
-          <p>已接入系统：当前复用 ChenMo 专用解析与报告入口；如需重跑，可从全量结果进入对应任务。</p>
-        </div>
-        <div class="path-input-action">
-          <label>
-            <span>ChenMo 数据文件（Markdown）</span>
-            <input id="chenmoData" spellcheck="false" placeholder="/path/to/chenmo_evaluation_scenario.md">
-          </label>
-          <button class="secondary generic-validate" type="button" data-benchmark="chenmo">校验可跑链路</button>
-        </div>
-        <div class="form-grid three">
-          <label>
-            <span>测试题数（0=全量）</span>
-            <input id="chenmoCount" type="number" min="0" max="1000" value="3">
-          </label>
-          <label>
-            <span>题目搜索</span>
-            <input id="chenmoQuestionSearch" class="generic-question-search" data-benchmark="chenmo" spellcheck="false" placeholder="T1 / M2 / 关键词 / 答案">
-          </label>
-          <label>
-            <span>模式</span>
-            <select id="chenmoMode">
-              <option value="smoke">OpenViking MemoryBench 小样本核验</option>
-            </select>
-          </label>
-        </div>
-        <div class="panel-actions">
-          <button class="primary generic-run-adapter" type="button" data-benchmark="chenmo">开始测试</button>
-          <button class="secondary generic-preview" type="button" data-benchmark="chenmo">加载题目</button>
-          <button class="secondary generic-select-visible" type="button" data-benchmark="chenmo">选择当前页</button>
-          <button class="secondary generic-clear-selection" type="button" data-benchmark="chenmo">清空选择</button>
-        </div>
-        <small id="chenmoSelectedText">未加载题目。</small>
-        <div class="progress-bar benchmark-progress"><span id="chenmoProgressBar"></span></div>
-        <small id="chenmoProgressText">等待测试</small>
-        <details class="log-details benchmark-log">
-          <summary>运行日志</summary>
-          <pre class="log" id="chenmoLogBox">运行日志会显示在这里。</pre>
-        </details>
-        <div class="analysis-grid">
-          <section>
-            <h3>题目选择</h3>
-            <div id="chenmoPreview" class="analysis-box"><p>点击“加载题目”后显示 T/M/C/CT/COMP 推理题，可勾选后只跑选中题。</p></div>
-          </section>
-          <section>
-            <h3>小样本结果</h3>
-            <div id="chenmoRunResult" class="analysis-box"><p>点击“开始测试”后显示结果文件、任务目录和计分口径。</p></div>
-          </section>
-          <section>
-            <h3>测试方案</h3>
-            <div class="analysis-box">
-              <p>小样本核验：选择 1-3 道 ChenMo 推理题，把完整对话写入 OpenViking memory，检索后生成答案并判分。</p>
-              <p>正式：不再复用历史 EchoMemory v0.0.4 运行结果；需要使用 EchoMemory version_0.0.6 同口径重跑后再做对比。</p>
-            </div>
-          </section>
-        </div>
-      </section>
-
-    <section class="view-panel active" id="openvikingView" data-title="记忆导入" data-subtitle="选择数据、导入 conv、检查完整性。">
-      <article class="panel import-console">
-        <div class="panel-head tight">
-          <div>
-            <h2>导入控制台</h2>
-            <p>校验 LoCoMo JSON，选择对话（conv），写入当前账户的记忆空间，并在完成后检查完整性。</p>
-          </div>
-          <div class="panel-actions">
-            <span class="readiness-chip muted" id="activeDatasetPill">LoCoMo 未校验</span>
             <button class="primary alt" id="commitImport">导入所选对话</button>
-            <button class="secondary" id="importSmokeTest" type="button">单 session 测试</button>
             <button class="danger" id="stopAllTasksImport">停止导入</button>
           </div>
         </div>
@@ -255,61 +128,42 @@
         <section class="import-section">
           <div class="import-section-head">
             <div>
-              <h3>数据与范围</h3>
-              <p>导入前先校验 LoCoMo JSON，然后选择单个 conv 或全部导入。</p>
+              <h3>数据</h3>
             </div>
           </div>
           <div class="path-input-action">
             <label>
               <span>LoCoMo JSON</span>
-              <input id="data" spellcheck="false" placeholder="/path/to/locomo.json">
+              <input id="data" spellcheck="false" placeholder="./dataset/locomo10.json">
             </label>
-            <button class="secondary" id="loadDataset">校验 LoCoMo JSON</button>
           </div>
           <div class="quick-test-status" id="datasetRunnerNote">
-            <p>校验后会显示对话数和题目数。</p>
-          </div>
-          <div class="quick-test-status" id="importSmokeNote">
-            <p>选中具体 conv 后，可直接点“单 session 测试”先验证注入链路；也可以在下拉里选择内置的 conv-30 单 session 选项。</p>
+            <p>读取后显示对话数和题目数；可先用 conv-30 单 session 验证注入链路。</p>
           </div>
           <div class="dataset-category-panel" id="datasetCategoryPanel" hidden></div>
           <div class="form-grid two">
             <label>
-              <span>导入对话</span>
-              <select id="importSample"><option value="all">全部 conv</option></select>
-            </label>
-            <label id="echoImportModeWrap">
-              <span>EchoMemory 导入模式</span>
-              <select id="echoImportMode">
-                <option value="fast" selected>快速注入（推荐）</option>
-                <option value="full">完整等待</option>
-              </select>
+              <span id="importSampleLabel">导入会话</span>
+              <select id="importSample"><option value="all">全部对话</option></select>
             </label>
           </div>
           <div class="form-grid two">
             <label>
-              <span id="importWorkspaceLabel">记忆空间目录</span>
-              <input id="ovWorkspace" spellcheck="false" placeholder="/path/to/memory_workspace">
+              <span id="importWorkspaceLabel">记忆目录</span>
+              <input id="ovWorkspace" spellcheck="false" placeholder="可手填记忆目录，或点右侧自动生成">
             </label>
-          </div>
-          <div class="quick-test-status" id="echoImportModeNote">
-            <p>快速注入会先写入消息并触发 commit，不在每个 session 上等待 atom / graph 全部落完；更适合先导入、稍后再测。</p>
-          </div>
-          <label class="inline-check">
-            <input id="ovWorkspaceAuto" type="checkbox" checked>
-            <span>自动生成新的记忆空间目录</span>
-          </label>
-          <div class="panel-actions compact-actions">
-            <button class="secondary" id="syncImportToEval">同步到问答范围</button>
-            <button class="secondary" type="button" data-view-jump="systemConfigView">去系统配置</button>
+            <div class="panel-actions compact-actions">
+              <button class="secondary" type="button" id="generateImportWorkspace">自动生成目录</button>
+              <button class="secondary" type="button" data-view-jump="systemConfigView">打开系统配置</button>
+            </div>
           </div>
         </section>
 
         <section class="import-section">
           <div class="import-section-head">
             <div>
-              <h3>导入进度</h3>
-              <p>显示当前导入进度、耗时和完成状态。</p>
+              <h3>进度</h3>
+              <p>当前导入进度、耗时和完成状态。</p>
             </div>
           </div>
           <div class="import-readiness-panel" id="importReadinessPanel" aria-label="导入准备状态"></div>
@@ -329,8 +183,18 @@
         <section class="import-section">
           <div class="import-section-head">
             <div>
-              <h3>异常日志</h3>
-              <p>出现模型、限流、API 或导入异常时展示。</p>
+              <h3>日志</h3>
+              <p>当前导入任务的 <code>run.log</code>。</p>
+            </div>
+          </div>
+          <pre class="log" id="importLogBox">当前导入任务的 run.log 会显示在这里。</pre>
+        </section>
+
+        <section class="import-section">
+          <div class="import-section-head">
+            <div>
+              <h3>异常</h3>
+              <p>模型、限流、API 或导入异常。</p>
             </div>
           </div>
           <div class="import-diagnostic-panel" id="importDiagnosticPanel">
@@ -343,8 +207,8 @@
         <section class="import-section">
           <div class="import-section-head">
             <div>
-              <h3>导入后检查</h3>
-              <p>检查消息数量、session、memory 文件和证据核验。</p>
+              <h3>结果</h3>
+              <p>检查消息数量、session 和落盘情况。</p>
             </div>
             <button class="secondary" id="checkImportIntegrity">检查导入完整性</button>
           </div>
@@ -354,28 +218,36 @@
             <p>导入完成后，这里会显示摘要。</p>
           </div>
           <details class="import-secondary-details">
-            <summary>目录与产物路径</summary>
+            <summary>产物、脚本与日志</summary>
             <div class="path-list" id="importPathList">
-              <p>导入后会显示相关目录、日志和结果文件。</p>
+              <p>导入后显示目录、脚本和日志。</p>
             </div>
           </details>
-          <details class="import-secondary-details">
-            <summary>当前账户已导入内容</summary>
-            <div class="panel-actions compact-actions">
-              <button class="secondary" id="refreshImportedMemories">刷新已导入内容</button>
-            </div>
-            <div class="memory-list imported-list" id="importedMemoryList"></div>
-          </details>
+          <div class="panel-actions compact-actions" hidden>
+            <button class="secondary" id="refreshImportedMemories">刷新记忆概览</button>
+          </div>
+          <div class="memory-list imported-list" id="importedMemoryList"></div>
         </section>
 
         <section class="import-section">
           <div class="import-section-head">
             <div>
-              <h3>导入日志</h3>
-              <p>实时查看当前任务日志。</p>
+              <h3>近 3 天任务</h3>
+              <p>这里只显示近 72 小时的记忆导入任务。问答任务请到“问答测试”页面查看。</p>
             </div>
+            <button class="secondary" id="refreshRecentLocomoRuns" type="button">刷新列表</button>
           </div>
-          <pre class="log" id="importLogBox">导入日志会显示在这里。</pre>
+          <div class="recent-locomo-runs-grid">
+            <section class="recent-locomo-runs-column">
+              <div class="recent-locomo-runs-head">
+                <strong>记忆导入</strong>
+                <span id="recentImportRunsCount">0 条</span>
+              </div>
+              <div class="run-list recent-locomo-runs-list" id="recentImportRunsList">
+                <p class="muted-list-note">正在读取近 3 天导入任务...</p>
+              </div>
+            </section>
+          </div>
         </section>
       </article>
       </section>
@@ -426,25 +298,13 @@
       <input id="ovAccount" type="hidden" value="default">
       <input id="useMemory" type="checkbox" checked hidden>
       <input id="allowWrite" type="checkbox" disabled hidden>
-      <section class="chat-persona-card chat-path-card" aria-label="当前账户读取路径">
-        <div id="chatMemorySpaceInline" class="memory-space-inline">
-          <span>当前账户读取路径</span>
-          <code>正在读取...</code>
-        </div>
-      </section>
-      <section class="chat-persona-card chat-system-summary-card" aria-label="系统人设摘要">
-        <div class="system-persona-summary">
-          <div>
-            <span>系统人设</span>
-            <strong id="chatPersonaCompactTitle">当前记忆后端默认 system prompt</strong>
-          </div>
-          <pre id="chatPersonaCompactBody">进入对话页后自动显示当前后端的系统人设。</pre>
-        </div>
-      </section>
       <div class="agent-workbench" id="agentWorkbench">
         <div class="agent-chat-panel">
           <div class="agent-chat-head">
-            <span class="chat-head-title">对话</span>
+            <div>
+              <span class="label">当前账户</span>
+              <span class="chat-head-title">人工对话测试</span>
+            </div>
           </div>
           <div class="chat-transcript" id="chatTranscript">
             <article class="chat-bubble assistant">
@@ -470,8 +330,8 @@
         <aside class="memory-evidence">
           <div class="agent-card persona-card">
             <div class="memory-panel-head">
-              <strong>系统人设</strong>
-              <span>本次对话实际使用的 system prompt 人设</span>
+              <strong>系统提示词</strong>
+              <span>显示当前轮实际注入模型的系统提示词</span>
             </div>
             <div class="context-persona-panel">
               <span>本次 system prompt 人设</span>
@@ -497,20 +357,11 @@
           </div>
           <div class="agent-card context-card">
             <div class="memory-panel-head">
-              <strong>上下文组装</strong>
-              <span>人设、相关记忆、检索计划和最终模型消息</span>
+              <strong>上下文追踪</strong>
+              <span>查看相关记忆、检索计划和最终模型消息</span>
             </div>
             <div id="contextTrace" class="trace-list context-inspector">
               <p>发送问题后显示组装后的模型上下文。</p>
-            </div>
-          </div>
-          <div class="agent-card memory-space-card">
-            <div class="memory-panel-head">
-              <strong>当前账户读取的记忆空间路径</strong>
-              <span>对话检索会从这个账户路径读取记忆</span>
-            </div>
-            <div id="chatMemorySpace" class="memory-space-details">
-              <p>正在读取当前账户的记忆空间路径。</p>
             </div>
           </div>
         </aside>
@@ -518,161 +369,225 @@
     </section>
 
     <section class="panel view-panel" id="evalView" data-title="问答测试" data-subtitle="选择 QA 并运行测试。">
-      <div class="panel-head">
+      <div class="workbench-stage-hero">
         <div>
-          <h2>题目选择</h2>
+          <span class="label">问答</span>
+          <h2>问答测试</h2>
+          <p>选范围后启动问答。</p>
         </div>
         <div class="panel-actions">
           <button class="danger" id="stopAllTasksEval">停止问答</button>
         </div>
       </div>
-      <label>
-        <span>对话范围</span>
-        <select id="sample"><option value="all">全部 conv</option></select>
-      </label>
-      <div class="qa-readiness-panel" id="qaReadinessPanel" aria-live="polite"></div>
-      <div class="panel-head tight">
-        <div>
-          <h2>筛选</h2>
-        </div>
-        <div class="panel-actions">
-          <button class="secondary" id="selectAllQuestions">全选当前题目</button>
-          <button class="secondary" id="clearQuestions">清空选题</button>
-        </div>
-      </div>
-      <div class="form-grid two">
+      <section class="workbench-subsection eval-config-card">
         <label>
-          <span>搜索</span>
-          <input id="questionSearch" spellcheck="false" placeholder="例如 banker、conv-30_qa0、January">
+          <span>对话范围</span>
+          <select id="sample"><option value="all">全部对话</option></select>
         </label>
-        <label>
-          <span>类别</span>
-          <select id="questionCategory">
-            <option value="all">全部类别</option>
-            <option value="1">C1 · 单条记忆事实</option>
-            <option value="2">C2 · 时间/日期推理</option>
-            <option value="3">C3 · 跨记忆多跳</option>
-            <option value="4">C4 · 综合开放回答</option>
-          </select>
-        </label>
-      </div>
-      <div class="result-kpis compact" id="questionSelectionKpis"></div>
-      <div class="quick-test-status" id="quickTestStatus"></div>
-      <div class="memory-warning" id="memoryMismatchWarning" hidden></div>
-      <div class="eval-action-bar result-actions" id="largeDatasetActions" hidden>
-        <button class="secondary" id="loadLargeQuestionPage">加载前 100 题预览</button>
-      </div>
-      <div class="question-picker" id="questionPicker">
-      </div>
-      <div class="eval-action-bar">
-        <button class="primary" id="runOpenVikingQa" type="button">跑选中题</button>
-        <button class="primary alt" id="runOpenVikingFullQa" type="button">跑全部 LoCoMo</button>
-        <button class="primary alt" id="runEval" hidden>本地基线</button>
-        <button class="secondary" id="runPreviousWrong">跑上一轮错题</button>
-        <button class="secondary" id="runTimeQuestions">跑时间题</button>
-        <button class="secondary" id="refreshResult">刷新问答结果</button>
-      </div>
-      <div class="progress-bar legacy-eval-progress"><span id="evalProgressBar"></span></div>
-      <small class="legacy-eval-progress" id="evalProgressText">等待测试</small>
-      <div class="task-strip" id="activeTaskStrip">
-      </div>
-      <div class="panel-head tight">
-        <div>
-          <h2>问答任务</h2>
+        <div class="qa-readiness-panel" id="qaReadinessPanel" aria-live="polite"></div>
+      </section>
+      <section class="workbench-subsection eval-question-card">
+        <div class="panel-head tight">
+          <div>
+            <h2>筛选与题目</h2>
+          </div>
+          <div class="panel-actions">
+            <button class="secondary" id="selectAllQuestions">全选当前题目</button>
+            <button class="secondary" id="clearQuestions">清空选题</button>
+          </div>
         </div>
-        <div class="panel-actions">
-          <label class="scope-toggle">
-            <input id="taskCurrentAccountOnly" type="checkbox" checked>
-            <span>只看当前空间</span>
+        <div class="form-grid two">
+          <label>
+            <span>搜索</span>
+            <input id="questionSearch" spellcheck="false" placeholder="例如 banker、conv-30_qa0、January">
           </label>
-          <button class="secondary" id="refreshTasks">刷新任务列表</button>
+          <label>
+            <span>类别</span>
+            <select id="questionCategory">
+              <option value="all">全部类别</option>
+              <option value="1">C1 · 单条记忆事实</option>
+              <option value="2">C2 · 时间/日期推理</option>
+              <option value="3">C3 · 跨记忆多跳</option>
+              <option value="4">C4 · 综合开放回答</option>
+            </select>
+          </label>
         </div>
-      </div>
-      <div class="task-list compact" id="recentTaskList">
-      </div>
-      <details class="log-details">
-        <summary>运行日志</summary>
-        <pre class="log" id="evalLogBox">运行日志会显示在这里。</pre>
-      </details>
-      <div class="panel-head tight">
-        <div>
-          <h2>结果</h2>
+        <div class="result-kpis compact" id="questionSelectionKpis"></div>
+        <div class="quick-test-status" id="quickTestStatus"></div>
+        <div class="memory-warning" id="memoryMismatchWarning" hidden></div>
+        <div class="eval-action-bar result-actions" id="largeDatasetActions" hidden>
+          <button class="secondary" id="loadLargeQuestionPage">加载前 100 题预览</button>
         </div>
-        <div class="panel-actions">
-          <button class="secondary" id="goJudgePage" data-view-jump="judgeView">打开判分页</button>
+        <div class="question-picker" id="questionPicker">
         </div>
-      </div>
+        <div class="eval-action-bar eval-primary-actions">
+          <button class="primary" id="runOpenVikingQa" type="button">跑选中题</button>
+          <button class="primary alt" id="runOpenVikingFullQa" type="button">跑全部 LoCoMo</button>
+          <button class="secondary" id="refreshResult">刷新问答结果</button>
+        </div>
+        <div class="eval-action-bar eval-secondary-actions">
+          <button class="secondary" id="runPreviousWrong">跑上一轮错题</button>
+          <button class="secondary" id="runTimeQuestions">跑时间题</button>
+          <button class="secondary" id="runEval" hidden>本地基线</button>
+        </div>
+        <div class="progress-bar legacy-eval-progress"><span id="evalProgressBar"></span></div>
+        <small class="legacy-eval-progress" id="evalProgressText">正在恢复任务状态</small>
+      </section>
+      <section class="workbench-subsection eval-task-card">
+        <div class="task-strip" id="activeTaskStrip">
+        </div>
+        <div class="panel-head tight">
+          <div>
+            <h2>问答任务</h2>
+          </div>
+          <div class="panel-actions">
+            <label class="scope-toggle">
+              <input id="taskCurrentAccountOnly" type="checkbox" checked>
+              <span>只看当前空间</span>
+            </label>
+            <button class="secondary" id="refreshTasks">刷新任务列表</button>
+          </div>
+        </div>
+        <div class="task-list compact" id="recentTaskList">
+        </div>
+        <details class="log-details">
+          <summary>运行日志</summary>
+          <pre class="log" id="evalLogBox">运行日志会显示在这里。</pre>
+        </details>
+      </section>
     </section>
 
     <section class="panel view-panel" id="judgeView" data-title="判分" data-subtitle="选择问答结果文件，检查配置，然后判分当前结果。">
-      <div class="panel-head">
+      <div class="judge-stage-hero">
         <div>
-          <h2>判分</h2>
-          <p>确认结果文件和判分配置后，直接点击“判分当前结果”。</p>
+          <span class="label">判分</span>
+          <h2>结果判分</h2>
+          <p>选结果文件后判分。</p>
         </div>
         <div class="panel-actions">
           <button class="secondary" id="refreshJudgeResult">刷新判分结果</button>
           <button class="danger" id="stopAllTasksJudge" hidden>停止判分</button>
         </div>
       </div>
-      <label>
-        <span>结果文件</span>
-        <input id="judgeInput" spellcheck="false" placeholder="运行后自动填入，也可手动粘贴结果路径">
-      </label>
-      <div class="judge-config-redirect">
-        <div>
-          <strong>判分配置来自系统配置</strong>
-          <p>判分页只显示状态，不回显 API 密钥。</p>
+
+      <div class="judge-workbench">
+        <aside class="judge-side-column">
+          <section class="judge-panel-card judge-control-card">
+            <div class="judge-panel-head">
+              <div>
+                <span class="label">输入与配置</span>
+                <h3>判分控制台</h3>
+              </div>
+            </div>
+
+            <div class="judge-control-stack">
+              <label>
+                <span>结果文件</span>
+                <input id="judgeInput" spellcheck="false" placeholder="运行后自动填入，也可手动粘贴结果路径">
+              </label>
+
+              <div class="judge-config-redirect">
+                <div>
+                  <strong>判分配置统一在系统配置维护</strong>
+                  <p>模型、地址和密钥不在当前页分散修改。</p>
+                </div>
+                <button class="secondary" type="button" data-view-jump="systemConfigView">去系统配置</button>
+              </div>
+
+              <div class="form-grid two" hidden aria-hidden="true">
+                <label>
+                  <span>判分地址</span>
+                  <input id="judgeBaseUrl" spellcheck="false">
+                </label>
+                <label>
+                  <span>判分模型</span>
+                  <input id="judgeModel" spellcheck="false">
+                </label>
+              </div>
+
+              <label hidden aria-hidden="true">
+                <span>判分密钥</span>
+                <input id="judgeToken" type="password" spellcheck="false" placeholder="必填">
+              </label>
+
+              <div class="judge-readiness-panel" id="judgeReadinessPanel" aria-live="polite"></div>
+
+              <div class="eval-action-bar result-actions">
+                <button class="secondary" id="preflightJudge">检查判分配置</button>
+                <button class="primary" id="runJudgeInline">判分当前结果</button>
+                <button class="secondary" id="retryMissingQa" hidden>补跑缺失题</button>
+                <button class="secondary" id="retryFailedQa" hidden>重跑失败题</button>
+              </div>
+
+              <div class="judge-progress-stack">
+                <div class="progress-bar" hidden><span id="judgeProgressBar"></span></div>
+                <small id="judgeProgressText" hidden>等待判分</small>
+              </div>
+
+              <div class="check-list preflight-box" id="judgePreflightBox" hidden>
+              </div>
+              <div class="judge-estimate" id="judgeEstimateBox" hidden>
+              </div>
+            </div>
+          </section>
+
+          <details class="log-details judge-panel-card" open>
+            <summary>判分日志</summary>
+            <pre class="log" id="judgeLogBox">判分日志会显示在这里。</pre>
+          </details>
+        </aside>
+
+        <div class="judge-main-column">
+          <div class="judge-empty-state" id="judgeEmptyState">
+            <strong>等待判分结果</strong>
+            <p>先选择一个 QA 结果文件，或先到“问答测试”跑出结果；判分完成后，这里会显示摘要、待判分、结果样例和报告产物。</p>
+          </div>
+
+          <section class="judge-panel-card" id="judgeSummaryCard">
+            <div class="judge-panel-head">
+              <div>
+                <span class="label">摘要</span>
+                <h3>当前结果概览</h3>
+              </div>
+            </div>
+            <div class="result-kpis" id="evalResultKpis"></div>
+            <div class="quick-test-status" id="qaDiagnosticsPanel" hidden></div>
+          </section>
+
+          <section class="judge-panel-card" id="judgePendingCard">
+            <div class="judge-panel-head">
+              <div>
+                <span class="label">待处理</span>
+                <h3>待判分行</h3>
+              </div>
+            </div>
+            <div class="pending-judge-panel" id="pendingJudgePanel" hidden>
+            </div>
+          </section>
+
+          <section class="judge-panel-card" id="judgeArtifactCard">
+            <div class="judge-panel-head">
+              <div>
+                <span class="label">产物</span>
+                <h3>结果与报告路径</h3>
+              </div>
+            </div>
+            <div class="path-list" id="resultArtifactList" hidden>
+            </div>
+          </section>
+
+          <section class="judge-panel-card" id="judgeSamplesCard">
+            <div class="judge-panel-head">
+              <div>
+                <span class="label">样例</span>
+                <h3>判分明细与证据</h3>
+              </div>
+            </div>
+            <div class="sample-list" id="evalSampleRows" hidden></div>
+            <div class="result-kpis" id="resultKpis" hidden></div>
+            <div class="sample-list" id="sampleRows" hidden></div>
+          </section>
         </div>
-        <button class="secondary" type="button" data-view-jump="systemConfigView">去系统配置</button>
-      </div>
-      <div class="form-grid two" hidden aria-hidden="true">
-        <label>
-          <span>判分地址</span>
-          <input id="judgeBaseUrl" spellcheck="false">
-        </label>
-        <label>
-          <span>判分模型</span>
-          <input id="judgeModel" spellcheck="false">
-        </label>
-      </div>
-      <label hidden aria-hidden="true">
-        <span>判分密钥</span>
-        <input id="judgeToken" type="password" spellcheck="false" placeholder="必填">
-      </label>
-      <div class="judge-readiness-panel" id="judgeReadinessPanel" aria-live="polite"></div>
-      <div class="eval-action-bar result-actions">
-        <button class="secondary" id="preflightJudge">检查判分配置</button>
-        <button class="secondary" id="retryMissingQa" hidden>补跑缺失题</button>
-        <button class="secondary" id="retryFailedQa" hidden>重跑失败题</button>
-        <button class="primary alt" id="runJudgeSmoke3" hidden>抽样</button>
-        <button class="primary" id="runJudgeInline">判分当前结果</button>
-      </div>
-      <div class="progress-bar"><span id="judgeProgressBar"></span></div>
-      <small id="judgeProgressText">等待判分</small>
-      <details class="log-details">
-        <summary>判分日志</summary>
-        <pre class="log" id="judgeLogBox">判分日志会显示在这里。</pre>
-      </details>
-      <div class="check-list preflight-box" id="judgePreflightBox">
-      </div>
-      <div class="judge-estimate" id="judgeEstimateBox">
-      </div>
-      <div class="result-kpis" id="evalResultKpis"></div>
-      <div class="quick-test-status" id="qaDiagnosticsPanel">
-        <p>判分完成后显示准确率、Token 用量和日志摘要。</p>
-      </div>
-      <div class="pending-judge-panel" id="pendingJudgePanel">
-      </div>
-      <div class="path-list" id="resultArtifactList">
-      </div>
-      <div class="sample-list" id="evalSampleRows"></div>
-      <div class="result-kpis" id="resultKpis" hidden></div>
-      <div class="sample-list" id="sampleRows" hidden></div>
-      <div class="eval-action-bar result-actions">
-        <button class="secondary" id="refreshResultBottom">刷新当前结果</button>
-        <button class="primary alt" id="runJudgeSmoke3Bottom" hidden>抽样</button>
-        <button class="primary" id="runJudgeBottom">判分当前结果</button>
       </div>
     </section>
 
@@ -717,52 +632,16 @@
       </div>
     </section>
 
-    <section class="panel view-panel" id="runsView" data-title="导出报告" data-subtitle="选择一次结果，生成并打开 HTML 报告。">
-      <div class="panel-head">
+    <section class="panel view-panel" id="runsView" data-title="导出报告" data-subtitle="选择一次结果，生成评测报告。">
+      <div class="workbench-stage-hero">
         <div>
-          <h2>导出报告</h2>
-          <p>选择左侧一次结果后，点击“生成 HTML 报告”。报告会包含配置、准确率、Token 用量、证据和日志摘要。</p>
+          <span class="label">报告</span>
+          <h2>结果与报告</h2>
+          <p>按时间查看结果，选择一次运行并导出评测报告。</p>
         </div>
         <div class="panel-actions">
           <button class="secondary" id="refreshRuns">刷新结果列表</button>
         </div>
-      </div>
-
-      <details class="report-help-panel" hidden>
-        <summary>怎么用</summary>
-        <div class="flow-compare-grid compact">
-          <article>
-            <span>记忆评测</span>
-            <p>先归档对话，再运行问答，最后判分。</p>
-          </article>
-          <article>
-            <span>MemoryBench 本地基线</span>
-            <p>只做本地检索，用来排查数据、题目和判分。</p>
-          </article>
-          <article>
-            <span>对比重点</span>
-            <p>重点看结果变化、回答差异和失败聚类。</p>
-          </article>
-        </div>
-        <button class="secondary" id="loadLongMemBaseline" hidden>LongMemEval 基线对比</button>
-        <button class="primary alt" id="loadLongMemLatest" hidden>最新 LongMemEval 结果</button>
-      </details>
-      <div id="longMemQuickCards" class="quick-run-grid" hidden>
-        <article>
-          <span>LongMemEval 100</span>
-          <strong>92/100 exact</strong>
-          <p>Subset aggregation + acronym/numeric aliases + evidence support</p>
-        </article>
-        <article>
-          <span>判分抽样 50</span>
-          <strong>50/50 formal</strong>
-          <p>独立切片，不修改源结果文件</p>
-        </article>
-        <article>
-          <span>判分抽样 20</span>
-          <strong>20/20 formal</strong>
-          <p>快速 sanity check 已通过</p>
-        </article>
       </div>
 
       <div class="report-workbench">
@@ -777,79 +656,41 @@
                 <input id="runsCurrentAccountOnly" type="checkbox" checked>
                 <span>只看当前空间</span>
               </label>
-              <button class="secondary compact-button" id="refreshRunsMini" type="button">刷新列表</button>
             </div>
           </div>
           <div class="run-list" id="runsList"></div>
         </aside>
 
         <section class="report-main-column">
-          <div class="report-control-panel">
-            <section class="report-control-card primary-card" hidden>
-              <div>
-                <span class="label">对比</span>
-                <h3>差异分析</h3>
-              </div>
-              <div class="form-grid two compact-form">
-                <label>
-                  <span>对照</span>
-                  <input id="diffBase" spellcheck="false" placeholder="选择结果后自动填入">
-                </label>
-                <label>
-                  <span>当前</span>
-                  <input id="diffCandidate" spellcheck="false" placeholder="选择另一个结果或手动填入">
-                </label>
-              </div>
-              <div class="report-action-row">
-                <button class="primary alt" id="compareCsvRuns">比较两个 CSV</button>
-                <button class="secondary" id="runDiff">查看逐题差异</button>
-                <button class="secondary" id="copyLocalToCandidate">复制为当前 CSV</button>
-                <button class="secondary" id="useLatestLocalAsBase">填入最新本地基线</button>
-              </div>
-            </section>
-            <section class="report-control-card native-baseline-card">
-              <div class="report-section-head compact-head">
-                <div>
-                  <span class="label">固定基线</span>
-                  <h3>原生 OpenViking</h3>
-                </div>
-                <span class="native-baseline-status" id="nativeBaselineStatus">未固定</span>
-              </div>
-              <div class="native-baseline-body" id="nativeBaselineBody">
-                <p>固定一次原生 OpenViking 结果后，后续 EchoMemory 或其他后端都按同一基线比较。</p>
-              </div>
-              <div class="report-action-row native-baseline-actions">
-                <button class="primary alt" id="compareWithNativeBaseline" type="button">对比选中与原生基线</button>
-                <button class="secondary" id="pinSelectedNativeBaseline" type="button">设为原生基线</button>
-                <button class="secondary" id="autoPinNativeBaseline" type="button">自动固定全量基线</button>
-                <button class="secondary" id="refreshNativeBaseline" type="button">刷新基线</button>
-              </div>
-            </section>
+          <section class="report-empty-state" id="runsEmptyState">
+            <strong>等待选择结果</strong>
+            <p id="runsEmptyStateText">先从左侧结果列表选择一条记录，再生成评测报告。</p>
+          </section>
+
+          <div class="report-control-panel" id="runsActionPanel" hidden>
             <section class="report-control-card">
-              <span class="label">生成</span>
-              <h3>HTML 报告</h3>
-              <p>先在左侧选择一次运行，再生成报告；多结果对比和错题聚类按需展开查看。</p>
-              <div class="report-action-stack">
-                <button class="primary" id="exportRunReport">生成所选报告</button>
-                <button class="secondary" id="compareSelectedRuns" type="button">对比选中结果</button>
-                <button class="secondary" id="loadWrongClusters" type="button">错题聚类</button>
-                <button class="secondary" id="clearSelectedRuns" type="button">清空对比选择</button>
+              <div class="report-inline-head">
+                <span class="label">操作</span>
+                <strong>已选结果</strong>
+              </div>
+              <div class="report-action-stack compact-single">
+                <button class="primary" id="exportRunReport">生成评测报告</button>
               </div>
             </section>
           </div>
 
-          <section class="report-detail-panel">
+          <section class="report-detail-panel" id="runDetailPanel" hidden>
             <div class="report-section-head">
               <div>
-                <span class="label">查看</span>
-                <h3>详情</h3>
+                <span class="label">详情</span>
+                <h3>当前结果</h3>
               </div>
             </div>
             <div class="result-kpis compact" id="runDetailKpis"></div>
             <div class="run-audit-panel" id="runAuditPanel"></div>
-            <div class="run-audit-panel" id="failureAttributionPanel"></div>
-            <div class="run-audit-panel" id="evidenceContractPanel"></div>
-            <div class="path-list" id="runArtifactList"></div>
+            <div class="run-audit-panel" id="failureAttributionPanel" hidden></div>
+            <div class="run-audit-panel" id="evidenceContractPanel" hidden></div>
+            <div class="path-list" id="runArtifactList" hidden></div>
             <div class="question-detail-layout">
               <div class="sample-list" id="runQuestionList"></div>
               <div class="question-detail" id="questionDetailPane"></div>
@@ -857,30 +698,15 @@
           </section>
 
           <section class="report-analysis-stack">
-            <details hidden>
-              <summary>差异</summary>
-              <div id="runDiffResult" class="analysis-box"></div>
-            </details>
-            <details hidden>
-              <summary>多结果</summary>
-              <div id="runCompareResult" class="analysis-box"></div>
-            </details>
-            <details hidden>
-              <summary>错题</summary>
-              <div id="wrongClusterResult" class="analysis-box"></div>
-            </details>
-            <details id="runReportDetails" open>
-              <summary>HTML 报告</summary>
+            <details id="runReportDetails" hidden>
+              <summary>评测报告</summary>
               <div id="runReportResult" class="analysis-box"></div>
             </details>
-            <details hidden>
-              <summary>基线</summary>
-              <div id="longMemBaselineResult" class="analysis-box"></div>
-            </details>
-            <details hidden>
-              <summary>配置快照</summary>
-              <div id="configSnapshotResult" class="analysis-box"></div>
-            </details>
+            <div id="runDiffResult" hidden></div>
+            <div id="runCompareResult" hidden></div>
+            <div id="wrongClusterResult" hidden></div>
+            <div id="longMemBaselineResult" hidden></div>
+            <div id="configSnapshotResult" hidden></div>
           </section>
         </section>
       </div>
@@ -892,7 +718,7 @@
           <div>
             <span class="label">长记忆问答</span>
             <h2>LongMemEval</h2>
-            <p>选择数据后运行正式 MemoryBench OpenViking 记忆问答；LongMemEval 官方式摘要会随结果生成。</p>
+            <p>选择数据后运行真实 MemoryBench 长记忆问答；任务会跟随当前记忆后端，LongMemEval 官方式摘要会随结果生成。</p>
           </div>
           <div class="panel-actions">
             <button class="secondary" id="longMemRefreshDatasets">刷新数据集</button>
@@ -903,7 +729,7 @@
           <div class="benchmark-stage-head">
             <span class="label">记忆导入</span>
             <h3>数据与记忆准备</h3>
-            <p>选择 LongMemEval 数据文件，校验字段和样本范围；正式运行时会把样本上下文写入当前后端后再进入问答。</p>
+            <p>选择 LongMemEval 数据文件，校验字段和样本范围；正式运行时会先把样本上下文写入当前后端，再进入问答。</p>
           </div>
           <div class="benchmark-dataset-grid" id="longMemDatasetCards">
             <p>正在读取 LongMemEval 数据集配置。</p>
@@ -978,7 +804,7 @@
             <button class="secondary" id="longMemLatestResults">最新结果</button>
           </div>
           <div class="progress-bar benchmark-progress"><span id="longMemProgressBar"></span></div>
-          <small id="longMemProgressText">等待测试</small>
+          <small id="longMemProgressText">正在恢复任务状态</small>
           <details class="log-details benchmark-log">
             <summary>运行日志</summary>
             <pre class="log" id="longMemLogBox">运行日志会显示在这里。</pre>
@@ -1013,8 +839,11 @@
         <section class="benchmark-plan-strip">
           <h3>测试方案</h3>
           <div class="analysis-box">
-            <p>小样本核验：选择 1-3 题或设置题数为 3，运行 MemoryBench OpenViking 记忆问答、答案模型、判分和 LongMemEval 官方式摘要。</p>
-            <p>正式：完整 LongMemEval-S、样本范围全部、题数 0；报告展示 MemoryBench 分数和官方式摘要。</p>
+            <p>小样本核验：选择 sample 或完整数据里的 1-3 题，确认上下文写入、检索、回答、判分和 LongMemEval 官方式摘要都能跑通。</p>
+            <p>正式：使用完整 LongMemEval-S、样本范围全部、题数 0；报告同时展示 MemoryBench 分数和 LongMemEval 官方式摘要。</p>
+            <div class="panel-actions">
+              <a class="secondary button-link" href="/formal-benchmark-plan-20260606.html" target="_blank" rel="noreferrer">查看正式方案</a>
+            </div>
           </div>
         </section>
       </div>
@@ -1026,70 +855,95 @@
           <div>
             <span class="label">事件记忆</span>
             <h2>EvolvingEvents</h2>
-            <p>校验字段后运行正式 MemoryBench OpenViking 记忆问答；官方 EvolvingEvents 指标单独标注，不冒充 SOTA 对比。</p>
+            <p>校验字段后运行真实 MemoryBench 事件记忆问答；支持小样本先验链路，官方 EvolvingEvents 原指标单独标注。</p>
           </div>
           <div class="panel-actions">
             <button class="secondary generic-load-example" type="button" data-benchmark="evolvingevents">使用示例数据</button>
+            <button class="secondary generic-use-formal-preset" type="button" data-benchmark="evolvingevents" data-count="0">正式全量</button>
             <button class="secondary" data-view-jump="runsView">查看结果</button>
           </div>
         </div>
-        <div class="path-input-action">
-          <label>
-            <span>EvolvingEvents JSON / JSONL</span>
-            <input id="evolvingEventsData" spellcheck="false" placeholder="/path/to/evolvingevents.json">
-          </label>
-          <button class="secondary generic-validate" type="button" data-benchmark="evolvingevents">校验数据集</button>
-        </div>
-        <div class="result-kpis compact" id="evolvingEventsKpis"></div>
-        <div class="quick-test-status" id="evolvingEventsStatus">
-          <p>完整 JSON / JSONL 路径会运行 MemoryBench 记忆问答、答案模型、判分和报告；内置 sample 只作为小样本核验。</p>
-        </div>
-        <div class="form-grid three">
-          <label>
-            <span>测试题数（0=全量）</span>
-            <input id="evolvingEventsCount" type="number" min="0" max="10000" value="3">
-          </label>
-          <label>
-            <span>题目搜索</span>
-            <input id="evolvingeventsQuestionSearch" class="generic-question-search" data-benchmark="evolvingevents" spellcheck="false" placeholder="question_id / 关键词 / 答案">
-          </label>
-          <label>
-            <span>模式</span>
-            <select id="evolvingEventsMode">
-              <option value="formal">MemoryBench 事件记忆问答</option>
-            </select>
-          </label>
-        </div>
-        <div class="panel-actions">
-          <button class="primary generic-run-adapter" type="button" data-benchmark="evolvingevents">开始测试</button>
-          <button class="secondary generic-preview" type="button" data-benchmark="evolvingevents">加载题目</button>
-          <button class="secondary generic-select-visible" type="button" data-benchmark="evolvingevents">选择当前页</button>
-          <button class="secondary generic-clear-selection" type="button" data-benchmark="evolvingevents">清空选择</button>
-        </div>
-        <small id="evolvingeventsSelectedText">未加载题目。</small>
-        <div class="progress-bar benchmark-progress"><span id="evolvingEventsProgressBar"></span></div>
-        <small id="evolvingEventsProgressText">等待测试</small>
-        <details class="log-details benchmark-log">
-          <summary>运行日志</summary>
-          <pre class="log" id="evolvingEventsLogBox">运行日志会显示在这里。</pre>
-        </details>
-        <div class="analysis-grid">
-          <section>
-            <h3>题目选择</h3>
-            <div id="evolvingEventsPreview" class="analysis-box"><p>点击“加载题目”后显示前 100 条样本，可勾选后只跑选中题。</p></div>
-          </section>
-          <section>
-            <h3>结果</h3>
-            <div id="evolvingEventsRunResult" class="analysis-box"><p>点击“开始测试”后显示结果文件、任务目录和计分口径。</p></div>
-          </section>
-          <section>
-            <h3>测试方案</h3>
-            <div class="analysis-box">
-              <p>小样本核验：示例或完整 JSON 上选择 1-3 题，验证事件写入、记忆检索、答案模型和判分。</p>
-              <p>正式：填写完整 EvolvingEvents JSON / JSONL，题数 0 或选定题集，产出 MemoryBench 记忆问答分数；官方原指标另行标注。</p>
+        <section class="benchmark-stage-panel" data-benchmark-stage="import" aria-label="EvolvingEvents 记忆导入">
+          <div class="benchmark-stage-head">
+            <span class="label">记忆导入</span>
+            <h3>数据与运行准备</h3>
+            <p>这一段先确定 EvolvingEvents 数据路径和运行口径。当前没有独立预导入任务；正式运行时会在问答阶段逐题写入事件上下文。</p>
+          </div>
+          <div class="path-input-action">
+            <label>
+              <span>EvolvingEvents JSON / JSONL</span>
+              <input id="evolvingEventsData" spellcheck="false" placeholder="/path/to/evolvingevents.json">
+            </label>
+            <button class="secondary generic-validate" type="button" data-benchmark="evolvingevents">校验数据集</button>
+          </div>
+          <div class="result-kpis compact" id="evolvingEventsKpis"></div>
+          <div class="quick-test-status" id="evolvingEventsStatus">
+            <p>完整 JSON / JSONL 路径会运行 MemoryBench 记忆问答、答案模型、判分和报告；内置 sample 只作为小样本核验。</p>
+          </div>
+          <div class="analysis-box">
+            <p>导入阶段负责确认数据集路径、字段映射和正式 / 小样本口径；真正的上下文写入、检索和回答在“问答测试”阶段发生。</p>
+          </div>
+        </section>
+
+        <section class="benchmark-stage-panel" data-benchmark-stage="qa" aria-label="EvolvingEvents 问答测试">
+          <div class="benchmark-stage-head">
+            <span class="label">问答测试</span>
+            <h3>题目选择与运行</h3>
+            <p>加载题目后可以按题数、关键词或显式勾选来跑；正式任务会把事件上下文写入当前后端，再进入 MemoryBench 检索、回答和判分。</p>
+          </div>
+          <div class="form-grid three">
+            <label>
+              <span>测试题数（0=全量）</span>
+              <input id="evolvingEventsCount" type="number" min="0" max="10000" value="3">
+            </label>
+            <label>
+              <span>题目搜索</span>
+              <input id="evolvingeventsQuestionSearch" class="generic-question-search" data-benchmark="evolvingevents" spellcheck="false" placeholder="question_id / 关键词 / 答案">
+            </label>
+            <label>
+              <span>模式</span>
+              <select id="evolvingEventsMode">
+                <option value="formal">MemoryBench 事件记忆问答</option>
+              </select>
+            </label>
+          </div>
+          <div class="panel-actions">
+            <button class="primary generic-run-adapter" type="button" data-benchmark="evolvingevents">开始测试</button>
+            <button class="secondary generic-use-formal-preset" type="button" data-benchmark="evolvingevents" data-count="20">正式 20</button>
+            <button class="secondary generic-use-full-count" type="button" data-benchmark="evolvingevents">全量 0</button>
+            <button class="secondary generic-preview" type="button" data-benchmark="evolvingevents">加载题目</button>
+            <button class="secondary generic-select-visible" type="button" data-benchmark="evolvingevents">选择当前页</button>
+            <button class="secondary generic-clear-selection" type="button" data-benchmark="evolvingevents">清空选择</button>
+          </div>
+          <small id="evolvingeventsSelectedText">未加载题目。</small>
+          <div class="progress-bar benchmark-progress"><span id="evolvingEventsProgressBar"></span></div>
+          <small id="evolvingEventsProgressText">正在恢复任务状态</small>
+          <details class="log-details benchmark-log">
+            <summary>运行日志</summary>
+            <pre class="log" id="evolvingEventsLogBox">运行日志会显示在这里。</pre>
+          </details>
+          <div class="analysis-grid two">
+            <section>
+              <h3>题目选择</h3>
+              <div id="evolvingEventsPreview" class="analysis-box"><p>点击“加载题目”后显示前 100 条样本，可勾选后只跑选中题。</p></div>
+            </section>
+            <section>
+              <h3>结果</h3>
+              <div id="evolvingEventsRunResult" class="analysis-box"><p>点击“开始测试”后显示结果文件、任务目录和计分口径。</p></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="benchmark-plan-strip">
+          <h3>测试方案</h3>
+          <div class="analysis-box">
+            <p>小样本核验：先用 sample 或完整数据中的 1-3 题，确认事件写入、记忆检索、答案模型和判分链路能启动。</p>
+            <p>正式：填写完整 EvolvingEvents JSON / JSONL，优先题数 0；当前平台输出的是 MemoryBench 记忆问答分数，不冒充官方原榜指标。</p>
+            <div class="panel-actions">
+              <a class="secondary button-link" href="/formal-benchmark-plan-20260606.html" target="_blank" rel="noreferrer">查看正式方案</a>
             </div>
-          </section>
-        </div>
+          </div>
+        </section>
       </div>
     </section>
 
@@ -1099,69 +953,144 @@
           <div>
             <span class="label">多跳问答</span>
             <h2>HotpotQA</h2>
-            <p>校验字段后运行正式 MemoryBench OpenViking 记忆问答，并输出答案 EM/F1；支持事实 / 联合 F1 指标单独标注。</p>
+            <p>分成准备、问答测试和结果判读三段来跑；正式任务会在问答阶段按题写入上下文并统计注入、QA 和端到端时间。</p>
           </div>
           <div class="panel-actions">
+            <button class="secondary" type="button" id="hotpotQaCheckModels">检查模型</button>
+            <button class="secondary" type="button" data-external-href="/generated-reports/hotpotqa_echomemory_live_current.html">Live</button>
+            <button class="secondary" type="button" data-external-href="/generated-reports/hotpotqa_echomemory_live_diagnostic_current.html">诊断</button>
             <button class="secondary" data-view-jump="runsView">查看结果</button>
           </div>
         </div>
-        <div class="path-input-action">
-          <label>
-            <span>HotpotQA JSON / JSONL</span>
-            <input id="hotpotQaData" spellcheck="false" placeholder="/path/to/hotpotqa.json">
-          </label>
-          <button class="secondary generic-validate" type="button" data-benchmark="hotpotqa">校验数据集</button>
-        </div>
-        <div class="result-kpis compact" id="hotpotQaKpis"></div>
-        <div class="quick-test-status" id="hotpotQaStatus">
-          <p>完整 HotpotQA dev/distractor 路径会运行 MemoryBench 记忆问答、判分与答案 EM/F1；不是完整官方联合 F1 指标。</p>
-        </div>
-        <div class="form-grid three">
-          <label>
-            <span>测试题数（0=全量）</span>
-            <input id="hotpotQaCount" type="number" min="0" max="10000" value="3">
-          </label>
-          <label>
-            <span>题目搜索</span>
-            <input id="hotpotqaQuestionSearch" class="generic-question-search" data-benchmark="hotpotqa" spellcheck="false" placeholder="question_id / 关键词 / 答案">
-          </label>
-          <label>
-            <span>模式</span>
-            <select id="hotpotQaMode">
-              <option value="formal">OpenViking + 大模型 + 判分 + 答案 EM/F1</option>
-            </select>
-          </label>
-        </div>
-        <div class="panel-actions">
-          <button class="primary generic-run-adapter" type="button" data-benchmark="hotpotqa">开始测试</button>
-          <button class="secondary generic-preview" type="button" data-benchmark="hotpotqa">加载题目</button>
-          <button class="secondary generic-select-visible" type="button" data-benchmark="hotpotqa">选择当前页</button>
-          <button class="secondary generic-clear-selection" type="button" data-benchmark="hotpotqa">清空选择</button>
-        </div>
-        <small id="hotpotqaSelectedText">未加载题目。</small>
-        <div class="progress-bar benchmark-progress"><span id="hotpotQaProgressBar"></span></div>
-        <small id="hotpotQaProgressText">等待测试</small>
-        <details class="log-details benchmark-log">
-          <summary>运行日志</summary>
-          <pre class="log" id="hotpotQaLogBox">运行日志会显示在这里。</pre>
-        </details>
-        <div class="analysis-grid">
-          <section>
-            <h3>题目选择</h3>
-            <div id="hotpotQaPreview" class="analysis-box"><p>点击“加载题目”后显示前 100 条样本，可勾选后只跑选中题。</p></div>
-          </section>
-          <section>
-            <h3>结果</h3>
-            <div id="hotpotQaRunResult" class="analysis-box"><p>点击“开始测试”后显示结果文件、任务目录和计分口径。</p></div>
-          </section>
-          <section>
-            <h3>测试方案</h3>
-            <div class="analysis-box">
-              <p>小样本核验：选择 1-3 题，写入上下文文档，检索证据，生成答案，自动判分，并输出答案 EM/F1。</p>
-              <p>正式：HotpotQA distractor/dev 全量，题数 0；支持事实 / 联合 F1 指标接入后才能对齐官方完整指标。</p>
+        <section class="benchmark-stage-panel" data-benchmark-stage="import" aria-label="HotpotQA 记忆导入">
+          <div class="benchmark-stage-head">
+            <span class="label">记忆导入</span>
+            <h3>数据、空间和模型准备</h3>
+            <p>这一段先确定 HotpotQA 数据路径、当前账户、模型状态和 MemoryBench 运行口径。HotpotQA 目前没有独立的预导入任务；正式运行时会在问答阶段按题写入上下文并统计注入时间。</p>
+          </div>
+          <div class="path-input-action">
+            <label>
+              <span>HotpotQA JSON / JSONL</span>
+              <input id="hotpotQaData" spellcheck="false" placeholder="/path/to/hotpotqa.json">
+            </label>
+            <button class="secondary generic-validate" type="button" data-benchmark="hotpotqa">校验数据集</button>
+          </div>
+          <div class="result-kpis compact" id="hotpotQaKpis"></div>
+          <div class="quick-test-status" id="hotpotQaStatus">
+            <p>完整 HotpotQA dev/distractor 路径会运行 MemoryBench 记忆问答、判分与答案 EM/F1；当前不是完整官方联合 F1 指标。</p>
+          </div>
+          <div id="hotpotQaRunConfig" class="analysis-box">
+            <p>当前运行配置会显示在这里。</p>
+          </div>
+          <div id="hotpotQaModelReadiness" class="analysis-box">
+            <p>启动前模型检查会显示在这里。</p>
+          </div>
+          <div class="analysis-box">
+            <p>导入阶段只负责确认数据集、账户隔离空间、回答模型和判分模型是否可用；真正的逐题上下文写入和检索在“问答测试”阶段发生。</p>
+          </div>
+        </section>
+
+        <section class="benchmark-stage-panel" data-benchmark-stage="qa" aria-label="HotpotQA 问答测试">
+          <div class="benchmark-stage-head">
+            <span class="label">问答测试</span>
+            <h3>题目选择、运行和 Live 进度</h3>
+            <p>加载题目后可以按题数、关键词或显式勾选来跑；正式任务会记录注入时间、记忆落稳等待、QA 时间和端到端时间。</p>
+          </div>
+          <div class="form-grid three">
+            <label>
+              <span>测试题数（0=全量）</span>
+              <input id="hotpotQaCount" type="number" min="0" max="10000" value="3">
+            </label>
+            <label>
+              <span>题目搜索</span>
+              <input id="hotpotqaQuestionSearch" class="generic-question-search" data-benchmark="hotpotqa" spellcheck="false" placeholder="question_id / 关键词 / 答案">
+            </label>
+            <label>
+              <span>模式</span>
+              <select id="hotpotQaMode">
+                <option value="formal">EchoMemory + 大模型 + 判分 + 答案 EM/F1</option>
+              </select>
+            </label>
+          </div>
+          <div class="panel-actions">
+            <button class="primary generic-run-adapter" type="button" data-benchmark="hotpotqa">开始测试</button>
+            <button class="secondary generic-use-formal-preset" type="button" data-benchmark="hotpotqa" data-count="0">正式全量</button>
+            <button class="secondary generic-use-formal-preset" type="button" data-benchmark="hotpotqa" data-count="50">正式 50</button>
+            <button class="secondary generic-use-full-count" type="button" data-benchmark="hotpotqa">全量 0</button>
+            <button class="secondary generic-preview" type="button" data-benchmark="hotpotqa">加载题目</button>
+            <button class="secondary generic-select-visible" type="button" data-benchmark="hotpotqa">选择当前页</button>
+            <button class="secondary generic-clear-selection" type="button" data-benchmark="hotpotqa">清空选择</button>
+          </div>
+          <small id="hotpotqaSelectedText">未加载题目。</small>
+          <div class="progress-bar benchmark-progress"><span id="hotpotQaProgressBar"></span></div>
+          <small id="hotpotQaProgressText">正在恢复任务状态</small>
+          <details class="log-details benchmark-log">
+            <summary>运行日志</summary>
+            <pre class="log" id="hotpotQaLogBox">运行日志会显示在这里。</pre>
+          </details>
+          <div id="hotpotQaNativeSummary" class="analysis-box">
+            <p>当前运行总览会显示在这里。</p>
+          </div>
+          <section class="benchmark-live-embed">
+            <div class="panel-head compact">
+              <div>
+                <span class="label">平台内 Live</span>
+                <h3>当前运行快照</h3>
+                <p id="hotpotQaLiveInlineMeta">这里会在有活跃任务时显示当前运行的 live 报告；当前没有任务时只保留空闲提示。</p>
+              </div>
+              <div class="panel-actions">
+                <a class="secondary button-link" id="hotpotQaLiveInlineOpen" href="/generated-reports/hotpotqa_echomemory_live_current.html" target="_blank" rel="noreferrer">新窗口打开</a>
+                <button class="secondary" type="button" data-external-href="/generated-reports/hotpotqa_echomemory_live_diagnostic_current.html">诊断页</button>
+              </div>
             </div>
+            <div id="hotpotQaLiveInlineIdle" class="analysis-box">
+              <p>当前没有运行中的 HotpotQA 任务。</p>
+              <p><a href="/generated-reports/hotpotqa_echomemory_completed_current.html" target="_blank" rel="noreferrer">打开最近完成报告</a> · <a href="/generated-reports/hotpotqa_echomemory_completed_diagnostic_current.html" target="_blank" rel="noreferrer">打开最近完成诊断</a></p>
+            </div>
+            <iframe id="hotpotQaLiveInlineFrame" class="benchmark-live-iframe" src="/generated-reports/hotpotqa_echomemory_live_current.html" title="HotpotQA Live 报告" hidden></iframe>
           </section>
-        </div>
+          <div class="analysis-grid two">
+            <section>
+              <h3>题目选择</h3>
+              <div id="hotpotQaPreview" class="analysis-box"><p>点击“加载题目”后显示前 100 条样本，可勾选后只跑选中题。</p></div>
+            </section>
+            <section>
+              <h3>结果</h3>
+              <div id="hotpotQaRunResult" class="analysis-box"><p>点击“开始测试”后显示结果文件、任务目录和计分口径。</p></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="benchmark-stage-panel" data-benchmark-stage="judge" aria-label="HotpotQA 判分">
+          <div class="benchmark-stage-head">
+            <span class="label">判分</span>
+            <h3>健康、产物和问题摘要</h3>
+            <p>任务结束后，这一段集中看模型错误、import_failed、pending_async、最终报告状态和问题样本摘要；不要把执行链路失败误判成准确率。</p>
+          </div>
+          <div id="hotpotQaRunHealth" class="analysis-box">
+            <p>当前运行健康会显示在这里。</p>
+          </div>
+          <div id="hotpotQaArtifactStatus" class="analysis-box">
+            <p>最终产物状态会显示在这里。</p>
+          </div>
+          <div id="hotpotQaProblemDigest" class="analysis-box">
+            <p>当前问题样本摘要会显示在这里。</p>
+          </div>
+          <div class="analysis-box">
+            <p>如果页面里看到的是启动前模型错误，先修回答模型或判分模型配置；如果已经进入运行态，再结合 Live 报告和诊断页判断是不是导入超时、模型服务异常或异步落稳问题。</p>
+          </div>
+        </section>
+
+        <section class="benchmark-plan-strip">
+          <h3>测试方案</h3>
+          <div class="analysis-box">
+            <p>小样本核验：先跑 1-3 题，确认上下文写入、检索、回答、自动判分和答案 EM/F1 都能启动。</p>
+            <p>正式：使用 HotpotQA dev/distractor 全量，题数 0；当前平台对齐的是答案 EM/F1，不是官方完整联合指标。</p>
+            <div class="panel-actions">
+              <a class="secondary button-link" href="/formal-benchmark-plan-20260606.html" target="_blank" rel="noreferrer">查看正式方案</a>
+            </div>
+          </div>
+        </section>
       </div>
     </section>
 
@@ -1212,7 +1141,7 @@
         </div>
         <small id="proagentbenchSelectedText">未加载题目。</small>
         <div class="progress-bar benchmark-progress"><span id="proAgentBenchProgressBar"></span></div>
-        <small id="proAgentBenchProgressText">等待测试</small>
+        <small id="proAgentBenchProgressText">正在恢复任务状态</small>
         <details class="log-details benchmark-log">
           <summary>运行日志</summary>
           <pre class="log" id="proAgentBenchLogBox">运行日志会显示在这里。</pre>
@@ -1284,7 +1213,7 @@
         </div>
         <small id="tau2benchSelectedText">未加载题目。</small>
         <div class="progress-bar benchmark-progress"><span id="tauBenchProgressBar"></span></div>
-        <small id="tauBenchProgressText">等待测试</small>
+        <small id="tauBenchProgressText">正在恢复任务状态</small>
         <details class="log-details benchmark-log">
           <summary>运行日志</summary>
           <pre class="log" id="tauBenchLogBox">运行日志会显示在这里。</pre>
@@ -1309,206 +1238,97 @@
       </div>
     </section>
 
-    <section class="panel view-panel" id="systemConfigView" data-title="系统配置" data-subtitle="支持 OpenViking、EchoMemory；切换只对当前账户生效。">
+    <section class="panel view-panel" id="systemConfigView" data-title="系统配置" data-subtitle="后端、目录和模型配置。">
       <div class="panel-head">
         <div>
-          <span class="label">设置</span>
-          <h2>配置</h2>
+          <h2>系统配置</h2>
         </div>
       </div>
-      <div class="readme-section handoff-dashboard-section">
-        <div class="section-title-row">
-          <div>
-            <h3>交付驾驶舱</h3>
-            <p>一屏聚合启动门禁、外部验收、EchoMemory 契约、小样本核验、外发清单和安全边界。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runHandoffDashboard">刷新驾驶舱</button>
+      <details class="readme-section system-advanced-checks" hidden>
+        <summary>高级检查</summary>
+        <div class="system-advanced-grid">
+          <section class="handoff-dashboard-section">
+            <div class="section-title-row">
+              <h3>交付驾驶舱</h3>
+              <button class="secondary compact-button" type="button" id="runHandoffDashboard">刷新</button>
+            </div>
+            <div class="handoff-dashboard-panel" id="handoffDashboardPanel"></div>
+          </section>
+          <section class="delivery-boundary-section">
+            <div class="section-title-row">
+              <h3>交付边界</h3>
+              <button class="secondary compact-button" type="button" id="runDeliveryBoundary">刷新</button>
+            </div>
+            <div class="handoff-audit-panel" id="deliveryBoundaryPanel"></div>
+          </section>
+          <section class="agent-alignment-section">
+            <div class="section-title-row">
+              <h3>Agent 可比性</h3>
+              <button class="secondary compact-button" type="button" id="runAgentAlignment">刷新</button>
+            </div>
+            <div class="handoff-audit-panel" id="agentAlignmentPanel"></div>
+          </section>
+          <section class="account-isolation-section">
+            <div class="section-title-row">
+              <h3>账户隔离</h3>
+              <button class="secondary compact-button" type="button" id="runAccountIsolation">刷新</button>
+            </div>
+            <div class="handoff-audit-panel" id="accountIsolationGatePanel"></div>
+          </section>
+          <section class="readiness-section">
+            <div class="section-title-row">
+              <h3>启动门禁</h3>
+              <button class="secondary compact-button" type="button" id="runReadiness">刷新</button>
+            </div>
+            <div class="readiness-panel" id="readinessPanel"></div>
+          </section>
+          <section class="acceptance-matrix-section">
+            <div class="section-title-row">
+              <h3>验收矩阵</h3>
+              <button class="secondary compact-button" type="button" id="runAcceptanceMatrix">刷新</button>
+            </div>
+            <div class="acceptance-matrix-panel" id="acceptanceMatrixPanel"></div>
+          </section>
+          <section class="smoke-plan-section">
+            <div class="section-title-row">
+              <h3>小样本计划</h3>
+              <button class="secondary compact-button" type="button" id="runSmokePlan">生成</button>
+            </div>
+            <div class="smoke-plan-panel" id="smokePlanPanel"></div>
+          </section>
+          <section class="handoff-package-section">
+            <div class="section-title-row">
+              <h3>外发清单</h3>
+              <button class="secondary compact-button" type="button" id="runHandoffPackage">生成</button>
+            </div>
+            <div class="handoff-package-panel" id="handoffPackagePanel"></div>
+          </section>
+          <section class="setup-pack-section">
+            <div class="section-title-row">
+              <h3>接入模板</h3>
+              <button class="secondary compact-button" type="button" id="runSetupPack">生成</button>
+            </div>
+            <div class="setup-pack-panel" id="setupPackPanel"></div>
+          </section>
+          <section class="adapter-doctor-section">
+            <div class="section-title-row">
+              <h3>后端自检</h3>
+              <button class="secondary compact-button" type="button" id="runAdapterDoctor">运行</button>
+            </div>
+            <div class="handoff-audit-panel" id="adapterDoctorPanel"></div>
+          </section>
+          <section class="echomem-contract-section">
+            <div class="section-title-row">
+              <h3>EchoMemory 契约</h3>
+              <button class="secondary compact-button" type="button" id="runEchoMemContract">检查</button>
+            </div>
+            <div class="handoff-audit-panel" id="echomemContractPanel"></div>
+          </section>
         </div>
-        <div class="handoff-dashboard-panel" id="handoffDashboardPanel">
-          <article class="handoff-dashboard-card muted">
-            <span>等待检查</span>
-            <strong>服务启动后自动读取</strong>
-            <p>只返回状态、路径、布尔值和占位符命令，不返回 API 密钥。</p>
-          </article>
-        </div>
-      </div>
-      <div class="readme-section delivery-boundary-section">
-        <div class="section-title-row">
-          <div>
-            <h3>交付边界门禁</h3>
-            <p>确认当前交付只有 MemoryBench Agent、OpenViking 基线、EchoMemory 接入、固定侧边栏入口和脱敏外发边界。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runDeliveryBoundary">刷新边界</button>
-        </div>
-        <div class="handoff-audit-panel" id="deliveryBoundaryPanel">
-          <article class="handoff-audit-card muted">
-            <span>等待检查</span>
-            <strong>只读交付边界</strong>
-            <p>不会导入数据、调用模型、读取 API 密钥或修改 workspace。</p>
-          </article>
-        </div>
-      </div>
-      <div class="readme-section agent-alignment-section">
-        <div class="section-title-row">
-          <div>
-            <h3>Agent 可比性门禁</h3>
-            <p>只读检查 MemoryBench Agent 是否按 VikingBoat 可比参数运行：提示词、召回条数、工具循环、工具集合和兜底开关。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runAgentAlignment">刷新门禁</button>
-        </div>
-        <div class="handoff-audit-panel" id="agentAlignmentPanel">
-          <article class="handoff-audit-card muted">
-            <span>等待检查</span>
-            <strong>读取最近 LoCoMo QA 任务</strong>
-            <p>不会调用模型、不会读取 API 密钥，只检查已有任务清单、摘要和报告证据。</p>
-          </article>
-        </div>
-      </div>
-      <div class="readme-section account-isolation-section">
-        <div class="section-title-row">
-          <div>
-            <h3>账户隔离门禁</h3>
-            <p>只读检查当前 account 的后端、workspace、存储根目录和共享风险；用于证明评测环境干净。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runAccountIsolation">刷新隔离</button>
-        </div>
-        <div class="handoff-audit-panel" id="accountIsolationGatePanel">
-          <article class="handoff-audit-card muted">
-            <span>等待检查</span>
-            <strong>读取当前账户 workspace</strong>
-            <p>不会调用模型、不会读取 API 密钥，只检查当前账户目录和共享关系。</p>
-          </article>
-        </div>
-      </div>
-      <div class="readme-section readiness-section">
-        <div class="section-title-row">
-          <div>
-            <h3>启动门禁</h3>
-            <p>聚合环境预检、交付审计、数据集、记忆后端、模型和运行任务。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runReadiness">刷新门禁</button>
-        </div>
-        <div class="readiness-panel" id="readinessPanel">
-          <article class="readiness-card muted">
-            <span>等待检查</span>
-            <strong>读取当前状态后显示</strong>
-            <p>只返回状态、路径和布尔值，不返回 API 密钥。</p>
-          </article>
-        </div>
-      </div>
-      <div class="readme-section acceptance-matrix-section">
-        <div class="section-title-row">
-          <div>
-            <h3>外部验收矩阵</h3>
-            <p>把交付边界、EchoMemory 接入、数据集、运行时、模型、安全和报告链路合成一张可复制的验收表。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runAcceptanceMatrix">刷新验收</button>
-        </div>
-        <div class="acceptance-matrix-panel" id="acceptanceMatrixPanel">
-          <article class="acceptance-card muted">
-            <span>等待检查</span>
-            <strong>读取当前交付验收状态</strong>
-            <p>只返回状态、路径和布尔值，不返回 API 密钥。</p>
-          </article>
-        </div>
-      </div>
-      <div class="readme-section smoke-plan-section">
-        <div class="section-title-row">
-          <div>
-            <h3>小样本核验控制台</h3>
-            <p>给外部测试者生成只读测试路线：推荐 conv、推荐 QA、下一步页面和预期产物。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runSmokePlan">生成计划</button>
-        </div>
-        <div class="smoke-plan-panel" id="smokePlanPanel">
-          <article class="smoke-plan-card muted">
-            <span>等待生成</span>
-            <strong>只读测试计划</strong>
-            <p>不会导入数据、调用模型、执行判分或返回 API 密钥。</p>
-          </article>
-        </div>
-      </div>
-      <div class="readme-section handoff-package-section">
-        <div class="section-title-row">
-          <div>
-            <h3>外发清单</h3>
-            <p>只生成交付净化清单：哪些文件可带、哪些目录必须排除、接收后怎么验证。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runHandoffPackage">生成清单</button>
-        </div>
-        <div class="handoff-package-panel" id="handoffPackagePanel">
-          <article class="handoff-package-card muted">
-            <span>等待生成</span>
-            <strong>不打包、不读取密钥</strong>
-            <p>用于外发前确认当前交付只包含 OpenViking + EchoMemory。</p>
-          </article>
-        </div>
-      </div>
-      <div class="readme-section setup-pack-section">
-        <div class="section-title-row">
-          <div>
-            <h3>接入配置向导</h3>
-            <p>按当前账户和记忆后端生成安全 env 模板、启动命令和验证命令。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runSetupPack">生成配置模板</button>
-        </div>
-        <div class="setup-pack-panel" id="setupPackPanel">
-          <article class="setup-pack-card muted">
-            <span>等待生成</span>
-            <strong>只生成占位符</strong>
-            <p>不会读取或返回真实 API 密钥。</p>
-          </article>
-        </div>
-      </div>
-      <div class="readme-section adapter-doctor-section">
-        <div class="section-title-row">
-          <div>
-            <h3>记忆后端自检</h3>
-            <p>确认当前交付只注册 OpenViking 基线和 EchoMemory 接入，并验证 LoCoMo 必需契约。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runAdapterDoctor">运行自检</button>
-        </div>
-        <div class="handoff-audit-panel" id="adapterDoctorPanel">
-          <article class="handoff-audit-card muted">
-            <span>等待自检</span>
-            <strong>只检查后端边界和契约</strong>
-            <p>不会导入数据、检索记忆或返回 API 密钥。</p>
-          </article>
-        </div>
-      </div>
-      <div class="readme-section echomem-contract-section">
-        <div class="section-title-row">
-          <div>
-            <h3>EchoMemory 接入契约</h3>
-            <p>只读检查外部 EchoMemory fork 是否满足 SDK、导入、检索、evidence 和账户隔离要求。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runEchoMemContract">检查契约</button>
-        </div>
-        <div class="handoff-audit-panel" id="echomemContractPanel">
-          <article class="handoff-audit-card muted">
-            <span>等待检查</span>
-            <strong>不导入、不检索、不调用模型</strong>
-            <p>只检查源码布局、脚本契约和本机配置是否满足 EchoMemory 接入要求。</p>
-          </article>
-        </div>
-      </div>
+      </details>
       <div class="readme-section backend-control-section">
         <div class="section-title-row">
-          <div>
-            <h3>EchoMemory 源码版本</h3>
-            <p>当前平台只接入官方 `version_0.0.6`；这里显示本机实际读取的源码路径、tag 和 commit。</p>
-          </div>
-        </div>
-        <div class="handoff-audit-panel" id="echomemorySourceCard">
-          <article class="handoff-audit-card muted">
-            <span>等待读取</span>
-            <strong>检查 EchoMemory 本地源码</strong>
-            <p>不读取 API 密钥，不调用模型。</p>
-          </article>
-        </div>
-        <div class="section-title-row">
-          <h3>当前账户记忆后端</h3>
-          <p>只影响当前账户；LoCoMo 导入、问答会按这里选择的后端执行。</p>
+          <h3>当前后端</h3>
         </div>
         <label class="backend-select-row">
           <span>记忆后端</span>
@@ -1521,7 +1341,7 @@
           <div class="section-title-row compact">
             <div>
               <h4>后端连接</h4>
-              <p id="backendConnectionSummary">OpenViking 服务状态</p>
+              <p id="backendConnectionSummary">连接状态</p>
             </div>
             <button class="secondary compact-button" id="probeOpenViking" type="button">检测后端连接</button>
           </div>
@@ -1542,19 +1362,33 @@
           <div class="check-list" id="ovStatus"></div>
         </div>
       </div>
+      <div class="readme-section system-preflight-section">
+        <div class="section-title-row">
+          <div>
+            <h3>运行检查</h3>
+          </div>
+          <button class="secondary compact-button" type="button" id="runSystemPreflight">运行预检</button>
+        </div>
+        <div class="system-preflight-grid" id="systemPreflightPanel">
+          <article class="preflight-card muted">
+            <span>等待检查</span>
+            <strong>读取当前配置后显示</strong>
+            <p>不回显密钥。</p>
+          </article>
+        </div>
+      </div>
       <div class="readme-section system-model-config-section">
         <div class="section-title-row">
           <div>
             <h3>模型配置</h3>
-            <p>只对当前账户生效；密钥只保存在当前浏览器的当前账户，不同步到账户状态文件，也不会通过接口返回。</p>
           </div>
         </div>
         <div class="system-model-grid">
-          <article class="system-model-card">
-            <div class="memory-panel-head">
+          <details class="system-model-card model-card-fold" open>
+            <summary class="memory-panel-head">
               <strong>Agent 模型</strong>
-              <span>对话和 LoCoMo 问答生成答案使用</span>
-            </div>
+              <span>对话与 QA</span>
+            </summary>
             <label>
               <span>模型地址</span>
               <input id="systemAgentBaseUrl" spellcheck="false" placeholder="https://api.openai.com/v1">
@@ -1571,12 +1405,12 @@
               <button class="secondary compact-button" type="button" id="testAgentModel">测试 Agent 模型</button>
               <small id="systemAgentPreflight">未测试</small>
             </div>
-          </article>
-          <article class="system-model-card">
-            <div class="memory-panel-head">
+          </details>
+          <details class="system-model-card model-card-fold">
+            <summary class="memory-panel-head">
               <strong>判分模型</strong>
-              <span>评测判分使用</span>
-            </div>
+              <span>Judge</span>
+            </summary>
             <label>
               <span>模型地址</span>
               <input id="systemJudgeBaseUrl" spellcheck="false" placeholder="https://codexcs.ysaikeji.cn/v1">
@@ -1593,12 +1427,12 @@
               <button class="secondary compact-button" type="button" id="testJudgeModel">测试判分模型</button>
               <small id="systemJudgePreflight">未测试</small>
             </div>
-          </article>
-          <article class="system-model-card">
-            <div class="memory-panel-head">
+          </details>
+          <details class="system-model-card model-card-fold">
+            <summary class="memory-panel-head">
               <strong>记忆注入模型</strong>
-              <span>导入记忆时抽取/整理长期记忆使用</span>
-            </div>
+              <span>导入抽取</span>
+            </summary>
             <label>
               <span>模型地址</span>
               <input id="systemMemoryBaseUrl" spellcheck="false" placeholder="https://api.openai.com/v1">
@@ -1615,30 +1449,14 @@
               <button class="secondary compact-button" type="button" id="testMemoryModel">测试记忆注入模型</button>
               <small id="systemMemoryPreflight">未测试</small>
             </div>
-          </article>
-        </div>
-      </div>
-      <div class="readme-section system-preflight-section">
-        <div class="section-title-row">
-          <div>
-            <h3>环境预检</h3>
-            <p>检查当前账户、记忆后端、数据集、模型配置和安全项。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runSystemPreflight">运行预检</button>
-        </div>
-        <div class="system-preflight-grid" id="systemPreflightPanel">
-          <article class="preflight-card muted">
-            <span>等待检查</span>
-            <strong>读取当前配置后显示</strong>
-            <p>预检不会返回 API 密钥，只显示是否已配置。</p>
-          </article>
+          </details>
         </div>
       </div>
       <div class="readme-section handoff-audit-section">
         <div class="section-title-row">
           <div>
-            <h3>交付审计</h3>
-            <p>检查当前可交付源码是否有范围外后端口径、真实密钥、缓存错配和必需文件缺失；外发入口只保留 OpenViking 基线和 EchoMemory 接入。</p>
+            <h3>外发检查</h3>
+            <p>检查可外发源码是否混入真实密钥、范围外后端或缺少必需文件。</p>
           </div>
           <button class="secondary compact-button" type="button" id="runHandoffAudit">运行审计</button>
         </div>
@@ -1646,663 +1464,510 @@
           <article class="handoff-audit-card muted">
             <span>等待审计</span>
             <strong>外发前运行一次</strong>
-            <p>审计默认排除 runs、dist、outputs、external 和 dataset/full。</p>
+            <p>默认排除 runs、dist、outputs、external 和 dataset/full。</p>
           </article>
         </div>
       </div>
-      <div class="config-plugin-grid" id="backendCards">
-        <article class="config-plugin-card">
-          <span>记忆后端状态</span>
-          <strong>加载中</strong>
-          <p>正在读取服务状态。</p>
-        </article>
-      </div>
-      <div class="support-link-grid" aria-label="辅助文档">
-        <a class="support-link-card" href="/product-roadmap.html" target="_blank" rel="noreferrer">
-          <span>产品方案</span>
-          <strong>20k Star 工作台蓝图</strong>
-        </a>
-        <button type="button" class="support-link-card" data-view-jump="readmeView">
-          <span>交付</span>
-          <strong>README / 接入说明</strong>
-        </button>
-        <a class="support-link-card" href="/accuracy-strategy.html" target="_blank" rel="noreferrer">
-          <span>判分</span>
-          <strong>准确率策略</strong>
-        </a>
-        <a class="support-link-card" href="/dataset-evaluation-guide.html" target="_blank" rel="noreferrer">
-          <span>数据集</span>
-          <strong>导入 / 测试 / 准确率</strong>
-        </a>
-      </div>
-      <div class="readme-section">
-        <div class="section-title-row">
-          <h3>当前空间</h3>
-        </div>
-        <div class="report-kv">
-          <article><span>空间</span><strong id="systemAccountLabel">default</strong></article>
-          <article><span>记忆后端</span><strong id="systemBackendLabel">OpenViking</strong></article>
-          <article><span>服务地址</span><strong id="systemOpenVikingLabel">-</strong></article>
-          <article><span>记忆空间</span><strong id="systemWorkspaceLabel">-</strong></article>
-          <article><span>Agent 模型</span><strong id="systemAgentLabel">-</strong></article>
-          <article><span>判分模型</span><strong id="systemJudgeLabel">-</strong></article>
-          <article><span>记忆注入模型</span><strong id="systemMemoryModelLabel">-</strong></article>
-          <article><span>状态文件</span><strong id="systemAccountStateFile">-</strong></article>
-        </div>
-      </div>
-      <div class="readme-section system-extra-section">
-        <div class="section-title-row">
-          <div>
-            <h3>后端隔离说明</h3>
-            <p>确认当前账户会写到哪个存储根目录，以及切换后端是否只影响当前账户。</p>
+      <details class="readme-section system-secondary-section">
+        <summary>更多信息</summary>
+        <div class="readme-section">
+          <div class="section-title-row">
+            <div>
+              <h3>EchoMemory 版本</h3>
+              <p>显示当前读取的本地源码路径、tag 和 commit。</p>
+            </div>
+          </div>
+          <div class="handoff-audit-panel" id="echomemorySourceCard">
+            <article class="handoff-audit-card muted">
+              <span>等待读取</span>
+              <strong>检查 EchoMemory 本地源码</strong>
+              <p>不读取密钥，不调用模型。</p>
+            </article>
           </div>
         </div>
-        <div class="backend-isolation-summary" id="accountBackendIsolationSummary"></div>
-      </div>
-      <div class="readme-section system-extra-section">
-        <div class="section-title-row">
-          <h3>配置快照</h3>
+        <div class="readme-section">
+          <div class="section-title-row">
+            <h3>EchoMemory 本地接入</h3>
+          </div>
+          <label>
+            <span>EchoMemory 源码根目录</span>
+            <input id="echomemRoot" spellcheck="false" placeholder="/Users/you/Code/echomemory/echo_memory_v007_tag">
+          </label>
+          <div class="form-grid two">
+            <label>
+              <span>Memory User ID</span>
+              <input id="memoryUserId" spellcheck="false" value="default" placeholder="default">
+            </label>
+            <label>
+              <span>Memory Agent ID</span>
+              <input id="memoryAgentId" spellcheck="false" value="default" placeholder="default">
+            </label>
+          </div>
         </div>
-        <div class="account-config-snapshot" id="accountConfigSnapshot">
+        <div class="config-plugin-grid" id="backendCards">
+          <article class="config-plugin-card">
+            <span>记忆后端状态</span>
+            <strong>加载中</strong>
+            <p>正在读取服务状态。</p>
+          </article>
         </div>
-      </div>
-      <div class="readme-section system-extra-section">
-        <div class="section-title-row">
-          <h3>隔离检查</h3>
-        </div>
-        <div class="account-isolation-matrix" id="accountIsolationMatrix">
-        </div>
-      </div>
+        <details class="readme-section system-summary-section">
+          <summary>配置快照</summary>
+          <div class="readme-section">
+            <div class="section-title-row">
+              <h3>基础配置</h3>
+            </div>
+            <div class="report-kv">
+              <article><span>空间</span><strong id="systemAccountLabel">default</strong></article>
+              <article><span>记忆后端</span><strong id="systemBackendLabel">OpenViking</strong></article>
+              <article><span>服务地址</span><strong id="systemOpenVikingLabel">-</strong></article>
+              <article><span>目录</span><strong id="systemWorkspaceLabel">-</strong></article>
+              <article><span>Agent 模型</span><strong id="systemAgentLabel">-</strong></article>
+              <article><span>判分模型</span><strong id="systemJudgeLabel">-</strong></article>
+              <article><span>记忆注入模型</span><strong id="systemMemoryModelLabel">-</strong></article>
+              <article><span>状态文件</span><strong id="systemAccountStateFile">-</strong></article>
+            </div>
+          </div>
+          <div class="readme-section system-extra-section">
+            <div class="section-title-row">
+              <div>
+                <h3>目录隔离</h3>
+                <p>确认当前账户会写到哪个目录，以及后端切换是否只影响当前账户。</p>
+              </div>
+            </div>
+            <div class="backend-isolation-summary" id="accountBackendIsolationSummary"></div>
+          </div>
+          <div class="readme-section system-extra-section">
+            <div class="section-title-row">
+              <h3>配置总览</h3>
+            </div>
+            <div class="account-config-snapshot" id="accountConfigSnapshot">
+            </div>
+          </div>
+          <div class="readme-section system-extra-section">
+            <div class="section-title-row">
+              <h3>账户目录</h3>
+            </div>
+            <div class="account-isolation-matrix" id="accountIsolationMatrix">
+            </div>
+          </div>
+          <details class="system-summary-links">
+            <summary>辅助文档</summary>
+            <div class="support-link-grid" aria-label="辅助文档">
+              <a class="support-link-card" href="/product-roadmap.html" target="_blank" rel="noreferrer">
+                <span>产品方案</span>
+                <strong>20k Star 工作台蓝图</strong>
+              </a>
+              <button type="button" class="support-link-card" data-view-jump="systemConfigView">
+                <span>交付</span>
+                <strong>系统配置</strong>
+              </button>
+              <a class="support-link-card" href="/accuracy-strategy.html" target="_blank" rel="noreferrer">
+                <span>判分</span>
+                <strong>准确率策略</strong>
+              </a>
+              <a class="support-link-card" href="/dataset-evaluation-guide.html" target="_blank" rel="noreferrer">
+                <span>数据集</span>
+                <strong>导入 / 测试 / 准确率</strong>
+              </a>
+            </div>
+          </details>
+        </details>
+      </details>
     </section>
 
-    <section class="panel view-panel" id="readmeView" data-title="README / 交付说明" data-subtitle="给外部测试者的最小配置、OpenViking/EchoMemory 接入和安全外发清单。">
-      <div class="panel-head">
-        <div>
-          <span class="label">MemoryBench + LoCoMo</span>
-          <h2>外部测试交付说明</h2>
-          <p>用于把测试平台交给别人复现 LoCoMo 流程，重点说明路径、记忆后端、模型配置和不要外发 API 密钥。</p>
-        </div>
-      </div>
-
-      <div class="readme-hero">
-        <div>
-          <span class="label">最小启动</span>
-          <h3>进入项目、填配置、预检后启动 Web</h3>
-        </div>
-        <div class="readme-command">
-          <span>推荐命令</span>
-          <code>cp env.example .env.local # OpenViking；EchoMemory 用 env.echomem.example。编辑后执行：source .env.local && ./preflight.sh && ./start.sh</code>
-        </div>
-      </div>
-
-      <div class="readme-section onboarding-guide-section">
-        <div class="section-title-row">
-          <div>
-            <h3>EchoMemory 外部接入操作指南</h3>
-            <p>这里只保留纯文字说明。先明确两点：不是所有后端都只给一个端口就能接；EchoMemory 的图结构和检索逻辑留在后端内部，平台只调用统一导入与检索接口。</p>
-          </div>
-          <div class="panel-actions">
-            <button class="secondary compact-button" type="button" data-view-jump="systemConfigView">去系统配置</button>
-            <button class="secondary compact-button" type="button" data-view-jump="openvikingView">去 LoCoMo 评测</button>
-          </div>
-        </div>
-        <div class="readme-critical">
-          <p><strong>重点：</strong><span class="critical-text">不要把 EchoMemory 理解成“只要给平台一个端口就能接”。</span>当前 EchoMemory 是本地 SDK + 源码目录 + workspace 的接法。</p>
-          <p><strong>重点：</strong><span class="critical-text">不要一上来全量跑。</span>先导入 <code>conv-30</code>，先测 5 到 10 题，确认检索、回答和判分都通，再扩到正式数据。</p>
-          <p><strong>重点：</strong><span class="critical-text">真实密钥只放在 <code>.env.local</code> 或页面密码框。</span>不要写进日志、报告、提交记录或共享说明。</p>
-        </div>
-        <div class="readme-text-stack onboarding-text-stack">
-          <article class="readme-card primary">
-            <span>接入结论</span>
-            <ul>
-              <li>OpenViking 偏 HTTP 服务型，对接重点是 host / port。</li>
-              <li>EchoMemory 当前按本地 SDK + 源码目录 + workspace 对接，不是单独暴露一个统一检索端口。</li>
-              <li>大多数外部接入不需要改 Web 检索逻辑。</li>
-            </ul>
-          </article>
-          <article class="readme-card primary">
-            <span>默认数据路径</span>
-            <ul>
-              <li>优先读取 <code>LOCOMO_DATA</code>。</li>
-              <li>其次读取 <code>dataset/full/locomo.json</code>。</li>
-              <li>再回退到 <code>dataset/locomo.json</code> 和 <code>dataset/locomo10.json</code>。</li>
-            </ul>
-          </article>
-          <article class="readme-card primary">
-            <span>外部团队真要改代码</span>
-            <ul>
-              <li>优先看 <code>scripts/echomemory_common.py</code>。</li>
-              <li>任务拼装和默认 QA 参数在 <code>memory/plugins/echomemory/tasks.py</code>。</li>
-              <li>如果只是换密钥、workspace、模型地址，不需要改平台代码。</li>
-            </ul>
-          </article>
-        </div>
-
-        <div class="readme-text-stack onboarding-text-stack">
-          <article class="readme-card primary">
-            <span>步骤 1. 先在系统配置切到 EchoMemory</span>
-            <ul>
-              <li>当前账户的记忆后端切到 <code>EchoMemory</code>。</li>
-              <li>确认 EchoMemory 源码目录能被识别，workspace / account / user / agent 是本机要跑的值。</li>
-              <li>至少把 Agent、判分、记忆注入模型做一次连通性测试。</li>
-            </ul>
-            <p class="critical-note">关键检查：<span class="critical-text">当前账户后端必须已经切到 EchoMemory。</span>如果这里还是 OpenViking，后面的导入和 QA 会走错链路。</p>
-          </article>
-          <article class="readme-card primary">
-            <span>步骤 2. 先导入 conv-30，不要一上来全量跑</span>
-            <ul>
-              <li>先校验 LoCoMo JSON。</li>
-              <li>推荐先导入 <code>conv-30</code>。</li>
-              <li>EchoMemory 导入模式先用“快速注入（推荐）”。</li>
-              <li>优先勾选自动生成新的 workspace，避免污染旧记忆空间。</li>
-              <li>导入完成后看 <code>expected_messages</code>、<code>submitted_messages</code>、<code>commit_session</code> 和完整性状态。</li>
-            </ul>
-            <p class="critical-note">关键检查：<span class="critical-text">完整性检查没过时，不要继续做 QA。</span>先回头处理 workspace、会话提交或消息缺失。</p>
-          </article>
-          <article class="readme-card primary">
-            <span>步骤 3. 问答测试先跑 5 到 10 题，再判分</span>
-            <ul>
-              <li>对话范围先选 <code>conv-30</code>。</li>
-              <li>先跑 5 到 10 题，确认每题都能产出回答、上下文和相关记忆。</li>
-              <li>确认回答模型能返回结果，再跑判分，最后导出 HTML 报告。</li>
-              <li>如果要测正式数据，再从小样本扩到全量。</li>
-            </ul>
-            <p class="critical-note">关键检查：<span class="critical-text">回答模型不通时，不要先怀疑 EchoMemory 检索。</span>先确认模型地址、模型名、密钥和超时配置。</p>
-          </article>
-        </div>
-
-        <div class="readme-text-stack onboarding-text-stack">
-          <article class="readme-card primary">
-            <span>平台到底要求 EchoMemory 提供什么</span>
-            <ul>
-              <li>写入：<code>create_session</code>、<code>add_message</code>、<code>commit_session</code></li>
-              <li>检索：<code>find</code>、<code>search</code></li>
-              <li>evidence 至少能提供 <code>content</code>，以及 <code>uri/source_uri</code>、<code>score/confidence</code> 这一类字段</li>
-            </ul>
-          </article>
-          <article class="readme-card primary">
-            <span>平台不关心什么</span>
-            <ul>
-              <li>图结构怎么建</li>
-              <li>向量索引怎么切分</li>
-              <li><code>find</code> / <code>search</code> 内部怎么路由</li>
-              <li>是图召回、向量召回还是混合召回</li>
-            </ul>
-          </article>
-          <article class="readme-card primary">
-            <span>给外部测试者的一页版清单</span>
-            <ul>
-              <li>放 LoCoMo 数据到默认路径。</li>
-              <li>复制 <code>env.echomem.example</code> 到 <code>.env.local</code>。</li>
-              <li>填 <code>ECHOMEM_ROOT</code>、workspace、account、user、agent、模型地址和密钥。</li>
-              <li>运行 <code>./preflight.sh</code>、<code>./start.sh</code>，然后按“系统配置 - 导入 conv-30 - 少量 QA - 判分 - 报告”的顺序走。</li>
-            </ul>
-          </article>
-        </div>
-      </div>
-
-      <div class="readme-section">
-        <div class="section-title-row">
-          <div>
-            <h3>交付边界</h3>
-            <p>当前平台只包含一个自定义 Agent、OpenViking 基线和 EchoMemory 接入。Agent 负责对话、上下文组装、证据展示和 LoCoMo QA；记忆系统只通过统一接口被调用。</p>
-          </div>
-          <div class="panel-actions">
-            <button class="secondary compact-button" type="button" id="runDeliveryBoundaryReadme">刷新边界</button>
-          </div>
-        </div>
-        <div class="report-kv">
-          <article><span>Agent</span><strong>MemoryBench Agent</strong></article>
-          <article><span>后端范围</span><strong>OpenViking baseline / EchoMemory</strong></article>
-          <article><span>Public UI Contract</span><strong>web/ui_contract.json</strong></article>
-          <article><span>主评测</span><strong>LoCoMo</strong></article>
-          <article><span>安全边界</span><strong>不回显 API 密钥</strong></article>
-        </div>
-        <div class="handoff-audit-panel" id="deliveryBoundaryReadmePanel">
-          <article class="handoff-audit-card muted">
-            <span>等待检查</span>
-            <strong>服务启动后自动读取</strong>
-            <p>这张门禁可以复制给外部测试者，不包含真实密钥和本机私有路径。</p>
-          </article>
-        </div>
-      </div>
-
-      <div class="readme-section handoff-dashboard-section">
-        <div class="section-title-row">
-          <div>
-            <h3>交付驾驶舱</h3>
-            <p>给外部测试者看的第一屏：当前能不能接 EchoMemory、跑 LoCoMo、生成报告，以及哪些内容不能外发。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runHandoffDashboardReadme">刷新驾驶舱</button>
-        </div>
-        <div class="handoff-dashboard-panel" id="handoffDashboardReadmePanel">
-          <article class="handoff-dashboard-card muted">
-            <span>等待检查</span>
-            <strong>服务启动后自动读取</strong>
-            <p>这张驾驶舱可以复制给外部测试者，不包含真实密钥和本机路径。</p>
-          </article>
-        </div>
-      </div>
-
-      <div class="readme-section github-launch-section">
-        <div class="section-title-row">
-          <div>
-            <h3>GitHub Launch Kit</h3>
-            <p>一键生成开源 README 首屏、Mermaid 架构图、核验复现命令、Issue 模板状态和安全边界。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runGithubLaunchKitReadme">生成发布材料</button>
-        </div>
-        <div class="github-launch-panel" id="githubLaunchKitReadmePanel">
-          <article class="github-launch-card muted">
-            <span>等待生成</span>
-            <strong>服务启动后自动读取</strong>
-            <p>输出可复制 Markdown 文本，不包含真实密钥和本机路径。</p>
-          </article>
-        </div>
-      </div>
-
-      <div class="readme-section open-source-docs-section">
-        <div class="section-title-row">
-          <div>
-            <h3>开源协作材料</h3>
-            <p>这些文件必须随源码一起外发，保证别人能安全 fork、提 issue、接入 EchoMemory fork，并知道哪些内容不能提交。</p>
-          </div>
-          <a class="secondary compact-button" href="/product-roadmap.html" target="_blank" rel="noreferrer">查看方案</a>
-        </div>
-        <div class="github-launch-panel open-source-docs-grid">
-          <article class="github-launch-card ok">
-            <span>License</span>
-            <strong>LICENSE</strong>
-            <p>MIT license，降低外部 fork、二次接入和 demo 复现的不确定性。</p>
-          </article>
-          <article class="github-launch-card ok">
-            <span>Contribute</span>
-            <strong>CONTRIBUTING.md</strong>
-            <p>写清 preflight、静态镜像、OpenViking 基线、EchoMemory 接入边界，以及不要提交密钥和 runs。</p>
-          </article>
-          <article class="github-launch-card ok">
-            <span>Security</span>
-            <strong>SECURITY.md</strong>
-            <p>说明 API 密钥、workspace、路径接口、报告导出和私有数据泄露的披露方式。</p>
-          </article>
-          <article class="github-launch-card ok">
-            <span>社区</span>
-            <strong>CODE_OF_CONDUCT.md</strong>
-            <p>约束 issue / PR 讨论，避免泄露密钥、私有路径、私有数据或误导 benchmark 结果。</p>
-          </article>
-          <article class="github-launch-card ok">
-            <span>发布</span>
-            <strong>PUBLICATION_CHECKLIST.md</strong>
-            <p>发布前逐项确认“可外发 / 不外发 / 演示报告”边界，避免把历史产物和真实 workspace 发出去。</p>
-          </article>
-          <article class="github-launch-card warn">
-            <span>门禁</span>
-            <strong>已纳入 ./preflight.sh</strong>
-            <p>缺少这些文件或缺少关键安全口径时，交付审计会失败。</p>
-          </article>
-          <article class="github-launch-card ok">
-            <span>CI</span>
-            <strong>.github/workflows/preflight.yml</strong>
-            <p>PR 和 main/master push 自动跑 Python/Node 语法、静态镜像、交付边界和安全门禁。</p>
-          </article>
-          <article class="github-launch-card ok">
-            <span>PR</span>
-            <strong>.github/pull_request_template.md</strong>
-            <p>要求提交者说明影响范围、脱敏状态、preflight 输出和已知限制。</p>
-          </article>
-        </div>
-      </div>
-
-      <div class="readme-section readiness-section">
-        <div class="section-title-row">
-          <div>
-            <h3>当前启动门禁</h3>
-            <p>给外部测试者看这一块最直接：红色先修，黄色确认，绿色再开始跑。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runReadinessReadme">刷新门禁</button>
-        </div>
-        <div class="readiness-panel" id="readinessReadmePanel">
-          <article class="readiness-card muted">
-            <span>等待检查</span>
-            <strong>服务启动后自动读取</strong>
-            <p>门禁通过不等于 benchmark 已完成，只表示当前环境可以开始测试。</p>
-          </article>
-        </div>
-      </div>
-
-      <div class="readme-section acceptance-matrix-section">
-        <div class="section-title-row">
-          <div>
-            <h3>外部验收矩阵</h3>
-            <p>给测试同学确认：当前包是否真的可接 EchoMemory、跑 LoCoMo、生成报告，并且交付边界只保留 OpenViking 基线与 EchoMemory 接入。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runAcceptanceMatrixReadme">刷新验收</button>
-        </div>
-        <div class="acceptance-matrix-panel" id="acceptanceMatrixReadmePanel">
-          <article class="acceptance-card muted">
-            <span>等待检查</span>
-            <strong>服务启动后自动读取</strong>
-            <p>这张表可以复制给外部测试者，不包含真实密钥和本机路径。</p>
-          </article>
-        </div>
-      </div>
-      <div class="readme-section smoke-plan-section">
-        <div class="section-title-row">
-          <div>
-            <h3>小样本核验控制台</h3>
-            <p>给测试同学一张可复制的低成本测试路线：先看门禁，再导入推荐 conv，最后跑 1 题/10 题 QA 和报告。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runSmokePlanReadme">生成计划</button>
-        </div>
-        <div class="smoke-plan-panel" id="smokePlanReadmePanel">
-          <article class="smoke-plan-card muted">
-            <span>等待生成</span>
-            <strong>服务启动后自动读取</strong>
-            <p>这张计划可以复制给外部测试者，不包含真实密钥和本机路径。</p>
-          </article>
-        </div>
-      </div>
-
-      <div class="readme-section handoff-package-section">
-        <div class="section-title-row">
-          <div>
-            <h3>外发清单</h3>
-            <p>给测试同学看哪些源码和模板可以带走，哪些历史运行、workspace 和密钥必须留在本机。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runHandoffPackageReadme">生成清单</button>
-        </div>
-        <div class="handoff-package-panel" id="handoffPackageReadmePanel">
-          <article class="handoff-package-card muted">
-            <span>等待生成</span>
-            <strong>服务启动后自动读取</strong>
-            <p>清单可以复制给外部测试者，不包含真实密钥和本机路径。</p>
-          </article>
-        </div>
-      </div>
-
-      <div class="readme-section setup-pack-section">
-        <div class="section-title-row">
-          <div>
-            <h3>接入配置向导</h3>
-            <p>复制模板到本机填写，避免把真实密钥写进交付目录。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runSetupPackReadme">生成配置模板</button>
-        </div>
-        <div class="setup-pack-panel" id="setupPackReadmePanel">
-          <article class="setup-pack-card muted">
-            <span>等待生成</span>
-            <strong>服务启动后自动生成</strong>
-            <p>模板只包含占位符和当前路径，不包含真实 key。</p>
-          </article>
-        </div>
-      </div>
-
-      <div class="readme-section adapter-doctor-section">
-        <div class="section-title-row">
-          <div>
-            <h3>记忆后端自检</h3>
-            <p>给外部测试者确认：当前交付只包含 OpenViking 基线和 EchoMemory 接入。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runAdapterDoctorReadme">运行自检</button>
-        </div>
-        <div class="handoff-audit-panel" id="adapterDoctorReadmePanel">
-          <article class="handoff-audit-card muted">
-            <span>等待自检</span>
-            <strong>服务启动后自动读取</strong>
-            <p>结果可以复制给外部测试者，不包含真实密钥和本机路径。</p>
-          </article>
-        </div>
-      </div>
-
-      <div class="readme-section echomem-contract-section">
-        <div class="section-title-row">
-          <div>
-            <h3>EchoMemory 接入契约</h3>
-            <p>给外部测试者确认：自己的 EchoMemory fork 是否满足平台调用协议。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runEchoMemContractReadme">检查契约</button>
-        </div>
-        <div class="handoff-audit-panel" id="echomemContractReadmePanel">
-          <article class="handoff-audit-card muted">
-            <span>等待检查</span>
-            <strong>服务启动后自动读取</strong>
-            <p>通过后再做 LoCoMo 导入、QA 和判分。</p>
-          </article>
-        </div>
-      </div>
-
-      <div class="readme-section agent-alignment-section">
-        <div class="section-title-row">
-          <div>
-            <h3>Agent 可比性门禁</h3>
-            <p>给外部测试者确认：正式 LoCoMo 分数是否来自 VikingBoat 可比的 MemoryBench Agent 配置。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runAgentAlignmentReadme">刷新门禁</button>
-        </div>
-        <div class="handoff-audit-panel" id="agentAlignmentReadmePanel">
-          <article class="handoff-audit-card muted">
-            <span>等待检查</span>
-            <strong>服务启动后自动读取</strong>
-            <p>结果可以复制给外部测试者，不包含真实密钥和本机私有路径。</p>
-          </article>
-        </div>
-      </div>
-      <div class="readme-section account-isolation-section">
-        <div class="section-title-row">
-          <div>
-            <h3>账户隔离门禁</h3>
-            <p>给外部测试者确认：当前 account 是否独占 workspace，OpenViking / EchoMemory 目录布局是否可验证。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runAccountIsolationReadme">刷新隔离</button>
-        </div>
-        <div class="handoff-audit-panel" id="accountIsolationReadmePanel">
-          <article class="handoff-audit-card muted">
-            <span>等待检查</span>
-            <strong>服务启动后自动读取</strong>
-            <p>结果可以复制给外部测试者，不包含真实密钥和本机私有路径。</p>
-          </article>
-        </div>
-      </div>
-
-      <div class="readme-grid">
-        <article class="readme-card primary">
-          <span>1. 项目与运行环境</span>
-          <ul>
-            <li>项目目录：当前 <code>locomo-eval-web</code> 或外发后的同名目录。</li>
-            <li>Python：建议 Python 3.11+，能直接运行 <code>server.py</code>。</li>
-            <li>浏览器入口：打开 <code>http://127.0.0.1:19181/</code>，不要直接打开 HTML 文件。</li>
-          </ul>
-        </article>
-        <article class="readme-card primary">
-          <span>2. LoCoMo 数据集</span>
-          <ul>
-            <li>项目内置数据集放在 <code>dataset/</code>，由 <code>dataset/manifest.json</code> 注册。</li>
-            <li>在“数据集”页选择卡片后点“校验数据集”；不需要用户单独下载或填写本机绝对路径。</li>
-            <li>支持 LoCoMo 列表格式 JSON；如果不是 10 个对话，也应该能校验出样本数、问题数和分类分布。</li>
-          </ul>
-        </article>
-        <article class="readme-card primary">
-          <span>3. 记忆后端</span>
-          <ul>
-            <li>当前交付只包含 OpenViking 基线和 EchoMemory 接入。</li>
-            <li>OpenViking：作为基线对照，填写服务地址、端口、workspace 和 account。</li>
-            <li>EchoMemory：作为外部接入主线，填写 <code>ECHOMEM_ROOT</code>、workspace、account、user、agent。</li>
-            <li>系统配置页先点“运行预检”，确认记忆后端、workspace、数据集和模型配置都可用。</li>
-            <li>每次正式实验建议使用新的 workspace 或新的 account，避免历史记忆污染。</li>
-          </ul>
-        </article>
-        <article class="readme-card primary">
-          <span>4. 模型配置</span>
-          <ul>
-            <li>向量模型：EchoMemory 抽取和检索需要 embedding provider。</li>
-            <li>EchoMemory SDK：<code>ECHOMEM_ROOT</code> 必须指向包含 <code>packages/echomem/src</code> 和 <code>packages/echofs/src</code> 的源码目录。</li>
-            <li>回答模型/判分：使用兼容 OpenAI Chat Completions 的地址、模型和密钥。</li>
-            <li>API 密钥 只填到本机 <code>.env.local</code> 或 Web 密码框，不要写进报告、日志或截图。</li>
-          </ul>
-        </article>
-        <article class="readme-card primary">
-          <span>5. 输出与安全</span>
-          <ul>
-            <li>评测输出：项目下的 <code>runs/</code>，外发目录中不应包含历史运行结果。</li>
-            <li>空间与后端状态：<code>runs/accounts.json</code>，不保存 API 密钥。</li>
-            <li>长期记忆落盘：OpenViking 在 workspace 下，EchoMemory 在 EchoMemory workspace 下。</li>
-            <li>每次任务通常包含日志、结果文件、摘要和 HTML 报告文件（<code>report.html</code>）。</li>
-          </ul>
-        </article>
-      </div>
-
-      <div class="readme-section">
-        <div class="section-title-row">
-          <h3>跑通流程</h3>
-          <p>按顺序执行，方便定位问题。</p>
-        </div>
-        <div class="readme-flow">
-          <article>
-            <strong>1</strong>
-            <span>预检并启动服务</span>
-            <p>先运行 <code>./preflight.sh</code>，通过后再启动 Web，并打开 <code>/health</code> 确认服务可用。</p>
-          </article>
-          <article>
-            <strong>2</strong>
-            <span>记忆导入</span>
-            <p>填写 LoCoMo JSON，校验数据集，选择 conv，导入并检查完整性。</p>
-          </article>
-          <article>
-            <strong>3</strong>
-            <span>问答测试</span>
-            <p>选择单题、多题、时间题或错题，查看回答、Token 用量和相关记忆。</p>
-          </article>
-          <article>
-            <strong>4</strong>
-            <span>判分</span>
-            <p>运行判分模型，显示进度、待判分数量和补跑入口。</p>
-          </article>
-          <article>
-            <strong>5</strong>
-            <span>查看报告</span>
-            <p>导出 HTML 报告，查看历史报告，并选择多次任务做对比。</p>
-          </article>
-        </div>
-      </div>
-
-      <div class="readme-two-col">
-        <section class="readme-card">
-          <span>记忆服务接入要求</span>
-          <ul>
-            <li>能创建/追加会话消息，并在需要时生成长期记忆。</li>
-            <li>归档后记忆应落在当前空间对应的目录下面。</li>
-            <li>问答阶段要能返回答案、用量、证据记忆和日志。</li>
-            <li>如果 EchoMemory fork 改了图记忆模块，优先保证 evidence 结构稳定，这样报告和详情页才能继续展示。</li>
-          </ul>
-        </section>
-        <section class="readme-card">
-          <span>EchoMemory 接入接口</span>
-          <ul>
-            <li><code>open_runtime</code> 用于加载 EchoMemory runtime 配置。</li>
-            <li><code>create_session</code>、<code>add_message</code>、<code>commit_session</code> 负责导入和归档。</li>
-            <li><code>find</code> / <code>search</code> 负责 QA 阶段相关记忆检索。</li>
-            <li>图记忆模块可以放在 EchoMemory 内部实现，平台只消费统一 evidence 结构。</li>
-          </ul>
-        </section>
-      </div>
-
-      <div class="readme-two-col">
-        <section class="readme-card">
-          <span>外发包不应包含</span>
-          <ul>
-            <li><code>runs/</code> 历史运行结果和日志。</li>
-            <li><code>judge.conf</code>、<code>.env.local</code>、真实 runtime yaml。</li>
-            <li>OpenViking / EchoMemory workspace。</li>
-            <li>任何真实 <code>sk-...</code>、Bearer 密钥或模型服务密钥。</li>
-          </ul>
-        </section>
-        <section class="readme-card">
-          <span>外发前扫描</span>
-          <ul>
-            <li>在交付目录运行密钥扫描，确认只出现占位符。</li>
-            <li>保留 <code>env.echomem.example</code>，不要保留 <code>.env.local</code>。</li>
-            <li>如需分享报告，先确认报告里没有密钥、私有路径或敏感业务数据。</li>
-          </ul>
-        </section>
-      </div>
-
-      <div class="readme-section handoff-audit-section">
-        <div class="section-title-row">
-          <div>
-            <h3>外发前一键审计</h3>
-            <p>检查当前交付入口，不扫描历史运行和旧输出目录。</p>
-          </div>
-          <button class="secondary compact-button" type="button" id="runHandoffAuditReadme">运行审计</button>
-        </div>
-        <div class="handoff-audit-panel" id="handoffAuditReadmePanel">
-          <article class="handoff-audit-card muted">
-            <span>等待审计</span>
-            <strong>确认再外发</strong>
-            <p>如果这里出现必需失败，先修复再给别人测试。</p>
-          </article>
-        </div>
-      </div>
-
-      <div class="readme-section">
-        <div class="section-title-row">
-          <h3>路径速查</h3>
-          <p>把示例路径替换成实际路径。</p>
-        </div>
-        <div class="readme-paths">
-          <div class="path-row">
-            <span>Web URL</span>
-            <code>http://127.0.0.1:19181/</code>
-            <button class="path-copy" type="button" data-copy="http://127.0.0.1:19181/">复制</button>
-          </div>
-          <div class="path-row">
-            <span>Health</span>
-            <code>http://127.0.0.1:19181/health</code>
-            <button class="path-copy" type="button" data-copy="http://127.0.0.1:19181/health">复制</button>
-          </div>
-          <div class="path-row">
-            <span>结果目录</span>
-            <code>&lt;project&gt;/runs</code>
-            <button class="path-copy" type="button" data-copy="<project>/runs">复制</button>
-          </div>
-          <div class="path-row">
-            <span>EchoMemory 模板</span>
-            <code>env.echomem.example</code>
-            <button class="path-copy" type="button" data-copy="env.echomem.example">复制</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="readme-section">
-        <div class="section-title-row">
-          <h3>常见问题</h3>
-          <p>先定位到数据、服务、模型或判分。</p>
-        </div>
-        <div class="readme-grid compact">
-          <article class="readme-card">
-            <span>页面打不开</span>
-            <p>确认不是 <code>file://</code>，然后检查 <code>/health</code>。如果 health 不通，重启 <code>server.py</code>。</p>
-          </article>
-          <article class="readme-card">
-            <span>记忆后端连接失败</span>
-            <p>OpenViking 先检查服务地址和端口；EchoMemory 先检查 <code>ECHOMEM_ROOT</code>、依赖环境和 workspace 权限。</p>
-          </article>
-          <article class="readme-card">
-            <span>准确率为空</span>
-            <p>问答完成但还没判分时会显示“待判分”。先运行判分，再看准确率。</p>
-          </article>
-          <article class="readme-card">
-            <span>EchoMemory 检索为空</span>
-            <p>确认导入和 QA 阶段使用相同 workspace、account、user、agent；任一项不同都会变成干净记忆空间。</p>
-          </article>
-          <article class="readme-card">
-            <span>记忆不完整</span>
-            <p>看导入摘要、会话目录、历史文件和长期记忆文件；必要时换干净目录重新导入。</p>
-          </article>
-        </div>
-      </div>
-    </section>
   </main>
   <div class="toast" id="toast"></div>
-  <script src="/app.js?v=20260611uixlate13"></script>
+  <script src="/app.js?v=20260622workspacepaths01"></script>
+  <script>
+    (() => {
+      function parseProgressLabel(value) {
+        const match = String(value || "").match(/(\d+)\s*\/\s*(\d+)/);
+        if (!match) return null;
+        const current = Number(match[1] || 0);
+        const total = Number(match[2] || 0);
+        return { current, total, pct: total > 0 ? Math.max(0, Math.min(100, (current / total) * 100)) : 0 };
+      }
+
+      async function readHotpotQaLiveDoc(frame) {
+        const liveDoc = frame?.contentDocument;
+        if (liveDoc?.querySelector("article.card")) return liveDoc;
+        const response = await fetch("/generated-reports/hotpotqa_echomemory_live_current.html", { cache: "no-store" });
+        if (!response.ok) throw new Error(`live report unavailable: ${response.status}`);
+        const text = await response.text();
+        return new DOMParser().parseFromString(text, "text/html");
+      }
+
+      function readLiveReportCard(doc, label) {
+        if (!doc) return "";
+        const cards = Array.from(doc.querySelectorAll("article.card"));
+        const card = cards.find((item) => item.querySelector(".label")?.textContent?.trim() === label);
+        return card?.querySelector(".stat")?.textContent?.trim() || "";
+      }
+
+      function readStrongCodeValue(doc, label) {
+        if (!doc) return "";
+        const strongs = Array.from(doc.querySelectorAll("strong"));
+        const strong = strongs.find((item) => item.textContent?.trim() === label);
+        const valueNode = strong?.nextElementSibling;
+        return valueNode?.textContent?.trim() || "";
+      }
+
+      function readLiveWarningLines(doc) {
+        if (!doc) return [];
+        const sections = Array.from(doc.querySelectorAll("section.card"));
+        const warningSection = sections.find((item) => item.querySelector("strong")?.textContent?.trim() === "运行风险提示");
+        if (!warningSection) return [];
+        return Array.from(warningSection.querySelectorAll("p")).map((item) => item.textContent?.trim() || "").filter(Boolean);
+      }
+
+      function readArtifactStatuses(doc) {
+        if (!doc) return [];
+        const sections = Array.from(doc.querySelectorAll("section.card"));
+        const artifactSection = sections.find((item) => item.querySelector("strong")?.textContent?.trim() === "最终产物状态");
+        if (!artifactSection) return [];
+        const labels = Array.from(artifactSection.querySelectorAll(".path-grid strong"));
+        return labels.map((strong) => {
+          const label = strong.textContent?.trim() || "";
+          const value = strong.nextElementSibling?.textContent?.trim() || "";
+          return label && value ? `${label} ${value}` : "";
+        }).filter(Boolean);
+      }
+
+      function renderHotpotQaLiveKpis(rows) {
+        const kpis = document.getElementById("hotpotQaKpis");
+        if (!kpis) return;
+        const visibleRows = (rows || []).filter(([, value]) => value !== undefined && value !== null && value !== "");
+        kpis.innerHTML = visibleRows.map(([label, value]) => `
+          <div class="kpi"><span>${label}</span><strong>${value}</strong></div>
+        `).join("");
+        kpis.hidden = !visibleRows.length;
+      }
+
+      async function readActiveHotpotQaTaskState() {
+        try {
+          const response = await fetch("/api/tasks", { cache: "no-store" });
+          const data = await response.json();
+          const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
+          const activeStatuses = new Set(["queued", "running", "starting"]);
+          const activeTask = tasks.find((task) => {
+            const format = String(task?.dataset_format || "").trim().toLowerCase();
+            const status = String(task?.status || "").trim().toLowerCase();
+            return format === "hotpotqa" && activeStatuses.has(status);
+          });
+          return {
+            active: Boolean(activeTask),
+            taskId: String(activeTask?.id || "").trim(),
+          };
+        } catch (_) {
+          return { active: false, taskId: "" };
+        }
+      }
+
+      async function syncHotpotQaDiagnosticDigest() {
+        const digest = document.getElementById("hotpotQaProblemDigest");
+        const configBox = document.getElementById("hotpotQaRunConfig");
+        const healthBox = document.getElementById("hotpotQaRunHealth");
+        if (!digest) return;
+        const taskState = await readActiveHotpotQaTaskState();
+        const hasActiveTask = Boolean(taskState.active);
+        if (!hasActiveTask) {
+          if (digest.dataset.hotpotqaIdleRendered === "1" && configBox?.dataset.hotpotqaIdleRendered === "1" && healthBox?.dataset.hotpotqaIdleRendered === "1") {
+            return;
+          }
+          digest.dataset.hotpotqaIdleRendered = "1";
+          if (configBox) configBox.dataset.hotpotqaIdleRendered = "1";
+          if (healthBox) healthBox.dataset.hotpotqaIdleRendered = "1";
+          digest.innerHTML = `
+            <p><strong>问题样本摘要</strong></p>
+            <p>当前没有运行中的 HotpotQA 任务。</p>
+          `;
+          if (configBox) {
+            configBox.innerHTML = `
+              <p><strong>当前运行配置</strong></p>
+              <p>当前没有运行中的 HotpotQA 任务。</p>
+            `;
+          }
+          if (healthBox) {
+            healthBox.innerHTML = `
+              <p><strong>当前运行健康</strong></p>
+              <p>当前没有运行中的 HotpotQA 任务。</p>
+            `;
+          }
+          return;
+        }
+        digest.dataset.hotpotqaIdleRendered = "0";
+        if (configBox) configBox.dataset.hotpotqaIdleRendered = "0";
+        if (healthBox) healthBox.dataset.hotpotqaIdleRendered = "0";
+        try {
+          const response = await fetch("/generated-reports/hotpotqa_echomemory_live_diagnostic_current.html", { cache: "no-store" });
+          const text = await response.text();
+          const doc = new DOMParser().parseFromString(text, "text/html");
+          const pathGrid = doc.querySelector(".path-grid");
+          const pathPairs = pathGrid ? Array.from(pathGrid.querySelectorAll("strong")).map((strong) => {
+            const label = strong.textContent?.trim() || "";
+            const value = strong.nextElementSibling?.textContent?.trim() || "";
+            return { label, value };
+          }).filter((item) => item.label && item.value) : [];
+          if (configBox) {
+            const keepLabels = new Set(["Task ID", "Run Dir", "当前样本", "更新于", "运行态新鲜度", "Import Timeout", "Settle Timeout", "Stable Hits", "Timed Out", "Commit Call Timeout"]);
+            const visiblePairs = pathPairs.filter((item) => keepLabels.has(item.label));
+            configBox.innerHTML = `
+              <p><strong>当前运行配置</strong></p>
+              ${visiblePairs.length ? `<p>${visiblePairs.map((item) => `${item.label} ${item.value}`).join(" · ")}</p>` : "<p>当前还没有读取到运行配置。</p>"}
+              <p><a href="/generated-reports/hotpotqa_echomemory_live_diagnostic_current.html" target="_blank" rel="noreferrer">打开诊断页</a> · <a href="/generated-reports/hotpotqa_echomemory_live_current.html" target="_blank" rel="noreferrer">打开 Live 报告</a></p>
+            `;
+          }
+          if (healthBox) {
+            const metricsLabels = new Set(["当前进度", "当前阶段", "运行态新鲜度", "pending_async", "import_failed"]);
+            const statCards = Array.from(doc.querySelectorAll(".stat-card"));
+            const metrics = statCards.map((card) => {
+              const label = card.querySelector(".stat-label")?.textContent?.trim() || "";
+              const value = card.querySelector(".stat-value")?.textContent?.trim() || "";
+              return { label, value };
+            }).filter((item) => metricsLabels.has(item.label) && item.value);
+            const healthPairs = pathPairs.filter((item) => new Set(["当前样本", "更新于", "Stable Hits", "Timed Out"]).has(item.label));
+            const warningLines = Array.from(doc.querySelectorAll(".callout")).map((item) => item.textContent?.trim() || "").filter(Boolean).slice(0, 6);
+            healthBox.innerHTML = `
+              <p><strong>当前运行健康</strong></p>
+              ${metrics.length ? `<p>${metrics.map((item) => `${item.label} ${item.value}`).join(" · ")}</p>` : "<p>当前还没有读取到运行健康摘要。</p>"}
+              ${healthPairs.length ? `<p>${healthPairs.map((item) => `${item.label} ${item.value}`).join(" · ")}</p>` : ""}
+              ${warningLines.length ? `<p class="bad-text">${warningLines.join(" ")}</p>` : "<p>当前没有额外健康告警。</p>"}
+              <p><a href="/generated-reports/hotpotqa_echomemory_live_diagnostic_current.html" target="_blank" rel="noreferrer">打开诊断页</a> · <a href="/generated-reports/hotpotqa_echomemory_live_current.html" target="_blank" rel="noreferrer">打开 Live 报告</a></p>
+            `;
+          }
+          const snapshot = doc.getElementById("diagnosticSnapshotSection");
+          const snapshotPairs = snapshot ? Array.from(snapshot.querySelectorAll(".path-grid strong")).slice(0, 6).map((strong) => {
+            const label = strong.textContent?.trim() || "";
+            const value = strong.nextElementSibling?.textContent?.trim() || "";
+            return label && value ? `${label} ${value}` : "";
+          }).filter(Boolean) : [];
+          const cards = Array.from(doc.querySelectorAll(".problem-detail-card")).slice(0, 3).map((card) => {
+            const qid = card.getAttribute("data-question-id") || card.querySelector("h3")?.textContent?.trim() || "-";
+            const paragraphs = Array.from(card.querySelectorAll("p")).map((p) => p.textContent?.trim() || "").filter(Boolean);
+            return `
+              <article class="memory-hit">
+                <strong>${qid}</strong>
+                ${paragraphs.slice(0, 3).map((line) => `<p>${line}</p>`).join("")}
+              </article>
+            `;
+          });
+          digest.innerHTML = `
+            <p><strong>问题样本摘要</strong></p>
+            ${snapshotPairs.length ? `<p>${snapshotPairs.join(" · ")}</p>` : "<p>当前没有可用快照摘要。</p>"}
+            ${cards.length ? cards.join("") : "<p>当前没有新的问题样本详情。</p>"}
+            <p><a href="/generated-reports/hotpotqa_echomemory_live_diagnostic_current.html" target="_blank" rel="noreferrer">打开完整诊断页</a></p>
+          `;
+        } catch (_) {
+          digest.innerHTML = `<p><strong>问题样本摘要</strong></p><p>暂时还没有读取到诊断页内容。</p>`;
+          if (configBox) {
+            configBox.innerHTML = `<p><strong>当前运行配置</strong></p><p>暂时还没有读取到运行配置。</p>`;
+          }
+          if (healthBox) {
+            healthBox.innerHTML = `<p><strong>当前运行健康</strong></p><p>暂时还没有读取到运行健康摘要。</p>`;
+          }
+        }
+      }
+
+      async function syncHotpotQaLiveSummary() {
+        if (document.body?.dataset?.hotpotqaLaunchBlocked === "1") return;
+        const frame = document.getElementById("hotpotQaLiveInlineFrame");
+        const liveSection = frame?.closest(".benchmark-live-embed");
+        const idleBox = document.getElementById("hotpotQaLiveInlineIdle");
+        const progressText = document.getElementById("hotpotQaProgressText");
+        const progressBar = document.getElementById("hotpotQaProgressBar");
+        const status = document.getElementById("hotpotQaStatus");
+        const meta = document.getElementById("hotpotQaLiveInlineMeta");
+        const nativeSummary = document.getElementById("hotpotQaNativeSummary");
+        const artifactStatus = document.getElementById("hotpotQaArtifactStatus");
+        const taskState = await readActiveHotpotQaTaskState();
+        const hasActiveTask = Boolean(taskState.active);
+        document.body.dataset.hotpotqaLiveActive = hasActiveTask ? "1" : "0";
+        document.body.dataset.hotpotqaLiveTaskId = taskState.taskId || "";
+        if (!hasActiveTask) {
+          if (document.body.dataset.hotpotqaLiveIdleRendered === "1") return;
+          document.body.dataset.hotpotqaLiveIdleRendered = "1";
+          if (liveSection) liveSection.hidden = false;
+          if (idleBox) idleBox.hidden = false;
+          if (frame) frame.hidden = true;
+          if (progressText) progressText.textContent = "当前没有运行中的 HotpotQA 任务";
+          if (progressBar) {
+            progressBar.style.width = "0%";
+            progressBar.style.animation = "none";
+          }
+          if (status) {
+            status.innerHTML = `
+              <p><strong>HotpotQA 当前空闲</strong></p>
+              <p class="dataset-next-step">当前没有运行中的 HotpotQA 任务。</p>
+              <p class="dataset-next-step">任务启动后这里会切换为实时进度，不会保留历史快照进度。</p>
+            `;
+          }
+          if (meta) meta.textContent = "当前没有运行中的 HotpotQA 任务";
+          if (nativeSummary) {
+            nativeSummary.innerHTML = `
+              <p><strong>当前没有运行中的 HotpotQA 任务</strong></p>
+              <p>这里只保留空闲状态，不显示历史快照进度。</p>
+            `;
+          }
+          if (artifactStatus) {
+            artifactStatus.innerHTML = `
+              <p><strong>最终产物状态</strong></p>
+              <p>当前没有运行中的 HotpotQA 任务。</p>
+            `;
+          }
+          return;
+        }
+        document.body.dataset.hotpotqaLiveIdleRendered = "0";
+        if (liveSection) liveSection.hidden = false;
+        if (idleBox) idleBox.hidden = true;
+        if (frame) frame.hidden = false;
+        if (!progressText || !progressBar || !status || !meta || !nativeSummary || !artifactStatus) return;
+        let progress = "";
+        let stage = "";
+        let rows = "";
+        let pendingAsync = "";
+        let importFailed = "";
+        let taskId = "";
+        let currentImport = "";
+        let finishEta = "";
+        let freshness = "";
+        let avgInjection = "";
+        let totalInjection = "";
+        let avgQa = "";
+        let totalQa = "";
+        let avgEndToEnd = "";
+        let totalEndToEnd = "";
+        let warnings = [];
+        let artifacts = [];
+        try {
+          const liveDoc = await readHotpotQaLiveDoc(frame);
+          progress = readLiveReportCard(liveDoc, "当前进度");
+          stage = readLiveReportCard(liveDoc, "当前阶段");
+          rows = readLiveReportCard(liveDoc, "结果行数");
+          pendingAsync = readStrongCodeValue(liveDoc, "pending_async 行");
+          importFailed = readStrongCodeValue(liveDoc, "import_failed 行");
+          taskId = readStrongCodeValue(liveDoc, "Task ID");
+          currentImport = readStrongCodeValue(liveDoc, "当前记忆写入");
+          finishEta = readStrongCodeValue(liveDoc, "预计完成");
+          freshness = readStrongCodeValue(liveDoc, "运行态新鲜度");
+          avgInjection = readLiveReportCard(liveDoc, "平均注入时间");
+          totalInjection = readLiveReportCard(liveDoc, "总注入时间");
+          avgQa = readLiveReportCard(liveDoc, "平均 QA 时间");
+          totalQa = readLiveReportCard(liveDoc, "总 QA 时间");
+          avgEndToEnd = readLiveReportCard(liveDoc, "平均端到端");
+          totalEndToEnd = readLiveReportCard(liveDoc, "总端到端");
+          warnings = readLiveWarningLines(liveDoc);
+          artifacts = readArtifactStatuses(liveDoc);
+        } catch (_) {
+          return;
+        }
+        const liveTaskId = taskState.taskId || taskId;
+        if (!progress && !stage && !rows) return;
+        const parsed = parseProgressLabel(progress);
+        if (parsed) progressBar.style.width = `${parsed.pct.toFixed(1)}%`;
+        renderHotpotQaLiveKpis([
+          ["当前进度", progress],
+          ["平均注入", avgInjection],
+          ["总注入", totalInjection],
+          ["平均 QA", avgQa],
+          ["总 QA", totalQa],
+          ["平均端到端", avgEndToEnd],
+          ["总端到端", totalEndToEnd],
+          ["运行态新鲜度", freshness],
+          ["pending_async", pendingAsync],
+          ["import_failed", importFailed],
+        ]);
+        progressText.textContent = [
+          progress ? `Live 进度 ${progress}` : "",
+          stage ? `阶段 ${stage}` : "",
+          rows ? `已写 ${rows} 行` : "",
+        ].filter(Boolean).join(" · ") || "HotpotQA live 已连接";
+        status.innerHTML = `
+          <p><strong>HotpotQA live 进度已接管显示</strong>${liveTaskId ? ` · ${liveTaskId}` : ""}</p>
+          <p class="dataset-next-step">${[
+            progress ? `当前进度 ${progress}` : "",
+            stage ? `当前阶段 ${stage}` : "",
+            rows ? `结果行数 ${rows}` : "",
+            freshness ? `运行态新鲜度 ${freshness}` : "",
+            avgInjection ? `平均注入 ${avgInjection}` : "",
+            avgQa ? `平均 QA ${avgQa}` : "",
+            avgEndToEnd ? `平均端到端 ${avgEndToEnd}` : "",
+            pendingAsync ? `pending_async ${pendingAsync}` : "",
+            importFailed ? `import_failed ${importFailed}` : "",
+          ].filter(Boolean).join(" · ")}</p>
+          ${warnings.length ? `<p class="dataset-next-step bad-text">${warnings.join(" ")}</p>` : ""}
+          <p class="dataset-next-step">上面的数字直接从内嵌 live 报告同步，主任务卡片没刷新时这里仍会继续更新。</p>
+        `;
+        nativeSummary.innerHTML = `
+          <p><strong>当前运行总览</strong>${liveTaskId ? ` · <code>${liveTaskId}</code>` : ""}</p>
+          <p>${[
+            progress ? `进度 ${progress}` : "",
+            stage ? `阶段 ${stage}` : "",
+            rows ? `结果行数 ${rows}` : "",
+            currentImport ? `当前样本 ${currentImport}` : "",
+            freshness ? `运行态新鲜度 ${freshness}` : "",
+            finishEta ? `预计完成 ${finishEta}` : "",
+          ].filter(Boolean).join(" · ")}</p>
+          <p>${[
+            avgInjection ? `平均注入 ${avgInjection}` : "",
+            totalInjection ? `总注入 ${totalInjection}` : "",
+            avgQa ? `平均 QA ${avgQa}` : "",
+            totalQa ? `总 QA ${totalQa}` : "",
+            avgEndToEnd ? `平均端到端 ${avgEndToEnd}` : "",
+            totalEndToEnd ? `总端到端 ${totalEndToEnd}` : "",
+          ].filter(Boolean).join(" · ")}</p>
+          <p>${[
+            pendingAsync ? `pending_async ${pendingAsync}` : "",
+            importFailed ? `import_failed ${importFailed}` : "",
+          ].filter(Boolean).join(" · ")}</p>
+          ${warnings.length ? `<p class="bad-text">${warnings.join(" ")}</p>` : ""}
+          <p><a href="/generated-reports/hotpotqa_echomemory_live_current.html" target="_blank" rel="noreferrer">打开 Live 报告</a> · <a href="/generated-reports/hotpotqa_echomemory_live_diagnostic_current.html" target="_blank" rel="noreferrer">打开诊断页</a> · <a href="/generated-reports/hotpotqa_echomemory_completed_current.html" target="_blank" rel="noreferrer">完成固定报告</a> · <a href="/generated-reports/hotpotqa_echomemory_completed_diagnostic_current.html" target="_blank" rel="noreferrer">完成固定诊断</a></p>
+        `;
+        artifactStatus.innerHTML = `
+          <p><strong>最终产物状态</strong></p>
+          ${artifacts.length ? `<p>${artifacts.join(" · ")}</p>` : "<p>当前还没有读取到最终产物状态。</p>"}
+          <p><a href="/generated-reports/hotpotqa_echomemory_live_current.html" target="_blank" rel="noreferrer">打开 Live 报告</a> · <a href="/generated-reports/hotpotqa_echomemory_completed_current.html" target="_blank" rel="noreferrer">完成固定报告</a></p>
+        `;
+        meta.textContent = [
+          liveTaskId ? `当前任务 ${liveTaskId}` : "",
+          progress ? `进度 ${progress}` : "",
+          rows ? `已写 ${rows} 行` : "",
+          freshness ? `新鲜度 ${freshness}` : "",
+          avgInjection ? `注入 ${avgInjection}` : "",
+          avgQa ? `QA ${avgQa}` : "",
+          pendingAsync ? `pending_async ${pendingAsync}` : "",
+        ].filter(Boolean).join(" · ");
+      }
+
+      function scheduleHotpotQaLiveSummarySync() {
+        const hasActiveTask = document.body?.dataset?.hotpotqaLiveActive === "1";
+        const delay = hasActiveTask ? 5000 : 30000;
+        window.setTimeout(async () => {
+          await syncHotpotQaLiveSummary().catch(() => {});
+          scheduleHotpotQaLiveSummarySync();
+        }, delay);
+      }
+
+      function scheduleHotpotQaDiagnosticDigestSync() {
+        const hasActiveTask = document.body?.dataset?.hotpotqaLiveActive === "1";
+        const delay = hasActiveTask ? 15000 : 45000;
+        window.setTimeout(async () => {
+          await syncHotpotQaDiagnosticDigest().catch(() => {});
+          scheduleHotpotQaDiagnosticDigestSync();
+        }, delay);
+      }
+
+      window.addEventListener("load", () => {
+        const frame = document.getElementById("hotpotQaLiveInlineFrame");
+        if (!frame) return;
+        frame.addEventListener("load", () => { syncHotpotQaLiveSummary().catch(() => {}); });
+        frame.addEventListener("load", () => { syncHotpotQaDiagnosticDigest().catch(() => {}); });
+        syncHotpotQaLiveSummary().catch(() => {});
+        syncHotpotQaDiagnosticDigest().catch(() => {});
+        scheduleHotpotQaLiveSummarySync();
+        scheduleHotpotQaDiagnosticDigestSync();
+      });
+    })();
+  </script>
 </body>
 </html>

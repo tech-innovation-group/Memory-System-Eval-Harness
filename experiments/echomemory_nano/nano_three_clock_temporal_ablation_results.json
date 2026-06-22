@@ -1,0 +1,659 @@
+{
+  "turns": [
+    {
+      "turn_id": "t1",
+      "text": "I signed the venue contract on 2026-03-03, but I'm only telling you now after travel.",
+      "write_time": "2026-03-10T09:00:00Z"
+    },
+    {
+      "turn_id": "t2",
+      "text": "Yesterday I finished the budget proposal for the studio launch.",
+      "write_time": "2026-04-09T18:00:00Z"
+    },
+    {
+      "turn_id": "t3",
+      "text": "Last week we had the partner board meeting about the Rome launch plan.",
+      "write_time": "2026-05-18T10:00:00Z"
+    },
+    {
+      "turn_id": "t4",
+      "text": "Two days ago I finalized the keynote rehearsal.",
+      "write_time": "2026-05-21T08:30:00Z"
+    }
+  ],
+  "records": [
+    {
+      "record_id": "rec-000",
+      "statement": "I signed the venue contract on 2026-03-03, but I'm only telling you now after travel.",
+      "event_time": "2026-03-03",
+      "mention_time": "2026-03-10T09:00:00Z",
+      "write_time": "2026-03-10T09:00:00Z"
+    },
+    {
+      "record_id": "rec-001",
+      "statement": "Yesterday I finished the budget proposal for the studio launch.",
+      "event_time": "2026-04-08",
+      "mention_time": "2026-04-09T18:00:00Z",
+      "write_time": "2026-04-09T18:00:00Z"
+    },
+    {
+      "record_id": "rec-002",
+      "statement": "Last week we had the partner board meeting about the Rome launch plan.",
+      "event_time": "2026-05-11",
+      "mention_time": "2026-05-18T10:00:00Z",
+      "write_time": "2026-05-18T10:00:00Z"
+    },
+    {
+      "record_id": "rec-003",
+      "statement": "Two days ago I finalized the keynote rehearsal.",
+      "event_time": "2026-05-19",
+      "mention_time": "2026-05-21T08:30:00Z",
+      "write_time": "2026-05-21T08:30:00Z"
+    }
+  ],
+  "summary": {
+    "cases": 4,
+    "write_time_only_passed": 0,
+    "event_mention_split_passed": 4,
+    "three_clock_passed": 4
+  },
+  "cases": [
+    {
+      "case_id": "retrospective_contract",
+      "query": "When did I sign the contract?",
+      "query_time": "2026-03-10T10:00:00Z",
+      "expected_event_time": "2026-03-03",
+      "expected_keyword": "contract",
+      "note": "Retrospective mention: write time is later than true event time.",
+      "write_time_only": {
+        "hits": [
+          {
+            "record_id": "rec-000",
+            "mode": "write_time_only",
+            "score": 3.0,
+            "event_time": "2026-03-10",
+            "evidence_clock": "write_time",
+            "statement": "I signed the venue contract on 2026-03-03, but I'm only telling you now after travel."
+          }
+        ],
+        "judge": {
+          "ok": false,
+          "top_event_time": "2026-03-10",
+          "contains_keyword": true
+        }
+      },
+      "event_mention_split": {
+        "hits": [
+          {
+            "record_id": "rec-000",
+            "mode": "event_mention_split",
+            "score": 4.0,
+            "event_time": "2026-03-03",
+            "mention_time": "2026-03-10",
+            "evidence_clock": "event_time",
+            "statement": "I signed the venue contract on 2026-03-03, but I'm only telling you now after travel."
+          },
+          {
+            "record_id": "rec-003",
+            "mode": "event_mention_split",
+            "score": 1.0,
+            "event_time": "2026-05-19",
+            "mention_time": "2026-05-21",
+            "evidence_clock": "event_time",
+            "statement": "Two days ago I finalized the keynote rehearsal."
+          },
+          {
+            "record_id": "rec-002",
+            "mode": "event_mention_split",
+            "score": 1.0,
+            "event_time": "2026-05-11",
+            "mention_time": "2026-05-18",
+            "evidence_clock": "event_time",
+            "statement": "Last week we had the partner board meeting about the Rome launch plan."
+          },
+          {
+            "record_id": "rec-001",
+            "mode": "event_mention_split",
+            "score": 1.0,
+            "event_time": "2026-04-08",
+            "mention_time": "2026-04-09",
+            "evidence_clock": "event_time",
+            "statement": "Yesterday I finished the budget proposal for the studio launch."
+          }
+        ],
+        "judge": {
+          "ok": true,
+          "top_event_time": "2026-03-03",
+          "contains_keyword": true
+        }
+      },
+      "three_clock": {
+        "hits": [
+          {
+            "record_id": "rec-000",
+            "mode": "three_clock",
+            "score": 5.0,
+            "event_time": "2026-03-03",
+            "mention_time": "2026-03-10",
+            "write_time": "2026-03-10",
+            "evidence_clock": "event_time+mention_time+write_time",
+            "rationale": [
+              "query asks for event date"
+            ],
+            "statement": "I signed the venue contract on 2026-03-03, but I'm only telling you now after travel."
+          },
+          {
+            "record_id": "rec-003",
+            "mode": "three_clock",
+            "score": 2.0,
+            "event_time": "2026-05-19",
+            "mention_time": "2026-05-21",
+            "write_time": "2026-05-21",
+            "evidence_clock": "event_time+mention_time+write_time",
+            "rationale": [
+              "query asks for event date"
+            ],
+            "statement": "Two days ago I finalized the keynote rehearsal."
+          },
+          {
+            "record_id": "rec-002",
+            "mode": "three_clock",
+            "score": 2.0,
+            "event_time": "2026-05-11",
+            "mention_time": "2026-05-18",
+            "write_time": "2026-05-18",
+            "evidence_clock": "event_time+mention_time+write_time",
+            "rationale": [
+              "query asks for event date"
+            ],
+            "statement": "Last week we had the partner board meeting about the Rome launch plan."
+          },
+          {
+            "record_id": "rec-001",
+            "mode": "three_clock",
+            "score": 2.0,
+            "event_time": "2026-04-08",
+            "mention_time": "2026-04-09",
+            "write_time": "2026-04-09",
+            "evidence_clock": "event_time+mention_time+write_time",
+            "rationale": [
+              "query asks for event date"
+            ],
+            "statement": "Yesterday I finished the budget proposal for the studio launch."
+          }
+        ],
+        "judge": {
+          "ok": true,
+          "top_event_time": "2026-03-03",
+          "contains_keyword": true
+        }
+      }
+    },
+    {
+      "case_id": "yesterday_budget",
+      "query": "What happened yesterday about the proposal?",
+      "query_time": "2026-04-10T09:00:00Z",
+      "expected_event_time": "2026-04-08",
+      "expected_keyword": "proposal",
+      "note": "Relative day query should resolve against query anchor, not just write time.",
+      "write_time_only": {
+        "hits": [
+          {
+            "record_id": "rec-001",
+            "mode": "write_time_only",
+            "score": 7.5,
+            "event_time": "2026-04-09",
+            "evidence_clock": "write_time",
+            "statement": "Yesterday I finished the budget proposal for the studio launch."
+          },
+          {
+            "record_id": "rec-003",
+            "mode": "write_time_only",
+            "score": 0.5,
+            "event_time": "2026-05-21",
+            "evidence_clock": "write_time",
+            "statement": "Two days ago I finalized the keynote rehearsal."
+          },
+          {
+            "record_id": "rec-002",
+            "mode": "write_time_only",
+            "score": 0.5,
+            "event_time": "2026-05-18",
+            "evidence_clock": "write_time",
+            "statement": "Last week we had the partner board meeting about the Rome launch plan."
+          },
+          {
+            "record_id": "rec-000",
+            "mode": "write_time_only",
+            "score": 0.5,
+            "event_time": "2026-03-10",
+            "evidence_clock": "write_time",
+            "statement": "I signed the venue contract on 2026-03-03, but I'm only telling you now after travel."
+          }
+        ],
+        "judge": {
+          "ok": false,
+          "top_event_time": "2026-04-09",
+          "contains_keyword": true
+        }
+      },
+      "event_mention_split": {
+        "hits": [
+          {
+            "record_id": "rec-001",
+            "mode": "event_mention_split",
+            "score": 2.5,
+            "event_time": "2026-04-08",
+            "mention_time": "2026-04-09",
+            "evidence_clock": "event_time",
+            "statement": "Yesterday I finished the budget proposal for the studio launch."
+          },
+          {
+            "record_id": "rec-003",
+            "mode": "event_mention_split",
+            "score": 0.5,
+            "event_time": "2026-05-19",
+            "mention_time": "2026-05-21",
+            "evidence_clock": "event_time",
+            "statement": "Two days ago I finalized the keynote rehearsal."
+          },
+          {
+            "record_id": "rec-002",
+            "mode": "event_mention_split",
+            "score": 0.5,
+            "event_time": "2026-05-11",
+            "mention_time": "2026-05-18",
+            "evidence_clock": "event_time",
+            "statement": "Last week we had the partner board meeting about the Rome launch plan."
+          },
+          {
+            "record_id": "rec-000",
+            "mode": "event_mention_split",
+            "score": 0.5,
+            "event_time": "2026-03-03",
+            "mention_time": "2026-03-10",
+            "evidence_clock": "event_time",
+            "statement": "I signed the venue contract on 2026-03-03, but I'm only telling you now after travel."
+          }
+        ],
+        "judge": {
+          "ok": true,
+          "top_event_time": "2026-04-08",
+          "contains_keyword": true
+        }
+      },
+      "three_clock": {
+        "hits": [
+          {
+            "record_id": "rec-001",
+            "mode": "three_clock",
+            "score": 3.5,
+            "event_time": "2026-04-08",
+            "mention_time": "2026-04-09",
+            "write_time": "2026-04-09",
+            "evidence_clock": "event_time+mention_time+write_time",
+            "rationale": [
+              "retrospective mention preserved"
+            ],
+            "statement": "Yesterday I finished the budget proposal for the studio launch."
+          },
+          {
+            "record_id": "rec-003",
+            "mode": "three_clock",
+            "score": 1.5,
+            "event_time": "2026-05-19",
+            "mention_time": "2026-05-21",
+            "write_time": "2026-05-21",
+            "evidence_clock": "event_time+mention_time+write_time",
+            "rationale": [
+              "retrospective mention preserved"
+            ],
+            "statement": "Two days ago I finalized the keynote rehearsal."
+          },
+          {
+            "record_id": "rec-002",
+            "mode": "three_clock",
+            "score": 1.5,
+            "event_time": "2026-05-11",
+            "mention_time": "2026-05-18",
+            "write_time": "2026-05-18",
+            "evidence_clock": "event_time+mention_time+write_time",
+            "rationale": [
+              "retrospective mention preserved"
+            ],
+            "statement": "Last week we had the partner board meeting about the Rome launch plan."
+          },
+          {
+            "record_id": "rec-000",
+            "mode": "three_clock",
+            "score": 1.5,
+            "event_time": "2026-03-03",
+            "mention_time": "2026-03-10",
+            "write_time": "2026-03-10",
+            "evidence_clock": "event_time+mention_time+write_time",
+            "rationale": [
+              "retrospective mention preserved"
+            ],
+            "statement": "I signed the venue contract on 2026-03-03, but I'm only telling you now after travel."
+          }
+        ],
+        "judge": {
+          "ok": true,
+          "top_event_time": "2026-04-08",
+          "contains_keyword": true
+        }
+      }
+    },
+    {
+      "case_id": "last_week_board",
+      "query": "What happened last week about the Rome launch?",
+      "query_time": "2026-05-18T20:00:00Z",
+      "expected_event_time": "2026-05-11",
+      "expected_keyword": "rome launch",
+      "note": "Week-scale recall needs event windowing instead of write-time proximity.",
+      "write_time_only": {
+        "hits": [
+          {
+            "record_id": "rec-002",
+            "mode": "write_time_only",
+            "score": 6.5,
+            "event_time": "2026-05-18",
+            "evidence_clock": "write_time",
+            "statement": "Last week we had the partner board meeting about the Rome launch plan."
+          },
+          {
+            "record_id": "rec-003",
+            "mode": "write_time_only",
+            "score": 2.5,
+            "event_time": "2026-05-21",
+            "evidence_clock": "write_time",
+            "statement": "Two days ago I finalized the keynote rehearsal."
+          },
+          {
+            "record_id": "rec-001",
+            "mode": "write_time_only",
+            "score": 2.5,
+            "event_time": "2026-04-09",
+            "evidence_clock": "write_time",
+            "statement": "Yesterday I finished the budget proposal for the studio launch."
+          },
+          {
+            "record_id": "rec-000",
+            "mode": "write_time_only",
+            "score": 0.5,
+            "event_time": "2026-03-10",
+            "evidence_clock": "write_time",
+            "statement": "I signed the venue contract on 2026-03-03, but I'm only telling you now after travel."
+          }
+        ],
+        "judge": {
+          "ok": false,
+          "top_event_time": "2026-05-18",
+          "contains_keyword": true
+        }
+      },
+      "event_mention_split": {
+        "hits": [
+          {
+            "record_id": "rec-002",
+            "mode": "event_mention_split",
+            "score": 8.5,
+            "event_time": "2026-05-11",
+            "mention_time": "2026-05-18",
+            "evidence_clock": "event_time",
+            "statement": "Last week we had the partner board meeting about the Rome launch plan."
+          },
+          {
+            "record_id": "rec-001",
+            "mode": "event_mention_split",
+            "score": 2.5,
+            "event_time": "2026-04-08",
+            "mention_time": "2026-04-09",
+            "evidence_clock": "event_time",
+            "statement": "Yesterday I finished the budget proposal for the studio launch."
+          },
+          {
+            "record_id": "rec-003",
+            "mode": "event_mention_split",
+            "score": 0.5,
+            "event_time": "2026-05-19",
+            "mention_time": "2026-05-21",
+            "evidence_clock": "event_time",
+            "statement": "Two days ago I finalized the keynote rehearsal."
+          },
+          {
+            "record_id": "rec-000",
+            "mode": "event_mention_split",
+            "score": 0.5,
+            "event_time": "2026-03-03",
+            "mention_time": "2026-03-10",
+            "evidence_clock": "event_time",
+            "statement": "I signed the venue contract on 2026-03-03, but I'm only telling you now after travel."
+          }
+        ],
+        "judge": {
+          "ok": true,
+          "top_event_time": "2026-05-11",
+          "contains_keyword": true
+        }
+      },
+      "three_clock": {
+        "hits": [
+          {
+            "record_id": "rec-002",
+            "mode": "three_clock",
+            "score": 10.5,
+            "event_time": "2026-05-11",
+            "mention_time": "2026-05-18",
+            "write_time": "2026-05-18",
+            "evidence_clock": "event_time+mention_time+write_time",
+            "rationale": [
+              "event_time in relative week window",
+              "mention/event split available"
+            ],
+            "statement": "Last week we had the partner board meeting about the Rome launch plan."
+          },
+          {
+            "record_id": "rec-001",
+            "mode": "three_clock",
+            "score": 3.5,
+            "event_time": "2026-04-08",
+            "mention_time": "2026-04-09",
+            "write_time": "2026-04-09",
+            "evidence_clock": "event_time+mention_time+write_time",
+            "rationale": [
+              "mention/event split available"
+            ],
+            "statement": "Yesterday I finished the budget proposal for the studio launch."
+          },
+          {
+            "record_id": "rec-003",
+            "mode": "three_clock",
+            "score": 1.5,
+            "event_time": "2026-05-19",
+            "mention_time": "2026-05-21",
+            "write_time": "2026-05-21",
+            "evidence_clock": "event_time+mention_time+write_time",
+            "rationale": [
+              "mention/event split available"
+            ],
+            "statement": "Two days ago I finalized the keynote rehearsal."
+          },
+          {
+            "record_id": "rec-000",
+            "mode": "three_clock",
+            "score": 1.5,
+            "event_time": "2026-03-03",
+            "mention_time": "2026-03-10",
+            "write_time": "2026-03-10",
+            "evidence_clock": "event_time+mention_time+write_time",
+            "rationale": [
+              "mention/event split available"
+            ],
+            "statement": "I signed the venue contract on 2026-03-03, but I'm only telling you now after travel."
+          }
+        ],
+        "judge": {
+          "ok": true,
+          "top_event_time": "2026-05-11",
+          "contains_keyword": true
+        }
+      }
+    },
+    {
+      "case_id": "before_anchor_rehearsal",
+      "query": "What had happened before the keynote day?",
+      "query_time": "2026-05-22T09:00:00Z",
+      "expected_event_time": "2026-05-19",
+      "expected_keyword": "rehearsal",
+      "note": "Before/after style questions need event ordering, mention time alone is not enough.",
+      "write_time_only": {
+        "hits": [
+          {
+            "record_id": "rec-003",
+            "mode": "write_time_only",
+            "score": 0.5,
+            "event_time": "2026-05-21",
+            "evidence_clock": "write_time",
+            "statement": "Two days ago I finalized the keynote rehearsal."
+          },
+          {
+            "record_id": "rec-002",
+            "mode": "write_time_only",
+            "score": 0.5,
+            "event_time": "2026-05-18",
+            "evidence_clock": "write_time",
+            "statement": "Last week we had the partner board meeting about the Rome launch plan."
+          },
+          {
+            "record_id": "rec-001",
+            "mode": "write_time_only",
+            "score": 0.5,
+            "event_time": "2026-04-09",
+            "evidence_clock": "write_time",
+            "statement": "Yesterday I finished the budget proposal for the studio launch."
+          },
+          {
+            "record_id": "rec-000",
+            "mode": "write_time_only",
+            "score": 0.5,
+            "event_time": "2026-03-10",
+            "evidence_clock": "write_time",
+            "statement": "I signed the venue contract on 2026-03-03, but I'm only telling you now after travel."
+          }
+        ],
+        "judge": {
+          "ok": false,
+          "top_event_time": "2026-05-21",
+          "contains_keyword": true
+        }
+      },
+      "event_mention_split": {
+        "hits": [
+          {
+            "record_id": "rec-003",
+            "mode": "event_mention_split",
+            "score": 0.5,
+            "event_time": "2026-05-19",
+            "mention_time": "2026-05-21",
+            "evidence_clock": "event_time",
+            "statement": "Two days ago I finalized the keynote rehearsal."
+          },
+          {
+            "record_id": "rec-002",
+            "mode": "event_mention_split",
+            "score": 0.5,
+            "event_time": "2026-05-11",
+            "mention_time": "2026-05-18",
+            "evidence_clock": "event_time",
+            "statement": "Last week we had the partner board meeting about the Rome launch plan."
+          },
+          {
+            "record_id": "rec-001",
+            "mode": "event_mention_split",
+            "score": 0.5,
+            "event_time": "2026-04-08",
+            "mention_time": "2026-04-09",
+            "evidence_clock": "event_time",
+            "statement": "Yesterday I finished the budget proposal for the studio launch."
+          },
+          {
+            "record_id": "rec-000",
+            "mode": "event_mention_split",
+            "score": 0.5,
+            "event_time": "2026-03-03",
+            "mention_time": "2026-03-10",
+            "evidence_clock": "event_time",
+            "statement": "I signed the venue contract on 2026-03-03, but I'm only telling you now after travel."
+          }
+        ],
+        "judge": {
+          "ok": true,
+          "top_event_time": "2026-05-19",
+          "contains_keyword": true
+        }
+      },
+      "three_clock": {
+        "hits": [
+          {
+            "record_id": "rec-003",
+            "mode": "three_clock",
+            "score": 3.5,
+            "event_time": "2026-05-19",
+            "mention_time": "2026-05-21",
+            "write_time": "2026-05-21",
+            "evidence_clock": "event_time+mention_time+write_time",
+            "rationale": [
+              "event is before query anchor"
+            ],
+            "statement": "Two days ago I finalized the keynote rehearsal."
+          },
+          {
+            "record_id": "rec-002",
+            "mode": "three_clock",
+            "score": 3.5,
+            "event_time": "2026-05-11",
+            "mention_time": "2026-05-18",
+            "write_time": "2026-05-18",
+            "evidence_clock": "event_time+mention_time+write_time",
+            "rationale": [
+              "event is before query anchor"
+            ],
+            "statement": "Last week we had the partner board meeting about the Rome launch plan."
+          },
+          {
+            "record_id": "rec-001",
+            "mode": "three_clock",
+            "score": 3.5,
+            "event_time": "2026-04-08",
+            "mention_time": "2026-04-09",
+            "write_time": "2026-04-09",
+            "evidence_clock": "event_time+mention_time+write_time",
+            "rationale": [
+              "event is before query anchor"
+            ],
+            "statement": "Yesterday I finished the budget proposal for the studio launch."
+          },
+          {
+            "record_id": "rec-000",
+            "mode": "three_clock",
+            "score": 3.5,
+            "event_time": "2026-03-03",
+            "mention_time": "2026-03-10",
+            "write_time": "2026-03-10",
+            "evidence_clock": "event_time+mention_time+write_time",
+            "rationale": [
+              "event is before query anchor"
+            ],
+            "statement": "I signed the venue contract on 2026-03-03, but I'm only telling you now after travel."
+          }
+        ],
+        "judge": {
+          "ok": true,
+          "top_event_time": "2026-05-19",
+          "contains_keyword": true
+        }
+      }
+    }
+  ]
+}

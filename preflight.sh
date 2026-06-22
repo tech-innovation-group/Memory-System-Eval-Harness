@@ -119,8 +119,8 @@ allowed = {
 if allowed != {"openviking", "echomemory"}:
     raise SystemExit(f"current release must expose exactly openviking and echomemory, got {sorted(allowed)}")
 sidebar = contract.get("sidebar") or []
-if len(sidebar) != 9:
-    raise SystemExit(f"sidebar contract must contain 9 entries, got {len(sidebar)}")
+if len(sidebar) != 10:
+    raise SystemExit(f"sidebar contract must contain 10 entries, got {len(sidebar)}")
 if (contract.get("agent") or {}).get("label") != "MemoryBench Agent":
     raise SystemExit("agent label must be MemoryBench Agent")
 delivery = contract.get("delivery_boundary") or {}

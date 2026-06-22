@@ -11,7 +11,7 @@
    - 使用 formal Judge 评测 50 行，不修改 100 行源 CSV。
    - 结果：49/50，98.0% formal accuracy。
    - 唯一错题：`25e5aa4f`，问题为 UCLA / Bachelor's degree extraction。
-   - Report: `/Users/chx/locomo-eval-web/runs/manual_longmemeval_numericalias_judge_smoke_50/report.md`
+   - Report: `<repo-root>/runs/manual_longmemeval_numericalias_judge_smoke_50/report.md`
 
 2. Runs 页面易用性
    - 新增 `最新 LongMemEval 结果` 按钮。

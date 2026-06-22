@@ -38,6 +38,11 @@ def read_dataset(path: Path) -> Any:
 
 
 def _candidate_format(path: Path, candidates: list[dict[str, Any]] | None = None) -> str | None:
+    record = _candidate_record(path, candidates)
+    return str(record.get("format") or "") if record else None
+
+
+def _candidate_record(path: Path, candidates: list[dict[str, Any]] | None = None) -> dict[str, Any] | None:
     try:
         resolved = path.expanduser().resolve()
     except Exception:
@@ -48,8 +53,28 @@ def _candidate_format(path: Path, candidates: list[dict[str, Any]] | None = None
         except Exception:
             continue
         if candidate_path == resolved:
-            return str(candidate.get("format") or "")
+            return candidate
     return None
+
+
+def dataset_scope(path: Path, candidates: list[dict[str, Any]] | None = None) -> str:
+    record = _candidate_record(path, candidates)
+    text = " ".join(
+        [
+            str(path),
+            str(path.name),
+            str(record.get("id") or "") if record else "",
+            str(record.get("name") or "") if record else "",
+            str(record.get("description") or "") if record else "",
+        ]
+    ).lower()
+    if "sample" in text or ".sample." in text:
+        return "sample"
+    if "/full/" in str(path).replace("\\", "/").lower() or re.search(r"\bfull\b", text):
+        return "full"
+    if record:
+        return "registered"
+    return "custom"
 
 
 def looks_like_locomo_data(data: Any) -> bool:
@@ -126,29 +151,55 @@ def chenmo_overview_from_markdown(path: Path) -> dict[str, Any]:
     }
 
 
+def _locomo_sample_summary(sample: dict[str, Any], idx: int) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    qa = [q for q in sample.get("qa", []) if str(q.get("category", "")) != "5"]
+    conv = sample.get("conversation", {})
+    row = {
+        "index": idx,
+        "sample_id": sample.get("sample_id", f"sample_{idx}"),
+        "speakers": [conv.get("speaker_a", ""), conv.get("speaker_b", "")],
+        "questions": len(qa),
+        "sessions": len([k for k in conv if str(k).startswith("session_") and not str(k).endswith("_date_time")]),
+    }
+    return row, qa
+
+
 def locomo_overview_from_data(path: Path, data: Any) -> dict[str, Any]:
     categories: dict[str, int] = {}
     samples = []
     question_total = 0
     for idx, sample in enumerate(data if isinstance(data, list) else []):
-        qa = [q for q in sample.get("qa", []) if str(q.get("category", "")) != "5"]
+        row, qa = _locomo_sample_summary(sample, idx)
         question_total += len(qa)
         for q in qa:
             cat = str(q.get("category", ""))
             categories[cat] = categories.get(cat, 0) + 1
-        conv = sample.get("conversation", {})
-        samples.append(
-            {
-                "index": idx,
-                "sample_id": sample.get("sample_id", f"sample_{idx}"),
-                "speakers": [conv.get("speaker_a", ""), conv.get("speaker_b", "")],
-                "questions": len(qa),
-                "sessions": len([k for k in conv if str(k).startswith("session_") and not str(k).endswith("_date_time")]),
-            }
-        )
+        samples.append(row)
     return {
         "path": str(path),
         "samples": len(data) if isinstance(data, list) else 0,
+        "questions": question_total,
+        "categories": categories,
+        "sample_rows": samples,
+    }
+
+
+def locomo_overview_from_stream(path: Path) -> dict[str, Any]:
+    categories: dict[str, int] = {}
+    samples = []
+    question_total = 0
+    for idx, sample in iter_json_array_objects(path, 0, 10**9):
+        if not isinstance(sample, dict):
+            continue
+        row, qa = _locomo_sample_summary(sample, idx)
+        question_total += len(qa)
+        for q in qa:
+            cat = str(q.get("category", ""))
+            categories[cat] = categories.get(cat, 0) + 1
+        samples.append(row)
+    return {
+        "path": str(path),
+        "samples": len(samples),
         "questions": question_total,
         "categories": categories,
         "sample_rows": samples,
@@ -213,6 +264,7 @@ def dataset_overview(
     cache: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     cache = cache if cache is not None else {}
+    scope = dataset_scope(path, candidates)
     try:
         stat = path.stat()
         cache_key = str(path.resolve())
@@ -221,16 +273,31 @@ def dataset_overview(
             return dict(cached["data"])
         if stat.st_size > scan_limit_bytes:
             fmt = infer_dataset_format(path, None, candidates)
-            overview = {
-                "path": str(path),
-                "samples": "?",
-                "questions": "?",
-                "categories": {},
-                "sample_rows": [],
+            if fmt == "locomo" and path.suffix.lower() == ".json":
+                try:
+                    overview = locomo_overview_from_stream(path)
+                except Exception:
+                    overview = {
+                        "path": str(path),
+                        "samples": "?",
+                        "questions": "?",
+                        "categories": {},
+                        "sample_rows": [],
+                    }
+            else:
+                overview = {
+                    "path": str(path),
+                    "samples": "?",
+                    "questions": "?",
+                    "categories": {},
+                    "sample_rows": [],
+                }
+            overview.update({
                 "format": fmt,
+                "scope": scope,
                 "runner_status": "large_dataset_lazy",
                 "runner_note": f"文件较大（{round(stat.st_size / 1024 / 1024, 1)} MB）；页面概览不会全量扫描，正式任务会完整读取 memory events。可直接用 count=100 跑抽样测试。",
-            }
+            })
             cache[cache_key] = {"mtime_ns": stat.st_mtime_ns, "size": stat.st_size, "data": dict(overview)}
             return overview
     except Exception:
@@ -244,6 +311,7 @@ def dataset_overview(
     else:
         overview = locomo_overview_from_data(path, data) if fmt == "locomo" and looks_like_locomo_data(data) else generic_data_overview(path, data, candidates)
     overview["format"] = fmt
+    overview["scope"] = scope
     overview["runner_status"] = "ready"
     overview["runner_note"] = (
         "已完成 LoCoMo 结构校验；请选择要导入的 conversation，确认记忆空间目录，然后点击“导入所选对话”。"

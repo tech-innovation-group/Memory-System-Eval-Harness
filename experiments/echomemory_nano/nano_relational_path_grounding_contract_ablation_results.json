@@ -1,0 +1,214 @@
+{
+  "policies": {
+    "graph_fact_only": {
+      "required": [
+        "graph",
+        "fact"
+      ],
+      "used_readers": [
+        "graph_seed",
+        "atom"
+      ],
+      "final_coverage": {
+        "required": [
+          "graph",
+          "fact"
+        ],
+        "matched": [
+          "graph",
+          "fact"
+        ],
+        "missing": [],
+        "contract_ok": true,
+        "coverage_ratio": 1.0,
+        "has_path_grounding": false
+      },
+      "hits": [
+        {
+          "source": "graph://entity/Alice",
+          "layer": "graph",
+          "content": "Alice and Bob are both linked to Orchard Labs",
+          "path_edge_ids": [],
+          "why": "Graph seed hit without explicit path trace."
+        },
+        {
+          "source": "atom://orchard_fact",
+          "layer": "fact",
+          "content": "Alice worked at Orchard Labs in 2026.",
+          "path_edge_ids": [],
+          "why": "Fact support, but still no explicit relation path."
+        }
+      ],
+      "snapshots": [
+        {
+          "after_reader": "graph_seed",
+          "coverage": {
+            "required": [
+              "graph",
+              "fact"
+            ],
+            "matched": [
+              "graph"
+            ],
+            "missing": [
+              "fact"
+            ],
+            "contract_ok": false,
+            "coverage_ratio": 0.5,
+            "has_path_grounding": false
+          },
+          "present_layers": [
+            "graph"
+          ]
+        },
+        {
+          "after_reader": "atom",
+          "coverage": {
+            "required": [
+              "graph",
+              "fact"
+            ],
+            "matched": [
+              "graph",
+              "fact"
+            ],
+            "missing": [],
+            "contract_ok": true,
+            "coverage_ratio": 1.0,
+            "has_path_grounding": false
+          },
+          "present_layers": [
+            "fact",
+            "graph"
+          ]
+        }
+      ]
+    },
+    "path_grounded_relational": {
+      "required": [
+        "graph",
+        "fact",
+        "path_grounding"
+      ],
+      "used_readers": [
+        "graph_seed",
+        "atom",
+        "graph_path"
+      ],
+      "final_coverage": {
+        "required": [
+          "graph",
+          "fact",
+          "path_grounding"
+        ],
+        "matched": [
+          "graph",
+          "fact",
+          "path_grounding"
+        ],
+        "missing": [],
+        "contract_ok": true,
+        "coverage_ratio": 1.0,
+        "has_path_grounding": true
+      },
+      "hits": [
+        {
+          "source": "graph://entity/Alice",
+          "layer": "graph",
+          "content": "Alice and Bob are both linked to Orchard Labs",
+          "path_edge_ids": [],
+          "why": "Graph seed hit without explicit path trace."
+        },
+        {
+          "source": "atom://orchard_fact",
+          "layer": "fact",
+          "content": "Alice worked at Orchard Labs in 2026.",
+          "path_edge_ids": [],
+          "why": "Fact support, but still no explicit relation path."
+        },
+        {
+          "source": "graph://relation/alice-orchard-bob",
+          "layer": "graph",
+          "content": "Alice knew Bob because both worked on the Orchard Labs launch team.",
+          "path_edge_ids": [
+            "entity:Alice->company:Orchard",
+            "company:Orchard->entity:Bob"
+          ],
+          "why": "Explicit graph path grounding the relation."
+        }
+      ],
+      "snapshots": [
+        {
+          "after_reader": "graph_seed",
+          "coverage": {
+            "required": [
+              "graph",
+              "fact",
+              "path_grounding"
+            ],
+            "matched": [
+              "graph"
+            ],
+            "missing": [
+              "fact",
+              "path_grounding"
+            ],
+            "contract_ok": false,
+            "coverage_ratio": 0.333,
+            "has_path_grounding": false
+          },
+          "present_layers": [
+            "graph"
+          ]
+        },
+        {
+          "after_reader": "atom",
+          "coverage": {
+            "required": [
+              "graph",
+              "fact",
+              "path_grounding"
+            ],
+            "matched": [
+              "graph",
+              "fact"
+            ],
+            "missing": [
+              "path_grounding"
+            ],
+            "contract_ok": false,
+            "coverage_ratio": 0.667,
+            "has_path_grounding": false
+          },
+          "present_layers": [
+            "fact",
+            "graph"
+          ]
+        },
+        {
+          "after_reader": "graph_path",
+          "coverage": {
+            "required": [
+              "graph",
+              "fact",
+              "path_grounding"
+            ],
+            "matched": [
+              "graph",
+              "fact",
+              "path_grounding"
+            ],
+            "missing": [],
+            "contract_ok": true,
+            "coverage_ratio": 1.0,
+            "has_path_grounding": true
+          },
+          "present_layers": [
+            "fact",
+            "graph"
+          ]
+        }
+      ]
+    }
+  }
+}

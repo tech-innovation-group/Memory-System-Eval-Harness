@@ -1,0 +1,1843 @@
+{
+  "modes": {
+    "overview_only": {
+      "correct": 1,
+      "total": 6,
+      "accuracy": 0.16666666666666666,
+      "summary": "broad summary baseline"
+    },
+    "atom_only": {
+      "correct": 3,
+      "total": 6,
+      "accuracy": 0.5,
+      "summary": "fragmentary atom baseline"
+    },
+    "topic_dossier": {
+      "correct": 5,
+      "total": 6,
+      "accuracy": 0.8333333333333334,
+      "summary": "topic-centered middle layer"
+    },
+    "contract_topic_dossier": {
+      "correct": 5,
+      "total": 6,
+      "accuracy": 0.8333333333333334,
+      "summary": "topic dossier plus explicit contract-aware fallback"
+    }
+  },
+  "cases": [
+    {
+      "qid": "q1",
+      "question": "How did the apartment lease situation evolve?",
+      "family": "longitudinal",
+      "expected_topic": "apartment lease",
+      "runs": [
+        {
+          "qid": "q1",
+          "question": "How did the apartment lease situation evolve?",
+          "plan": {
+            "family": "longitudinal",
+            "primary": "topic_dossier",
+            "support": [
+              "atoms"
+            ],
+            "required": [
+              "topic_dossier",
+              "timeline",
+              "fact"
+            ],
+            "topic": "apartment lease"
+          },
+          "mode": "overview_only",
+          "readers": [
+            "overview"
+          ],
+          "answer": "apartment lease: Topic: apartment lease Span: 2026-03-01 -> 2026-03-12 Key updates: - We found an apartment on Rua Augusta 14 - The landlord asked for a signed lease draft - The lease screenshot showed the address Rua Au",
+          "success": false,
+          "hits": [
+            {
+              "kind": "overview",
+              "topic": "all",
+              "content": "apartment lease: Topic: apartment lease Span: 2026-03-01 -> 2026-03-12 Key updates: - We found an apartment on Rua Augusta 14 - The landlord asked for a signed lease draft - The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20 - The landlord delayed the handover by one week, so the move-in moved to 2026-03-27 | family support: Topic: family support Span: 2026-03-04 -> 2026-03-21 Key updates: - My mother moved in to help with childcare after the baby was born - The childcare plan shifted to include a nanny and my mother on weekdays - We kept the childcare plan because the work schedule became more intense | product launch: Topic: product launch Span: 2026-03-03 -> 2026-03-19 Key updates: - The team planned the beta launch for 2026-04-10 - A payment bug pushed the launch back to 2026-04-24 - The payment fix landed and the launch date was confirmed for 2026-04-24 | visa process: Topic: visa process Span: 2026-03-02 -> 2026-03-18 Key updates: - Maya started the visa paperwork and Nora helped collect the financial statements - The consulate requested an extra residence document, so the visa process was delayed - The visa was approved after Maya submitted the missing residence document",
+              "score": 0.429
+            }
+          ],
+          "covered_atoms": [],
+          "missing_atoms": [
+            "atom-000",
+            "atom-002",
+            "atom-004"
+          ],
+          "present_evidence": [
+            "fact"
+          ]
+        },
+        {
+          "qid": "q1",
+          "question": "How did the apartment lease situation evolve?",
+          "plan": {
+            "family": "longitudinal",
+            "primary": "topic_dossier",
+            "support": [
+              "atoms"
+            ],
+            "required": [
+              "topic_dossier",
+              "timeline",
+              "fact"
+            ],
+            "topic": "apartment lease"
+          },
+          "mode": "atom_only",
+          "readers": [
+            "atoms"
+          ],
+          "answer": "unknown",
+          "success": false,
+          "hits": [
+            {
+              "kind": "atom",
+              "atom_id": "atom-001",
+              "topic": "apartment lease",
+              "content": "The landlord asked for a signed lease draft",
+              "score": 0.466,
+              "event_time": "2026-03-01"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-002",
+              "topic": "apartment lease",
+              "content": "The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20",
+              "score": 0.466,
+              "event_time": "2026-03-05"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-000",
+              "topic": "apartment lease",
+              "content": "We found an apartment on Rua Augusta 14",
+              "score": 0.323,
+              "event_time": "2026-03-01"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-003",
+              "topic": "apartment lease",
+              "content": "The landlord delayed the handover by one week, so the move-in moved to 2026-03-27",
+              "score": 0.323,
+              "event_time": "2026-03-12"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-004",
+              "topic": "visa process",
+              "content": "Maya started the visa paperwork and Nora helped collect the financial statements",
+              "score": 0.143,
+              "event_time": "2026-03-02"
+            }
+          ],
+          "covered_atoms": [
+            "atom-000",
+            "atom-002",
+            "atom-004"
+          ],
+          "missing_atoms": [],
+          "present_evidence": [
+            "entity",
+            "fact",
+            "timeline"
+          ]
+        },
+        {
+          "qid": "q1",
+          "question": "How did the apartment lease situation evolve?",
+          "plan": {
+            "family": "longitudinal",
+            "primary": "topic_dossier",
+            "support": [
+              "atoms"
+            ],
+            "required": [
+              "topic_dossier",
+              "timeline",
+              "fact"
+            ],
+            "topic": "apartment lease"
+          },
+          "mode": "topic_dossier",
+          "readers": [
+            "topic_dossier",
+            "atoms"
+          ],
+          "answer": "apartment lease evolved as follows:\n- 2026-03-01: We found an apartment on Rua Augusta 14\n- 2026-03-01: The landlord asked for a signed lease draft\n- 2026-03-05: The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20",
+          "success": false,
+          "hits": [
+            {
+              "kind": "topic_dossier",
+              "topic": "apartment lease",
+              "content": "Topic: apartment lease\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20\n- The landlord delayed the handover by one week, so the move-in moved to 2026-03-27",
+              "score": 0.679,
+              "timeline": [
+                "2026-03-01: We found an apartment on Rua Augusta 14",
+                "2026-03-01: The landlord asked for a signed lease draft",
+                "2026-03-05: The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20",
+                "2026-03-12: The landlord delayed the handover by one week, so the move-in moved to 2026-03-27"
+              ],
+              "atom_ids": [
+                "atom-000",
+                "atom-001",
+                "atom-002",
+                "atom-003"
+              ]
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-001",
+              "topic": "apartment lease",
+              "content": "The landlord asked for a signed lease draft",
+              "score": 0.466,
+              "event_time": "2026-03-01"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-002",
+              "topic": "apartment lease",
+              "content": "The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20",
+              "score": 0.466,
+              "event_time": "2026-03-05"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-000",
+              "topic": "apartment lease",
+              "content": "We found an apartment on Rua Augusta 14",
+              "score": 0.323,
+              "event_time": "2026-03-01"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-003",
+              "topic": "apartment lease",
+              "content": "The landlord delayed the handover by one week, so the move-in moved to 2026-03-27",
+              "score": 0.323,
+              "event_time": "2026-03-12"
+            }
+          ],
+          "covered_atoms": [
+            "atom-000",
+            "atom-002"
+          ],
+          "missing_atoms": [
+            "atom-004"
+          ],
+          "present_evidence": [
+            "entity",
+            "fact",
+            "timeline",
+            "topic_dossier"
+          ]
+        },
+        {
+          "qid": "q1",
+          "question": "How did the apartment lease situation evolve?",
+          "plan": {
+            "family": "longitudinal",
+            "primary": "topic_dossier",
+            "support": [
+              "atoms"
+            ],
+            "required": [
+              "topic_dossier",
+              "timeline",
+              "fact"
+            ],
+            "topic": "apartment lease"
+          },
+          "mode": "contract_topic_dossier",
+          "readers": [
+            "topic_dossier",
+            "atoms"
+          ],
+          "answer": "apartment lease evolved as follows:\n- 2026-03-01: We found an apartment on Rua Augusta 14\n- 2026-03-01: The landlord asked for a signed lease draft\n- 2026-03-05: The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20",
+          "success": false,
+          "hits": [
+            {
+              "kind": "topic_dossier",
+              "topic": "apartment lease",
+              "content": "Topic: apartment lease\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20\n- The landlord delayed the handover by one week, so the move-in moved to 2026-03-27",
+              "score": 0.679,
+              "timeline": [
+                "2026-03-01: We found an apartment on Rua Augusta 14",
+                "2026-03-01: The landlord asked for a signed lease draft",
+                "2026-03-05: The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20",
+                "2026-03-12: The landlord delayed the handover by one week, so the move-in moved to 2026-03-27"
+              ],
+              "atom_ids": [
+                "atom-000",
+                "atom-001",
+                "atom-002",
+                "atom-003"
+              ]
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-001",
+              "topic": "apartment lease",
+              "content": "The landlord asked for a signed lease draft",
+              "score": 0.466,
+              "event_time": "2026-03-01"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-002",
+              "topic": "apartment lease",
+              "content": "The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20",
+              "score": 0.466,
+              "event_time": "2026-03-05"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-000",
+              "topic": "apartment lease",
+              "content": "We found an apartment on Rua Augusta 14",
+              "score": 0.323,
+              "event_time": "2026-03-01"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-003",
+              "topic": "apartment lease",
+              "content": "The landlord delayed the handover by one week, so the move-in moved to 2026-03-27",
+              "score": 0.323,
+              "event_time": "2026-03-12"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-004",
+              "topic": "visa process",
+              "content": "Maya started the visa paperwork and Nora helped collect the financial statements",
+              "score": 0.143,
+              "event_time": "2026-03-02"
+            }
+          ],
+          "covered_atoms": [
+            "atom-000",
+            "atom-002",
+            "atom-004"
+          ],
+          "missing_atoms": [],
+          "present_evidence": [
+            "entity",
+            "fact",
+            "timeline",
+            "topic_dossier"
+          ]
+        }
+      ]
+    },
+    {
+      "qid": "q2",
+      "question": "What is the latest status of the visa process?",
+      "family": "longitudinal",
+      "expected_topic": "visa process",
+      "runs": [
+        {
+          "qid": "q2",
+          "question": "What is the latest status of the visa process?",
+          "plan": {
+            "family": "longitudinal",
+            "primary": "topic_dossier",
+            "support": [
+              "atoms"
+            ],
+            "required": [
+              "topic_dossier",
+              "timeline",
+              "fact"
+            ],
+            "topic": "visa process"
+          },
+          "mode": "overview_only",
+          "readers": [
+            "overview"
+          ],
+          "answer": "apartment lease: Topic: apartment lease Span: 2026-03-01 -> 2026-03-12 Key updates: - We found an apartment on Rua Augusta 14 - The landlord asked for a signed lease draft - The lease screenshot showed the address Rua Au",
+          "success": false,
+          "hits": [
+            {
+              "kind": "overview",
+              "topic": "all",
+              "content": "apartment lease: Topic: apartment lease Span: 2026-03-01 -> 2026-03-12 Key updates: - We found an apartment on Rua Augusta 14 - The landlord asked for a signed lease draft - The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20 - The landlord delayed the handover by one week, so the move-in moved to 2026-03-27 | family support: Topic: family support Span: 2026-03-04 -> 2026-03-21 Key updates: - My mother moved in to help with childcare after the baby was born - The childcare plan shifted to include a nanny and my mother on weekdays - We kept the childcare plan because the work schedule became more intense | product launch: Topic: product launch Span: 2026-03-03 -> 2026-03-19 Key updates: - The team planned the beta launch for 2026-04-10 - A payment bug pushed the launch back to 2026-04-24 - The payment fix landed and the launch date was confirmed for 2026-04-24 | visa process: Topic: visa process Span: 2026-03-02 -> 2026-03-18 Key updates: - Maya started the visa paperwork and Nora helped collect the financial statements - The consulate requested an extra residence document, so the visa process was delayed - The visa was approved after Maya submitted the missing residence document",
+              "score": 0.5
+            }
+          ],
+          "covered_atoms": [],
+          "missing_atoms": [
+            "atom-006",
+            "atom-008",
+            "atom-010"
+          ],
+          "present_evidence": [
+            "fact"
+          ]
+        },
+        {
+          "qid": "q2",
+          "question": "What is the latest status of the visa process?",
+          "plan": {
+            "family": "longitudinal",
+            "primary": "topic_dossier",
+            "support": [
+              "atoms"
+            ],
+            "required": [
+              "topic_dossier",
+              "timeline",
+              "fact"
+            ],
+            "topic": "visa process"
+          },
+          "mode": "atom_only",
+          "readers": [
+            "atoms"
+          ],
+          "answer": "unknown",
+          "success": false,
+          "hits": [
+            {
+              "kind": "atom",
+              "atom_id": "atom-005",
+              "topic": "visa process",
+              "content": "The consulate requested an extra residence document, so the visa process was delayed",
+              "score": 0.555,
+              "event_time": "2026-03-09"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-004",
+              "topic": "visa process",
+              "content": "Maya started the visa paperwork and Nora helped collect the financial statements",
+              "score": 0.43,
+              "event_time": "2026-03-02"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-006",
+              "topic": "visa process",
+              "content": "The visa was approved after Maya submitted the missing residence document",
+              "score": 0.43,
+              "event_time": "2026-03-18"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-002",
+              "topic": "apartment lease",
+              "content": "The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20",
+              "score": 0.25,
+              "event_time": "2026-03-05"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-001",
+              "topic": "apartment lease",
+              "content": "The landlord asked for a signed lease draft",
+              "score": 0.125,
+              "event_time": "2026-03-01"
+            }
+          ],
+          "covered_atoms": [
+            "atom-006"
+          ],
+          "missing_atoms": [
+            "atom-008",
+            "atom-010"
+          ],
+          "present_evidence": [
+            "entity",
+            "fact",
+            "timeline"
+          ]
+        },
+        {
+          "qid": "q2",
+          "question": "What is the latest status of the visa process?",
+          "plan": {
+            "family": "longitudinal",
+            "primary": "topic_dossier",
+            "support": [
+              "atoms"
+            ],
+            "required": [
+              "topic_dossier",
+              "timeline",
+              "fact"
+            ],
+            "topic": "visa process"
+          },
+          "mode": "topic_dossier",
+          "readers": [
+            "topic_dossier",
+            "atoms"
+          ],
+          "answer": "visa process evolved as follows:\n- 2026-03-02: Maya started the visa paperwork and Nora helped collect the financial statements\n- 2026-03-09: The consulate requested an extra residence document, so the visa process was delayed\n- 2026-03-18: The visa was approved after Maya submitted the missing residence document",
+          "success": true,
+          "hits": [
+            {
+              "kind": "topic_dossier",
+              "topic": "visa process",
+              "content": "Topic: visa process\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consulate requested an extra residence document, so the visa process was delayed\n- The visa was approved after Maya submitted the missing residence document",
+              "score": 0.625,
+              "timeline": [
+                "2026-03-02: Maya started the visa paperwork and Nora helped collect the financial statements",
+                "2026-03-09: The consulate requested an extra residence document, so the visa process was delayed",
+                "2026-03-18: The visa was approved after Maya submitted the missing residence document"
+              ],
+              "atom_ids": [
+                "atom-004",
+                "atom-005",
+                "atom-006"
+              ]
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-005",
+              "topic": "visa process",
+              "content": "The consulate requested an extra residence document, so the visa process was delayed",
+              "score": 0.555,
+              "event_time": "2026-03-09"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-004",
+              "topic": "visa process",
+              "content": "Maya started the visa paperwork and Nora helped collect the financial statements",
+              "score": 0.43,
+              "event_time": "2026-03-02"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-006",
+              "topic": "visa process",
+              "content": "The visa was approved after Maya submitted the missing residence document",
+              "score": 0.43,
+              "event_time": "2026-03-18"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-002",
+              "topic": "apartment lease",
+              "content": "The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20",
+              "score": 0.25,
+              "event_time": "2026-03-05"
+            }
+          ],
+          "covered_atoms": [
+            "atom-006"
+          ],
+          "missing_atoms": [
+            "atom-008",
+            "atom-010"
+          ],
+          "present_evidence": [
+            "entity",
+            "fact",
+            "timeline",
+            "topic_dossier"
+          ]
+        },
+        {
+          "qid": "q2",
+          "question": "What is the latest status of the visa process?",
+          "plan": {
+            "family": "longitudinal",
+            "primary": "topic_dossier",
+            "support": [
+              "atoms"
+            ],
+            "required": [
+              "topic_dossier",
+              "timeline",
+              "fact"
+            ],
+            "topic": "visa process"
+          },
+          "mode": "contract_topic_dossier",
+          "readers": [
+            "topic_dossier",
+            "atoms"
+          ],
+          "answer": "visa process evolved as follows:\n- 2026-03-02: Maya started the visa paperwork and Nora helped collect the financial statements\n- 2026-03-09: The consulate requested an extra residence document, so the visa process was delayed\n- 2026-03-18: The visa was approved after Maya submitted the missing residence document",
+          "success": true,
+          "hits": [
+            {
+              "kind": "topic_dossier",
+              "topic": "visa process",
+              "content": "Topic: visa process\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consulate requested an extra residence document, so the visa process was delayed\n- The visa was approved after Maya submitted the missing residence document",
+              "score": 0.625,
+              "timeline": [
+                "2026-03-02: Maya started the visa paperwork and Nora helped collect the financial statements",
+                "2026-03-09: The consulate requested an extra residence document, so the visa process was delayed",
+                "2026-03-18: The visa was approved after Maya submitted the missing residence document"
+              ],
+              "atom_ids": [
+                "atom-004",
+                "atom-005",
+                "atom-006"
+              ]
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-005",
+              "topic": "visa process",
+              "content": "The consulate requested an extra residence document, so the visa process was delayed",
+              "score": 0.555,
+              "event_time": "2026-03-09"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-004",
+              "topic": "visa process",
+              "content": "Maya started the visa paperwork and Nora helped collect the financial statements",
+              "score": 0.43,
+              "event_time": "2026-03-02"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-006",
+              "topic": "visa process",
+              "content": "The visa was approved after Maya submitted the missing residence document",
+              "score": 0.43,
+              "event_time": "2026-03-18"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-002",
+              "topic": "apartment lease",
+              "content": "The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20",
+              "score": 0.25,
+              "event_time": "2026-03-05"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-001",
+              "topic": "apartment lease",
+              "content": "The landlord asked for a signed lease draft",
+              "score": 0.125,
+              "event_time": "2026-03-01"
+            }
+          ],
+          "covered_atoms": [
+            "atom-006"
+          ],
+          "missing_atoms": [
+            "atom-008",
+            "atom-010"
+          ],
+          "present_evidence": [
+            "entity",
+            "fact",
+            "timeline",
+            "topic_dossier"
+          ]
+        }
+      ]
+    },
+    {
+      "qid": "q3",
+      "question": "Who helped with the visa paperwork?",
+      "family": "relational",
+      "expected_topic": "visa process",
+      "runs": [
+        {
+          "qid": "q3",
+          "question": "Who helped with the visa paperwork?",
+          "plan": {
+            "family": "relational",
+            "primary": "atoms",
+            "support": [
+              "topic_dossier"
+            ],
+            "required": [
+              "fact",
+              "entity"
+            ],
+            "topic": "visa process"
+          },
+          "mode": "overview_only",
+          "readers": [
+            "overview"
+          ],
+          "answer": "apartment lease: Topic: apartment lease Span: 2026-03-01 -> 2026-03-12 Key updates: - We found an apartment on Rua Augusta 14 - The landlord asked for a signed lease draft - The lease screenshot showed the address Rua Au",
+          "success": false,
+          "hits": [
+            {
+              "kind": "overview",
+              "topic": "all",
+              "content": "apartment lease: Topic: apartment lease Span: 2026-03-01 -> 2026-03-12 Key updates: - We found an apartment on Rua Augusta 14 - The landlord asked for a signed lease draft - The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20 - The landlord delayed the handover by one week, so the move-in moved to 2026-03-27 | family support: Topic: family support Span: 2026-03-04 -> 2026-03-21 Key updates: - My mother moved in to help with childcare after the baby was born - The childcare plan shifted to include a nanny and my mother on weekdays - We kept the childcare plan because the work schedule became more intense | product launch: Topic: product launch Span: 2026-03-03 -> 2026-03-19 Key updates: - The team planned the beta launch for 2026-04-10 - A payment bug pushed the launch back to 2026-04-24 - The payment fix landed and the launch date was confirmed for 2026-04-24 | visa process: Topic: visa process Span: 2026-03-02 -> 2026-03-18 Key updates: - Maya started the visa paperwork and Nora helped collect the financial statements - The consulate requested an extra residence document, so the visa process was delayed - The visa was approved after Maya submitted the missing residence document",
+              "score": 0.833
+            }
+          ],
+          "covered_atoms": [],
+          "missing_atoms": [
+            "atom-006"
+          ],
+          "present_evidence": [
+            "fact"
+          ]
+        },
+        {
+          "qid": "q3",
+          "question": "Who helped with the visa paperwork?",
+          "plan": {
+            "family": "relational",
+            "primary": "atoms",
+            "support": [
+              "topic_dossier"
+            ],
+            "required": [
+              "fact",
+              "entity"
+            ],
+            "topic": "visa process"
+          },
+          "mode": "atom_only",
+          "readers": [
+            "atoms"
+          ],
+          "answer": "Maya started the visa paperwork and Nora helped collect the financial statements",
+          "success": true,
+          "hits": [
+            {
+              "kind": "atom",
+              "atom_id": "atom-004",
+              "topic": "visa process",
+              "content": "Maya started the visa paperwork and Nora helped collect the financial statements",
+              "score": 0.847,
+              "event_time": "2026-03-02"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-005",
+              "topic": "visa process",
+              "content": "The consulate requested an extra residence document, so the visa process was delayed",
+              "score": 0.513,
+              "event_time": "2026-03-09"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-006",
+              "topic": "visa process",
+              "content": "The visa was approved after Maya submitted the missing residence document",
+              "score": 0.513,
+              "event_time": "2026-03-18"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-010",
+              "topic": "family support",
+              "content": "My mother moved in to help with childcare after the baby was born",
+              "score": 0.333,
+              "event_time": "2026-03-04"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-001",
+              "topic": "apartment lease",
+              "content": "The landlord asked for a signed lease draft",
+              "score": 0.167,
+              "event_time": "2026-03-01"
+            }
+          ],
+          "covered_atoms": [
+            "atom-006"
+          ],
+          "missing_atoms": [],
+          "present_evidence": [
+            "entity",
+            "fact",
+            "timeline"
+          ]
+        },
+        {
+          "qid": "q3",
+          "question": "Who helped with the visa paperwork?",
+          "plan": {
+            "family": "relational",
+            "primary": "atoms",
+            "support": [
+              "topic_dossier"
+            ],
+            "required": [
+              "fact",
+              "entity"
+            ],
+            "topic": "visa process"
+          },
+          "mode": "topic_dossier",
+          "readers": [
+            "topic_dossier",
+            "atoms"
+          ],
+          "answer": "Topic: visa process\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consulate requested an extra residence document, so the visa process was delayed\n- The visa was approved after Maya submitted the missing residence document",
+          "success": true,
+          "hits": [
+            {
+              "kind": "topic_dossier",
+              "topic": "visa process",
+              "content": "Topic: visa process\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consulate requested an extra residence document, so the visa process was delayed\n- The visa was approved after Maya submitted the missing residence document",
+              "score": 0.917,
+              "timeline": [
+                "2026-03-02: Maya started the visa paperwork and Nora helped collect the financial statements",
+                "2026-03-09: The consulate requested an extra residence document, so the visa process was delayed",
+                "2026-03-18: The visa was approved after Maya submitted the missing residence document"
+              ],
+              "atom_ids": [
+                "atom-004",
+                "atom-005",
+                "atom-006"
+              ]
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-004",
+              "topic": "visa process",
+              "content": "Maya started the visa paperwork and Nora helped collect the financial statements",
+              "score": 0.847,
+              "event_time": "2026-03-02"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-005",
+              "topic": "visa process",
+              "content": "The consulate requested an extra residence document, so the visa process was delayed",
+              "score": 0.513,
+              "event_time": "2026-03-09"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-006",
+              "topic": "visa process",
+              "content": "The visa was approved after Maya submitted the missing residence document",
+              "score": 0.513,
+              "event_time": "2026-03-18"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-010",
+              "topic": "family support",
+              "content": "My mother moved in to help with childcare after the baby was born",
+              "score": 0.333,
+              "event_time": "2026-03-04"
+            }
+          ],
+          "covered_atoms": [
+            "atom-006"
+          ],
+          "missing_atoms": [],
+          "present_evidence": [
+            "entity",
+            "fact",
+            "timeline",
+            "topic_dossier"
+          ]
+        },
+        {
+          "qid": "q3",
+          "question": "Who helped with the visa paperwork?",
+          "plan": {
+            "family": "relational",
+            "primary": "atoms",
+            "support": [
+              "topic_dossier"
+            ],
+            "required": [
+              "fact",
+              "entity"
+            ],
+            "topic": "visa process"
+          },
+          "mode": "contract_topic_dossier",
+          "readers": [
+            "topic_dossier",
+            "atoms"
+          ],
+          "answer": "Topic: visa process\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consulate requested an extra residence document, so the visa process was delayed\n- The visa was approved after Maya submitted the missing residence document",
+          "success": true,
+          "hits": [
+            {
+              "kind": "topic_dossier",
+              "topic": "visa process",
+              "content": "Topic: visa process\nSpan: 2026-03-02 -> 2026-03-18\nKey updates:\n- Maya started the visa paperwork and Nora helped collect the financial statements\n- The consulate requested an extra residence document, so the visa process was delayed\n- The visa was approved after Maya submitted the missing residence document",
+              "score": 0.917,
+              "timeline": [
+                "2026-03-02: Maya started the visa paperwork and Nora helped collect the financial statements",
+                "2026-03-09: The consulate requested an extra residence document, so the visa process was delayed",
+                "2026-03-18: The visa was approved after Maya submitted the missing residence document"
+              ],
+              "atom_ids": [
+                "atom-004",
+                "atom-005",
+                "atom-006"
+              ]
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-004",
+              "topic": "visa process",
+              "content": "Maya started the visa paperwork and Nora helped collect the financial statements",
+              "score": 0.847,
+              "event_time": "2026-03-02"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-005",
+              "topic": "visa process",
+              "content": "The consulate requested an extra residence document, so the visa process was delayed",
+              "score": 0.513,
+              "event_time": "2026-03-09"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-006",
+              "topic": "visa process",
+              "content": "The visa was approved after Maya submitted the missing residence document",
+              "score": 0.513,
+              "event_time": "2026-03-18"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-010",
+              "topic": "family support",
+              "content": "My mother moved in to help with childcare after the baby was born",
+              "score": 0.333,
+              "event_time": "2026-03-04"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-001",
+              "topic": "apartment lease",
+              "content": "The landlord asked for a signed lease draft",
+              "score": 0.167,
+              "event_time": "2026-03-01"
+            }
+          ],
+          "covered_atoms": [
+            "atom-006"
+          ],
+          "missing_atoms": [],
+          "present_evidence": [
+            "entity",
+            "fact",
+            "timeline",
+            "topic_dossier"
+          ]
+        }
+      ]
+    },
+    {
+      "qid": "q4",
+      "question": "What address was shown in the lease screenshot?",
+      "family": "visual",
+      "expected_topic": "apartment lease",
+      "runs": [
+        {
+          "qid": "q4",
+          "question": "What address was shown in the lease screenshot?",
+          "plan": {
+            "family": "visual",
+            "primary": "topic_dossier",
+            "support": [
+              "atoms"
+            ],
+            "required": [
+              "topic_dossier",
+              "fact"
+            ],
+            "topic": "apartment lease"
+          },
+          "mode": "overview_only",
+          "readers": [
+            "overview"
+          ],
+          "answer": "apartment lease: Topic: apartment lease Span: 2026-03-01 -> 2026-03-12 Key updates: - We found an apartment on Rua Augusta 14 - The landlord asked for a signed lease draft - The lease screenshot showed the address Rua Au",
+          "success": true,
+          "hits": [
+            {
+              "kind": "overview",
+              "topic": "all",
+              "content": "apartment lease: Topic: apartment lease Span: 2026-03-01 -> 2026-03-12 Key updates: - We found an apartment on Rua Augusta 14 - The landlord asked for a signed lease draft - The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20 - The landlord delayed the handover by one week, so the move-in moved to 2026-03-27 | family support: Topic: family support Span: 2026-03-04 -> 2026-03-21 Key updates: - My mother moved in to help with childcare after the baby was born - The childcare plan shifted to include a nanny and my mother on weekdays - We kept the childcare plan because the work schedule became more intense | product launch: Topic: product launch Span: 2026-03-03 -> 2026-03-19 Key updates: - The team planned the beta launch for 2026-04-10 - A payment bug pushed the launch back to 2026-04-24 - The payment fix landed and the launch date was confirmed for 2026-04-24 | visa process: Topic: visa process Span: 2026-03-02 -> 2026-03-18 Key updates: - Maya started the visa paperwork and Nora helped collect the financial statements - The consulate requested an extra residence document, so the visa process was delayed - The visa was approved after Maya submitted the missing residence document",
+              "score": 0.75
+            }
+          ],
+          "covered_atoms": [],
+          "missing_atoms": [
+            "atom-002"
+          ],
+          "present_evidence": [
+            "fact"
+          ]
+        },
+        {
+          "qid": "q4",
+          "question": "What address was shown in the lease screenshot?",
+          "plan": {
+            "family": "visual",
+            "primary": "topic_dossier",
+            "support": [
+              "atoms"
+            ],
+            "required": [
+              "topic_dossier",
+              "fact"
+            ],
+            "topic": "apartment lease"
+          },
+          "mode": "atom_only",
+          "readers": [
+            "atoms"
+          ],
+          "answer": "The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20",
+          "success": true,
+          "hits": [
+            {
+              "kind": "atom",
+              "atom_id": "atom-002",
+              "topic": "apartment lease",
+              "content": "The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20",
+              "score": 0.805,
+              "event_time": "2026-03-05"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-001",
+              "topic": "apartment lease",
+              "content": "The landlord asked for a signed lease draft",
+              "score": 0.43,
+              "event_time": "2026-03-01"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-003",
+              "topic": "apartment lease",
+              "content": "The landlord delayed the handover by one week, so the move-in moved to 2026-03-27",
+              "score": 0.43,
+              "event_time": "2026-03-12"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-010",
+              "topic": "family support",
+              "content": "My mother moved in to help with childcare after the baby was born",
+              "score": 0.375,
+              "event_time": "2026-03-04"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-005",
+              "topic": "visa process",
+              "content": "The consulate requested an extra residence document, so the visa process was delayed",
+              "score": 0.25,
+              "event_time": "2026-03-09"
+            }
+          ],
+          "covered_atoms": [
+            "atom-002"
+          ],
+          "missing_atoms": [],
+          "present_evidence": [
+            "entity",
+            "fact",
+            "timeline"
+          ]
+        },
+        {
+          "qid": "q4",
+          "question": "What address was shown in the lease screenshot?",
+          "plan": {
+            "family": "visual",
+            "primary": "topic_dossier",
+            "support": [
+              "atoms"
+            ],
+            "required": [
+              "topic_dossier",
+              "fact"
+            ],
+            "topic": "apartment lease"
+          },
+          "mode": "topic_dossier",
+          "readers": [
+            "topic_dossier",
+            "atoms"
+          ],
+          "answer": "Topic: apartment lease\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20\n- The landlord delayed the handover by one week, so the move-in moved to 2026-03-27",
+          "success": true,
+          "hits": [
+            {
+              "kind": "topic_dossier",
+              "topic": "apartment lease",
+              "content": "Topic: apartment lease\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20\n- The landlord delayed the handover by one week, so the move-in moved to 2026-03-27",
+              "score": 0.875,
+              "timeline": [
+                "2026-03-01: We found an apartment on Rua Augusta 14",
+                "2026-03-01: The landlord asked for a signed lease draft",
+                "2026-03-05: The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20",
+                "2026-03-12: The landlord delayed the handover by one week, so the move-in moved to 2026-03-27"
+              ],
+              "atom_ids": [
+                "atom-000",
+                "atom-001",
+                "atom-002",
+                "atom-003"
+              ]
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-002",
+              "topic": "apartment lease",
+              "content": "The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20",
+              "score": 0.805,
+              "event_time": "2026-03-05"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-001",
+              "topic": "apartment lease",
+              "content": "The landlord asked for a signed lease draft",
+              "score": 0.43,
+              "event_time": "2026-03-01"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-003",
+              "topic": "apartment lease",
+              "content": "The landlord delayed the handover by one week, so the move-in moved to 2026-03-27",
+              "score": 0.43,
+              "event_time": "2026-03-12"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-010",
+              "topic": "family support",
+              "content": "My mother moved in to help with childcare after the baby was born",
+              "score": 0.375,
+              "event_time": "2026-03-04"
+            }
+          ],
+          "covered_atoms": [
+            "atom-002"
+          ],
+          "missing_atoms": [],
+          "present_evidence": [
+            "entity",
+            "fact",
+            "timeline",
+            "topic_dossier"
+          ]
+        },
+        {
+          "qid": "q4",
+          "question": "What address was shown in the lease screenshot?",
+          "plan": {
+            "family": "visual",
+            "primary": "topic_dossier",
+            "support": [
+              "atoms"
+            ],
+            "required": [
+              "topic_dossier",
+              "fact"
+            ],
+            "topic": "apartment lease"
+          },
+          "mode": "contract_topic_dossier",
+          "readers": [
+            "topic_dossier",
+            "atoms"
+          ],
+          "answer": "Topic: apartment lease\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20\n- The landlord delayed the handover by one week, so the move-in moved to 2026-03-27",
+          "success": true,
+          "hits": [
+            {
+              "kind": "topic_dossier",
+              "topic": "apartment lease",
+              "content": "Topic: apartment lease\nSpan: 2026-03-01 -> 2026-03-12\nKey updates:\n- We found an apartment on Rua Augusta 14\n- The landlord asked for a signed lease draft\n- The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20\n- The landlord delayed the handover by one week, so the move-in moved to 2026-03-27",
+              "score": 0.875,
+              "timeline": [
+                "2026-03-01: We found an apartment on Rua Augusta 14",
+                "2026-03-01: The landlord asked for a signed lease draft",
+                "2026-03-05: The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20",
+                "2026-03-12: The landlord delayed the handover by one week, so the move-in moved to 2026-03-27"
+              ],
+              "atom_ids": [
+                "atom-000",
+                "atom-001",
+                "atom-002",
+                "atom-003"
+              ]
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-002",
+              "topic": "apartment lease",
+              "content": "The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20",
+              "score": 0.805,
+              "event_time": "2026-03-05"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-001",
+              "topic": "apartment lease",
+              "content": "The landlord asked for a signed lease draft",
+              "score": 0.43,
+              "event_time": "2026-03-01"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-003",
+              "topic": "apartment lease",
+              "content": "The landlord delayed the handover by one week, so the move-in moved to 2026-03-27",
+              "score": 0.43,
+              "event_time": "2026-03-12"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-010",
+              "topic": "family support",
+              "content": "My mother moved in to help with childcare after the baby was born",
+              "score": 0.375,
+              "event_time": "2026-03-04"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-005",
+              "topic": "visa process",
+              "content": "The consulate requested an extra residence document, so the visa process was delayed",
+              "score": 0.25,
+              "event_time": "2026-03-09"
+            }
+          ],
+          "covered_atoms": [
+            "atom-002"
+          ],
+          "missing_atoms": [],
+          "present_evidence": [
+            "entity",
+            "fact",
+            "timeline",
+            "topic_dossier"
+          ]
+        }
+      ]
+    },
+    {
+      "qid": "q5",
+      "question": "When did the product launch settle on its final date?",
+      "family": "longitudinal",
+      "expected_topic": "product launch",
+      "runs": [
+        {
+          "qid": "q5",
+          "question": "When did the product launch settle on its final date?",
+          "plan": {
+            "family": "general",
+            "primary": "atoms",
+            "support": [
+              "topic_dossier"
+            ],
+            "required": [
+              "fact"
+            ],
+            "topic": "product launch"
+          },
+          "mode": "overview_only",
+          "readers": [
+            "overview"
+          ],
+          "answer": "apartment lease: Topic: apartment lease Span: 2026-03-01 -> 2026-03-12 Key updates: - We found an apartment on Rua Augusta 14 - The landlord asked for a signed lease draft - The lease screenshot showed the address Rua Au",
+          "success": false,
+          "hits": [
+            {
+              "kind": "overview",
+              "topic": "all",
+              "content": "apartment lease: Topic: apartment lease Span: 2026-03-01 -> 2026-03-12 Key updates: - We found an apartment on Rua Augusta 14 - The landlord asked for a signed lease draft - The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20 - The landlord delayed the handover by one week, so the move-in moved to 2026-03-27 | family support: Topic: family support Span: 2026-03-04 -> 2026-03-21 Key updates: - My mother moved in to help with childcare after the baby was born - The childcare plan shifted to include a nanny and my mother on weekdays - We kept the childcare plan because the work schedule became more intense | product launch: Topic: product launch Span: 2026-03-03 -> 2026-03-19 Key updates: - The team planned the beta launch for 2026-04-10 - A payment bug pushed the launch back to 2026-04-24 - The payment fix landed and the launch date was confirmed for 2026-04-24 | visa process: Topic: visa process Span: 2026-03-02 -> 2026-03-18 Key updates: - Maya started the visa paperwork and Nora helped collect the financial statements - The consulate requested an extra residence document, so the visa process was delayed - The visa was approved after Maya submitted the missing residence document",
+              "score": 0.5
+            }
+          ],
+          "covered_atoms": [],
+          "missing_atoms": [
+            "atom-012",
+            "atom-014",
+            "atom-016"
+          ],
+          "present_evidence": [
+            "fact"
+          ]
+        },
+        {
+          "qid": "q5",
+          "question": "When did the product launch settle on its final date?",
+          "plan": {
+            "family": "general",
+            "primary": "atoms",
+            "support": [
+              "topic_dossier"
+            ],
+            "required": [
+              "fact"
+            ],
+            "topic": "product launch"
+          },
+          "mode": "atom_only",
+          "readers": [
+            "atoms"
+          ],
+          "answer": "The payment fix landed and the launch date was confirmed for 2026-04-24",
+          "success": true,
+          "hits": [
+            {
+              "kind": "atom",
+              "atom_id": "atom-009",
+              "topic": "product launch",
+              "content": "The payment fix landed and the launch date was confirmed for 2026-04-24",
+              "score": 0.48,
+              "event_time": "2026-03-19"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-007",
+              "topic": "product launch",
+              "content": "The team planned the beta launch for 2026-04-10",
+              "score": 0.38,
+              "event_time": "2026-03-03"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-008",
+              "topic": "product launch",
+              "content": "A payment bug pushed the launch back to 2026-04-24",
+              "score": 0.38,
+              "event_time": "2026-03-11"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-002",
+              "topic": "apartment lease",
+              "content": "The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20",
+              "score": 0.2,
+              "event_time": "2026-03-05"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-011",
+              "topic": "family support",
+              "content": "The childcare plan shifted to include a nanny and my mother on weekdays",
+              "score": 0.2,
+              "event_time": "2026-03-10"
+            }
+          ],
+          "covered_atoms": [],
+          "missing_atoms": [
+            "atom-012",
+            "atom-014",
+            "atom-016"
+          ],
+          "present_evidence": [
+            "entity",
+            "fact",
+            "timeline"
+          ]
+        },
+        {
+          "qid": "q5",
+          "question": "When did the product launch settle on its final date?",
+          "plan": {
+            "family": "general",
+            "primary": "atoms",
+            "support": [
+              "topic_dossier"
+            ],
+            "required": [
+              "fact"
+            ],
+            "topic": "product launch"
+          },
+          "mode": "topic_dossier",
+          "readers": [
+            "topic_dossier",
+            "atoms"
+          ],
+          "answer": "Topic: product launch\nSpan: 2026-03-03 -> 2026-03-19\nKey updates:\n- The team planned the beta launch for 2026-04-10\n- A payment bug pushed the launch back to 2026-04-24\n- The payment fix landed and the launch date was confirmed for 2026-04-24",
+          "success": true,
+          "hits": [
+            {
+              "kind": "topic_dossier",
+              "topic": "product launch",
+              "content": "Topic: product launch\nSpan: 2026-03-03 -> 2026-03-19\nKey updates:\n- The team planned the beta launch for 2026-04-10\n- A payment bug pushed the launch back to 2026-04-24\n- The payment fix landed and the launch date was confirmed for 2026-04-24",
+              "score": 0.65,
+              "timeline": [
+                "2026-03-03: The team planned the beta launch for 2026-04-10",
+                "2026-03-11: A payment bug pushed the launch back to 2026-04-24",
+                "2026-03-19: The payment fix landed and the launch date was confirmed for 2026-04-24"
+              ],
+              "atom_ids": [
+                "atom-007",
+                "atom-008",
+                "atom-009"
+              ]
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-009",
+              "topic": "product launch",
+              "content": "The payment fix landed and the launch date was confirmed for 2026-04-24",
+              "score": 0.48,
+              "event_time": "2026-03-19"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-007",
+              "topic": "product launch",
+              "content": "The team planned the beta launch for 2026-04-10",
+              "score": 0.38,
+              "event_time": "2026-03-03"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-008",
+              "topic": "product launch",
+              "content": "A payment bug pushed the launch back to 2026-04-24",
+              "score": 0.38,
+              "event_time": "2026-03-11"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-002",
+              "topic": "apartment lease",
+              "content": "The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20",
+              "score": 0.2,
+              "event_time": "2026-03-05"
+            }
+          ],
+          "covered_atoms": [],
+          "missing_atoms": [
+            "atom-012",
+            "atom-014",
+            "atom-016"
+          ],
+          "present_evidence": [
+            "entity",
+            "fact",
+            "timeline",
+            "topic_dossier"
+          ]
+        },
+        {
+          "qid": "q5",
+          "question": "When did the product launch settle on its final date?",
+          "plan": {
+            "family": "general",
+            "primary": "atoms",
+            "support": [
+              "topic_dossier"
+            ],
+            "required": [
+              "fact"
+            ],
+            "topic": "product launch"
+          },
+          "mode": "contract_topic_dossier",
+          "readers": [
+            "topic_dossier",
+            "atoms"
+          ],
+          "answer": "Topic: product launch\nSpan: 2026-03-03 -> 2026-03-19\nKey updates:\n- The team planned the beta launch for 2026-04-10\n- A payment bug pushed the launch back to 2026-04-24\n- The payment fix landed and the launch date was confirmed for 2026-04-24",
+          "success": true,
+          "hits": [
+            {
+              "kind": "topic_dossier",
+              "topic": "product launch",
+              "content": "Topic: product launch\nSpan: 2026-03-03 -> 2026-03-19\nKey updates:\n- The team planned the beta launch for 2026-04-10\n- A payment bug pushed the launch back to 2026-04-24\n- The payment fix landed and the launch date was confirmed for 2026-04-24",
+              "score": 0.65,
+              "timeline": [
+                "2026-03-03: The team planned the beta launch for 2026-04-10",
+                "2026-03-11: A payment bug pushed the launch back to 2026-04-24",
+                "2026-03-19: The payment fix landed and the launch date was confirmed for 2026-04-24"
+              ],
+              "atom_ids": [
+                "atom-007",
+                "atom-008",
+                "atom-009"
+              ]
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-009",
+              "topic": "product launch",
+              "content": "The payment fix landed and the launch date was confirmed for 2026-04-24",
+              "score": 0.48,
+              "event_time": "2026-03-19"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-007",
+              "topic": "product launch",
+              "content": "The team planned the beta launch for 2026-04-10",
+              "score": 0.38,
+              "event_time": "2026-03-03"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-008",
+              "topic": "product launch",
+              "content": "A payment bug pushed the launch back to 2026-04-24",
+              "score": 0.38,
+              "event_time": "2026-03-11"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-002",
+              "topic": "apartment lease",
+              "content": "The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20",
+              "score": 0.2,
+              "event_time": "2026-03-05"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-011",
+              "topic": "family support",
+              "content": "The childcare plan shifted to include a nanny and my mother on weekdays",
+              "score": 0.2,
+              "event_time": "2026-03-10"
+            }
+          ],
+          "covered_atoms": [],
+          "missing_atoms": [
+            "atom-012",
+            "atom-014",
+            "atom-016"
+          ],
+          "present_evidence": [
+            "entity",
+            "fact",
+            "timeline",
+            "topic_dossier"
+          ]
+        }
+      ]
+    },
+    {
+      "qid": "q6",
+      "question": "How did the childcare plan evolve?",
+      "family": "longitudinal",
+      "expected_topic": "family support",
+      "runs": [
+        {
+          "qid": "q6",
+          "question": "How did the childcare plan evolve?",
+          "plan": {
+            "family": "longitudinal",
+            "primary": "topic_dossier",
+            "support": [
+              "atoms"
+            ],
+            "required": [
+              "topic_dossier",
+              "timeline",
+              "fact"
+            ],
+            "topic": "family support"
+          },
+          "mode": "overview_only",
+          "readers": [
+            "overview"
+          ],
+          "answer": "apartment lease: Topic: apartment lease Span: 2026-03-01 -> 2026-03-12 Key updates: - We found an apartment on Rua Augusta 14 - The landlord asked for a signed lease draft - The lease screenshot showed the address Rua Au",
+          "success": false,
+          "hits": [
+            {
+              "kind": "overview",
+              "topic": "all",
+              "content": "apartment lease: Topic: apartment lease Span: 2026-03-01 -> 2026-03-12 Key updates: - We found an apartment on Rua Augusta 14 - The landlord asked for a signed lease draft - The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20 - The landlord delayed the handover by one week, so the move-in moved to 2026-03-27 | family support: Topic: family support Span: 2026-03-04 -> 2026-03-21 Key updates: - My mother moved in to help with childcare after the baby was born - The childcare plan shifted to include a nanny and my mother on weekdays - We kept the childcare plan because the work schedule became more intense | product launch: Topic: product launch Span: 2026-03-03 -> 2026-03-19 Key updates: - The team planned the beta launch for 2026-04-10 - A payment bug pushed the launch back to 2026-04-24 - The payment fix landed and the launch date was confirmed for 2026-04-24 | visa process: Topic: visa process Span: 2026-03-02 -> 2026-03-18 Key updates: - Maya started the visa paperwork and Nora helped collect the financial statements - The consulate requested an extra residence document, so the visa process was delayed - The visa was approved after Maya submitted the missing residence document",
+              "score": 0.5
+            }
+          ],
+          "covered_atoms": [],
+          "missing_atoms": [
+            "atom-018",
+            "atom-020",
+            "atom-022"
+          ],
+          "present_evidence": [
+            "fact"
+          ]
+        },
+        {
+          "qid": "q6",
+          "question": "How did the childcare plan evolve?",
+          "plan": {
+            "family": "longitudinal",
+            "primary": "topic_dossier",
+            "support": [
+              "atoms"
+            ],
+            "required": [
+              "topic_dossier",
+              "timeline",
+              "fact"
+            ],
+            "topic": "family support"
+          },
+          "mode": "atom_only",
+          "readers": [
+            "atoms"
+          ],
+          "answer": "unknown",
+          "success": false,
+          "hits": [
+            {
+              "kind": "atom",
+              "atom_id": "atom-011",
+              "topic": "family support",
+              "content": "The childcare plan shifted to include a nanny and my mother on weekdays",
+              "score": 0.68,
+              "event_time": "2026-03-10"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-012",
+              "topic": "family support",
+              "content": "We kept the childcare plan because the work schedule became more intense",
+              "score": 0.68,
+              "event_time": "2026-03-21"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-010",
+              "topic": "family support",
+              "content": "My mother moved in to help with childcare after the baby was born",
+              "score": 0.513,
+              "event_time": "2026-03-04"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-001",
+              "topic": "apartment lease",
+              "content": "The landlord asked for a signed lease draft",
+              "score": 0.167,
+              "event_time": "2026-03-01"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-002",
+              "topic": "apartment lease",
+              "content": "The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20",
+              "score": 0.167,
+              "event_time": "2026-03-05"
+            }
+          ],
+          "covered_atoms": [],
+          "missing_atoms": [
+            "atom-018",
+            "atom-020",
+            "atom-022"
+          ],
+          "present_evidence": [
+            "entity",
+            "fact",
+            "timeline"
+          ]
+        },
+        {
+          "qid": "q6",
+          "question": "How did the childcare plan evolve?",
+          "plan": {
+            "family": "longitudinal",
+            "primary": "topic_dossier",
+            "support": [
+              "atoms"
+            ],
+            "required": [
+              "topic_dossier",
+              "timeline",
+              "fact"
+            ],
+            "topic": "family support"
+          },
+          "mode": "topic_dossier",
+          "readers": [
+            "topic_dossier",
+            "atoms"
+          ],
+          "answer": "family support evolved as follows:\n- 2026-03-04: My mother moved in to help with childcare after the baby was born\n- 2026-03-10: The childcare plan shifted to include a nanny and my mother on weekdays\n- 2026-03-21: We kept the childcare plan because the work schedule became more intense",
+          "success": true,
+          "hits": [
+            {
+              "kind": "topic_dossier",
+              "topic": "family support",
+              "content": "Topic: family support\nSpan: 2026-03-04 -> 2026-03-21\nKey updates:\n- My mother moved in to help with childcare after the baby was born\n- The childcare plan shifted to include a nanny and my mother on weekdays\n- We kept the childcare plan because the work schedule became more intense",
+              "score": 0.75,
+              "timeline": [
+                "2026-03-04: My mother moved in to help with childcare after the baby was born",
+                "2026-03-10: The childcare plan shifted to include a nanny and my mother on weekdays",
+                "2026-03-21: We kept the childcare plan because the work schedule became more intense"
+              ],
+              "atom_ids": [
+                "atom-010",
+                "atom-011",
+                "atom-012"
+              ]
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-011",
+              "topic": "family support",
+              "content": "The childcare plan shifted to include a nanny and my mother on weekdays",
+              "score": 0.68,
+              "event_time": "2026-03-10"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-012",
+              "topic": "family support",
+              "content": "We kept the childcare plan because the work schedule became more intense",
+              "score": 0.68,
+              "event_time": "2026-03-21"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-010",
+              "topic": "family support",
+              "content": "My mother moved in to help with childcare after the baby was born",
+              "score": 0.513,
+              "event_time": "2026-03-04"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-001",
+              "topic": "apartment lease",
+              "content": "The landlord asked for a signed lease draft",
+              "score": 0.167,
+              "event_time": "2026-03-01"
+            }
+          ],
+          "covered_atoms": [],
+          "missing_atoms": [
+            "atom-018",
+            "atom-020",
+            "atom-022"
+          ],
+          "present_evidence": [
+            "entity",
+            "fact",
+            "timeline",
+            "topic_dossier"
+          ]
+        },
+        {
+          "qid": "q6",
+          "question": "How did the childcare plan evolve?",
+          "plan": {
+            "family": "longitudinal",
+            "primary": "topic_dossier",
+            "support": [
+              "atoms"
+            ],
+            "required": [
+              "topic_dossier",
+              "timeline",
+              "fact"
+            ],
+            "topic": "family support"
+          },
+          "mode": "contract_topic_dossier",
+          "readers": [
+            "topic_dossier",
+            "atoms"
+          ],
+          "answer": "family support evolved as follows:\n- 2026-03-04: My mother moved in to help with childcare after the baby was born\n- 2026-03-10: The childcare plan shifted to include a nanny and my mother on weekdays\n- 2026-03-21: We kept the childcare plan because the work schedule became more intense",
+          "success": true,
+          "hits": [
+            {
+              "kind": "topic_dossier",
+              "topic": "family support",
+              "content": "Topic: family support\nSpan: 2026-03-04 -> 2026-03-21\nKey updates:\n- My mother moved in to help with childcare after the baby was born\n- The childcare plan shifted to include a nanny and my mother on weekdays\n- We kept the childcare plan because the work schedule became more intense",
+              "score": 0.75,
+              "timeline": [
+                "2026-03-04: My mother moved in to help with childcare after the baby was born",
+                "2026-03-10: The childcare plan shifted to include a nanny and my mother on weekdays",
+                "2026-03-21: We kept the childcare plan because the work schedule became more intense"
+              ],
+              "atom_ids": [
+                "atom-010",
+                "atom-011",
+                "atom-012"
+              ]
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-011",
+              "topic": "family support",
+              "content": "The childcare plan shifted to include a nanny and my mother on weekdays",
+              "score": 0.68,
+              "event_time": "2026-03-10"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-012",
+              "topic": "family support",
+              "content": "We kept the childcare plan because the work schedule became more intense",
+              "score": 0.68,
+              "event_time": "2026-03-21"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-010",
+              "topic": "family support",
+              "content": "My mother moved in to help with childcare after the baby was born",
+              "score": 0.513,
+              "event_time": "2026-03-04"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-001",
+              "topic": "apartment lease",
+              "content": "The landlord asked for a signed lease draft",
+              "score": 0.167,
+              "event_time": "2026-03-01"
+            },
+            {
+              "kind": "atom",
+              "atom_id": "atom-002",
+              "topic": "apartment lease",
+              "content": "The lease screenshot showed the address Rua Augusta 14 and a move-in date of 2026-03-20",
+              "score": 0.167,
+              "event_time": "2026-03-05"
+            }
+          ],
+          "covered_atoms": [],
+          "missing_atoms": [
+            "atom-018",
+            "atom-020",
+            "atom-022"
+          ],
+          "present_evidence": [
+            "entity",
+            "fact",
+            "timeline",
+            "topic_dossier"
+          ]
+        }
+      ]
+    }
+  ],
+  "readiness": {
+    "topics": [
+      "apartment lease",
+      "family support",
+      "product launch",
+      "visa process"
+    ],
+    "atoms": 13
+  }
+}

@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EchoMemory Multimodal Nano Ablation</title>
+  <style>
+    :root {
+      --bg:#f6f7fb;--panel:#fff;--text:#172033;--muted:#667085;--line:#dde4ee;
+      --blue:#2457c5;--blue-soft:#eef4ff;--green:#067647;--green-soft:#ecfdf3;--red:#b42318;--red-soft:#fff1f3;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font:14px/1.68 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+    .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 70px}
+    .hero,.panel,.card{background:var(--panel);border:1px solid var(--line);border-radius:12px}
+    .hero{padding:28px 30px 24px}
+    .panel{padding:20px 22px;margin-top:18px}
+    .grid{display:grid;gap:16px}
+    .grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .card{padding:14px 16px}
+    h1,h2,h3{margin:0 0 10px}
+    h1{font-size:28px}
+    p{margin:8px 0}
+    ul{margin:8px 0 0 18px;padding:0}
+    li{margin:6px 0}
+    code{background:#f8fafc;border:1px solid var(--line);border-radius:6px;padding:1px 5px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .muted{color:var(--muted)}
+    .badge{display:inline-block;border-radius:999px;padding:3px 9px;font-size:12px;font-weight:700}
+    .ok{background:var(--green-soft);color:var(--green)}
+    .bad{background:var(--red-soft);color:var(--red)}
+    .kpi{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr));margin-top:14px}
+    .kpi .item{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+    .kpi .num{font-size:24px;font-weight:800}
+    .case{padding-top:14px;border-top:1px solid var(--line);margin-top:14px}
+    @media (max-width:960px){.grid.two,.kpi{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>EchoMemory Multimodal Nano Ablation</h1>
+      <p class="muted">
+        This is a toy multimodal ablation for the CVPR-oriented branch. It compares text-only retrieval against multimodal retrieval on the same memory graph and focuses on one narrow question:
+        when does image evidence become necessary instead of merely helpful?
+      </p>
+      <div class="kpi">
+        <div class="item"><div class="num">3/3</div><div class="muted">text-only</div></div>
+        <div class="item"><div class="num">3/3</div><div class="muted">multimodal</div></div>
+        <div class="item"><div class="num">2</div><div class="muted">visual gain cases</div></div>
+        <div class="item"><div class="num">3</div><div class="muted">total cases</div></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Interpretation</h2>
+      <p class="muted">
+        The core expected pattern is not that multimodal always beats text-only on every query. Instead:
+      </p>
+      <ul>
+        <li>for screenshot-specific questions, multimodal retrieval should surface <code>image_evidence</code> nodes</li>
+        <li>for OCR-only answers, text-only retrieval should fail while multimodal retrieval succeeds</li>
+        <li>for style or preference questions, multimodal memory should complement text rather than replace it</li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>Cases</h2>
+      <div class='case'><h3>visual_city_q1</h3><p><b>Query:</b> Which city appears in Gina&#x27;s screenshot from her trip?</p><p><b>Expected:</b> top1 should be image_evidence in multimodal mode</p><p class='muted'>A visual-location query should prioritize the screenshot node itself, not only textual event descriptions.</p><p class='muted'><b>Delta:</b> multimodal path should route to screenshot evidence</p><div class='grid two'><div class='card'><div class='badge ok'>text-only pass</div><ul><li><code>event:atom-000</code> · event · score=4.0<br>statement=Gina arrived in Rome on 2023-01-30 for a design interview.
+participants=Gina, Rome
+event_time=2023-01-30</li><li><code>entity:Gina</code> · entity · score=4.0<br>name=Gina
+first_seen_in=Gina arrived in Rome on 2023-01-30 for a design interview.</li><li><code>entity:Rome</code> · entity · score=4.0<br>name=Rome
+first_seen_in=Gina arrived in Rome on 2023-01-30 for a design interview.</li></ul></div><div class='card'><div class='badge ok'>multimodal pass</div><p class='muted'>intent=visual · layers=image_evidence,event,entity</p><ul><li><code>image:obs-001</code> · image_evidence · score=8.0<br>caption=Phone screenshot from Gina&#x27;s arrival day showing Roma Termini station board.
+ocr=Roma Termini 08:42 Platform 7
+tags=rome, station, arrival, travel
+linked_subject=Gina
+event_time=2023-01-30
+cre</li><li><code>image:obs-003</code> · image_evidence · score=6.0<br>caption=Moodboard screenshot for Jon&#x27;s dream studio with sunlit windows and a waterfront interior.
+ocr=waterfront loft natural light Marley floor
+tags=studio, moodboard, design, waterfront
+linked_subj</li><li><code>event:atom-000</code> · event · score=4.0<br>statement=Gina arrived in Rome on 2023-01-30 for a design interview.
+participants=Gina, Rome
+event_time=2023-01-30</li></ul></div></div></div><div class='case'><h3>visual_time_q2</h3><p><b>Query:</b> What time was visible in Gina&#x27;s screenshot when she arrived?</p><p><b>Expected:</b> multimodal retrieval should surface OCR with 08:42; text-only should miss it</p><p class='muted'>This is the core visual-memory case: the answer lives in OCR, not in the textual fact node.</p><p class='muted'><b>Delta:</b> OCR-only timestamp should appear only in multimodal retrieval</p><div class='grid two'><div class='card'><div class='badge ok'>text-only pass</div><ul><li><code>event:atom-000</code> · event · score=6.0<br>statement=Gina arrived in Rome on 2023-01-30 for a design interview.
+participants=Gina, Rome
+event_time=2023-01-30</li><li><code>entity:Gina</code> · entity · score=5.0<br>name=Gina
+first_seen_in=Gina arrived in Rome on 2023-01-30 for a design interview.</li><li><code>entity:Rome</code> · entity · score=5.0<br>name=Rome
+first_seen_in=Gina arrived in Rome on 2023-01-30 for a design interview.</li></ul></div><div class='card'><div class='badge ok'>multimodal pass</div><p class='muted'>intent=visual · layers=image_evidence,event,entity</p><ul><li><code>image:obs-001</code> · image_evidence · score=8.0<br>caption=Phone screenshot from Gina&#x27;s arrival day showing Roma Termini station board.
+ocr=Roma Termini 08:42 Platform 7
+tags=rome, station, arrival, travel
+linked_subject=Gina
+event_time=2023-01-30
+cre</li><li><code>image:obs-003</code> · image_evidence · score=7.0<br>caption=Moodboard screenshot for Jon&#x27;s dream studio with sunlit windows and a waterfront interior.
+ocr=waterfront loft natural light Marley floor
+tags=studio, moodboard, design, waterfront
+linked_subj</li><li><code>event:atom-000</code> · event · score=6.0<br>statement=Gina arrived in Rome on 2023-01-30 for a design interview.
+participants=Gina, Rome
+event_time=2023-01-30</li></ul></div></div></div><div class='case'><h3>style_q3</h3><p><b>Query:</b> What did Jon want the studio to look like?</p><p><b>Expected:</b> text-only can answer, but multimodal should also surface the moodboard screenshot</p><p class='muted'>This case checks that multimodal memory complements text for style/preference questions rather than replacing it.</p><p class='muted'><b>Delta:</b> multimodal path should preserve textual answer while also surfacing moodboard evidence</p><div class='grid two'><div class='card'><div class='badge ok'>text-only pass</div><ul><li><code>fact:atom-001</code> · fact · score=8.0<br>statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.
+subject=Jon
+predicate=wanted_style
+object=a waterfront loft with natural light and Marley f</li><li><code>event:atom-001</code> · event · score=6.0<br>statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.
+participants=Jon, a waterfront loft with natural light and Marley flooring.
+event_time=2023</li><li><code>entity:Jon</code> · entity · score=6.0<br>name=Jon
+first_seen_in=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.</li></ul></div><div class='card'><div class='badge ok'>multimodal pass</div><p class='muted'>intent=profile · layers=fact,image_evidence</p><ul><li><code>fact:atom-001</code> · fact · score=8.0<br>statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.
+subject=Jon
+predicate=wanted_style
+object=a waterfront loft with natural light and Marley f</li><li><code>event:atom-001</code> · event · score=6.0<br>statement=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.
+participants=Jon, a waterfront loft with natural light and Marley flooring.
+event_time=2023</li><li><code>entity:Jon</code> · entity · score=6.0<br>name=Jon
+first_seen_in=Jon wanted the dance studio to look like a waterfront loft with natural light and Marley flooring.</li></ul></div></div></div>
+    </section>
+  </div>
+</body>
+</html>

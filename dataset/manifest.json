@@ -19,6 +19,8 @@
       "name": "LongMemEval Sample",
       "path": "longmemeval.sample.json",
       "format": "longmemeval",
+      "samples": 2,
+      "questions": 2,
       "description": "Small LongMemEval-compatible sample bundled for open-source demos and small-sample validation."
     },
     {
@@ -26,7 +28,27 @@
       "name": "LongMemEval-S Cleaned Full",
       "path": "full/longmemeval_s_cleaned.json",
       "format": "longmemeval",
+      "samples": 500,
+      "questions": 500,
       "description": "Full LongMemEval-S cleaned split for official-style 500-row scoring."
+    },
+    {
+      "id": "longmemeval-oracle-full",
+      "name": "LongMemEval Oracle Full",
+      "path": "full/longmemeval_oracle.json",
+      "format": "longmemeval",
+      "samples": 500,
+      "questions": 500,
+      "description": "Full LongMemEval oracle split from the cleaned release; 500-row official-style scoring."
+    },
+    {
+      "id": "longmemeval-m-cleaned-full",
+      "name": "LongMemEval-M Cleaned Full",
+      "path": "full/longmemeval_m_cleaned.json",
+      "format": "longmemeval",
+      "samples": 500,
+      "questions": 500,
+      "description": "Full LongMemEval-M cleaned split for official-style 500-row scoring."
     },
     {
       "id": "chenmo",
@@ -41,6 +63,13 @@
       "path": "evolvingevents.sample.json",
       "format": "evolvingevents",
       "description": "Small event-evolution sample bundled for MemoryBench validation; use a full dataset path for benchmark accuracy."
+    },
+    {
+      "id": "evolvingevents-full",
+      "name": "EvolvingEvents Full",
+      "path": "full/evolvingevents.json",
+      "format": "evolvingevents",
+      "description": "Expected canonical full EvolvingEvents dataset path for formal benchmark runs. Register the real full file here when available."
     },
     {
       "id": "hotpotqa-sample",

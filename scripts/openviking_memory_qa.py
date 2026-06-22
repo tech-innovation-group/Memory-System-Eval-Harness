@@ -51,6 +51,448 @@ def token_estimate(text: str) -> int:
     return max(1, (len(text or "") + 3) // 4) if text else 0
 
 
+def write_json(path: Path, data: Any) -> None:
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def copy_if_exists(source: Path, target: Path) -> bool:
+    if not source.exists():
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
+    return True
+
+
+def recall_question_no(job: benchmark_adapter.Job, default_no: int | None = None) -> int | None:
+    raw_index = str(getattr(job, "question_index", "") or "").strip()
+    if raw_index.isdigit():
+        return int(raw_index) + 1
+    raw_native_id = str(getattr(job, "native_question_id", "") or "").strip()
+    match = re.search(r"_qa(\d+)$", raw_native_id)
+    if match:
+        return int(match.group(1)) + 1
+    return default_no
+
+
+def numeric_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def numeric_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def token_char_estimate(tokens: Any, chars_per_token: int = 4) -> int:
+    try:
+        token_count = max(0, int(tokens or 0))
+    except (TypeError, ValueError):
+        return 0
+    try:
+        multiplier = max(1, int(chars_per_token or 4))
+    except (TypeError, ValueError):
+        multiplier = 4
+    return token_count * multiplier
+
+
+def recall_selected_item(item: dict[str, Any]) -> dict[str, Any]:
+    content = str(
+        item.get("_prefetched_content")
+        or item.get("content")
+        or item.get("text")
+        or item.get("abstract")
+        or item.get("overview")
+        or item.get("summary")
+        or ""
+    )
+    chars = numeric_int(item.get("chars"))
+    if chars is None and content:
+        chars = len(content)
+    tokens = numeric_int(item.get("tokens"))
+    if tokens is None and content:
+        tokens = token_estimate(content)
+    payload = {
+        "uri": str(item.get("uri") or item.get("path") or item.get("id") or item.get("source_uri") or ""),
+        "score": numeric_float(item.get("score") or item.get("similarity")),
+        "tokens": tokens,
+        "chars": chars,
+    }
+    optional_fields = {
+        "kind": item.get("kind"),
+        "source": item.get("source"),
+        "path": item.get("path"),
+        "session_id": item.get("session_id"),
+        "content_source": item.get("content_source") or item.get("_prefetched_content_source"),
+        "evidence_uri": item.get("evidence_uri"),
+        "memory_type": item.get("memory_type"),
+    }
+    for key, value in optional_fields.items():
+        if value not in (None, ""):
+            payload[key] = value
+    preview = compact(content, 1200) if content else ""
+    if preview:
+        payload["preview"] = preview
+    return payload
+
+
+def write_recall_log(
+    out_dir: Path | None,
+    job: benchmark_adapter.Job,
+    backend: str,
+    query: str,
+    query_plan: list[str],
+    selected: list[dict[str, Any]],
+    *,
+    user_hits: list[dict[str, Any]] | None = None,
+    agent_hits: list[dict[str, Any]] | None = None,
+    retrieval_error: str = "",
+    question_no: int | None = None,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    if not out_dir:
+        return
+    resolved_no = recall_question_no(job, question_no)
+    if not resolved_no:
+        return
+    selected_items = [recall_selected_item(item) for item in selected]
+    payload: dict[str, Any] = {
+        "backend": backend,
+        "sample_id": job.sample_id,
+        "question_id": job.question_id,
+        "native_question_id": str(getattr(job, "native_question_id", "") or ""),
+        "question_no": resolved_no,
+        "query": query,
+        "query_time": job.query_time,
+        "query_plan": query_plan,
+        "retrieval_error": retrieval_error,
+        "candidate_count": len(selected_items),
+        "selected_count": len(selected_items),
+        "memory_tokens": sum(item.get("tokens") or 0 for item in selected_items),
+        "memory_chars": sum(item.get("chars") or 0 for item in selected_items),
+        "selected": selected_items,
+    }
+    if user_hits is not None:
+        payload["user_memory"] = [recall_selected_item(item) for item in user_hits]
+    if agent_hits is not None:
+        payload["agent_memory"] = [recall_selected_item(item) for item in agent_hits]
+    if extra:
+        payload.update(extra)
+    try:
+        write_json(out_dir / f"q{resolved_no:03d}.recall.json", payload)
+    except Exception as exc:
+        print(f"[qa] failed to write recall log for {job.question_id}: {exc}", flush=True)
+
+
+OPENVIKING_LOW_LEVEL_DUPLICATE_SOURCES = {
+    "openviking.embedding",
+    "openviking.rerank",
+}
+
+
+def resolve_openviking_workspace(workspace: str | Path | None = "") -> str:
+    raw = str(workspace or "").strip()
+    if raw:
+        return str(Path(raw).expanduser().resolve())
+
+    token_dir_env = str(os.environ.get("OPENVIKING_LLM_TOKEN_USAGE_DIR") or "").strip()
+    if token_dir_env:
+        token_dir = Path(token_dir_env).expanduser().resolve()
+        if token_dir.name == "llm_token_usage" and token_dir.parent.name == "_system":
+            return str(token_dir.parent.parent)
+
+    config_file = str(os.environ.get("OPENVIKING_CONFIG_FILE") or "").strip()
+    if config_file:
+        try:
+            payload = json.loads(Path(config_file).expanduser().read_text(encoding="utf-8"))
+        except Exception:
+            payload = {}
+        storage = (payload.get("storage") or {}) if isinstance(payload, dict) else {}
+        workspace_value = str(storage.get("workspace") or "").strip()
+        if workspace_value:
+            return str(Path(workspace_value).expanduser().resolve())
+
+    return ""
+
+
+def resolve_openviking_token_usage_dir(workspace: str | Path | None = "") -> Path | None:
+    resolved_workspace = resolve_openviking_workspace(workspace)
+    if resolved_workspace:
+        candidate = Path(resolved_workspace) / "_system" / "llm_token_usage"
+        if candidate.exists():
+            return candidate.resolve()
+
+    token_dir_env = str(os.environ.get("OPENVIKING_LLM_TOKEN_USAGE_DIR") or "").strip()
+    if token_dir_env:
+        candidate = Path(token_dir_env).expanduser().resolve()
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def openviking_token_phase_family(row: dict[str, Any]) -> str:
+    metadata = row.get("metadata") or {}
+    phase = str(metadata.get("phase") or "").strip().lower()
+    if phase:
+        return phase
+
+    call_site = str(row.get("call_site") or "").strip().lower()
+    source = str(row.get("source") or "").strip().lower()
+    if call_site.endswith("embed_resource") or source.startswith("openviking.session.commit"):
+        return "memory_import"
+    if call_site.endswith("embed_query"):
+        return "retrieval"
+    if call_site.startswith("vikingbot.provider"):
+        return "qa_chat"
+    return "unknown"
+
+
+def openviking_token_stage_key(row: dict[str, Any]) -> str:
+    metadata = row.get("metadata") or {}
+    for key in ("telemetry_stage", "stage", "operation"):
+        value = str(metadata.get(key) or "").strip().lower()
+        if value:
+            return value
+    call_site = str(row.get("call_site") or "").strip().lower()
+    if ":" in call_site:
+        return call_site.split(":", 1)[1]
+    return call_site or "unknown"
+
+
+def load_openviking_token_usage_rows(workspace: str | Path | None = "") -> tuple[Path | None, list[dict[str, Any]]]:
+    token_dir = resolve_openviking_token_usage_dir(workspace)
+    if token_dir is None or not token_dir.exists():
+        return None, []
+
+    rows: list[dict[str, Any]] = []
+    for path in sorted(token_dir.glob("*.jsonl")):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        for line in text.splitlines():
+            raw = line.strip()
+            if not raw:
+                continue
+            try:
+                row = json.loads(raw)
+            except Exception:
+                continue
+            if not isinstance(row, dict):
+                continue
+            rows.append(row)
+    rows.sort(key=lambda item: str(item.get("timestamp") or ""))
+    return token_dir, rows
+
+
+def summarize_openviking_token_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_tokens = 0
+    by_call_site: dict[str, dict[str, int]] = {}
+    by_source: dict[str, dict[str, int]] = {}
+    by_phase: dict[str, dict[str, int]] = {}
+    for row in rows:
+        input_tokens = int(row.get("input_tokens") or 0)
+        output_tokens = int(row.get("output_tokens") or 0)
+        row_total_tokens = int(row.get("total_tokens") or (input_tokens + output_tokens))
+        total_input_tokens += input_tokens
+        total_output_tokens += output_tokens
+        total_tokens += row_total_tokens
+
+        call_site = str(row.get("call_site") or "unknown")
+        source = str(row.get("source") or "unknown")
+        phase = openviking_token_phase_family(row)
+
+        call_site_bucket = by_call_site.setdefault(
+            call_site,
+            {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "call_count": 0},
+        )
+        call_site_bucket["input_tokens"] += input_tokens
+        call_site_bucket["output_tokens"] += output_tokens
+        call_site_bucket["total_tokens"] += row_total_tokens
+        call_site_bucket["call_count"] += 1
+
+        source_bucket = by_source.setdefault(
+            source,
+            {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "call_count": 0},
+        )
+        source_bucket["input_tokens"] += input_tokens
+        source_bucket["output_tokens"] += output_tokens
+        source_bucket["total_tokens"] += row_total_tokens
+        source_bucket["call_count"] += 1
+
+        phase_bucket = by_phase.setdefault(
+            phase,
+            {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "call_count": 0},
+        )
+        phase_bucket["input_tokens"] += input_tokens
+        phase_bucket["output_tokens"] += output_tokens
+        phase_bucket["total_tokens"] += row_total_tokens
+        phase_bucket["call_count"] += 1
+
+    return {
+        "call_count": len(rows),
+        "input_tokens": total_input_tokens,
+        "output_tokens": total_output_tokens,
+        "total_tokens": total_tokens,
+        "input_chars_est": token_char_estimate(total_input_tokens),
+        "output_chars_est": token_char_estimate(total_output_tokens),
+        "total_chars_est": token_char_estimate(total_tokens),
+        "by_call_site": by_call_site,
+        "by_source": by_source,
+        "by_phase": by_phase,
+    }
+
+
+def openviking_workspace_token_usage_summary(workspace: str | Path | None = "") -> dict[str, Any]:
+    token_dir, rows = load_openviking_token_usage_rows(workspace)
+    if token_dir is None:
+        return {
+            "internal_llm_log_dir": "",
+            "internal_llm_log_rows": 0,
+            "internal_llm_call_count": 0,
+            "internal_llm_input_tokens": 0,
+            "internal_llm_output_tokens": 0,
+            "internal_llm_total_tokens": 0,
+            "internal_llm_input_chars_est": 0,
+            "internal_llm_output_chars_est": 0,
+            "internal_llm_total_chars_est": 0,
+            "internal_llm_raw_total_tokens": 0,
+            "internal_llm_snapshot_total_tokens": 0,
+            "internal_llm_direct_total_tokens": 0,
+            "internal_llm_low_level_duplicate_tokens": 0,
+            "internal_llm_skipped_duplicate_tokens": 0,
+            "internal_memory_import_total_tokens": 0,
+            "internal_retrieval_total_tokens": 0,
+            "internal_qa_chat_total_tokens": 0,
+            "internal_call_sites": {},
+            "internal_sources": {},
+            "internal_phases": {},
+            "internal_dedupe_strategy": "prefer_snapshot_rows_over_duplicate_embedding_rerank_rows",
+        }
+
+    snapshot_rows: list[dict[str, Any]] = []
+    low_level_duplicate_rows: list[dict[str, Any]] = []
+    direct_rows: list[dict[str, Any]] = []
+    for row in rows:
+        source = str(row.get("source") or "").strip().lower()
+        if source.startswith("openviking.session"):
+            snapshot_rows.append(row)
+        elif source in OPENVIKING_LOW_LEVEL_DUPLICATE_SOURCES:
+            low_level_duplicate_rows.append(row)
+        else:
+            direct_rows.append(row)
+
+    snapshot_keys = {
+        (openviking_token_phase_family(row), openviking_token_stage_key(row))
+        for row in snapshot_rows
+    }
+    preferred_low_level_rows = [
+        row
+        for row in low_level_duplicate_rows
+        if (openviking_token_phase_family(row), openviking_token_stage_key(row)) not in snapshot_keys
+    ]
+    preferred_rows = snapshot_rows + direct_rows + preferred_low_level_rows
+
+    overall = summarize_openviking_token_rows(rows)
+    preferred = summarize_openviking_token_rows(preferred_rows)
+    snapshot = summarize_openviking_token_rows(snapshot_rows)
+    direct = summarize_openviking_token_rows(direct_rows)
+    duplicate_low_level = summarize_openviking_token_rows(low_level_duplicate_rows)
+    import_stage = summarize_openviking_token_rows(
+        [row for row in preferred_rows if openviking_token_phase_family(row) == "memory_import"]
+    )
+    retrieval_stage = summarize_openviking_token_rows(
+        [row for row in preferred_rows if openviking_token_phase_family(row) == "retrieval"]
+    )
+    qa_chat_stage = summarize_openviking_token_rows(
+        [row for row in preferred_rows if openviking_token_phase_family(row) == "qa_chat"]
+    )
+
+    return {
+        "internal_llm_log_dir": str(token_dir),
+        "internal_llm_log_rows": len(rows),
+        "internal_llm_call_count": preferred["call_count"],
+        "internal_llm_input_tokens": preferred["input_tokens"],
+        "internal_llm_output_tokens": preferred["output_tokens"],
+        "internal_llm_total_tokens": preferred["total_tokens"],
+        "internal_llm_input_chars_est": preferred["input_chars_est"],
+        "internal_llm_output_chars_est": preferred["output_chars_est"],
+        "internal_llm_total_chars_est": preferred["total_chars_est"],
+        "internal_llm_raw_total_tokens": overall["total_tokens"],
+        "internal_llm_snapshot_total_tokens": snapshot["total_tokens"],
+        "internal_llm_direct_total_tokens": direct["total_tokens"],
+        "internal_llm_low_level_duplicate_tokens": duplicate_low_level["total_tokens"],
+        "internal_llm_skipped_duplicate_tokens": overall["total_tokens"] - preferred["total_tokens"],
+        "internal_memory_import_total_tokens": import_stage["total_tokens"],
+        "internal_retrieval_total_tokens": retrieval_stage["total_tokens"],
+        "internal_qa_chat_total_tokens": qa_chat_stage["total_tokens"],
+        "internal_call_sites": preferred["by_call_site"],
+        "internal_sources": preferred["by_source"],
+        "internal_phases": preferred["by_phase"],
+        "internal_dedupe_strategy": "prefer_snapshot_rows_over_duplicate_embedding_rerank_rows",
+    }
+
+
+def _delta_int(after: Any, before: Any) -> int:
+    try:
+        return int(after or 0) - int(before or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _delta_metric_map(
+    after: dict[str, dict[str, Any]],
+    before: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, int]]:
+    result: dict[str, dict[str, int]] = {}
+    for key in sorted(set(after) | set(before)):
+        after_item = after.get(key) or {}
+        before_item = before.get(key) or {}
+        delta_item = {
+            "input_tokens": _delta_int(after_item.get("input_tokens"), before_item.get("input_tokens")),
+            "output_tokens": _delta_int(after_item.get("output_tokens"), before_item.get("output_tokens")),
+            "total_tokens": _delta_int(after_item.get("total_tokens"), before_item.get("total_tokens")),
+            "call_count": _delta_int(after_item.get("call_count"), before_item.get("call_count")),
+        }
+        if any(delta_item.values()):
+            result[key] = delta_item
+    return result
+
+
+def openviking_token_usage_delta(after: dict[str, Any], before: dict[str, Any] | None) -> dict[str, Any]:
+    baseline = before or {}
+    return {
+        "internal_llm_delta_call_count": _delta_int(after.get("internal_llm_call_count"), baseline.get("internal_llm_call_count")),
+        "internal_llm_delta_input_tokens": _delta_int(after.get("internal_llm_input_tokens"), baseline.get("internal_llm_input_tokens")),
+        "internal_llm_delta_output_tokens": _delta_int(after.get("internal_llm_output_tokens"), baseline.get("internal_llm_output_tokens")),
+        "internal_llm_delta_total_tokens": _delta_int(after.get("internal_llm_total_tokens"), baseline.get("internal_llm_total_tokens")),
+        "internal_llm_delta_input_chars_est": _delta_int(after.get("internal_llm_input_chars_est"), baseline.get("internal_llm_input_chars_est")),
+        "internal_llm_delta_output_chars_est": _delta_int(after.get("internal_llm_output_chars_est"), baseline.get("internal_llm_output_chars_est")),
+        "internal_llm_delta_total_chars_est": _delta_int(after.get("internal_llm_total_chars_est"), baseline.get("internal_llm_total_chars_est")),
+        "internal_memory_import_delta_total_tokens": _delta_int(after.get("internal_memory_import_total_tokens"), baseline.get("internal_memory_import_total_tokens")),
+        "internal_retrieval_delta_total_tokens": _delta_int(after.get("internal_retrieval_total_tokens"), baseline.get("internal_retrieval_total_tokens")),
+        "internal_qa_chat_delta_total_tokens": _delta_int(after.get("internal_qa_chat_total_tokens"), baseline.get("internal_qa_chat_total_tokens")),
+        "internal_delta_call_sites": _delta_metric_map(
+            dict(after.get("internal_call_sites") or {}),
+            dict(baseline.get("internal_call_sites") or {}),
+        ),
+        "internal_delta_sources": _delta_metric_map(
+            dict(after.get("internal_sources") or {}),
+            dict(baseline.get("internal_sources") or {}),
+        ),
+        "internal_delta_phases": _delta_metric_map(
+            dict(after.get("internal_phases") or {}),
+            dict(baseline.get("internal_phases") or {}),
+        ),
+    }
+
+
 SECRET_VALUE_RE = re.compile(r"(sk-[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._-]{12,})")
 MUTATING_COMMAND_RE = re.compile(
     r"(^|[;&|]\s*)(rm|mv|cp|touch|mkdir|rmdir|chmod|chown|python|python3|node|perl|ruby|sh|bash|zsh|curl|wget|tee)\b|>{1,2}",
@@ -75,9 +517,12 @@ def path_within(path: Path, root: Path) -> bool:
 def detect_vikingbot_workspace() -> str:
     candidates = [
         os.environ.get("VIKINGBOT_WORKSPACE", ""),
-        str(Path.home() / "openviking-latest" / "bot" / "workspace"),
+        str(Path.home() / "Code/openviking/versions/v0.3.24/bot/workspace"),
         str(Path.cwd() / "bot" / "workspace"),
+        str(ROOT / "bot" / "workspace"),
+        str(Path.cwd().parent / "bot" / "workspace"),
         str(Path.cwd().parent / "openviking-latest" / "bot" / "workspace"),
+        str(Path.home() / "openviking-latest" / "bot" / "workspace"),
     ]
     for raw in candidates:
         if not raw:
@@ -85,6 +530,25 @@ def detect_vikingbot_workspace() -> str:
         path = Path(raw).expanduser()
         if path.exists() and path.is_dir():
             return str(path.resolve())
+    return ""
+
+
+def detect_openviking_client_repo() -> str:
+    candidates = [
+        os.environ.get("OPENVIKING_CLIENT_REPO", ""),
+        str(Path.home() / "Code/openviking/versions/v0.3.24"),
+        str(ROOT.parent / "Code/openviking/versions/v0.3.24"),
+        str(Path.cwd() / "Code/openviking/versions/v0.3.24"),
+    ]
+    for raw in candidates:
+        if not raw:
+            continue
+        path = Path(raw).expanduser()
+        if (path / "pyproject.toml").exists() and (path / "openviking_cli").exists():
+            try:
+                return str(path.resolve())
+            except OSError:
+                return str(path)
     return ""
 
 
@@ -247,6 +711,21 @@ def parse_counter_json(value: Any) -> Counter:
     return counter
 
 
+def write_rows_csv(path: Path, rows: list[dict[str, Any]]) -> None:
+    fieldnames = csv_fieldnames(rows) if rows else []
+    with path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def read_rows_csv(path: Path) -> list[dict[str, str]]:
+    if not path.exists():
+        return []
+    with path.open(newline="", encoding="utf-8", errors="replace") as f:
+        return list(csv.DictReader(f))
+
+
 def parse_memory_users(value: Any) -> list[str]:
     if value in (None, ""):
         return []
@@ -370,10 +849,22 @@ TIMEOUT_RE = re.compile(r"(timed out|timeout|temporarily unavailable|connection 
 
 
 class ModelCallError(RuntimeError):
-    def __init__(self, message: str, retry_count: int, error_kind: str) -> None:
+    def __init__(
+        self,
+        message: str,
+        retry_count: int,
+        error_kind: str,
+        *,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        total_tokens: int = 0,
+    ) -> None:
         super().__init__(message)
         self.retry_count = retry_count
         self.error_kind = error_kind
+        self.prompt_tokens = int(prompt_tokens or 0)
+        self.completion_tokens = int(completion_tokens or 0)
+        self.total_tokens = int(total_tokens or 0)
 
 
 def _merge_stream_tool_call(target: dict[str, Any], update: dict[str, Any]) -> None:
@@ -627,6 +1118,128 @@ def openviking_search_api(
     return [item for item in items[:limit] if isinstance(item, dict)]
 
 
+def openviking_search_via_uv_client(
+    repo_root: str,
+    base_url: str,
+    query: str,
+    account: str,
+    user_id: str,
+    agent_id: str,
+    api_key: str,
+    limit: int,
+    target_uri: str = "",
+    session_id: str = "",
+    timeout_s: int = 90,
+) -> list[dict[str, Any]]:
+    repo = Path(repo_root).expanduser().resolve()
+    if not repo.exists():
+        raise RuntimeError(f"OpenViking repo not found: {repo}")
+    payload = {
+        "base_url": base_url,
+        "query": query,
+        "account": account,
+        "user_id": user_id,
+        "agent_id": agent_id,
+        "api_key": api_key,
+        "limit": limit,
+        "target_uri": target_uri,
+        "session_id": session_id,
+    }
+    inline = r"""
+import json
+import sys
+from openviking_cli.client.sync_http import SyncHTTPClient
+
+payload = json.loads(sys.stdin.read())
+client = SyncHTTPClient(
+    url=payload["base_url"],
+    api_key=payload.get("api_key") or None,
+    account=payload.get("account") or None,
+    user=payload.get("user_id") or None,
+    agent_id=payload.get("agent_id") or None,
+    timeout=payload.get("timeout_s") or 90.0,
+)
+client.initialize()
+try:
+    result = client.search(
+        query=payload["query"],
+        target_uri=payload.get("target_uri") or "",
+        session_id=payload.get("session_id") or None,
+        limit=int(payload.get("limit") or 10),
+    )
+    print(json.dumps(result.to_dict(include_provenance=False), ensure_ascii=False))
+finally:
+    client.close()
+"""
+    proc = subprocess.run(
+        ["uv", "run", "python", "-c", inline],
+        cwd=str(repo),
+        input=json.dumps({**payload, "timeout_s": timeout_s}, ensure_ascii=False),
+        capture_output=True,
+        text=True,
+        timeout=max(30, int(timeout_s)),
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(compact(proc.stderr or proc.stdout or f"uv client search failed rc={proc.returncode}", 1000))
+    raw = json.loads(proc.stdout.strip() or "{}")
+    items: list[dict[str, Any]] = []
+    for key, item_type in (("memories", "memory"), ("resources", "resource"), ("skills", "skill")):
+        for item in raw.get(key) or []:
+            if not isinstance(item, dict):
+                continue
+            copied = dict(item)
+            copied.setdefault("type", item_type)
+            items.append(copied)
+    return items[:limit]
+
+
+def openviking_retrieval_impl(args: argparse.Namespace) -> str:
+    value = str(getattr(args, "openviking_retrieval_impl", "find_api") or "find_api").strip().lower()
+    if value in {"client_search", "search_api"}:
+        return "client_search"
+    return "find_api"
+
+
+def openviking_client_search_prefetch(
+    args: argparse.Namespace,
+    query: str,
+    target_uri: str,
+    session_id: str = "",
+) -> tuple[list[dict[str, Any]], str]:
+    repo_root = str(getattr(args, "openviking_client_repo", "") or "").strip()
+    if repo_root:
+        try:
+            items = openviking_search_via_uv_client(
+                repo_root,
+                args.openviking_url,
+                query,
+                args.account,
+                args.user_id,
+                args.agent_id,
+                args.openviking_api_key,
+                args.top_k,
+                target_uri,
+                session_id,
+                int(getattr(args, "timeout_s", 120) or 120),
+            )
+            return items, "official_sync_client.search"
+        except Exception as exc:
+            print(f"[retrieval] official client.search fallback error={compact(exc, 220)}", flush=True)
+    items = openviking_search_api(
+        args.openviking_url,
+        query,
+        args.account,
+        args.user_id,
+        args.agent_id,
+        args.openviking_api_key,
+        args.top_k,
+        target_uri,
+        args.retrieval_retries,
+        session_id,
+    )
+    return items, "http_search_api_fallback"
+
+
 def openviking_result(raw: Any) -> Any:
     if isinstance(raw, dict) and raw.get("status") == "error":
         raise RuntimeError(json.dumps(raw.get("error") or raw, ensure_ascii=False)[:1000])
@@ -737,27 +1350,45 @@ def expand_memory_queries(query: str, limit: int = 8) -> list[str]:
     return deduped[:limit]
 
 
-def ranked_openviking_find(args: argparse.Namespace, query: str, target_uri: str) -> tuple[list[dict[str, Any]], list[str], str]:
+def ranked_openviking_retrieve(
+    args: argparse.Namespace,
+    query: str,
+    target_uri: str,
+) -> tuple[list[dict[str, Any]], list[str], str]:
     base_query = str(query or "").strip()
     query_plan = expand_memory_queries(query) if args.query_expansion else ([base_query] if base_query else [])
     merged: list[dict[str, Any]] = []
     errors: list[str] = []
+    retrieval_impl = openviking_retrieval_impl(args)
+    session_id = str(getattr(args, "vikingbot_session_id", "") or "")
     for item_query in query_plan:
         try:
-            for item in openviking_find(
-                args.openviking_url,
-                item_query,
-                args.account,
-                args.user_id,
-                args.agent_id,
-                args.openviking_api_key,
-                args.top_k,
-                target_uri,
-                args.retrieval_retries,
-            ):
+            if retrieval_impl == "client_search":
+                items, impl_detail = openviking_client_search_prefetch(
+                    args,
+                    item_query,
+                    target_uri,
+                    session_id,
+                )
+            else:
+                items = openviking_find(
+                    args.openviking_url,
+                    item_query,
+                    args.account,
+                    args.user_id,
+                    args.agent_id,
+                    args.openviking_api_key,
+                    args.top_k,
+                    target_uri,
+                    args.retrieval_retries,
+                )
+            for item in items:
                 copied = dict(item)
                 copied.setdefault("_target_uri", target_uri)
                 copied.setdefault("_query", item_query)
+                copied.setdefault("_retrieval_impl", retrieval_impl)
+                if retrieval_impl == "client_search":
+                    copied.setdefault("_retrieval_impl_detail", impl_detail)
                 merged.append(copied)
         except Exception as exc:
             errors.append(f"{item_query}: {exc}")
@@ -777,6 +1408,10 @@ def ranked_openviking_find(args: argparse.Namespace, query: str, target_uri: str
     return sorted(seen.values(), key=score, reverse=True)[: args.top_k], query_plan, "; ".join(errors[:3])
 
 
+def ranked_openviking_find(args: argparse.Namespace, query: str, target_uri: str) -> tuple[list[dict[str, Any]], list[str], str]:
+    return ranked_openviking_retrieve(args, query, target_uri)
+
+
 def ranked_openviking_find_many(
     args: argparse.Namespace,
     query: str,
@@ -786,7 +1421,7 @@ def ranked_openviking_find_many(
     query_plan: list[str] = []
     errors: list[str] = []
     for target_uri in target_uris:
-        hits, plan, err = ranked_openviking_find(args, query, target_uri)
+        hits, plan, err = ranked_openviking_retrieve(args, query, target_uri)
         query_plan = query_plan or plan
         if err:
             errors.append(f"{target_uri}: {err}")
@@ -815,6 +1450,15 @@ def vikingbot_style_openviking_find(args: argparse.Namespace, query: str) -> dic
         "agent_memory": agent_hits,
         "query_plan": user_plan or agent_plan,
         "retrieval_error": "; ".join(errors),
+        "retrieval_impl": openviking_retrieval_impl(args),
+        "retrieval_impl_detail": next(
+            (
+                str(item.get("_retrieval_impl_detail") or "")
+                for item in [*user_hits, *agent_hits]
+                if str(item.get("_retrieval_impl_detail") or "").strip()
+            ),
+            "",
+        ),
         "memory_users": memory_users,
         "user_target_uris": user_targets,
     }
@@ -1112,6 +1756,7 @@ def call_openai(base_url: str, model: str, token: str, messages: list[dict[str, 
     last_kind = "api_error"
     data: dict[str, Any] | None = None
     retry_count = 0
+    total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     attempts = max(1, max_retries + 1)
     payload_variants = openai_payload_variants(model, messages, default_openai_max_tokens())
     for attempt in range(attempts):
@@ -1127,6 +1772,13 @@ def call_openai(base_url: str, model: str, token: str, messages: list[dict[str, 
                 body = resp.read().decode("utf-8", errors="replace")
             candidate = parse_openai_compatible_response(body)
             openai_response_message(candidate)
+            usage = candidate.get("usage") or {}
+            prompt_tokens = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+            completion_tokens = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
+            total_tokens = int(usage.get("total_tokens") or (prompt_tokens + completion_tokens))
+            total_usage["prompt_tokens"] += prompt_tokens
+            total_usage["completion_tokens"] += completion_tokens
+            total_usage["total_tokens"] += total_tokens
             data = candidate
             retry_count = attempt
             break
@@ -1145,14 +1797,20 @@ def call_openai(base_url: str, model: str, token: str, messages: list[dict[str, 
             print(f"[model] retry={attempt + 1}/{max_retries} variant={variant} kind={last_kind} error={compact(last_error, 220)}", flush=True)
             time.sleep(sleep_s)
     if data is None:
-        raise ModelCallError(last_error or "model call failed", max_retries, last_kind)
+        raise ModelCallError(
+            last_error or "model call failed",
+            max_retries,
+            last_kind,
+            prompt_tokens=total_usage["prompt_tokens"],
+            completion_tokens=total_usage["completion_tokens"],
+            total_tokens=total_usage["total_tokens"],
+        )
     msg = openai_response_message(data).get("content") or ""
-    usage = data.get("usage") or {}
     return {
         "answer": msg.strip(),
-        "prompt_tokens": usage.get("prompt_tokens") or usage.get("input_tokens") or 0,
-        "completion_tokens": usage.get("completion_tokens") or usage.get("output_tokens") or 0,
-        "total_tokens": usage.get("total_tokens") or ((usage.get("prompt_tokens") or 0) + (usage.get("completion_tokens") or 0)),
+        "prompt_tokens": total_usage["prompt_tokens"],
+        "completion_tokens": total_usage["completion_tokens"],
+        "total_tokens": total_usage["total_tokens"],
         "model_retry_count": retry_count,
         "model_error_kind": "",
     }
@@ -1898,6 +2556,11 @@ def call_openai_vikingbot_loop(
     messages: list[dict[str, Any]],
 ) -> dict[str, Any]:
     tools = openviking_tool_definitions(args) if args.openviking_tool_loop else None
+    allowed_tool_names = {
+        str(tool.get("function", {}).get("name") or "").strip()
+        for tool in list(tools or [])
+        if str(tool.get("function", {}).get("name") or "").strip()
+    }
     total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     tools_used: list[dict[str, Any]] = []
     final_answer = ""
@@ -1967,8 +2630,23 @@ def call_openai_vikingbot_loop(
                     parsed_args = json.loads(raw_args) if isinstance(raw_args, str) else dict(raw_args)
                 except Exception:
                     parsed_args = {"query": str(raw_args)}
-                result_text = execute_openviking_tool(args, name, parsed_args)
-                tools_used.append({"tool_name": name, "args": parsed_args, "result": compact(result_text, 1200)})
+                executed = name in allowed_tool_names
+                if name not in allowed_tool_names:
+                    result_text = (
+                        f"Error: Tool '{name}' is not available in the current evaluation schema. "
+                        f"Allowed tools: {', '.join(sorted(allowed_tool_names)) or '(none)'}"
+                    )
+                else:
+                    result_text = execute_openviking_tool(args, name, parsed_args)
+                tools_used.append(
+                    {
+                        "tool_name": name if executed else f"unsupported:{name}",
+                        "requested_tool_name": name,
+                        "executed": executed,
+                        "args": parsed_args,
+                        "result": compact(result_text, 1200),
+                    }
+                )
                 messages.append(
                     {
                         "role": "tool",
@@ -2002,7 +2680,12 @@ def call_openai_vikingbot_loop(
     }
 
 
-def answer_question(args: argparse.Namespace, job: benchmark_adapter.Job) -> dict[str, str]:
+def answer_question(
+    args: argparse.Namespace,
+    job: benchmark_adapter.Job,
+    out_dir: Path | None = None,
+    question_no: int | None = None,
+) -> dict[str, str]:
     started = time.time()
     retrieval_error = ""
     native_prompt = build_vikingbot_question_prompt(job)
@@ -2024,11 +2707,15 @@ def answer_question(args: argparse.Namespace, job: benchmark_adapter.Job) -> dic
         agent_hits = list(retrieval.get("agent_memory") or [])
         query_plan = list(retrieval.get("query_plan") or [])
         retrieval_error = str(retrieval.get("retrieval_error") or "")
+        retrieval_impl = str(retrieval.get("retrieval_impl") or openviking_retrieval_impl(ctx_args))
+        retrieval_impl_detail = str(retrieval.get("retrieval_impl_detail") or "")
     except Exception as exc:
         user_hits = []
         agent_hits = []
         query_plan = []
         retrieval_error = str(exc)
+        retrieval_impl = openviking_retrieval_impl(ctx_args)
+        retrieval_impl_detail = ""
     if ctx_args.workspace and ctx_args.lexical_fallback:
         seen = {item.get("uri") for item in user_hits}
         for item in lexical_memory_hits(ctx_args.workspace, ctx_args.account, native_prompt, ctx_args.lexical_top_k):
@@ -2114,6 +2801,8 @@ def answer_question(args: argparse.Namespace, job: benchmark_adapter.Job) -> dic
         messages: list[dict[str, Any]] = build_strict_messages(system, user)
     else:
         messages = build_vikingbot_aligned_messages(ctx_args, job, evidence, has_memory)
+    prompt_payload = json.dumps(messages, ensure_ascii=False)
+    prompt_chars_actual = len(prompt_payload)
 
     if ctx_args.answer_token:
         try:
@@ -2133,9 +2822,9 @@ def answer_question(args: argparse.Namespace, job: benchmark_adapter.Job) -> dic
         except ModelCallError as exc:
             result = {
                 "answer": "",
-                "prompt_tokens": token_estimate(json.dumps(messages, ensure_ascii=False)),
+                "prompt_tokens": token_estimate(prompt_payload),
                 "completion_tokens": 0,
-                "total_tokens": token_estimate(json.dumps(messages, ensure_ascii=False)),
+                "total_tokens": token_estimate(prompt_payload),
                 "model_retry_count": exc.retry_count,
                 "model_error_kind": exc.error_kind,
                 "model_error": str(exc),
@@ -2145,9 +2834,9 @@ def answer_question(args: argparse.Namespace, job: benchmark_adapter.Job) -> dic
     else:
         result = {
             "answer": "unknown",
-            "prompt_tokens": token_estimate(json.dumps(messages, ensure_ascii=False)),
+            "prompt_tokens": token_estimate(prompt_payload),
             "completion_tokens": 1,
-            "total_tokens": token_estimate(json.dumps(messages, ensure_ascii=False)) + 1,
+            "total_tokens": token_estimate(prompt_payload) + 1,
             "model_retry_count": 0,
             "model_error_kind": "no_answer_token",
             "iteration": 0,
@@ -2181,6 +2870,31 @@ def answer_question(args: argparse.Namespace, job: benchmark_adapter.Job) -> dic
     if not answer_ok:
         health_notes.append("empty_or_unknown_answer")
     vikingbot_meta = vikingbot_context_metadata(ctx_args)
+    selected_hits = sorted(hits, key=hit_score, reverse=True)
+    write_recall_log(
+        out_dir,
+        job,
+        "openviking",
+        native_prompt,
+        query_plan,
+        selected_hits,
+        user_hits=user_hits,
+        agent_hits=agent_hits,
+        retrieval_error=retrieval_error,
+        question_no=question_no,
+        extra={
+            "answer": str(result.get("answer") or ""),
+            "retrieval_status": "ok" if retrieval_ok else "empty",
+            "answer_status": "ok" if answer_ok else ("failed" if result.get("model_error_kind") else "empty_or_unknown"),
+            "health_status": result.get("model_error_kind") or health_status,
+            "retrieval_impl": retrieval_impl,
+            "retrieval_impl_detail": retrieval_impl_detail,
+            "tool_call_count": len(tools_used),
+            "tools_used_names": tool_names,
+            "memory_users": memory_users,
+            "user_target_uris": user_target_uris,
+        },
+    )
     return {
         **benchmark_adapter.asdict(job),
         "response": result["answer"],
@@ -2206,6 +2920,8 @@ def answer_question(args: argparse.Namespace, job: benchmark_adapter.Job) -> dic
         "effective_memory_users": json.dumps(memory_users, ensure_ascii=False),
         "user_target_uris": json.dumps(user_target_uris, ensure_ascii=False),
         "relevant_memory": relevant_memory,
+        "openviking_retrieval_impl": retrieval_impl,
+        "openviking_retrieval_impl_detail": retrieval_impl_detail,
         "prompt_mode": ctx_args.prompt_mode,
         "vikingbot_prompt_aligned": str(ctx_args.prompt_mode == "vikingbot_aligned").lower(),
         "openviking_tool_loop_enabled": str(bool(ctx_args.openviking_tool_loop and ctx_args.prompt_mode == "vikingbot_aligned")).lower(),
@@ -2224,9 +2940,11 @@ def answer_question(args: argparse.Namespace, job: benchmark_adapter.Job) -> dic
         "tools_used": json.dumps(tools_used, ensure_ascii=False),
         "native_prompt": native_prompt,
         "prompt_message_count": str(len(messages)),
-        "prompt_preview": compact(json.dumps(messages, ensure_ascii=False), 5000),
+        "prompt_preview": compact(prompt_payload, 5000),
         "retrieval_query_plan": json.dumps(query_plan, ensure_ascii=False),
         "retrieval_mode": "strict_original_query" if not ctx_args.query_expansion else "diagnostic_query_expansion",
+        "retrieval_impl": retrieval_impl,
+        "retrieval_impl_detail": retrieval_impl_detail,
         "query_expansion_enabled": str(bool(ctx_args.query_expansion)).lower(),
         "lexical_fallback_enabled": str(bool(ctx_args.lexical_fallback)).lower(),
         "archive_fallback_enabled": str(bool(ctx_args.archive_fallback)).lower(),
@@ -2246,11 +2964,17 @@ def answer_question(args: argparse.Namespace, job: benchmark_adapter.Job) -> dic
         "user_agent_memory_split": "true",
         "link_only_when_over_budget": "true",
         "raw_turn_fallback": "false",
-        "retrieval_tokens_est": str(token_estimate(evidence)),
+        "retrieval_tokens_est": "",
         "context_preview": compact(evidence, 3000),
         "answer_prompt_tokens": str(result["prompt_tokens"]),
         "answer_completion_tokens": str(result["completion_tokens"]),
         "answer_total_tokens": str(result["total_tokens"]),
+        "answer_prompt_chars_actual": str(prompt_chars_actual),
+        "answer_completion_chars_actual": str(len(str(result.get("answer") or ""))),
+        "answer_total_chars_actual": str(prompt_chars_actual + len(str(result.get("answer") or ""))),
+        "answer_prompt_chars_est": str(token_char_estimate(result["prompt_tokens"])),
+        "answer_completion_chars_est": str(token_char_estimate(result["completion_tokens"])),
+        "answer_total_chars_est": str(token_char_estimate(result["total_tokens"])),
         "model_status": "ok" if model_ok else "failed",
         "model_retry_count": str(result.get("model_retry_count", 0)),
         "model_error_kind": str(result.get("model_error_kind") or ""),
@@ -2259,6 +2983,360 @@ def answer_question(args: argparse.Namespace, job: benchmark_adapter.Job) -> dic
         "answer_status": "ok" if answer_ok else ("failed" if result.get("model_error_kind") else "empty_or_unknown"),
         "health_status": result.get("model_error_kind") or health_status,
         "retrieval_error": retrieval_error,
+    }
+
+
+def checkpoint_csv_path(out_dir: Path, answered_count: int, total_count: int) -> Path:
+    if total_count > 0 and answered_count >= total_count:
+        return out_dir / "judge_snapshot_latest.csv"
+    return out_dir / f"judge_snapshot_{answered_count:03d}.csv"
+
+
+def checkpoint_summary_path(out_dir: Path, answered_count: int, total_count: int) -> Path:
+    if total_count > 0 and answered_count >= total_count:
+        return out_dir / "judge_snapshot_latest_summary.json"
+    return out_dir / f"judge_snapshot_{answered_count:03d}_summary.json"
+
+
+def load_snapshot_index(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    try:
+        data = read_json(path)
+    except Exception:
+        return []
+    if isinstance(data, dict):
+        items = data.get("snapshots")
+        return items if isinstance(items, list) else []
+    return data if isinstance(data, list) else []
+
+
+def write_snapshot_index(path: Path, snapshots: list[dict[str, Any]]) -> None:
+    write_json(path, {"snapshots": snapshots, "count": len(snapshots)})
+
+
+def judge_runtime_settings(args: argparse.Namespace) -> dict[str, Any]:
+    base_url = str(getattr(args, "judge_base_url", "") or getattr(args, "answer_base_url", "") or "")
+    model = str(getattr(args, "judge_model", "") or getattr(args, "answer_model", "") or "")
+    token = str(getattr(args, "judge_token", "") or getattr(args, "answer_token", "") or "")
+    parallel = max(1, int(getattr(args, "judge_parallel", 6) or 6))
+    enabled = bool(base_url and model and token and int(getattr(args, "judge_every", 0) or 0) > 0)
+    reason = ""
+    if int(getattr(args, "judge_every", 0) or 0) <= 0:
+        reason = "judge_every_disabled"
+    elif not base_url:
+        reason = "missing_judge_base_url"
+    elif not model:
+        reason = "missing_judge_model"
+    elif not token:
+        reason = "missing_judge_token"
+    return {
+        "enabled": enabled,
+        "base_url": base_url,
+        "model": model,
+        "token": token,
+        "parallel": parallel,
+        "reason": reason,
+    }
+
+
+def run_incremental_judge(
+    args: argparse.Namespace,
+    csv_path: Path,
+    out_dir: Path,
+    answered_count: int,
+    total_count: int,
+) -> dict[str, Any]:
+    settings = judge_runtime_settings(args)
+    snapshot_index_path = out_dir / "judge_snapshot_index.json"
+    latest_snapshot_path = out_dir / "judge_snapshot_latest.csv"
+    latest_summary_path = out_dir / "judge_snapshot_latest_summary.json"
+    if not settings["enabled"]:
+        return {
+            "enabled": False,
+            "reason": settings["reason"],
+            "answered_count": answered_count,
+            "snapshot_index_path": str(snapshot_index_path),
+            "latest_snapshot_path": str(latest_snapshot_path),
+            "latest_summary_path": str(latest_summary_path),
+        }
+
+    env = os.environ.copy()
+    env["LOCOMO_JUDGE_TOKEN"] = settings["token"]
+    cmd = [
+        sys.executable,
+        str(ROOT / "scripts" / "local_judge.py"),
+        "--input",
+        str(csv_path),
+        "--base-url",
+        settings["base_url"],
+        "--model",
+        settings["model"],
+        "--parallel",
+        str(settings["parallel"]),
+        "--timeout-s",
+        str(getattr(args, "judge_timeout_s", getattr(args, "timeout_s", 120)) or 120),
+        "--retries",
+        str(getattr(args, "judge_retries", getattr(args, "model_retries", 5)) or 5),
+        "--only-pending",
+    ]
+    print(
+        f"[judge-checkpoint] start answered={answered_count}/{total_count or '-'} model={settings['model']} base_url={settings['base_url'] or '-'}",
+        flush=True,
+    )
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(ROOT),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        print(line.rstrip("\n"), flush=True)
+    rc = proc.wait()
+
+    summary_path = csv_path.parent / "judge_summary.json"
+    summary = read_json(summary_path) if summary_path.exists() else {}
+    snapshot_path = checkpoint_csv_path(out_dir, answered_count, total_count)
+    snapshot_summary_path = checkpoint_summary_path(out_dir, answered_count, total_count)
+    if answered_count >= total_count > 0:
+        copy_if_exists(csv_path, out_dir / f"judge_snapshot_{answered_count:03d}.csv")
+        copy_if_exists(summary_path, out_dir / f"judge_snapshot_{answered_count:03d}_summary.json")
+    copy_if_exists(csv_path, snapshot_path)
+    copy_if_exists(summary_path, snapshot_summary_path)
+    copy_if_exists(csv_path, latest_snapshot_path)
+    copy_if_exists(summary_path, latest_summary_path)
+
+    snapshots = load_snapshot_index(snapshot_index_path)
+    snapshot_record = {
+        "answered_count": answered_count,
+        "total_count": total_count,
+        "returncode": rc,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "csv_path": str(snapshot_path),
+        "summary_path": str(snapshot_summary_path),
+        "latest_csv_path": str(latest_snapshot_path),
+        "latest_summary_path": str(latest_summary_path),
+        "accuracy": summary.get("accuracy"),
+        "graded": summary.get("graded"),
+        "correct": summary.get("correct"),
+        "wrong": summary.get("wrong"),
+        "selected": summary.get("selected"),
+        "judge_model": settings["model"],
+    }
+    replaced = False
+    for index, item in enumerate(snapshots):
+        if int(item.get("answered_count") or 0) == answered_count:
+            snapshots[index] = snapshot_record
+            replaced = True
+            break
+    if not replaced:
+        snapshots.append(snapshot_record)
+    snapshots.sort(key=lambda item: int(item.get("answered_count") or 0))
+    write_snapshot_index(snapshot_index_path, snapshots)
+    print(
+        f"[judge-checkpoint] done answered={answered_count}/{total_count or '-'} rc={rc} accuracy={summary.get('accuracy')}",
+        flush=True,
+    )
+    return {
+        "enabled": True,
+        "returncode": rc,
+        "answered_count": answered_count,
+        "summary": summary,
+        "summary_path": str(summary_path),
+        "snapshot_path": str(snapshot_path),
+        "snapshot_summary_path": str(snapshot_summary_path),
+        "snapshot_index_path": str(snapshot_index_path),
+        "latest_snapshot_path": str(latest_snapshot_path),
+        "latest_summary_path": str(latest_summary_path),
+        "checkpoint_count": len(snapshots),
+    }
+
+
+def build_summary(
+    args: argparse.Namespace,
+    rows: list[dict[str, Any]],
+    csv_path: Path,
+    out_dir: Path,
+    question_filter: set[str],
+    *,
+    token_usage_before: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    tool_name_counts: Counter = Counter()
+    retrieval_impl_detail_counts: Counter = Counter()
+    for row in rows:
+        tool_name_counts.update(parse_counter_json(row.get("tool_call_name_counts")))
+        detail = str(row.get("retrieval_impl_detail") or "").strip()
+        if detail:
+            retrieval_impl_detail_counts[detail] += 1
+    tool_call_total = sum(int(r.get("tool_call_count") or 0) for r in rows)
+    answer_prompt_tokens = sum(int(r.get("answer_prompt_tokens") or 0) for r in rows)
+    answer_completion_tokens = sum(int(r.get("answer_completion_tokens") or 0) for r in rows)
+    answer_total_tokens = sum(int(r.get("answer_total_tokens") or 0) for r in rows)
+    answer_prompt_chars_actual = sum(int(r.get("answer_prompt_chars_actual") or 0) for r in rows)
+    answer_completion_chars_actual = sum(int(r.get("answer_completion_chars_actual") or 0) for r in rows)
+    answer_total_chars_actual = sum(int(r.get("answer_total_chars_actual") or 0) for r in rows)
+    answer_ok_count = sum(1 for r in rows if r.get("answer_status") == "ok")
+    answer_failure_count = sum(1 for r in rows if r.get("answer_status") != "ok")
+    vikingbot_meta = vikingbot_context_metadata(args)
+    resolved_workspace = resolve_openviking_workspace(args.workspace)
+    token_usage_summary = openviking_workspace_token_usage_summary(resolved_workspace)
+    judge_settings = judge_runtime_settings(args)
+    snapshot_index_path = out_dir / "judge_snapshot_index.json"
+    snapshots = load_snapshot_index(snapshot_index_path)
+    latest_snapshot = snapshots[-1] if snapshots else {}
+    latest_judge_summary = {}
+    latest_summary_path = Path(str(latest_snapshot.get("summary_path") or out_dir / "judge_snapshot_latest_summary.json"))
+    if latest_summary_path.exists():
+        try:
+            latest_judge_summary = read_json(latest_summary_path)
+        except Exception:
+            latest_judge_summary = {}
+    token_usage_delta = openviking_token_usage_delta(token_usage_summary, token_usage_before)
+    combined_prompt_tokens = answer_prompt_tokens + int(token_usage_summary.get("internal_llm_input_tokens") or 0)
+    combined_completion_tokens = answer_completion_tokens + int(token_usage_summary.get("internal_llm_output_tokens") or 0)
+    combined_total_tokens = answer_total_tokens + int(token_usage_summary.get("internal_llm_total_tokens") or 0)
+    run_internal_prompt_tokens = int(token_usage_delta.get("internal_llm_delta_input_tokens") or 0)
+    run_internal_completion_tokens = int(token_usage_delta.get("internal_llm_delta_output_tokens") or 0)
+    run_internal_total_tokens = int(token_usage_delta.get("internal_llm_delta_total_tokens") or 0)
+    run_retrieval_total_tokens = int(token_usage_delta.get("internal_retrieval_delta_total_tokens") or 0)
+    run_combined_prompt_tokens = answer_prompt_tokens + run_internal_prompt_tokens
+    run_combined_completion_tokens = answer_completion_tokens + run_internal_completion_tokens
+    run_combined_total_tokens = answer_total_tokens + run_internal_total_tokens
+    run_answer_plus_retrieval_tokens = answer_total_tokens + run_retrieval_total_tokens
+
+    return {
+        **alignment_metadata("openviking", "custom_agent_initial_find_tool_search"),
+        "dataset_format": "locomo",
+        "dataset": str(Path(args.dataset).expanduser().resolve()),
+        "sample": args.sample,
+        "selected_question_count": len(question_filter) if question_filter else len(rows),
+        "total_question_count": len(rows),
+        "tool_set": args.openviking_tool_set,
+        "openviking_retrieval_impl": openviking_retrieval_impl(args),
+        "openviking_client_repo": str(getattr(args, "openviking_client_repo", "") or ""),
+        "top_k": args.top_k,
+        "group_chat": bool(args.group_chat),
+        "memory_user_strategy": effective_memory_user_strategy(args),
+        "initial_agent_memory_enabled": bool(args.initial_agent_memory),
+        "memory_users_override": parse_memory_users(args.memory_users),
+        "vikingbot_identity_mode": args.vikingbot_identity_mode,
+        "vikingbot_channel": "cli",
+        "vikingbot_workspace": vikingbot_meta["vikingbot_workspace"],
+        "vikingbot_bootstrap_files": vikingbot_meta["vikingbot_bootstrap_files"],
+        "vikingbot_skill_names": vikingbot_meta["vikingbot_skill_names"],
+        "base_user_id": args.user_id,
+        "base_agent_id": args.agent_id,
+        "prompt_mode": args.prompt_mode,
+        "vikingbot_prompt_aligned": args.prompt_mode == "vikingbot_aligned",
+        "agent_runtime_label": "custom_agent",
+        "agent_runtime_mode": "memorybench_custom_agent",
+        "openviking_tool_loop_enabled": bool(args.openviking_tool_loop and args.prompt_mode == "vikingbot_aligned"),
+        "openviking_tool_set": args.openviking_tool_set,
+        "openviking_tool_names": [tool["function"]["name"] for tool in openviking_tool_definitions(args)],
+        "openviking_content_read_enabled": bool(args.read_openviking_content),
+        "max_iterations": args.max_iterations,
+        "vikingboat_alignment_profile": VIKINGBOT_ALIGNMENT_PROFILE,
+        "alignment_backend_route": "custom_agent_initial_find_tool_search",
+        "answer_model": args.answer_model,
+        "judge_model": judge_settings["model"],
+        "judge_base_url": judge_settings["base_url"],
+        "judge_every": int(getattr(args, "judge_every", 0) or 0),
+        "judge_enabled": judge_settings["enabled"],
+        "judge_parallel": judge_settings["parallel"],
+        "judge_checkpoint_count": len(snapshots),
+        "judge_last_completed_rows": int(latest_snapshot.get("answered_count") or 0),
+        "judge_latest_snapshot_csv": str(latest_snapshot.get("latest_csv_path") or out_dir / "judge_snapshot_latest.csv"),
+        "judge_latest_summary_path": str(latest_snapshot.get("latest_summary_path") or out_dir / "judge_snapshot_latest_summary.json"),
+        "judge_snapshot_index_path": str(snapshot_index_path),
+        "judge_latest_accuracy": latest_judge_summary.get("accuracy"),
+        "judge_latest_graded": latest_judge_summary.get("graded"),
+        "judge_latest_correct": latest_judge_summary.get("correct"),
+        "judge_latest_wrong": latest_judge_summary.get("wrong"),
+        "openviking_url": args.openviking_url,
+        "workspace": resolved_workspace,
+        "account": args.account,
+        "count": len(rows),
+        "output_csv": str(csv_path),
+        "recall_log_pattern": str(out_dir / "qNNN.recall.json"),
+        "recall_log_count": len(list(out_dir.glob("q*.recall.json"))),
+        "retrieval_mode": "strict_original_query" if not args.query_expansion else "diagnostic_query_expansion",
+        "retrieval_impl": openviking_retrieval_impl(args),
+        "query_expansion_enabled": bool(args.query_expansion),
+        "lexical_fallback_enabled": bool(args.lexical_fallback),
+        "archive_fallback_enabled": bool(args.archive_fallback),
+        "memory_file_read_enabled": bool(args.read_memory_files),
+        "iteration_total": sum(int(r.get("iteration") or 0) for r in rows),
+        "avg_iteration": round(sum(int(r.get("iteration") or 0) for r in rows) / len(rows), 2) if rows else 0,
+        "tool_call_count": tool_call_total,
+        "tool_call_total": tool_call_total,
+        "tool_call_rows": sum(1 for r in rows if int(r.get("tool_call_count") or 0) > 0),
+        "tool_name_counts": dict(tool_name_counts),
+        "retrieval_impl_detail_counts": dict(retrieval_impl_detail_counts),
+        "qa_token_usage": {
+            "prompt_tokens": answer_prompt_tokens,
+            "completion_tokens": answer_completion_tokens,
+            "total_tokens": answer_total_tokens,
+        },
+        "answer_prompt_tokens": answer_prompt_tokens,
+        "answer_completion_tokens": answer_completion_tokens,
+        "answer_total_tokens": answer_total_tokens,
+        "answer_prompt_chars_actual": answer_prompt_chars_actual,
+        "answer_completion_chars_actual": answer_completion_chars_actual,
+        "answer_total_chars_actual": answer_total_chars_actual,
+        "answer_prompt_chars_est": token_char_estimate(answer_prompt_tokens),
+        "answer_completion_chars_est": token_char_estimate(answer_completion_tokens),
+        "answer_total_chars_est": token_char_estimate(answer_total_tokens),
+        "combined_prompt_tokens": combined_prompt_tokens,
+        "combined_completion_tokens": combined_completion_tokens,
+        "combined_total_tokens": combined_total_tokens,
+        "combined_prompt_chars_est": token_char_estimate(combined_prompt_tokens),
+        "combined_completion_chars_est": token_char_estimate(combined_completion_tokens),
+        "combined_total_chars_est": token_char_estimate(combined_total_tokens),
+        "run_internal_prompt_tokens": run_internal_prompt_tokens,
+        "run_internal_completion_tokens": run_internal_completion_tokens,
+        "run_internal_total_tokens": run_internal_total_tokens,
+        "run_retrieval_total_tokens": run_retrieval_total_tokens,
+        "run_combined_prompt_tokens": run_combined_prompt_tokens,
+        "run_combined_completion_tokens": run_combined_completion_tokens,
+        "run_combined_total_tokens": run_combined_total_tokens,
+        "run_answer_plus_retrieval_tokens": run_answer_plus_retrieval_tokens,
+        "retrieval_tokens_est": None,
+        "avg_retrieval_count": round(sum(int(r.get("retrieval_count") or 0) for r in rows) / len(rows), 2) if rows else 0,
+        "avg_user_memory_count": round(sum(int(r.get("user_memory_count") or 0) for r in rows) / len(rows), 2) if rows else 0,
+        "avg_agent_memory_count": round(sum(int(r.get("agent_memory_count") or 0) for r in rows) / len(rows), 2) if rows else 0,
+        "archive_fallback_total": sum(int(r.get("archive_fallback_count") or 0) for r in rows),
+        "avg_archive_fallback_count": round(sum(int(r.get("archive_fallback_count") or 0) for r in rows) / len(rows), 2) if rows else 0,
+        "memory_hit_total": sum(int(r.get("memory_hit_count") or 0) for r in rows),
+        "user_memory_budget_chars": VIKINGBOT_USER_MEMORY_BUDGET_CHARS,
+        "agent_memory_budget_chars": VIKINGBOT_AGENT_MEMORY_BUDGET_CHARS,
+        "initial_search_limit": args.top_k,
+        "initial_score_threshold": VIKINGBOT_INITIAL_MIN_SCORE,
+        "score_threshold": VIKINGBOT_INITIAL_MIN_SCORE,
+        "tool_search_limit": args.tool_search_limit,
+        "tool_min_score": args.tool_min_score,
+        "user_agent_memory_split": True,
+        "link_only_when_over_budget": True,
+        "raw_turn_fallback": False,
+        "model_retries_configured": args.model_retries,
+        "retrieval_retries_configured": args.retrieval_retries,
+        "model_ok_count": sum(1 for r in rows if r.get("model_status") == "ok"),
+        "model_failed_count": sum(1 for r in rows if r.get("model_status") == "failed"),
+        "model_rate_limited_count": sum(1 for r in rows if r.get("model_error_kind") == "rate_limited" or r.get("health_status") == "rate_limited"),
+        "rows_with_model_retries": sum(1 for r in rows if int(r.get("model_retry_count") or 0) > 0),
+        "model_retry_total": sum(int(r.get("model_retry_count") or 0) for r in rows),
+        "retrieval_ok_count": sum(1 for r in rows if r.get("retrieval_status") == "ok"),
+        "retrieval_empty_count": sum(1 for r in rows if r.get("retrieval_status") == "empty"),
+        "answer_success_count": answer_ok_count,
+        "answer_failure_count": answer_failure_count,
+        "answer_ok_count": answer_ok_count,
+        "answer_empty_or_unknown_count": sum(1 for r in rows if r.get("answer_status") == "empty_or_unknown"),
+        "health_counts": {key: sum(1 for r in rows if r.get("health_status") == key) for key in sorted({r.get("health_status") or "unknown" for r in rows})},
+        **token_usage_summary,
+        **token_usage_delta,
     }
 
 
@@ -2317,6 +3395,17 @@ def main() -> None:
         default=VIKINGBOT_TOOL_SET,
         help="vikingbot_native_safe exposes VikingBot-style local read/list/exec plus OpenViking tools while keeping raw transcript fallbacks off; vikingboat_default restricts tools to long-term memory URIs.",
     )
+    parser.add_argument(
+        "--openviking-retrieval-impl",
+        choices=["find_api", "client_search"],
+        default="find_api",
+        help="find_api uses the previous /api/v1/search/find prefetch path; client_search switches prefetch retrieval to OpenViking /api/v1/search/search semantics before the answer LLM call.",
+    )
+    parser.add_argument(
+        "--openviking-client-repo",
+        default=detect_openviking_client_repo(),
+        help="Optional OpenViking source repo used with `uv run` to call official SyncHTTPClient.search during client_search prefetch.",
+    )
     parser.add_argument("--tool-search-limit", type=int, default=VIKINGBOT_TOOL_SEARCH_LIMIT)
     parser.add_argument("--tool-min-score", type=float, default=VIKINGBOT_TOOL_MIN_SCORE)
     parser.add_argument("--read-openviking-content", dest="read_openviking_content", action="store_true", default=True)
@@ -2328,6 +3417,13 @@ def main() -> None:
     parser.add_argument("--answer-base-url", default=os.environ.get("JUDGE_BASE_URL", ""))
     parser.add_argument("--answer-model", default=os.environ.get("JUDGE_MODEL", "gpt-5.5"))
     parser.add_argument("--answer-token", default=os.environ.get("LOCOMO_JUDGE_TOKEN") or os.environ.get("JUDGE_TOKEN") or os.environ.get("OPENAI_API_KEY") or "")
+    parser.add_argument("--judge-base-url", default=os.environ.get("JUDGE_BASE_URL", ""))
+    parser.add_argument("--judge-model", default=os.environ.get("JUDGE_MODEL", "gpt-5.5"))
+    parser.add_argument("--judge-token", default=os.environ.get("LOCOMO_JUDGE_TOKEN") or os.environ.get("JUDGE_TOKEN") or os.environ.get("OPENAI_API_KEY") or "")
+    parser.add_argument("--judge-every", type=int, default=0, help="Run local_judge.py every N answered questions and persist checkpoint snapshots.")
+    parser.add_argument("--judge-parallel", type=int, default=6)
+    parser.add_argument("--judge-timeout-s", type=int, default=90)
+    parser.add_argument("--judge-retries", type=int, default=5)
     parser.add_argument("--model-retries", type=int, default=5)
     parser.add_argument("--retrieval-retries", type=int, default=2)
     parser.add_argument("--timeout-s", type=int, default=120)
@@ -2342,13 +3438,17 @@ def main() -> None:
         jobs = rnd.sample(jobs, min(args.random_count, len(jobs)))
     out_dir = Path(args.out_dir).expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
+    token_usage_before = openviking_workspace_token_usage_summary(resolve_openviking_workspace(args.workspace))
     csv_path = out_dir / "openviking_memory_qa_results.csv"
     print(f"[qa] dataset={args.dataset} sample={args.sample} questions={len(jobs)} openviking={args.openviking_url}", flush=True)
     rows = []
+    question_total = len(jobs)
+    last_judge_count = 0
+    summary_path = out_dir / "summary.json"
     for index, job in enumerate(jobs, 1):
         print(f"[qa] {index}/{len(jobs)} {job.question_id} {job.question[:90]}", flush=True)
         try:
-            rows.append(answer_question(args, job))
+            rows.append(answer_question(args, job, out_dir=out_dir, question_no=index))
         except Exception as exc:
             retry_count = getattr(exc, "retry_count", args.model_retries if isinstance(exc, ModelCallError) else 0)
             error_kind = getattr(exc, "error_kind", classify_model_error(str(exc)))
@@ -2360,6 +3460,30 @@ def main() -> None:
             qa_user_id = sender_id if args.vikingbot_identity_mode == "sender_session" else args.user_id
             qa_agent_id = session_id if args.vikingbot_identity_mode == "sender_session" else args.agent_id
             vikingbot_meta = vikingbot_context_metadata(args)
+            write_recall_log(
+                out_dir,
+                job,
+                "openviking",
+                build_vikingbot_question_prompt(job),
+                [],
+                [],
+                user_hits=[],
+                agent_hits=[],
+                retrieval_error=str(exc),
+                question_no=index,
+                extra={
+                    "answer": "",
+                    "retrieval_status": "unknown",
+                    "answer_status": "failed",
+                    "health_status": error_kind,
+                    "tool_call_count": 0,
+                    "tools_used_names": [],
+                    "memory_users": memory_users,
+                    "user_target_uris": user_target_uris,
+                    "model_error": str(exc),
+                    "model_error_kind": error_kind,
+                },
+            )
             rows.append(
                 {
                     **benchmark_adapter.asdict(job),
@@ -2429,7 +3553,7 @@ def main() -> None:
                     "user_agent_memory_split": "true",
                     "link_only_when_over_budget": "true",
                     "raw_turn_fallback": "false",
-                    "retrieval_tokens_est": "0",
+                    "retrieval_tokens_est": "",
                     "answer_prompt_tokens": "0",
                     "answer_completion_tokens": "0",
                     "answer_total_tokens": "0",
@@ -2443,98 +3567,41 @@ def main() -> None:
                     "retrieval_error": "",
                 }
             )
-        fieldnames = csv_fieldnames(rows)
-        with csv_path.open("w", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
-            writer.writeheader()
-            writer.writerows(rows)
-    fieldnames = csv_fieldnames(rows) if rows else []
-    with csv_path.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
-        writer.writeheader()
-        writer.writerows(rows)
-    tool_name_counts: Counter = Counter()
-    for row in rows:
-        tool_name_counts.update(parse_counter_json(row.get("tool_call_name_counts")))
-    tool_call_total = sum(int(r.get("tool_call_count") or 0) for r in rows)
-    vikingbot_meta = vikingbot_context_metadata(args)
-    summary = {
-        **alignment_metadata("openviking", "custom_agent_initial_find_tool_search"),
-        "dataset_format": "locomo",
-        "dataset": str(Path(args.dataset).expanduser().resolve()),
-        "sample": args.sample,
-        "selected_question_count": len(question_filter),
-        "top_k": args.top_k,
-        "group_chat": bool(args.group_chat),
-        "memory_user_strategy": effective_memory_user_strategy(args),
-        "initial_agent_memory_enabled": bool(args.initial_agent_memory),
-        "memory_users_override": parse_memory_users(args.memory_users),
-        "vikingbot_identity_mode": args.vikingbot_identity_mode,
-        "vikingbot_channel": "cli",
-        "vikingbot_workspace": vikingbot_meta["vikingbot_workspace"],
-        "vikingbot_bootstrap_files": vikingbot_meta["vikingbot_bootstrap_files"],
-        "vikingbot_skill_names": vikingbot_meta["vikingbot_skill_names"],
-        "base_user_id": args.user_id,
-        "base_agent_id": args.agent_id,
-        "prompt_mode": args.prompt_mode,
-        "vikingbot_prompt_aligned": args.prompt_mode == "vikingbot_aligned",
-        "openviking_tool_loop_enabled": bool(args.openviking_tool_loop and args.prompt_mode == "vikingbot_aligned"),
-        "openviking_tool_set": args.openviking_tool_set,
-        "openviking_tool_names": [tool["function"]["name"] for tool in openviking_tool_definitions(args)],
-        "openviking_content_read_enabled": bool(args.read_openviking_content),
-        "max_iterations": args.max_iterations,
-        "vikingboat_alignment_profile": VIKINGBOT_ALIGNMENT_PROFILE,
-        "alignment_backend_route": "custom_agent_initial_find_tool_search",
-        "answer_model": args.answer_model,
-        "openviking_url": args.openviking_url,
-        "workspace": args.workspace,
-        "account": args.account,
-        "count": len(rows),
-        "output_csv": str(csv_path),
-        "retrieval_mode": "strict_original_query" if not args.query_expansion else "diagnostic_query_expansion",
-        "query_expansion_enabled": bool(args.query_expansion),
-        "lexical_fallback_enabled": bool(args.lexical_fallback),
-        "archive_fallback_enabled": bool(args.archive_fallback),
-        "memory_file_read_enabled": bool(args.read_memory_files),
-        "iteration_total": sum(int(r.get("iteration") or 0) for r in rows),
-        "avg_iteration": round(sum(int(r.get("iteration") or 0) for r in rows) / len(rows), 2) if rows else 0,
-        "tool_call_total": tool_call_total,
-        "tool_call_rows": sum(1 for r in rows if int(r.get("tool_call_count") or 0) > 0),
-        "tool_name_counts": dict(tool_name_counts),
-        "answer_prompt_tokens": sum(int(r.get("answer_prompt_tokens") or 0) for r in rows),
-        "answer_completion_tokens": sum(int(r.get("answer_completion_tokens") or 0) for r in rows),
-        "answer_total_tokens": sum(int(r.get("answer_total_tokens") or 0) for r in rows),
-        "retrieval_tokens_est": sum(int(r.get("retrieval_tokens_est") or 0) for r in rows),
-        "avg_retrieval_count": round(sum(int(r.get("retrieval_count") or 0) for r in rows) / len(rows), 2) if rows else 0,
-        "avg_user_memory_count": round(sum(int(r.get("user_memory_count") or 0) for r in rows) / len(rows), 2) if rows else 0,
-        "avg_agent_memory_count": round(sum(int(r.get("agent_memory_count") or 0) for r in rows) / len(rows), 2) if rows else 0,
-        "archive_fallback_total": sum(int(r.get("archive_fallback_count") or 0) for r in rows),
-        "avg_archive_fallback_count": round(sum(int(r.get("archive_fallback_count") or 0) for r in rows) / len(rows), 2) if rows else 0,
-        "memory_hit_total": sum(int(r.get("memory_hit_count") or 0) for r in rows),
-        "user_memory_budget_chars": VIKINGBOT_USER_MEMORY_BUDGET_CHARS,
-        "agent_memory_budget_chars": VIKINGBOT_AGENT_MEMORY_BUDGET_CHARS,
-        "initial_search_limit": args.top_k,
-        "initial_score_threshold": VIKINGBOT_INITIAL_MIN_SCORE,
-        "score_threshold": VIKINGBOT_INITIAL_MIN_SCORE,
-        "tool_search_limit": args.tool_search_limit,
-        "tool_min_score": args.tool_min_score,
-        "user_agent_memory_split": True,
-        "link_only_when_over_budget": True,
-        "raw_turn_fallback": False,
-        "model_retries_configured": args.model_retries,
-        "retrieval_retries_configured": args.retrieval_retries,
-        "model_ok_count": sum(1 for r in rows if r.get("model_status") == "ok"),
-        "model_failed_count": sum(1 for r in rows if r.get("model_status") == "failed"),
-        "model_rate_limited_count": sum(1 for r in rows if r.get("model_error_kind") == "rate_limited" or r.get("health_status") == "rate_limited"),
-        "rows_with_model_retries": sum(1 for r in rows if int(r.get("model_retry_count") or 0) > 0),
-        "model_retry_total": sum(int(r.get("model_retry_count") or 0) for r in rows),
-        "retrieval_ok_count": sum(1 for r in rows if r.get("retrieval_status") == "ok"),
-        "retrieval_empty_count": sum(1 for r in rows if r.get("retrieval_status") == "empty"),
-        "answer_ok_count": sum(1 for r in rows if r.get("answer_status") == "ok"),
-        "answer_empty_or_unknown_count": sum(1 for r in rows if r.get("answer_status") == "empty_or_unknown"),
-        "health_counts": {key: sum(1 for r in rows if r.get("health_status") == key) for key in sorted({r.get("health_status") or "unknown" for r in rows})},
-    }
-    (out_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+        write_rows_csv(csv_path, rows)
+        checkpoint_due = (
+            int(args.judge_every or 0) > 0
+            and len(rows) > last_judge_count
+            and (
+                len(rows) % int(args.judge_every) == 0
+                or len(rows) >= question_total
+            )
+        )
+        if checkpoint_due:
+            try:
+                judge_info = run_incremental_judge(args, csv_path, out_dir, len(rows), question_total)
+                if judge_info.get("enabled"):
+                    reloaded_rows = read_rows_csv(csv_path)
+                    if reloaded_rows:
+                        rows = reloaded_rows
+                    last_judge_count = len(rows)
+            except Exception as exc:
+                print(f"[judge-checkpoint] failed answered={len(rows)}/{question_total or '-'} error={exc}", flush=True)
+        summary = build_summary(args, rows, csv_path, out_dir, question_filter, token_usage_before=token_usage_before)
+        summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_rows_csv(csv_path, rows)
+    final_judge_due = int(args.judge_every or 0) > 0 and len(rows) > last_judge_count
+    if final_judge_due:
+        try:
+            judge_info = run_incremental_judge(args, csv_path, out_dir, len(rows), question_total)
+            if judge_info.get("enabled"):
+                reloaded_rows = read_rows_csv(csv_path)
+                if reloaded_rows:
+                    rows = reloaded_rows
+        except Exception as exc:
+            print(f"[judge-checkpoint] final failed answered={len(rows)}/{question_total or '-'} error={exc}", flush=True)
+    write_rows_csv(csv_path, rows)
+    summary = build_summary(args, rows, csv_path, out_dir, question_filter, token_usage_before=token_usage_before)
+    summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(summary, ensure_ascii=False, indent=2), flush=True)
 
 

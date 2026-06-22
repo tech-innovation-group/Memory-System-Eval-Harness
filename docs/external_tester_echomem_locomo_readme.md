@@ -114,7 +114,7 @@ source .env.local
 打开：
 
 ```text
-http://127.0.0.1:19181/
+<WEB_BASE_URL>/
 ```
 
 如果端口占用，可以改：

@@ -178,8 +178,8 @@ Output:  1,061 tokens × $10/1M   = $0.011
 
 ```bash
 # 使用 LLM Judge 评估 GPT-5.5 的答案
-/Users/chx/jiuwenclaw/bin/python3.12 scripts/local_judge.py \
-  --input /Users/chx/locomo-eval-web/runs/echomem_gpt55_10q_final/vikingbot_eval.csv \
+<python-bin> scripts/local_judge.py \
+  --input <repo-root>/runs/echomem_gpt55_10q_final/vikingbot_eval.csv \
   --base-url https://codexcs.ysaikeji.cn/v1 \
   --model gpt-5.5 \
   --token sk-REDACTED
@@ -207,13 +207,13 @@ Output:  1,061 tokens × $10/1M   = $0.011
 
 ```bash
 # 测试完整 conv-30 (199 题)
-/Users/chx/jiuwenclaw/bin/python3.12 scripts/run_vikingbot_eval.py \
+<python-bin> scripts/run_vikingbot_eval.py \
   --dataset dataset/locomo10.json \
-  --out-dir /Users/chx/locomo-eval-web/runs/echomem_gpt55_conv30_full \
+  --out-dir <repo-root>/runs/echomem_gpt55_conv30_full \
   --sample conv-30 \
   --engine openviking_memory \
-  --openviking-url http://localhost:1933 \
-  --workspace /Users/chx/openviking_workspace \
+  --openviking-url <OPENVIKING_BASE_URL> \
+  --workspace <openviking-workspace> \
   --answer-base-url https://codexcs.ysaikeji.cn/v1 \
   --answer-model gpt-5.5 \
   --answer-token sk-REDACTED \
@@ -242,7 +242,7 @@ Output:  1,061 tokens × $10/1M   = $0.011
 ## 📁 生成的文件
 
 ```
-/Users/chx/locomo-eval-web/runs/echomem_gpt55_10q_final/
+<repo-root>/runs/echomem_gpt55_10q_final/
 ├── vikingbot_eval.csv          # 详细结果
 ├── summary.json                # 统计摘要
 └── (无 relevant_memory.json)   # 检索记录在 CSV 中

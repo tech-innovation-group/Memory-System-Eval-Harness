@@ -10,7 +10,7 @@
 
 ```bash
 # 检查 OpenViking 服务
-curl http://localhost:1933/health
+curl <OPENVIKING_BASE_URL>/health
 
 # 预期输出: {"status":"ok","healthy":true,...}
 ```
@@ -36,17 +36,17 @@ echo $OPENAI_API_KEY
 ### 步骤 1: 导入数据到 OpenViking
 
 ```bash
-cd /Users/chx/locomo-eval-web
+cd <repo-root>
 
 # 导入 conv-30 数据
-/Users/chx/jiuwenclaw/bin/python3.12 scripts/benchmark_adapter.py \
+<python-bin> scripts/benchmark_adapter.py \
   --dataset dataset/locomo10.json \
   --format auto \
-  --out-dir /Users/chx/locomo-eval-web/runs/echomem_ov_import_$(date +%Y%m%d_%H%M%S) \
+  --out-dir <repo-root>/runs/echomem_ov_import_$(date +%Y%m%d_%H%M%S) \
   --mode execute \
   --allow-writes \
   --memory-mode isolated_instance \
-  --ov-base-url http://localhost:1933 \
+  --ov-base-url <OPENVIKING_BASE_URL> \
   --namespace echomem_gpt55_$(date +%Y%m%d) \
   --sample conv-30
 ```
@@ -72,15 +72,15 @@ cd /Users/chx/locomo-eval-web
 #### 选项 A: 10 题快速测试（推荐先做）
 
 ```bash
-/Users/chx/jiuwenclaw/bin/python3.12 scripts/run_vikingbot_eval.py \
+<python-bin> scripts/run_vikingbot_eval.py \
   --dataset dataset/locomo10.json \
-  --out-dir /Users/chx/locomo-eval-web/runs/echomem_gpt55_10q_$(date +%Y%m%d_%H%M%S) \
+  --out-dir <repo-root>/runs/echomem_gpt55_10q_$(date +%Y%m%d_%H%M%S) \
   --sample conv-30 \
   --random-count 10 \
   --random-seed 42 \
   --engine openviking_memory \
-  --openviking-url http://localhost:1933 \
-  --workspace /Users/chx/openviking_workspace \
+  --openviking-url <OPENVIKING_BASE_URL> \
+  --workspace <openviking-workspace> \
   --account default \
   --answer-base-url https://codexcs.ysaikeji.cn/v1 \
   --answer-model gpt-5.5 \
@@ -100,13 +100,13 @@ cd /Users/chx/locomo-eval-web
 #### 选项 B: 完整 conv-30 测试（199 题）
 
 ```bash
-/Users/chx/jiuwenclaw/bin/python3.12 scripts/run_vikingbot_eval.py \
+<python-bin> scripts/run_vikingbot_eval.py \
   --dataset dataset/locomo10.json \
-  --out-dir /Users/chx/locomo-eval-web/runs/echomem_gpt55_conv30_full_$(date +%Y%m%d_%H%M%S) \
+  --out-dir <repo-root>/runs/echomem_gpt55_conv30_full_$(date +%Y%m%d_%H%M%S) \
   --sample conv-30 \
   --engine openviking_memory \
-  --openviking-url http://localhost:1933 \
-  --workspace /Users/chx/openviking_workspace \
+  --openviking-url <OPENVIKING_BASE_URL> \
+  --workspace <openviking-workspace> \
   --account default \
   --answer-base-url https://codexcs.ysaikeji.cn/v1 \
   --answer-model gpt-5.5 \
@@ -127,25 +127,25 @@ cd /Users/chx/locomo-eval-web
 
 ```bash
 # 先导入所有数据
-/Users/chx/jiuwenclaw/bin/python3.12 scripts/benchmark_adapter.py \
+<python-bin> scripts/benchmark_adapter.py \
   --dataset dataset/locomo10.json \
   --format auto \
-  --out-dir /Users/chx/locomo-eval-web/runs/echomem_ov_import_all_$(date +%Y%m%d_%H%M%S) \
+  --out-dir <repo-root>/runs/echomem_ov_import_all_$(date +%Y%m%d_%H%M%S) \
   --mode execute \
   --allow-writes \
   --memory-mode isolated_instance \
-  --ov-base-url http://localhost:1933 \
+  --ov-base-url <OPENVIKING_BASE_URL> \
   --namespace echomem_gpt55_full_$(date +%Y%m%d)
 
 # 等待 30 秒
 
 # 运行全量评测
-/Users/chx/jiuwenclaw/bin/python3.12 scripts/run_vikingbot_eval.py \
+<python-bin> scripts/run_vikingbot_eval.py \
   --dataset dataset/locomo10.json \
-  --out-dir /Users/chx/locomo-eval-web/runs/echomem_gpt55_full_1540_$(date +%Y%m%d_%H%M%S) \
+  --out-dir <repo-root>/runs/echomem_gpt55_full_1540_$(date +%Y%m%d_%H%M%S) \
   --engine openviking_memory \
-  --openviking-url http://localhost:1933 \
-  --workspace /Users/chx/openviking_workspace \
+  --openviking-url <OPENVIKING_BASE_URL> \
+  --workspace <openviking-workspace> \
   --account default \
   --answer-base-url https://codexcs.ysaikeji.cn/v1 \
   --answer-model gpt-5.5 \
@@ -167,8 +167,8 @@ cd /Users/chx/locomo-eval-web
 
 ```bash
 # 使用 DeepSeek-V4-Flash 作为 Judge
-/Users/chx/jiuwenclaw/bin/python3.12 scripts/local_judge.py \
-  --input /Users/chx/locomo-eval-web/runs/echomem_gpt55_10q_*/vikingbot_eval.csv \
+<python-bin> scripts/local_judge.py \
+  --input <repo-root>/runs/echomem_gpt55_10q_*/vikingbot_eval.csv \
   --base-url https://dashscope.aliyuncs.com/compatible-mode/v1 \
   --model deepseek-v4-flash \
   --token sk-REDACTED \
@@ -188,7 +188,7 @@ Grading completed: X/10 correct, accuracy: XX.XX%
 
 ```bash
 # 设置输出目录（替换为实际目录）
-OUTPUT_DIR="/Users/chx/locomo-eval-web/runs/echomem_gpt55_10q_20260531_201500"
+OUTPUT_DIR="<repo-root>/runs/echomem_gpt55_10q_20260531_201500"
 
 # 查看摘要
 cat $OUTPUT_DIR/summary.json
@@ -217,7 +217,7 @@ with open('$OUTPUT_DIR/vikingbot_eval.csv', 'r', encoding='utf-8') as f:
 ### 自动生成分析报告
 
 ```bash
-/Users/chx/jiuwenclaw/bin/python3.12 -c "
+<python-bin> -c "
 import csv
 import json
 
@@ -274,7 +274,7 @@ print(f'  总成本: \${total_cost:.4f}')
 
 ```bash
 # 检查服务
-curl http://localhost:1933/health
+curl <OPENVIKING_BASE_URL>/health
 
 # 如果失败，启动服务
 cd /path/to/openviking
@@ -301,10 +301,10 @@ curl -X POST https://codexcs.ysaikeji.cn/v1/chat/completions \
 
 ```bash
 # 检查 workspace 权限
-ls -la /Users/chx/openviking_workspace/viking/default/
+ls -la <openviking-workspace>
 
 # 检查 namespace
-curl http://localhost:1933/api/v1/namespaces
+curl <OPENVIKING_BASE_URL>/api/v1/namespaces
 ```
 
 ### 问题 4: Python 路径错误
@@ -312,7 +312,7 @@ curl http://localhost:1933/api/v1/namespaces
 ```bash
 # 确认 Python 路径
 which python3.12
-/Users/chx/jiuwenclaw/bin/python3.12 --version
+<python-bin> --version
 
 # 如果路径不对，修改为正确的路径
 ```
@@ -330,10 +330,10 @@ which python3.12
 set -e
 
 # 配置
-PYTHON="/Users/chx/jiuwenclaw/bin/python3.12"
+PYTHON="<python-bin>"
 DATASET="dataset/locomo10.json"
-OPENVIKING_URL="http://localhost:1933"
-WORKSPACE="/Users/chx/openviking_workspace"
+OPENVIKING_URL="<OPENVIKING_BASE_URL>"
+WORKSPACE="<openviking-workspace>"
 API_KEY="sk-REDACTED"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
@@ -344,7 +344,7 @@ echo "📥 步骤 1/3: 导入数据..."
 $PYTHON scripts/benchmark_adapter.py \
   --dataset "$DATASET" \
   --format auto \
-  --out-dir "/Users/chx/locomo-eval-web/runs/echomem_ov_import_$TIMESTAMP" \
+  --out-dir "<repo-root>/runs/echomem_ov_import_$TIMESTAMP" \
   --mode execute \
   --allow-writes \
   --memory-mode isolated_instance \
@@ -357,7 +357,7 @@ sleep 5
 
 # 步骤 2: 运行评测
 echo "🤖 步骤 2/3: 运行 GPT-5.5 评测..."
-OUTPUT_DIR="/Users/chx/locomo-eval-web/runs/echomem_gpt55_10q_$TIMESTAMP"
+OUTPUT_DIR="<repo-root>/runs/echomem_gpt55_10q_$TIMESTAMP"
 $PYTHON scripts/run_vikingbot_eval.py \
   --dataset "$DATASET" \
   --out-dir "$OUTPUT_DIR" \
@@ -398,9 +398,9 @@ chmod +x test_gpt55.sh
 
 ## 📚 参考文档
 
-- 完整配置指南: `/Users/chx/locomo-eval-web/docs/openviking_gpt55_setup_guide.md`
-- 测试报告: `/Users/chx/locomo-eval-web/docs/test_final_report_with_judge_20260531.md`
-- EchoMem 指南: `/Users/chx/locomo-eval-web/docs/echomem_test_guide.md`
+- 完整配置指南: `<repo-root>/docs/openviking_gpt55_setup_guide.md`
+- 测试报告: `<repo-root>/docs/test_final_report_with_judge_20260531.md`
+- EchoMem 指南: `<repo-root>/docs/echomem_test_guide.md`
 
 ---
 

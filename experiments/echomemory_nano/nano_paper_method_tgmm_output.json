@@ -1,0 +1,226 @@
+{
+  "readiness": {
+    "messages_persisted": true,
+    "atoms_ready": true,
+    "blocks_ready": true,
+    "graph_ready": true,
+    "qa_ready": true
+  },
+  "counts": {
+    "observations": 5,
+    "atoms": 4,
+    "blocks": 3,
+    "nodes": 12,
+    "edges": 18
+  },
+  "queries": [
+    {
+      "query": "When did Jon lose his job?",
+      "plan": {
+        "intent": "temporal",
+        "layers": [
+          "event",
+          "fact",
+          "block"
+        ],
+        "graph_first": true,
+        "note": "Event nodes carry event time."
+      },
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "blocks_ready": true,
+        "graph_ready": true,
+        "qa_ready": true
+      },
+      "allowed_to_answer": true,
+      "hits": [
+        {
+          "item_id": "block-timeline-main",
+          "layer": "block",
+          "score": 3.3,
+          "content": "- 2023-01-19: Jon lost his job on 2023-01-19 and decided to open a dance studio.\n- 2023-01-30: Gina visited Rome on 2023-01-30 after her interview.",
+          "evidence_time": ""
+        },
+        {
+          "item_id": "event:atom-000",
+          "layer": "event",
+          "score": 3.0,
+          "content": "Jon lost_job job",
+          "evidence_time": "2023-01-19"
+        },
+        {
+          "item_id": "fact:atom-000",
+          "layer": "fact",
+          "score": 3.0,
+          "content": "statement=Jon lost his job on 2023-01-19 and decided to open a dance studio.\nsubject=Jon\npredicate=lost_job\nobject=job",
+          "evidence_time": "2023-01-19"
+        },
+        {
+          "item_id": "event:atom-002",
+          "layer": "event",
+          "score": 2.0,
+          "content": "Jon plans call three investors next week.",
+          "evidence_time": "2023-02-03"
+        },
+        {
+          "item_id": "block-plan-main",
+          "layer": "block",
+          "score": 1.3,
+          "content": "- Jon plans to call three investors next week.",
+          "evidence_time": ""
+        }
+      ],
+      "note": "Graph-first on temporal/visual; blocks help profile/plan questions."
+    },
+    {
+      "query": "What does Gina like?",
+      "plan": {
+        "intent": "profile",
+        "layers": [
+          "block",
+          "fact",
+          "entity"
+        ],
+        "graph_first": false,
+        "note": "Profile block is efficient for stable preferences."
+      },
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "blocks_ready": true,
+        "graph_ready": true,
+        "qa_ready": true
+      },
+      "allowed_to_answer": true,
+      "hits": [
+        {
+          "item_id": "block-profile-main",
+          "layer": "block",
+          "score": 2.3,
+          "content": "- Gina likes jazz and museums.",
+          "evidence_time": ""
+        },
+        {
+          "item_id": "fact:atom-003",
+          "layer": "fact",
+          "score": 2.0,
+          "content": "statement=Gina likes jazz and museums.\nsubject=Gina\npredicate=likes\nobject=jazz and museums.",
+          "evidence_time": "2023-02-03"
+        },
+        {
+          "item_id": "block-timeline-main",
+          "layer": "block",
+          "score": 1.3,
+          "content": "- 2023-01-19: Jon lost his job on 2023-01-19 and decided to open a dance studio.\n- 2023-01-30: Gina visited Rome on 2023-01-30 after her interview.",
+          "evidence_time": ""
+        },
+        {
+          "item_id": "entity:Gina",
+          "layer": "entity",
+          "score": 1.0,
+          "content": "name=Gina",
+          "evidence_time": ""
+        },
+        {
+          "item_id": "fact:atom-001",
+          "layer": "fact",
+          "score": 1.0,
+          "content": "statement=Gina visited Rome on 2023-01-30 after her interview.\nsubject=Gina\npredicate=visited\nobject=Rome",
+          "evidence_time": "2023-01-30"
+        }
+      ],
+      "note": "Graph-first on temporal/visual; blocks help profile/plan questions."
+    },
+    {
+      "query": "What does Jon plan to do?",
+      "plan": {
+        "intent": "plan",
+        "layers": [
+          "block",
+          "event",
+          "fact"
+        ],
+        "graph_first": true,
+        "note": "Plan block summarizes future actions."
+      },
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "blocks_ready": true,
+        "graph_ready": true,
+        "qa_ready": true
+      },
+      "allowed_to_answer": true,
+      "hits": [
+        {
+          "item_id": "block-plan-main",
+          "layer": "block",
+          "score": 3.3,
+          "content": "- Jon plans to call three investors next week.",
+          "evidence_time": ""
+        },
+        {
+          "item_id": "event:atom-002",
+          "layer": "event",
+          "score": 3.0,
+          "content": "Jon plans call three investors next week.",
+          "evidence_time": "2023-02-03"
+        },
+        {
+          "item_id": "fact:atom-002",
+          "layer": "fact",
+          "score": 3.0,
+          "content": "statement=Jon plans to call three investors next week.\nsubject=Jon\npredicate=plans\nobject=call three investors next week.",
+          "evidence_time": "2023-02-03"
+        },
+        {
+          "item_id": "block-timeline-main",
+          "layer": "block",
+          "score": 2.3,
+          "content": "- 2023-01-19: Jon lost his job on 2023-01-19 and decided to open a dance studio.\n- 2023-01-30: Gina visited Rome on 2023-01-30 after her interview.",
+          "evidence_time": ""
+        },
+        {
+          "item_id": "fact:atom-000",
+          "layer": "fact",
+          "score": 2.0,
+          "content": "statement=Jon lost his job on 2023-01-19 and decided to open a dance studio.\nsubject=Jon\npredicate=lost_job\nobject=job",
+          "evidence_time": "2023-01-19"
+        }
+      ],
+      "note": "Graph-first on temporal/visual; blocks help profile/plan questions."
+    },
+    {
+      "query": "What does the screenshot say?",
+      "plan": {
+        "intent": "visual",
+        "layers": [
+          "image_evidence",
+          "event",
+          "block"
+        ],
+        "graph_first": true,
+        "note": "Visual evidence first."
+      },
+      "readiness": {
+        "messages_persisted": true,
+        "atoms_ready": true,
+        "blocks_ready": true,
+        "graph_ready": true,
+        "qa_ready": true
+      },
+      "allowed_to_answer": true,
+      "hits": [
+        {
+          "item_id": "image:obs-004",
+          "layer": "image_evidence",
+          "score": 2.2,
+          "content": "caption=Finance dashboard screenshot\nocr=Revenue 123; Margin 18%\ntags=finance,dashboard",
+          "evidence_time": "2023-02-04"
+        }
+      ],
+      "note": "Graph-first on temporal/visual; blocks help profile/plan questions."
+    }
+  ]
+}
