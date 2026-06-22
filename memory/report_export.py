@@ -11,6 +11,7 @@ from typing import Any
 from . import graph_report as graph_report_service
 from . import reports as report_service
 from . import runs as run_service
+from .backend_profiles import backend_profile, normalize_backend_id
 from .plugins.service import plugin_service
 from .tasking import redacted_command
 
@@ -325,11 +326,10 @@ def command_options(command: Any) -> dict[str, Any]:
 
 
 def backend_display_name(backend: Any) -> str:
-    value = str(backend or "").strip().lower()
-    if value == "echomemory":
-        return "EchoMemory"
-    if value == "openviking":
-        return "OpenViking"
+    value = str(backend or "").strip()
+    lowered = value.lower()
+    if lowered in {"openviking", "echomemory", "echomem"}:
+        return backend_profile(lowered).display_name
     return str(backend or "未知后端")
 
 
@@ -477,22 +477,27 @@ def merged_config(manifest: dict[str, Any], snapshot: dict[str, Any]) -> dict[st
 
 
 def context_composition(summary: dict[str, Any], summary_json: dict[str, Any], config: dict[str, Any], backend: str = "openviking") -> list[tuple[str, str]]:
+    profile = backend_profile(backend)
     prompt_mode_text = summary_value(summary, summary_json, "prompt_mode", fallback=config_value(config, "prompt_mode"))
     top_k_text = native_top_k_label(config_value(config, "top_k", "local_agent_top_k"), prompt_mode_text)
-    if backend == "echomemory":
-        tool_loop_label = "Memory tool loop"
-        tool_set_label = "Memory tool set"
-        content_read_label = "Memory content read"
-        tool_loop_value = summary_value(summary, summary_json, "memory_tool_loop_enabled", "openviking_tool_loop_enabled", fallback=config_value(config, "memory_tool_loop_enabled", "openviking_tool_loop"))
-        tool_set_value = summary_value(summary, summary_json, "memory_tool_set", "openviking_tool_set", fallback=config_value(config, "memory_tool_set", "openviking_tool_set"))
-        content_read_value = summary_value(summary, summary_json, "memory_content_read_enabled", "openviking_content_read_enabled", fallback=config_value(config, "memory_content_read_enabled", "read_openviking_content"))
-    else:
-        tool_loop_label = "OpenViking tool loop"
-        tool_set_label = "OpenViking tool set"
-        content_read_label = "OpenViking content read"
-        tool_loop_value = summary_value(summary, summary_json, "openviking_tool_loop_enabled", fallback=config_value(config, "openviking_tool_loop"))
-        tool_set_value = summary_value(summary, summary_json, "openviking_tool_set", fallback=config_value(config, "openviking_tool_set"))
-        content_read_value = summary_value(summary, summary_json, "openviking_content_read_enabled", fallback=config_value(config, "read_openviking_content"))
+    tool_loop_value = summary_value(
+        summary,
+        summary_json,
+        *profile.tool_loop_summary_keys,
+        fallback=config_value(config, *profile.tool_loop_config_keys),
+    )
+    tool_set_value = summary_value(
+        summary,
+        summary_json,
+        *profile.tool_set_summary_keys,
+        fallback=config_value(config, *profile.tool_set_config_keys),
+    )
+    content_read_value = summary_value(
+        summary,
+        summary_json,
+        *profile.content_read_summary_keys,
+        fallback=config_value(config, *profile.content_read_config_keys),
+    )
     return [
         ("Prompt mode", prompt_mode_text),
         ("VikingBot prompt aligned", summary_value(summary, summary_json, "vikingbot_prompt_aligned")),
@@ -504,9 +509,9 @@ def context_composition(summary: dict[str, Any], summary_json: dict[str, Any], c
         ("Group chat", summary_value(summary, summary_json, "group_chat", fallback=config_value(config, "group_chat"))),
         ("Memory user strategy", summary_value(summary, summary_json, "memory_user_strategy")),
         ("Initial agent memory", summary_value(summary, summary_json, "initial_agent_memory_enabled", fallback=config_value(config, "initial_agent_memory"))),
-        (tool_loop_label, tool_loop_value),
-        (tool_set_label, tool_set_value),
-        (content_read_label, content_read_value),
+        (profile.tool_loop_label, tool_loop_value),
+        (profile.tool_set_label, tool_set_value),
+        (profile.content_read_label, content_read_value),
         ("Max iterations", summary_value(summary, summary_json, "max_iterations", fallback=config_value(config, "max_iterations"))),
         ("Avg iteration", summary_value(summary, summary_json, "avg_iteration")),
         ("Rows with tool calls", summary_value(summary, summary_json, "tool_call_rows")),
@@ -555,9 +560,9 @@ def report_backend(record: dict[str, Any], manifest: dict[str, Any], config: dic
 
 
 def import_integrity_unavailable(backend: str, reason: str, *, workspace: str = "", account: str = "default", sample: str = "") -> dict[str, Any]:
-    memory_label = "EchoMemory" if backend == "echomemory" else "OpenViking"
+    memory_label = backend_profile(backend).display_name
     return {
-        "backend": backend,
+        "backend": normalize_backend_id(backend),
         "memory_label": memory_label,
         "status": "not_available",
         "verification_level": "warn",
@@ -587,6 +592,8 @@ def latest_import_integrity(
     sample: str = "",
 ) -> dict[str, Any]:
     runs_root = run_dir.parent
+    profile = backend_profile(backend)
+    backend = profile.id
     workspace = config_value(config, "openviking_workspace", "ov_workspace", "workspace", "echomemory_workspace", fallback="")
     account = config_value(config, "account", "ov_account", fallback="default")
     user_id = config_value(config, "ov_user_id", "user_id", "em_user_id", fallback="default")
@@ -626,9 +633,6 @@ def latest_import_integrity(
         result["pending_after_commit_total"] = result.get("pending_after_commit_total", 0)
         return result
 
-    candidates: list[tuple[float, Path, dict[str, Any], dict[str, Any]]] = []
-    if not runs_root.exists():
-        return {}
     if not workspace or workspace == "-":
         return import_integrity_unavailable(
             backend,
@@ -637,6 +641,9 @@ def latest_import_integrity(
             account=account,
             sample=sample,
         )
+    candidates: list[tuple[float, Path, dict[str, Any], dict[str, Any]]] = []
+    if not runs_root.exists():
+        return {}
     import_patterns = ["openviking_import_*/manifest.json"]
     for pattern in import_patterns:
       for manifest_path in runs_root.glob(pattern):
@@ -1028,7 +1035,8 @@ def export_report(run_dir: Path, active_run_ids: set[str] | None = None) -> dict
         ("Model status counts", counts_text(summary.get("model_status_counts") or summary_json.get("model_status_counts"))),
         ("Answer health counts", counts_text(summary.get("health_counts") or summary_json.get("health_counts"))),
     ]
-    import_label = str(import_integrity.get("memory_label") or ("EchoMemory" if current_backend == "echomemory" else "OpenViking"))
+    current_profile = backend_profile(current_backend)
+    import_label = str(import_integrity.get("memory_label") or current_profile.display_name)
     import_checks = import_integrity.get("checks") if isinstance(import_integrity.get("checks"), list) else []
     import_check_failures = [
         item
@@ -1126,52 +1134,29 @@ def export_report(run_dir: Path, active_run_ids: set[str] | None = None) -> dict
     prompt_mode_text = summary_value(summary, summary_json, "prompt_mode", fallback=config_value(config, "prompt_mode"))
     top_k_text = native_top_k_label(config_value(config, "top_k", "local_agent_top_k"), prompt_mode_text)
     vikingbot_prompt_text = summary_value(summary, summary_json, "vikingbot_prompt_aligned")
-    if current_backend == "echomemory":
-        backend_url_label = "EchoMemory SDK Root"
-        backend_url_value = config_value(config, "echomem_root", "echomemory_root", fallback="-")
-        tool_loop_label = "Memory tool loop"
-        tool_set_label = "Memory tool set"
-        content_read_label = "Memory content read"
-        tool_loop_text = summary_value(
-            summary,
-            summary_json,
-            "memory_tool_loop_enabled",
-            "openviking_tool_loop_enabled",
-            fallback=config_value(config, "memory_tool_loop_enabled", "openviking_tool_loop"),
-        )
-        tool_set_text = summary_value(
-            summary,
-            summary_json,
-            "memory_tool_set",
-            "openviking_tool_set",
-            fallback=config_value(config, "memory_tool_set", "openviking_tool_set"),
-        )
-        content_read_text = summary_value(
-            summary,
-            summary_json,
-            "memory_content_read_enabled",
-            "openviking_content_read_enabled",
-            fallback=config_value(config, "memory_content_read_enabled", "read_openviking_content"),
-        )
-    else:
-        backend_url_label = "OpenViking URL"
-        backend_url_value = config_value(config, "openviking_url", "server_url")
-        tool_loop_label = "OpenViking tool loop"
-        tool_set_label = "OpenViking tool set"
-        content_read_label = "OpenViking content read"
-        tool_loop_text = summary_value(
-            summary,
-            summary_json,
-            "openviking_tool_loop_enabled",
-            fallback=config_value(config, "openviking_tool_loop"),
-        )
-        tool_set_text = summary_value(summary, summary_json, "openviking_tool_set", fallback=config_value(config, "openviking_tool_set"))
-        content_read_text = summary_value(
-            summary,
-            summary_json,
-            "openviking_content_read_enabled",
-            fallback=config_value(config, "read_openviking_content"),
-        )
+    backend_url_label = current_profile.backend_url_label
+    backend_url_value = config_value(config, *current_profile.backend_url_config_keys, fallback="-")
+    tool_loop_label = current_profile.tool_loop_label
+    tool_set_label = current_profile.tool_set_label
+    content_read_label = current_profile.content_read_label
+    tool_loop_text = summary_value(
+        summary,
+        summary_json,
+        *current_profile.tool_loop_summary_keys,
+        fallback=config_value(config, *current_profile.tool_loop_config_keys),
+    )
+    tool_set_text = summary_value(
+        summary,
+        summary_json,
+        *current_profile.tool_set_summary_keys,
+        fallback=config_value(config, *current_profile.tool_set_config_keys),
+    )
+    content_read_text = summary_value(
+        summary,
+        summary_json,
+        *current_profile.content_read_summary_keys,
+        fallback=config_value(config, *current_profile.content_read_config_keys),
+    )
     max_iterations_text = summary_value(summary, summary_json, "max_iterations", fallback=config_value(config, "max_iterations"))
     group_chat_text = summary_value(summary, summary_json, "group_chat", fallback=config_value(config, "group_chat"))
     memory_user_strategy_text = summary_value(summary, summary_json, "memory_user_strategy")
@@ -1288,7 +1273,7 @@ def export_report(run_dir: Path, active_run_ids: set[str] | None = None) -> dict
         "warn": "trusted_with_warnings",
         "fail": "untrusted_chain",
     }[gate_overall_status]
-    backend_name = backend_display_name(current_backend)
+    backend_name = current_profile.display_name
     dataset_name = dataset_display_name(config_value(config, "dataset_format"), config_value(config, "data", "dataset"))
     sample_text = config_value(config, "sample", fallback="-")
     question_filter_text = config_value(config, "questions", fallback="")
@@ -1305,11 +1290,7 @@ def export_report(run_dir: Path, active_run_ids: set[str] | None = None) -> dict
         f"top_k={top_k_text} · score_threshold={first_metric(summary, summary_json, config, 'score_threshold', 'initial_score_threshold')} · "
         f"tool_search_limit={first_metric(summary, summary_json, config, 'tool_search_limit')} · tool_min_score={first_metric(summary, summary_json, config, 'tool_min_score')}"
     )
-    backend_note = (
-        "本次使用 EchoMemory 作为记忆后端，Agent 调用 memory_search / memory_read_many 等 memory_* 工具读取 EchoMemory 记忆；不是 OpenViking 记忆结果。"
-        if current_backend == "echomemory"
-        else "本次使用 OpenViking 作为记忆后端，Agent 调用 OpenViking 兼容工具读取 user/agent memory。"
-    )
+    backend_note = current_profile.backend_note
     overview_items = [
         ("评测数据集", dataset_name),
         ("样本范围", sample_text if sample_text not in {"", "-"} else "全部样本"),
@@ -1336,11 +1317,7 @@ def export_report(run_dir: Path, active_run_ids: set[str] | None = None) -> dict
         f"{dataset_name} {sample_text if sample_text not in {'', '-'} else '全部样本'} · "
         f"{expected_questions_text} 题 · {backend_name} 后端"
     )
-    import_integrity_note = (
-        "自动匹配同一 workspace/account 的最近一次 EchoMemory import，检查 LoCoMo conversation 是否完整写入并可检索。"
-        if current_backend == "echomemory"
-        else "自动匹配同一 workspace/account 的最近一次 OpenViking import，检查 LoCoMo conversation 是否完整提交并 commit。"
-    )
+    import_integrity_note = current_profile.import_integrity_note
     attribution_total = int_value(attribution.get("total"), rows_total)
     attribution_problem_rows = int_value(attribution.get("problem_rows"))
     attribution_correct_rows = int_value(attribution.get("correct_rows"))

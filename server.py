@@ -5955,150 +5955,40 @@ def script_arg(text: str) -> str:
     return sh_quote(text)
 
 
-def normalize_task_payload(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
-    normalized = dict(payload)
-    dataset_format = str(normalized.get("dataset_format") or normalized.get("format") or "").strip().lower()
-    if kind in {"openviking_generic_qa", "echomemory_generic_qa"}:
-        normalized["dataset_format"] = dataset_format or "generic"
-    elif dataset_format:
-        normalized["dataset_format"] = dataset_format
-    if kind in {"echomemory_generic_qa", "echomemory_import"}:
-        wait_mode = str(normalized.get("import_wait_mode") or "").strip().lower()
-        fast_mode = wait_mode == "fast" or bool(normalized.get("defer_artifact_wait"))
-        try:
-            commit_timeout = float(normalized.get("commit_call_timeout_s") or 0)
-        except Exception:
-            commit_timeout = 0.0
-        minimum_commit_timeout = 900.0 if kind == "echomemory_generic_qa" else 300.0
-        if fast_mode and commit_timeout < minimum_commit_timeout:
-            normalized["commit_call_timeout_s"] = int(minimum_commit_timeout)
-        if kind == "echomemory_generic_qa":
-            try:
-                import_timeout = float(normalized.get("import_timeout_s") or 0)
-            except Exception:
-                import_timeout = 0.0
-            if import_timeout < minimum_commit_timeout:
-                normalized["import_timeout_s"] = int(minimum_commit_timeout)
-    return normalized
-
-
 def create_task(kind: str, payload: dict[str, Any]) -> Task:
-    payload = normalize_task_payload(kind, payload)
     with TASK_CREATION_LOCK:
-        duplicate_task = find_duplicate_active_task(kind, payload)
-        if duplicate_task:
-            raise DuplicateActiveTaskError(duplicate_task)
-        active_locomo_qa = find_conflicting_active_locomo_qa(kind, payload)
-        if active_locomo_qa:
-            raise ActiveLocomoQaConflictError(active_locomo_qa)
-        repo = safe_path(payload.get("repo") or str(DEFAULT_REPO))
-        output_dir = safe_path(payload.get("output_dir") or str(DEFAULT_OUTPUT_DIR))
-        output_dir.mkdir(parents=True, exist_ok=True)
-        config = safe_path(payload.get("config") or str(DEFAULT_CONFIG))
-        cli_config = safe_path(payload.get("cli_config") or str(DEFAULT_CLI_CONFIG))
-        judge_token = resolve_judge_token(payload, config)
-        echomemory_env: dict[str, str] = {}
-        if kind in {"echomemory_qa", "echomemory_generic_qa", "echomemory_import", "echomemory_qa_retry_failed"}:
-            echomemory_env = resolve_echomemory_runtime_env(payload, config, judge_token)
-            embedding_token = str(echomemory_env.get("token") or "").strip()
-            chat_token = str(echomemory_env.get("chat_token") or "").strip()
-            missing_runtime_keys: list[str] = []
-            if not embedding_token:
-                missing_runtime_keys.append("DASHSCOPE_API_KEY")
-            if not chat_token:
-                missing_runtime_keys.append("ECHOMEM_CHAT_API_KEY")
-            if missing_runtime_keys and not payload.get("fallback_to_mock"):
-                raise ValueError(
-                    "EchoMemory 导入/QA 启动前检查失败：缺少 "
-                    + "、".join(missing_runtime_keys)
-                    + "。请在页面或环境变量中分别补齐 embedding/chat provider key 后再运行。"
-                )
-            if chat_token and not skip_model_preflight(payload):
-                preflight = openai_compatible_chat_preflight(
-                    str(echomemory_env.get("chat_base") or "https://dashscope.aliyuncs.com/compatible-mode/v1"),
-                    str(echomemory_env.get("chat_model") or "deepseek-v4-flash"),
-                    chat_token,
-                    timeout_s=45,
-                )
-                if not preflight.get("ok"):
-                    raise ValueError(
-                        "EchoMemory 模型预检失败："
-                        f"{preflight.get('model') or ''} @ {preflight.get('base_url') or ''} "
-                        f"status={preflight.get('status')} · {preflight.get('error') or 'unknown error'}"
-                    )
-        ensure_task_model_preflight(kind, payload, config, echomemory_env)
-        run_id = f"{kind}_{now_slug()}_{uuid.uuid4().hex[:6]}"
-        run_dir = output_dir / run_id
-        run_dir.mkdir(parents=True, exist_ok=True)
-        log_file = run_dir / "run.log"
-        meta: dict[str, Any] = {}
-        if kind == "openviking_import":
-            meta["openviking"] = restart_openviking_for_workspace(payload, run_dir, config)
-        needs_openviking_connection_files = kind not in {"echomemory_qa", "echomemory_generic_qa", "echomemory_import", "echomemory_qa_retry_failed"} and (
-            payload.get("port")
-            or payload.get("server_url")
-            or payload.get("host")
-            or payload.get("root_api_key")
-            or payload.get("account")
+        return orchestrate_task(
+            kind,
+            payload,
+            context=TaskOrchestratorContext(
+                safe_path=safe_path,
+                default_repo=DEFAULT_REPO,
+                default_output_dir=DEFAULT_OUTPUT_DIR,
+                default_config=DEFAULT_CONFIG,
+                default_cli_config=DEFAULT_CLI_CONFIG,
+                resolve_judge_token=resolve_judge_token,
+                resolve_echomemory_runtime_env=resolve_echomemory_runtime_env,
+                skip_model_preflight=skip_model_preflight,
+                openai_compatible_chat_preflight=openai_compatible_chat_preflight,
+                ensure_task_model_preflight=ensure_task_model_preflight,
+                now_slug=now_slug,
+                restart_openviking_for_workspace=restart_openviking_for_workspace,
+                prepare_connection_files=prepare_connection_files,
+                redact_manifest_payload=redact_manifest_payload,
+                build_single_command=build_single_command,
+                build_pipeline_script=build_pipeline_script,
+                build_distributed_script=build_distributed_script,
+                task_cls=Task,
+                redacted_command=redacted_command,
+                write_manifest=write_manifest,
+                register_task=register_task,
+                start_task_thread=lambda task: threading.Thread(target=task_thread, args=(task,), daemon=True).start(),
+            ),
+            find_duplicate_active_task=find_duplicate_active_task,
+            find_conflicting_active_locomo_qa=find_conflicting_active_locomo_qa,
+            duplicate_error_cls=DuplicateActiveTaskError,
+            conflict_error_cls=ActiveLocomoQaConflictError,
         )
-        if needs_openviking_connection_files:
-            config, cli_config = prepare_connection_files(payload, run_dir, config, cli_config)
-        env = {
-            "OPENVIKING_CONFIG_FILE": str(config),
-            "OPENVIKING_CLI_CONFIG_FILE": str(cli_config),
-            "PYTHONUNBUFFERED": "1",
-            "LOCOMO_TASK_PAYLOAD_JSON": json.dumps(redact_manifest_payload(payload), ensure_ascii=False),
-        }
-        if judge_token:
-            env["LOCOMO_JUDGE_TOKEN"] = judge_token
-        if kind in {"echomemory_qa", "echomemory_generic_qa", "echomemory_import", "echomemory_qa_retry_failed"}:
-            embedding_token = str(echomemory_env.get("token") or "").strip()
-            chat_token = str(echomemory_env.get("chat_token") or "").strip()
-            if not embedding_token and chat_token:
-                embedding_token = chat_token
-            if not chat_token and embedding_token:
-                chat_token = embedding_token
-            if embedding_token and chat_token:
-                env["DASHSCOPE_API_KEY"] = embedding_token
-                env["ECHOMEM_CHAT_API_KEY"] = chat_token
-                explicit_answer_token = payload.get("answer_token") or payload.get("judge_token")
-                if kind in {"echomemory_qa", "echomemory_generic_qa", "echomemory_qa_retry_failed"} and not explicit_answer_token:
-                    env["LOCOMO_JUDGE_TOKEN"] = chat_token
-                env["ECHOMEM_CHAT_PROVIDER"] = str(echomemory_env.get("chat_provider") or "deepseek")
-                env["ECHOMEM_CHAT_MODEL"] = str(echomemory_env.get("chat_model") or "deepseek-v4-flash")
-                env["ECHOMEM_CHAT_BASE_URL"] = str(echomemory_env.get("chat_base") or "https://dashscope.aliyuncs.com/compatible-mode/v1")
-                env["DASHSCOPE_BASE_URL"] = str(echomemory_env.get("dashscope_base") or "https://dashscope.aliyuncs.com/compatible-mode/v1")
-
-        if kind in {"adapter", "local_agent", "openviking_qa", "openviking_import", "openviking_generic_qa", "echomemory_qa", "echomemory_generic_qa", "echomemory_import", "echomemory_qa_retry_failed", "openviking_qa_retry_failed", "openviking_qa_retry_missing", "judge", "stats"}:
-            command, output_file, name = build_single_command(kind, payload, run_dir, config)
-        elif kind == "pipeline":
-            command, output_file, name = build_pipeline_script(payload, run_dir, config)
-        elif kind == "distributed":
-            command, output_file, name = build_distributed_script(payload, run_dir, config, cli_config)
-        elif kind == "custom":
-            raise ValueError("custom command runner is disabled in the web harness")
-        else:
-            raise ValueError(f"unknown task kind: {kind}")
-
-        task = Task(
-            id=run_id,
-            kind=kind,
-            name=name,
-            command=command,
-            display_command=redacted_command(command),
-            cwd=str(repo),
-            output_file=output_file,
-            log_file=str(log_file),
-            run_dir=str(run_dir),
-            manifest_file=str(run_dir / "manifest.json"),
-            env=env,
-            meta={"config": redact_manifest_payload(payload), **meta},
-        )
-        write_manifest(task, payload, run_dir)
-        with TASK_LOCK:
-            TASKS[task.id] = task
-        threading.Thread(target=task_thread, args=(task,), daemon=True).start()
-        return task
 
 
 def stop_task(task: Task) -> dict[str, Any]:

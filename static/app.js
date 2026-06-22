@@ -7559,26 +7559,27 @@ async function openDatasetCard(path, format = "") {
     showView("openvikingView");
     return;
   }
-  if (normalized === "longmemeval") {
-    if ($("longMemData")) $("longMemData").value = resolvedPath;
-    renderLongMemEntryStatus(resolvedPath, datasetRecordForPath(resolvedPath, normalized));
-    rememberActiveDatasetView("longMemEvalView", normalized, resolvedPath);
-    showView("longMemEvalView");
-    validateLongMemDataset().catch((e) => {
-      renderLongMemEntryStatus(resolvedPath, datasetRecordForPath(resolvedPath, normalized));
-      toast(e.message);
-    });
-    return;
-  }
   const benchmarkKey = genericBenchmarkKeyForFormat(normalized);
-  if (benchmarkKey) {
-    const config = benchmarkConfig(benchmarkKey);
+  if (normalized === "longmemeval" || benchmarkKey) {
+    const targetKey = benchmarkKey || "longmemeval";
+    const config = normalized === "longmemeval"
+      ? {
+          view: "longMemEvalView",
+          dataInput: "longMemData",
+          renderStatus: renderLongMemEntryStatus,
+          validate: validateLongMemDataset,
+        }
+      : {
+          ...benchmarkConfig(targetKey),
+          renderStatus: (path, record) => renderGenericEntryStatus(targetKey, path, record),
+          validate: () => validateGenericBenchmark(targetKey),
+        };
     if ($(config.dataInput)) $(config.dataInput).value = resolvedPath;
-    renderGenericEntryStatus(benchmarkKey, resolvedPath, datasetRecordForPath(resolvedPath, normalized));
+    config.renderStatus(resolvedPath, datasetRecordForPath(resolvedPath, normalized));
     rememberActiveDatasetView(config.view, normalized, resolvedPath);
     showView(config.view);
-    validateGenericBenchmark(benchmarkKey).catch((e) => {
-      renderGenericEntryStatus(benchmarkKey, resolvedPath, datasetRecordForPath(resolvedPath, normalized));
+    config.validate().catch((e) => {
+      config.renderStatus(resolvedPath, datasetRecordForPath(resolvedPath, normalized));
       toast(e.message);
     });
     return;
