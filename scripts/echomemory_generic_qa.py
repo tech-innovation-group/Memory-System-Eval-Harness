@@ -23,6 +23,7 @@ import benchmark_adapter
 from echomemory_common import (
     DEFAULT_ECHOMEM_ROOT,
     ensure_echomem_imports,
+    open_echomem_sdk,
     sdk_ctx_kwargs,
     workspace_token_usage_summary,
     write_echomem_config,
@@ -281,6 +282,11 @@ async def import_sample_memory(
     started = time.time()
     user_id, agent_id = sample_identity(args, sample_id)
     messages = import_messages_from_plan(args.dataset_format, sample_id, args.namespace, plan)
+    print(
+        f"[import-sample] sample={sample_id} messages={len(messages)} "
+        f"user_id={user_id} agent_id={agent_id} import_dir={import_dir}",
+        flush=True,
+    )
     if not messages:
         return {
             "sample_id": sample_id,
@@ -299,7 +305,13 @@ async def import_sample_memory(
     import_args = argparse.Namespace(**vars(args))
     import_args.user_id = user_id
     import_args.agent_id = agent_id
+    print(f"[import-sample] sample={sample_id} requested_session_id={requested_session_id}", flush=True)
     record = await import_one_session(import_args, sdk, requested_session_id, messages, f"{args.dataset_format}/{sample_id}")
+    print(
+        f"[import-sample] sample={sample_id} session_id={record.get('session_id') or ''} "
+        f"integrity={record.get('integrity') or ''} submitted={record.get('submitted_messages') or 0}",
+        flush=True,
+    )
     record.update(
         {
             "sample_id": sample_id,
@@ -424,7 +436,10 @@ async def open_sdk_runtime(open_runtime: Any, sdk_cls: Any, config_path: Path) -
     return runtime, sdk_cls(runtime)
 
 
-async def close_sdk_runtime(runtime: Any, *, drain_pending: bool) -> None:
+async def close_sdk_runtime(runtime: Any, sdk: Any = None, *, drain_pending: bool) -> None:
+    close = getattr(sdk, "close", None)
+    if callable(close):
+        await close()
     if runtime is None:
         return
     stop = getattr(runtime, "stop", None)
@@ -528,12 +543,6 @@ def failed_row_from_import(
 
 async def run(args: argparse.Namespace) -> None:
     root = ensure_echomem_imports(args.echomem_root)
-    try:
-        from echomem.protocol.local_sdk.sdk import EchoMemSDK
-        from echomem.runtime.runtime import open_runtime
-    except ModuleNotFoundError:
-        from echomem.entrypoints.plugins.echoagent.sdk import EchoMemSDK
-        from echomem.runtime.bootstrap import open_runtime
 
     out_dir = Path(args.out_dir).expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -558,9 +567,17 @@ async def run(args: argparse.Namespace) -> None:
         if runtime is not None:
             await close_sdk_runtime(
                 runtime,
+                sdk,
                 drain_pending=not bool(getattr(args, "defer_artifact_wait", False)),
             )
-        runtime, sdk = await open_sdk_runtime(open_runtime, EchoMemSDK, config_path)
+        sdk, runtime, _layout = await open_echomem_sdk(
+            echomem_root=root,
+            workspace=args.workspace,
+            account=args.account,
+            user_id=args.user_id,
+            agent_id=args.agent_id,
+            config_path=config_path,
+        )
         runtime_generation += 1
         print(f"[runtime] generation={runtime_generation} reason={reason}", flush=True)
 
@@ -605,9 +622,11 @@ async def run(args: argparse.Namespace) -> None:
     import_timeout_s = max(0, int(getattr(args, "import_timeout_s", 0) or 0))
     runtime_jobs = 0
     fast_wait_mode = str(getattr(args, "import_wait_mode", "") or "").strip().lower() == "fast"
+    strict_ready_required = str(getattr(args, "dataset_format", "") or getattr(args, "format", "") or "").strip().lower() in STRICT_READY_DATASET_FORMATS
     print(
         f"[runtime] recycle_every={recycle_every} import_wait_mode={'fast' if fast_wait_mode else 'full'} "
         f"defer_artifact_wait={bool(getattr(args, 'defer_artifact_wait', False))} "
+        f"strict_ready_required={strict_ready_required} "
         f"import_timeout_s={import_timeout_s}",
         flush=True,
     )
@@ -847,6 +866,7 @@ async def run(args: argparse.Namespace) -> None:
             record = import_records[job.sample_id]
             record["memory_ready_before_qa"] = bool(stabilize_result.get("ready"))
             record["memory_wait_mode"] = "fast" if fast_wait_mode else "full"
+            record["strict_ready_required"] = strict_ready_required
             record["memory_injection_time_s"] = round(
                 float(record.get("import_elapsed_s") or 0.0)
                 + float(record.get("memory_settle_wait_elapsed_s") or 0.0)
@@ -961,6 +981,7 @@ async def run(args: argparse.Namespace) -> None:
     finally:
         await close_sdk_runtime(
             runtime,
+            sdk,
             drain_pending=not bool(getattr(args, "defer_artifact_wait", False)),
         )
 
@@ -1199,8 +1220,19 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+STRICT_READY_DATASET_FORMATS = {"longmemeval", "evolvingevents", "proagentbench", "tau2bench"}
+DOCUMENT_READY_DATASET_FORMATS = {"hotpotqa"}
+
+
 def main() -> None:
     args = parse_args()
+    dataset_format = str(getattr(args, "dataset_format", "") or getattr(args, "format", "") or "").strip().lower()
+    if dataset_format in STRICT_READY_DATASET_FORMATS:
+        args.import_wait_mode = "full"
+        args.defer_artifact_wait = False
+    elif dataset_format in DOCUMENT_READY_DATASET_FORMATS:
+        args.import_wait_mode = "fast"
+        args.defer_artifact_wait = True
     answer_base_url = str(args.answer_base_url or "").strip()
     answer_model = str(args.answer_model or "").strip()
     answer_token = str(args.answer_token or "").strip()
@@ -1222,6 +1254,12 @@ def main() -> None:
         data = read_dataset(args.dataset_path)
         args.dataset_format = benchmark_adapter.infer_format(args.dataset_path, data)
     args.dataset_format = str(args.dataset_format or "generic").strip().lower() or "generic"
+    if args.dataset_format in STRICT_READY_DATASET_FORMATS:
+        args.import_wait_mode = "full"
+        args.defer_artifact_wait = False
+    elif args.dataset_format in DOCUMENT_READY_DATASET_FORMATS:
+        args.import_wait_mode = "fast"
+        args.defer_artifact_wait = True
     args.retrieval_mode = normalize_retrieval_mode(args.retrieval_mode)
     args.tool_set = normalize_echomemory_tool_set(args.tool_set, vikingboat_compat=bool(args.vikingboat_compat))
     if not args.namespace:

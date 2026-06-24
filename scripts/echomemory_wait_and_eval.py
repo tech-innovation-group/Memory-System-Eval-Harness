@@ -14,7 +14,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from memory.plugins.echomemory.inspector import count_files, current_session_snapshot, first_existing_root
+from memory.plugins.echomemory.inspector import (
+    count_files,
+    current_session_snapshot,
+    first_existing_root,
+    preferred_memory_root,
+)
 
 
 SCRIPTS = ROOT / "scripts"
@@ -65,13 +70,35 @@ def build_workspace_snapshot(workspace: Path, account: str, sample: str) -> dict
     rows, totals = current_session_snapshot(workspace, account, sample)
     account_root = first_existing_root(workspace, account)
     session_count = len(rows)
-    abstract_count = sum(1 for row in rows if Path(str(row.get("session_path") or "")).joinpath("abstract.md").exists())
-    overview_count = sum(1 for row in rows if Path(str(row.get("session_path") or "")).joinpath("overview.md").exists())
-    memory_root = account_root / "memory"
-    vector_root = account_root.parent / "system" / "vector_index"
+    abstract_count = 0
+    overview_count = 0
+    for row in rows:
+        session_id = str(row.get("session_id") or "").strip()
+        if not session_id:
+            continue
+        projection_root = account_root / "engines" / "echo0_plugin" / "sessions" / session_id
+        legacy_root = Path(str(row.get("session_path") or ""))
+        abstract_path = projection_root / "abstract.md"
+        overview_path = projection_root / "overview.md"
+        if not abstract_path.exists():
+            abstract_path = legacy_root / "abstract.md"
+        if not overview_path.exists():
+            overview_path = legacy_root / "overview.md"
+        if abstract_path.exists():
+            abstract_count += 1
+        if overview_path.exists():
+            overview_count += 1
+    memory_root = preferred_memory_root(account_root)
+    vector_roots = [
+        account_root / "engines" / "echo0_plugin" / "vector_store",
+        account_root.parent / "local" / "engines" / "echo0_plugin" / "vector_store" / account,
+        account_root.parent / "system" / "vector_index",
+    ]
     atom_count = count_atom_artifacts(memory_root)
     graph_count = count_files(memory_root / ".graph")
-    vector_count = count_files(vector_root)
+    vector_count = 0
+    for vector_root in vector_roots:
+        vector_count = max(vector_count, count_files(vector_root))
     complete_sessions = sum(1 for row in rows if row.get("ok"))
     snapshot = {
         "workspace": str(workspace),
@@ -132,20 +159,29 @@ def snapshot_ready(snapshot: dict[str, Any], expected_sessions_total: int) -> bo
     graph_count = int(snapshot.get("graph_count") or 0)
     vector_count = int(snapshot.get("vector_count") or 0)
     enough_sessions = session_count >= max(1, expected_sessions_total or session_count)
-    artifact_ready = bool(
+    summaries_ready = bool(
         enough_sessions
+        and session_count > 0
         and abstract_count == session_count
         and overview_count == session_count
-        and atom_count > 0
-        and graph_count > 0
         and vector_count > 0
     )
-    # Fast-import LoCoMo runs can land stable retrieval artifacts before the
-    # legacy atom cursor fields (`atom_pipeline_index`, `last_extracted_turn_id`)
-    # are fully back-filled in every session meta.json. In that case the
-    # workspace is already good enough for repair/QA to proceed, even though
-    # `current_session_snapshot()` still reports `complete_sessions == 0`.
-    return bool(artifact_ready)
+    # EchoMemory's newer engine layout can be retrieval-ready before every
+    # per-session abstract/overview file lands, as long as the vector store and
+    # structured graph/atom artifacts are already materialized for this account.
+    search_ready = bool(
+        enough_sessions
+        and session_count > 0
+        and vector_count > 0
+        and (atom_count > 0 or graph_count > 0 or complete_sessions > 0)
+    )
+    # Some benchmark flows, especially document-style HotpotQA imports, are
+    # already retrieval-ready once summaries and vector artifacts exist. In
+    # those runs, session rows may never flip to "ok" even though retrieval can
+    # already see the imported documents, so do not hard-gate on complete_sessions.
+    doc_ready = summaries_ready
+    structured_ready = summaries_ready and atom_count > 0 and graph_count > 0
+    return bool(doc_ready or structured_ready or search_ready)
 
 
 def wait_for_async_memory_stability(
@@ -194,13 +230,6 @@ def wait_for_async_memory_stability(
         if ready and stable_hits >= max(1, int(stability_polls)):
             return {
                 "ready": True,
-                "timed_out": False,
-                "stable_hits": stable_hits,
-                "snapshot": snapshot,
-            }
-        if (not ready) and stable_hits >= max(1, int(stability_polls)):
-            return {
-                "ready": False,
                 "timed_out": False,
                 "stable_hits": stable_hits,
                 "snapshot": snapshot,

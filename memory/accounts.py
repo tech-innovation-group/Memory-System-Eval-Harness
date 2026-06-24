@@ -7,6 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .backend_profiles import backend_profile, normalize_backend_id
+
 
 DEFAULT_ACCOUNT = "default"
 SECRET_MARKERS = ("key", "token", "password", "secret")
@@ -54,17 +56,11 @@ def slug_account(value: str | None) -> str:
 
 def clean_workspace(home: str | Path, account: str, timestamp: str | None = None, backend: str = "openviking") -> str:
     stamp = timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
-    backend_id = normalize_backend(str(backend or "openviking"))
-    if backend_id == "echomemory":
-        prefix = "echomem_workspace"
-    else:
-        prefix = "openviking_workspace"
-    return str(Path(home).expanduser() / f"{prefix}_{slug_account(account)}_{stamp}")
+    return backend_profile(backend).clean_workspace(home, account, stamp)
 
 
 def normalize_backend(value: str | None) -> str:
-    text = str(value or "").strip().lower()
-    return "echomemory" if text in {"echomem", "echomemory"} else "openviking"
+    return normalize_backend_id(value)
 
 
 def is_legacy_fixed_workspace(workspace: str | Path | None) -> bool:
@@ -197,39 +193,57 @@ def account_root(workspace: str | Path, account: str) -> Path:
     return Path(workspace).expanduser() / "viking" / slug_account(account)
 
 
-def storage_root(workspace: str | Path, account: str, backend: str = "openviking") -> Path:
-    workspace_path = Path(workspace).expanduser()
+def _path_from_parts(parts: tuple[str, ...], fallback: Path) -> Path:
+    if parts:
+        return Path(*parts)
+    if fallback.anchor:
+        return Path(fallback.anchor)
+    return Path(".")
+
+
+def resolve_workspace_root(workspace: str | Path | None, account: str, backend: str = "openviking") -> str:
+    raw = str(workspace or "").strip()
+    if not raw:
+        return ""
+    workspace_path = Path(raw).expanduser()
+    parts = workspace_path.parts
     account_id = slug_account(account)
-    if normalize_backend(backend) == "echomemory":
-        return workspace_path / account_id / account_id
-    return workspace_path / "viking" / account_id
+    normalized_backend = normalize_backend(backend)
+
+    if normalized_backend == "openviking":
+        for idx, part in enumerate(parts):
+            if part != "viking":
+                continue
+            if idx + 1 < len(parts) and parts[idx + 1] == account_id:
+                return str(_path_from_parts(parts[:idx], workspace_path))
+            if idx == len(parts) - 1:
+                return str(_path_from_parts(parts[:idx], workspace_path))
+        return str(workspace_path)
+
+    for idx, part in enumerate(parts):
+        if part == "tenants":
+            if idx + 1 < len(parts) and parts[idx + 1] == account_id:
+                return str(_path_from_parts(parts[:idx], workspace_path))
+            if idx == len(parts) - 1:
+                return str(_path_from_parts(parts[:idx], workspace_path))
+
+    for idx in range(len(parts) - 1):
+        if parts[idx] == account_id and parts[idx + 1] == account_id:
+            return str(_path_from_parts(parts[:idx], workspace_path))
+
+    for idx in range(len(parts) - 1):
+        if parts[idx] == account_id and parts[idx + 1] in {"memory", "sessions", "users", "agents"}:
+            return str(_path_from_parts(parts[:idx], workspace_path))
+
+    return str(workspace_path)
+
+
+def storage_root(workspace: str | Path, account: str, backend: str = "openviking") -> Path:
+    return backend_profile(backend).storage_root(workspace, account)
 
 
 def prepare_account_workspace(workspace: str | Path, account: str, user_id: str = "default", agent_id: str = "default", backend: str = "openviking") -> dict[str, str]:
-    backend = normalize_backend(backend)
-    root = storage_root(workspace, account, backend)
-    if backend == "echomemory":
-        paths = {
-            "workspace": str(Path(workspace).expanduser()),
-            "storage_root": str(root),
-            "account_root": str(root),
-            "session_root": str(root / "sessions"),
-            "user_root": str(root / "users" / user_id),
-            "user_memories": str(root / "users" / user_id / "memories"),
-            "agent_root": str(root / "agents" / agent_id),
-            "agent_memories": str(root / "agents" / agent_id / "memories"),
-        }
-    else:
-        paths = {
-            "workspace": str(Path(workspace).expanduser()),
-            "storage_root": str(root),
-            "account_root": str(root),
-            "session_root": str(root / "session"),
-            "user_root": str(root / "user" / user_id),
-            "user_memories": str(root / "user" / user_id / "memories"),
-            "agent_root": str(root / "agent" / agent_id),
-            "agent_memories": str(root / "agent" / agent_id / "memories"),
-        }
+    paths = backend_profile(backend).prepare_paths(workspace, account, user_id, agent_id)
     for value in paths.values():
         Path(value).mkdir(parents=True, exist_ok=True)
     return paths
@@ -361,20 +375,14 @@ def account_view(record: dict[str, Any], *, include_secrets: bool = False, inclu
     account_id = record.get("id") or DEFAULT_ACCOUNT
     workspace = str(config.get("ovWorkspace") or config.get("memoryWorkspace") or "").strip()
     backend = normalize_backend(str(config.get("memoryBackend") or "openviking"))
+    profile = backend_profile(backend)
     workspace_path = Path(workspace).expanduser() if workspace else None
     root = storage_root(workspace_path, account_id, backend) if workspace_path else None
-    if backend == "echomemory":
-        user_root = root / "users" / "default" if root else None
-        agent_root = root / "agents" / "default" if root else None
-        session_root = root / "sessions" if root else None
-        memory_root = root / "memory" if root else None
-        atom_root = root / "memory" / ".structured" / "atoms" if root else None
-    else:
-        user_root = root / "user" / "default" if root else None
-        agent_root = root / "agent" / "default" if root else None
-        session_root = root / "session" if root else None
-        memory_root = root / "user" / "default" / "memories" if root else None
-        atom_root = None
+    user_root = profile.user_root(root, "default") if root else None
+    agent_root = profile.agent_root(root, "default") if root else None
+    session_root = profile.session_root(root) if root else None
+    memory_root = profile.memory_root(root, "default") if root else None
+    atom_root = profile.atom_root(root, "default") if root else None
     storage_files = None
     session_files = None
     memory_files = None

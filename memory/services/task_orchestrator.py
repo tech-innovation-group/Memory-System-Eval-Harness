@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
+
+from .. import accounts as account_service
 
 
 ECHOMEMORY_TASK_KINDS = {
@@ -28,6 +31,14 @@ DIRECT_COMMAND_KINDS = {
     "openviking_qa_retry_missing",
     "judge",
     "stats",
+}
+
+WORKSPACE_SCOPED_TASK_KINDS = ECHOMEMORY_TASK_KINDS | {
+    "openviking_import",
+    "openviking_qa",
+    "openviking_generic_qa",
+    "openviking_qa_retry_failed",
+    "openviking_qa_retry_missing",
 }
 
 
@@ -64,7 +75,116 @@ def normalize_task_payload(kind: str, payload: dict[str, Any]) -> dict[str, Any]
         normalized["dataset_format"] = dataset_format or "generic"
     elif dataset_format:
         normalized["dataset_format"] = dataset_format
+    if kind in WORKSPACE_SCOPED_TASK_KINDS:
+        backend = str(
+            normalized.get("backend")
+            or normalized.get("memoryBackend")
+            or ("echomemory" if kind in ECHOMEMORY_TASK_KINDS else "openviking")
+        ).strip()
+        account = str(normalized.get("account") or "default").strip() or "default"
+        workspace = str(
+            normalized.get("workspace")
+            or normalized.get("echomemory_workspace")
+            or normalized.get("memoryWorkspace")
+            or normalized.get("ovWorkspace")
+            or normalized.get("openviking_workspace")
+            or ""
+        ).strip()
+        if workspace:
+            resolved = account_service.resolve_workspace_root(workspace, account, backend)
+            normalized["workspace"] = resolved
+            if backend == "echomemory":
+                normalized["echomemory_workspace"] = resolved
+            else:
+                normalized["openviking_workspace"] = resolved
     return normalized
+
+
+def _slug_fragment(value: str, *, max_length: int = 48) -> str:
+    text = re.sub(r"[^A-Za-z0-9]+", "-", str(value or "").strip()).strip("-").lower()
+    if len(text) <= max_length:
+        return text
+    return text[-max_length:]
+
+
+def _workspace_run_fragment(kind: str, payload: dict[str, Any]) -> str:
+    if kind not in WORKSPACE_SCOPED_TASK_KINDS:
+        return ""
+    workspace = str(
+        payload.get("workspace")
+        or payload.get("echomemory_workspace")
+        or payload.get("memoryWorkspace")
+        or payload.get("ovWorkspace")
+        or payload.get("openviking_workspace")
+        or ""
+    ).strip()
+    if not workspace:
+        return ""
+    name = Path(workspace).expanduser().name.strip()
+    if not name:
+        return ""
+    for prefix in ("echomem_workspace_", "openviking_workspace_"):
+        if name.startswith(prefix):
+            name = name[len(prefix):]
+            break
+    return _slug_fragment(name)
+
+
+def _is_transient_model_preflight_status(status: Any, error: Any = "") -> bool:
+    normalized = str(status or "").strip().lower()
+    if normalized in {
+        "timeout",
+        "timeouterror",
+        "urlerror",
+        "remotedisconnected",
+        "connectionreseterror",
+        "connectionabortederror",
+        "connectionrefusederror",
+    }:
+        return True
+    if normalized.isdigit():
+        code = int(normalized)
+        if code in {408, 409, 425, 429, 500, 502, 503, 504}:
+            return True
+    message = str(error or "").strip().lower()
+    return any(
+        marker in message
+        for marker in (
+            "timed out",
+            "temporary failure",
+            "temporarily unavailable",
+            "connection reset",
+            "connection aborted",
+            "connection refused",
+            "remote end closed connection",
+            "remote disconnected",
+            "read operation timed out",
+        )
+    )
+
+
+def _is_fatal_model_preflight_result(result: dict[str, Any]) -> bool:
+    if not isinstance(result, dict) or result.get("ok"):
+        return False
+    status = str(result.get("status") or "").strip().lower()
+    error = str(result.get("error") or "")
+    if status in {"missing_base_url", "missing_model", "missing_api_key"}:
+        return True
+    lowered = error.lower()
+    if any(
+        marker in lowered
+        for marker in (
+            "model_not_found",
+            "does not exist or you do not have access",
+            "invalid_request_error",
+            "authentication failed",
+            "autherror",
+            "invalid api key",
+            "incorrect api key",
+        )
+    ):
+        return True
+    return not _is_transient_model_preflight_status(status, error)
 
 
 def create_task(
@@ -115,7 +235,7 @@ def create_task(
                 chat_token,
                 timeout_s=45,
             )
-            if not preflight.get("ok"):
+            if not preflight.get("ok") and _is_fatal_model_preflight_result(preflight):
                 raise ValueError(
                     "EchoMemory 模型预检失败："
                     f"{preflight.get('model') or ''} @ {preflight.get('base_url') or ''} "
@@ -124,7 +244,12 @@ def create_task(
 
     context.ensure_task_model_preflight(kind, payload, config, echomemory_env)
 
-    run_id = f"{kind}_{context.now_slug()}_{uuid.uuid4().hex[:6]}"
+    workspace_fragment = _workspace_run_fragment(kind, payload)
+    run_id_parts = [kind, context.now_slug()]
+    if workspace_fragment:
+        run_id_parts.append(workspace_fragment)
+    run_id_parts.append(uuid.uuid4().hex[:6])
+    run_id = "_".join(run_id_parts)
     run_dir = output_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     log_file = run_dir / "run.log"
@@ -168,6 +293,9 @@ def create_task(
             env["ECHOMEM_CHAT_MODEL"] = str(echomemory_env.get("chat_model") or "deepseek-v4-flash")
             env["ECHOMEM_CHAT_BASE_URL"] = str(echomemory_env.get("chat_base") or "https://dashscope.aliyuncs.com/compatible-mode/v1")
             env["DASHSCOPE_BASE_URL"] = str(echomemory_env.get("dashscope_base") or "https://dashscope.aliyuncs.com/compatible-mode/v1")
+        if kind in {"echomemory_import", "echomemory_qa", "echomemory_generic_qa", "echomemory_qa_retry_failed"}:
+            env.setdefault("ECHOMEM_AUTO_COMMIT_THRESHOLD", "0")
+            env.setdefault("ECHOMEM_AUTO_FLUSH_ON_MESSAGE_PERSISTED", "false")
 
     if kind in DIRECT_COMMAND_KINDS:
         command, output_file, name = context.build_single_command(kind, payload, run_dir, config)

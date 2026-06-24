@@ -348,6 +348,8 @@ def build_echomemory_qa_retry_failed_task(
         str(payload.get("timeout_s") or 120),
         "--question-timeout-s",
         str(payload.get("question_timeout_s") or 600),
+        "--qa-parallelism",
+        str(payload.get("qa_parallelism") or 5),
         "--tool-set",
         str(payload.get("tool_set") or payload.get("openviking_tool_set") or "search_read"),
         "--tool-search-limit",
@@ -363,6 +365,7 @@ def build_echomemory_qa_retry_failed_task(
         "--max-iterations",
         str(payload.get("max_iterations") or 8),
     ]
+    command.append("--qa-memory-injection" if str(payload.get("qa_memory_injection", False)).strip().lower() not in {"0", "false", "no", "off"} else "--no-qa-memory-injection")
     if token:
         command += ["--answer-token", str(token)]
     if retrieval_mode == "local":

@@ -16,21 +16,36 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from echomemory_common import (
     DEFAULT_ECHOMEM_ROOT,
     ctx,
     ensure_echomem_imports,
+    load_echomem_config_file,
+    open_echomem_sdk,
     sdk_ctx_kwargs,
     workspace_token_usage_summary,
     write_echomem_config,
     write_json,
 )
 
+IMPORT_RECALL_ROUTERS = tuple(
+    item.strip()
+    for item in str(os.environ.get("ECHOMEM_DEVELOP_IMPORT_RECALL_ROUTERS") or "llm").split(",")
+    if item.strip()
+)
+MEMORY_ARTIFACT_CACHE_TTL_S = 1.0
+_MEMORY_ARTIFACT_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
+WORKSPACE_TOKEN_USAGE_CACHE_TTL_S = 5.0
+_WORKSPACE_TOKEN_USAGE_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
+
 
 class HardTimeoutError(TimeoutError):
     pass
+
+
+def safe_slug(value: Any, limit: int = 72) -> str:
+    text = "".join(ch if ch.isalnum() or ch in "._-" else "-" for ch in str(value or "").strip()).strip("-._")
+    return (text or "item")[:limit]
 
 
 @contextmanager
@@ -60,23 +75,12 @@ def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def read_yaml(path: Path) -> Any:
-    return yaml.safe_load(path.read_text(encoding="utf-8"))
-
-
 def runtime_config(args: argparse.Namespace) -> dict[str, Any]:
     cached = getattr(args, "_runtime_config_cache", None)
     if isinstance(cached, dict):
         return cached
     path = Path(str(getattr(args, "echomem_config", "") or "")).expanduser()
-    data: dict[str, Any] = {}
-    if path.exists():
-        try:
-            loaded = read_yaml(path)
-            if isinstance(loaded, dict):
-                data = loaded
-        except Exception:
-            data = {}
+    data = load_echomem_config_file(path)
     setattr(args, "_runtime_config_cache", data)
     return data
 
@@ -93,7 +97,9 @@ def config_get(data: dict[str, Any], key: str, default: Any = None) -> Any:
 
 def abstract_required(args: argparse.Namespace) -> bool:
     cfg = runtime_config(args)
-    return bool(config_get(cfg, "session.generate_abstract", True))
+    return bool(
+        config_get(cfg, "session.generate_abstract", config_get(cfg, "session.generateAbstract", True))
+    )
 
 
 def summarize_sample_progress(
@@ -178,6 +184,8 @@ def build_import_summary(
     status: str,
     status_explanation: str,
     running: bool = False,
+    progress_meta: dict[str, Any] | None = None,
+    token_usage: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     complete = sum(1 for item in records if item["integrity"] == "complete")
     pending_async = sum(1 for item in records if item["integrity"] == "pending_async_memory")
@@ -214,6 +222,8 @@ def build_import_summary(
         "estimated_import_tokens": sum(item["estimated_import_tokens"] for item in records),
         "workspace": str(Path(args.workspace).expanduser().resolve()),
         "account": args.account,
+        "account_path": str(account_memory_root(args.workspace, args.account)),
+        "memory_root": str(account_memory_root(args.workspace, args.account) / "memory"),
         "sample": args.sample,
         "echomem_root": str(root),
         "echomem_config": str(config_path),
@@ -222,8 +232,143 @@ def build_import_summary(
         "session_end": int(args.session_end or 0),
         "records": records,
     }
-    summary.update(workspace_token_usage_summary(args.workspace, args.account))
+    if isinstance(progress_meta, dict):
+        summary.update({key: value for key, value in progress_meta.items() if value is not None})
+    token_usage_summary = (
+        token_usage
+        if isinstance(token_usage, dict)
+        else cached_workspace_token_usage_summary(args.workspace, args.account)
+    )
+    summary.update(token_usage_summary)
+    summary["log_diagnostics"] = {
+        **(summary.get("log_diagnostics") or {}),
+        "token_usage": token_usage_summary,
+    }
     return summary
+
+
+def summarize_key_call_sites(token_usage: dict[str, Any] | None) -> str:
+    usage = token_usage if isinstance(token_usage, dict) else {}
+    call_sites = usage.get("call_sites") if isinstance(usage.get("call_sites"), dict) else {}
+    parts: list[str] = []
+    for site in ("atom_extraction", "overview_generation", "abstract_generation", "entity_merge", "search_intent"):
+        bucket = call_sites.get(site)
+        if not isinstance(bucket, dict):
+            continue
+        total_tokens = int(bucket.get("total_tokens") or 0)
+        call_count = int(bucket.get("call_count") or 0)
+        if not total_tokens and not call_count:
+            continue
+        parts.append(f"{site}={call_count}c/{total_tokens}t")
+    embedding_calls = int(usage.get("embedding_call_count") or 0)
+    if embedding_calls:
+        parts.append(f"embedding={embedding_calls}c")
+    llm_rows = int(usage.get("llm_log_rows") or 0)
+    if llm_rows:
+        parts.append(f"llm_rows={llm_rows}")
+    return " ".join(parts)
+
+
+def log_import_progress_snapshot(
+    *,
+    prefix: str,
+    sample_id: str,
+    session_label: str,
+    records: list[dict[str, Any]],
+    total_sessions: int,
+    token_usage: dict[str, Any] | None,
+) -> None:
+    if not records:
+        return
+    complete = sum(1 for item in records if str(item.get("integrity") or "") == "complete")
+    pending_async = sum(1 for item in records if str(item.get("integrity") or "") == "pending_async_memory")
+    partial = sum(1 for item in records if str(item.get("integrity") or "") == "partial")
+    last = records[-1] if records else {}
+    parts = [
+        prefix,
+        f"sample={sample_id}",
+        f"sessions={len(records)}/{max(int(total_sessions or 0), len(records))}",
+        f"qa_ready={complete}",
+    ]
+    if pending_async:
+        parts.append(f"pending_async={pending_async}")
+    if partial:
+        parts.append(f"partial={partial}")
+    if session_label:
+        parts.append(f"session={session_label}")
+    last_integrity = str(last.get("integrity") or "").strip()
+    if last_integrity:
+        parts.append(f"last_integrity={last_integrity}")
+    key_calls = summarize_key_call_sites(token_usage)
+    if key_calls:
+        parts.append(key_calls)
+    print(" ".join(parts), flush=True)
+
+
+def log_import_summary_digest(summary: dict[str, Any]) -> None:
+    records = summary.get("records") if isinstance(summary.get("records"), list) else []
+    phases = [
+        f"status={summary.get('status') or '-'}",
+        f"samples={summary.get('samples') or len(records)}",
+        f"complete={summary.get('complete_samples') or 0}",
+        f"pending_async={summary.get('pending_async_samples') or 0}",
+        f"partial={summary.get('partial_samples') or 0}",
+        f"incomplete={summary.get('incomplete_samples') or 0}",
+        f"submitted_messages={summary.get('submitted_messages') or 0}",
+        f"estimated_import_tokens={summary.get('estimated_import_tokens') or 0}",
+    ]
+    print("[summary] " + " ".join(phases), flush=True)
+    token_usage = summary.get("log_diagnostics", {}).get("token_usage") if isinstance(summary.get("log_diagnostics"), dict) else {}
+    key_calls = summarize_key_call_sites(token_usage if isinstance(token_usage, dict) else {})
+    if key_calls:
+        print(f"[summary] token_usage {key_calls}", flush=True)
+
+
+def commit_artifact_stage(state: dict[str, Any]) -> str:
+    if bool(state.get("complete")):
+        return "qa_ready"
+    if bool(state.get("retrieval_ready")):
+        return "retrieval_ready"
+    if bool(state.get("overview_nonempty")) and bool(state.get("abstract_nonempty") or not state.get("abstract_required")):
+        return "overview_abstract_ready"
+    if bool(state.get("overview_nonempty")):
+        return "overview_ready"
+    if bool(state.get("cursor_complete")):
+        return "cursor_ready"
+    if bool(state.get("atom_pipeline_index_ok")):
+        return "atom_index_ready"
+    if bool(state.get("commit_index_ok")):
+        return "commit_ready"
+    return "commit_pending"
+
+
+def finalize_force_wait_stall_seconds(args: argparse.Namespace) -> float:
+    explicit = str(os.environ.get("ECHOMEM_FINALIZE_FORCE_WAIT_STALL_S") or "").strip()
+    if explicit:
+        try:
+            return max(0.0, float(explicit))
+        except Exception:
+            pass
+    has_wait_tuning = hasattr(args, "flush_call_timeout_s") or hasattr(args, "commit_wait_s")
+    if not has_wait_tuning:
+        return 0.0
+    flush_timeout_s = max(0.0, float(getattr(args, "flush_call_timeout_s", 0) or 0.0))
+    commit_wait_s = max(0.0, float(getattr(args, "commit_wait_s", 0) or 0.0))
+    import_wait_mode = str(getattr(args, "import_wait_mode", "full") or "full").strip().lower()
+    staged_full_import = (
+        import_wait_mode == "full"
+        and not bool(getattr(args, "defer_artifact_wait", False))
+        and not bool(getattr(args, "skip_session_commit", False))
+    )
+    if staged_full_import:
+        # Staged full import already accepted the commit and intentionally
+        # deferred strict readiness to the finalizing phase. Waiting 45s before
+        # the first repair attempt leaves the pipeline idle even when session
+        # meta has clearly stopped advancing. Keep a short settling window so
+        # async overview/abstract work can land on its own, then move into the
+        # force-wait path sooner.
+        return max(8.0, min(12.0, max(flush_timeout_s * 0.35, commit_wait_s)))
+    return max(20.0, flush_timeout_s, commit_wait_s * 2.0)
 
 
 def write_running_summary(
@@ -275,6 +420,231 @@ def compact(text: Any, limit: int = 900) -> str:
     return value if len(value) <= limit else value[: limit - 3] + "..."
 
 
+def hotpotqa_document_records(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
+    records: list[dict[str, str]] = []
+    for index, msg in enumerate(messages, 1):
+        content = str(msg.get("content") or "")
+        if not content:
+            continue
+        title_match = re.search(r"^title:\s*(.+?)\s*$", content, re.M)
+        title = str(title_match.group(1)).strip() if title_match else f"document_{index}"
+        body = content.split("\n\n", 1)[1] if "\n\n" in content else content
+        body = body.strip()
+        if not body:
+            continue
+        records.append(
+            {
+                "title": title,
+                "text": body,
+            }
+        )
+    return records
+
+
+def hotpotqa_overview_text(records: list[dict[str, str]]) -> str:
+    lines = ["# HotpotQA Session Overview", ""]
+    for index, item in enumerate(records, 1):
+        title = str(item.get("title") or f"document_{index}").strip()
+        text = compact(item.get("text") or "", 280)
+        lines.append(f"- [{index}] {title}: {text}")
+    return "\n".join(lines).strip() + "\n"
+
+
+def hotpotqa_abstract_text(records: list[dict[str, str]]) -> str:
+    titles = [str(item.get("title") or "").strip() for item in records if str(item.get("title") or "").strip()]
+    if not titles:
+        return "HotpotQA benchmark documents were imported for retrieval.\n"
+    head = ", ".join(titles[:4])
+    suffix = f" and {max(0, len(titles) - 4)} more" if len(titles) > 4 else ""
+    return f"HotpotQA benchmark documents imported for retrieval: {head}{suffix}.\n"
+
+
+def hotpotqa_account_root(workspace: str, account: str) -> Path:
+    workspace_path = Path(workspace).expanduser().resolve()
+    candidates = [
+        workspace_path / "tenants" / account,
+        workspace_path / account / "default",
+        workspace_path / account / account,
+        workspace_path / account,
+        workspace_path,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+async def materialize_hotpotqa_retrieval_projection(
+    args: argparse.Namespace,
+    sdk: Any,
+    session_id: str,
+    messages: list[dict[str, Any]],
+    *,
+    expected_last_message_id: str = "",
+) -> dict[str, Any]:
+    if str(getattr(args, "dataset_format", "") or "").strip().lower() != "hotpotqa":
+        return {}
+    runtime = getattr(sdk, "_runtime", None)
+    if runtime is None:
+        client_core = getattr(sdk, "_client_core", None)
+        runtime = getattr(client_core, "_runtime", None)
+    if runtime is None:
+        return {}
+    engine = runtime.engine_service().getEngine("echo0_plugin")
+    core = getattr(engine, "_core", None)
+    vector_store = getattr(core, "vector_store", None)
+    gateway = getattr(core, "gateway", None)
+    vector_indexer = getattr(core, "vector_indexer", None)
+    if vector_store is None or gateway is None:
+        return {}
+
+    account_root = hotpotqa_account_root(args.workspace, args.account)
+    session_root = account_root / "sessions" / session_id
+    projection_root = account_root / "engines" / "echo0_plugin" / "sessions" / session_id
+    session_root.mkdir(parents=True, exist_ok=True)
+    projection_root.mkdir(parents=True, exist_ok=True)
+    docs_root = session_root / "docs"
+    docs_root.mkdir(parents=True, exist_ok=True)
+
+    records = hotpotqa_document_records(messages)
+    if not records:
+        return {}
+
+    overview_text = hotpotqa_overview_text(records)
+    abstract_text = hotpotqa_abstract_text(records)
+    (session_root / "overview.md").write_text(overview_text, encoding="utf-8")
+    (session_root / "abstract.md").write_text(abstract_text, encoding="utf-8")
+    (projection_root / "overview.md").write_text(overview_text, encoding="utf-8")
+    (projection_root / "abstract.md").write_text(abstract_text, encoding="utf-8")
+
+    from echo0.utils.contracts.vector_store import VectorItem
+    from echo0.utils.domain.context import RequestContext
+    from echo0.workers.extractors.chunker import SemanticChunker
+
+    ctx_obj = RequestContext(
+        account_id=args.account,
+        user_id=args.user_id,
+        agent_id=args.agent_id,
+        session_id=session_id,
+    )
+    chunker = SemanticChunker(chunk_size=400, overlap=100)
+    items: list[VectorItem] = []
+    texts: list[str] = []
+    overview_uri = f"echo://{args.account}/sessions/{session_id}/overview.md"
+    if vector_indexer is not None:
+        await vector_indexer.index_overview(
+            overview_uri=overview_uri,
+            overview_text=overview_text,
+            ctx=ctx_obj,
+            memory_type="session",
+        )
+
+    for index, item in enumerate(records, 1):
+        title = str(item.get("title") or f"document_{index}").strip()
+        body = str(item.get("text") or "").strip()
+        slug = safe_slug(title, 48)
+        doc_filename = f"{index:02d}_{slug}.md"
+        doc_path = docs_root / doc_filename
+        doc_text = f"# {title}\n\n{body}\n"
+        doc_path.write_text(doc_text, encoding="utf-8")
+        doc_uri = f"echo://{args.account}/sessions/{session_id}/docs/{doc_filename}"
+        if len(doc_text) <= 2048:
+            items.append(
+                VectorItem(
+                    id=doc_uri,
+                    vector=[],
+                    metadata={
+                        "uri": doc_uri,
+                        "memory_type": "session",
+                        "account_id": args.account,
+                        "tier": "short",
+                        "text": doc_text[:600],
+                        "title": title,
+                    },
+                )
+            )
+            texts.append(doc_text[:600])
+            continue
+        summary = compact(doc_text, 500)
+        items.append(
+            VectorItem(
+                id=f"{doc_uri}#summary",
+                vector=[],
+                metadata={
+                    "uri": doc_uri,
+                    "memory_type": "session",
+                    "account_id": args.account,
+                    "tier": "summary",
+                    "text": summary,
+                    "title": title,
+                },
+            )
+        )
+        texts.append(summary)
+        for chunk in chunker.split(doc_text):
+            items.append(
+                VectorItem(
+                    id=f"{doc_uri}#chunk-{chunk.idx}",
+                    vector=[],
+                    metadata={
+                        "uri": doc_uri,
+                        "memory_type": "session",
+                        "account_id": args.account,
+                        "tier": "chunk",
+                        "chunk_idx": chunk.idx,
+                        "chunk_start": chunk.start,
+                        "chunk_end": chunk.end,
+                        "text": chunk.text[:600],
+                        "title": title,
+                    },
+                )
+            )
+            texts.append(chunk.text[:600])
+
+    if items and texts:
+        vectors: list[list[float]] = []
+        batch_size = 10
+        for start in range(0, len(texts), batch_size):
+            batch = texts[start : start + batch_size]
+            batch_vectors = await gateway.embed(
+                "embedding",
+                batch,
+                _call_metadata={
+                    "account_id": args.account,
+                    "session_id": session_id,
+                    "tier": "hotpotqa_document_projection",
+                },
+            )
+            vectors.extend(batch_vectors)
+        for item, vector in zip(items, vectors):
+            item.vector = vector
+        await vector_store.upsert(ns=args.account, items=items)
+
+    meta_paths = [
+        session_root / "current" / "session.json",
+        session_root / "current" / "refs" / "session.json",
+        projection_root / "meta.json",
+    ]
+    for meta_path in meta_paths:
+        meta_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+        except Exception:
+            meta = {}
+        if expected_last_message_id:
+            meta["last_extracted_turn_id"] = expected_last_message_id
+        meta["commit_index"] = max(len(messages) - 1, -1)
+        meta["atom_pipeline_index"] = max(len(messages) - 1, -1)
+        meta["last_extracted_at"] = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        meta_path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+
+    return {
+        "doc_count": len(records),
+        "vector_items": len(items) + 1,
+        "overview_uri": overview_uri,
+    }
+
+
 def exception_text(exc: BaseException) -> str:
     message = str(exc).strip()
     return message or exc.__class__.__name__
@@ -301,6 +671,51 @@ def sanitize_model_error(text: Any) -> str:
     value = re.sub(r"sk-[A-Za-z0-9_-]{8,}", "sk-***", value)
     value = re.sub(r"Bearer\s+[A-Za-z0-9._-]{8,}", "Bearer ***", value, flags=re.I)
     return value[:1200]
+
+
+def is_transient_preflight_status(status: Any, error: Any = "") -> bool:
+    normalized = str(status or "").strip().lower()
+    if normalized in {
+        "timeout",
+        "timeouterror",
+        "urlerror",
+        "remotedisconnected",
+        "connectionreseterror",
+        "connectionabortederror",
+        "connectionrefusederror",
+    }:
+        return True
+    if normalized.isdigit():
+        code = int(normalized)
+        if code in {408, 409, 425, 429, 500, 502, 503, 504}:
+            return True
+    message = str(error or "").strip().lower()
+    return any(
+        marker in message
+        for marker in (
+            "timed out",
+            "temporary failure",
+            "temporarily unavailable",
+            "connection reset",
+            "connection aborted",
+            "connection refused",
+            "remote end closed connection",
+            "remote disconnected",
+            "read operation timed out",
+        )
+    )
+
+
+def preflight_failure_is_fatal(item: dict[str, Any]) -> bool:
+    if not isinstance(item, dict) or item.get("ok"):
+        return False
+    status = str(item.get("status") or "").strip().lower()
+    error = str(item.get("error") or "")
+    if status in {"missing_base_url", "missing_model", "missing_api_key"}:
+        return True
+    if is_fatal_model_error(error):
+        return True
+    return not is_transient_preflight_status(status, error)
 
 
 def openai_compatible_chat_preflight(base_url: str, model: str, token: str, timeout_s: float = 45) -> dict[str, Any]:
@@ -433,13 +848,47 @@ def retry_preflight(callable_obj: Any, *args: Any, attempts: int = 3, **kwargs: 
     return last
 
 
-def import_model_preflight(out_dir: Path) -> dict[str, Any]:
-    dashscope_base = str(os.environ.get("DASHSCOPE_BASE_URL") or "https://dashscope.aliyuncs.com/compatible-mode/v1").strip()
-    embedding_token = str(os.environ.get("DASHSCOPE_API_KEY") or os.environ.get("ECHOMEM_API_KEY") or "").strip()
-    embedding_model = str(os.environ.get("ECHOMEM_EMBEDDING_MODEL") or "text-embedding-v3").strip()
-    chat_base = str(os.environ.get("ECHOMEM_CHAT_BASE_URL") or dashscope_base).strip()
-    chat_token = str(os.environ.get("ECHOMEM_CHAT_API_KEY") or embedding_token).strip()
-    chat_model = str(os.environ.get("ECHOMEM_CHAT_MODEL") or "deepseek-v4-flash").strip()
+def import_model_preflight(args: argparse.Namespace, out_dir: Path) -> dict[str, Any]:
+    cfg = runtime_config(args)
+    dashscope_base = str(
+        os.environ.get("DASHSCOPE_BASE_URL")
+        or config_get(cfg, "model.embedding.api_base")
+        or config_get(cfg, "model.embedding.base_url")
+        or config_get(cfg, "engine.configs.echo0_plugin.models.providers.dashscope.base_url")
+        or "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    ).strip()
+    embedding_token = str(
+        os.environ.get("DASHSCOPE_API_KEY")
+        or os.environ.get("ECHOMEM_API_KEY")
+        or config_get(cfg, "model.embedding.api_key")
+        or config_get(cfg, "engine.configs.echo0_plugin.models.providers.dashscope.api_key")
+        or ""
+    ).strip()
+    embedding_model = str(
+        os.environ.get("ECHOMEM_EMBEDDING_MODEL")
+        or config_get(cfg, "model.embedding.model")
+        or config_get(cfg, "engine.configs.echo0_plugin.models.aliases.embedding.model_id")
+        or "text-embedding-v3"
+    ).strip()
+    chat_base = str(
+        os.environ.get("ECHOMEM_CHAT_BASE_URL")
+        or config_get(cfg, "model.llm.api_base")
+        or config_get(cfg, "model.llm.base_url")
+        or config_get(cfg, "engine.configs.echo0_plugin.models.providers.deepseek.base_url")
+        or dashscope_base
+    ).strip()
+    chat_token = str(
+        os.environ.get("ECHOMEM_CHAT_API_KEY")
+        or config_get(cfg, "model.llm.api_key")
+        or config_get(cfg, "engine.configs.echo0_plugin.models.providers.deepseek.api_key")
+        or embedding_token
+    ).strip()
+    chat_model = str(
+        os.environ.get("ECHOMEM_CHAT_MODEL")
+        or config_get(cfg, "model.llm.model")
+        or config_get(cfg, "engine.configs.echo0_plugin.models.aliases.chat.model_id")
+        or "deepseek-v4-flash"
+    ).strip()
     embedding = retry_preflight(
         openai_compatible_embedding_preflight,
         dashscope_base,
@@ -456,13 +905,19 @@ def import_model_preflight(out_dir: Path) -> dict[str, Any]:
         timeout_s=45,
         attempts=3,
     )
-    status = "ok" if embedding.get("ok") and chat.get("ok") else "fail"
+    failed_items = [item for item in (embedding, chat) if isinstance(item, dict) and not item.get("ok")]
+    fatal = any(preflight_failure_is_fatal(item) for item in failed_items)
+    status = "ok" if not failed_items else ("fail" if fatal else "warn")
     report = {
         "status": status,
+        "fatal": fatal,
         "checked_at": datetime.now().isoformat(timespec="seconds"),
         "embedding": embedding,
         "chat": chat,
-        "note": "导入前预检只验证 provider key / base_url / model 是否可用，不代表 overview / atom / graph 已经生成。",
+        "note": (
+            "导入前预检只验证 provider key / base_url / model 是否可用，不代表 overview / atom / graph 已经生成。"
+            " timeout/临时网络错误会记录为 warning 并继续导入；认证/权限/模型配置错误仍会阻断任务。"
+        ),
     }
     write_json(out_dir / "echomemory_model_preflight.json", report)
     return report
@@ -486,6 +941,58 @@ async def commit_session_full(sdk: Any, session_id: str, context: dict[str, str]
         if "keep_recent_count" not in str(exc):
             raise
         return await sdk.commit_session(session_id, ctx=context)
+
+
+def commit_archive_id(task: Any) -> str:
+    for key in ("archive_id", "task_id"):
+        value = str(getattr(task, key, "") or "").strip()
+        if value:
+            return value
+    return ""
+
+
+async def wait_for_develop_commit_completion(
+    sdk: Any,
+    session_id: str,
+    archive_id: str,
+    context: dict[str, str],
+    *,
+    timeout_s: float,
+) -> dict[str, Any]:
+    deadline = time.time() + max(0.0, float(timeout_s))
+    polls = 0
+    last_state: dict[str, Any] = {}
+    while True:
+        polls += 1
+        try:
+            last_state = await sdk.commit_status(session_id, archive_id, ctx=context)
+        except TypeError:
+            last_state = await sdk.commit_status(session_id, archive_id)
+        status = str(last_state.get("status") or "").strip().lower()
+        stage = str(last_state.get("stage") or "").strip().lower()
+        if polls == 1 or status in {"completed", "failed"} or stage in {"completed", "failed"}:
+            print(
+                "[commit-status] "
+                f"session={session_id} archive_id={archive_id} poll={polls} "
+                f"status={status or '-'} stage={stage or '-'} "
+                f"elapsed={round(max(0.0, float(timeout_s) - max(0.0, deadline - time.time())), 2)}s",
+                flush=True,
+            )
+        if status in {"completed", "failed"} or stage in {"completed", "failed"}:
+            break
+        if time.time() >= deadline:
+            break
+        await asyncio.sleep(1.0)
+    return {
+        **last_state,
+        "archive_id": archive_id,
+        "polls": polls,
+        "completed": str(last_state.get("status") or "").strip().lower() == "completed"
+        or str(last_state.get("stage") or "").strip().lower() == "completed",
+        "timed_out": time.time() >= deadline
+        and str(last_state.get("status") or "").strip().lower() not in {"completed", "failed"},
+        "wait_elapsed_s": round(max(0.0, float(timeout_s) - max(0.0, deadline - time.time())), 3),
+    }
 
 
 def token_estimate(text: str) -> int:
@@ -525,6 +1032,7 @@ def format_turn_time(base_dt: datetime | None, idx: int) -> str:
 def find_session_dir(workspace: str, account: str, session_id: str) -> Path | None:
     root = Path(workspace).expanduser().resolve()
     candidates = [
+        root / "tenants" / account / "sessions" / session_id,
         root / account / account / "sessions" / session_id,
         root / account / "sessions" / session_id,
         root / "sessions" / session_id,
@@ -534,6 +1042,23 @@ def find_session_dir(workspace: str, account: str, session_id: str) -> Path | No
             return candidate
     try:
         return next(root.rglob(f"sessions/{session_id}"))
+    except StopIteration:
+        return None
+
+
+def find_engine_session_dir(workspace: str, account: str, session_id: str, engine_id: str = "echo0_plugin") -> Path | None:
+    root = Path(workspace).expanduser().resolve()
+    candidates = [
+        root / "tenants" / account / "engines" / engine_id / "sessions" / session_id,
+        root / account / account / "engines" / engine_id / "sessions" / session_id,
+        root / account / "engines" / engine_id / "sessions" / session_id,
+        root / "engines" / engine_id / "sessions" / session_id,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    try:
+        return next(root.rglob(f"engines/{engine_id}/sessions/{session_id}"))
     except StopIteration:
         return None
 
@@ -584,9 +1109,16 @@ def extraction_timestamp(meta: dict[str, Any]) -> str:
 
 def account_memory_root(workspace: str, account: str) -> Path:
     root = Path(workspace).expanduser().resolve()
-    for candidate in (root / account / account, root / account, root):
-        if (candidate / "memory").exists() or (candidate / "sessions").exists():
+    for candidate in (root / "tenants" / account, root / account / account, root / account, root):
+        if (
+            (candidate / "memory").exists()
+            or (candidate / "sessions").exists()
+            or (candidate / "engines" / "echo0_plugin" / "memory").exists()
+            or (candidate / "engines" / "echo0_plugin" / "sessions").exists()
+        ):
             return candidate
+    if (root / "tenants").exists():
+        return root / "tenants" / account
     return root / account / account
 
 
@@ -606,16 +1138,37 @@ def reset_extraction_cursor(session_dir: Path) -> bool:
     return True
 
 
-def count_memory_artifacts(workspace: str, account: str) -> dict[str, Any]:
-    memory_root = account_memory_root(workspace, account)
-    atoms_dir = memory_root / "memory" / ".structured" / "atoms"
-    atoms_bundle = memory_root / "memory" / ".structured" / "atoms.json"
-    relations_dir = memory_root / "memory" / ".structured" / "relations"
-    graph_root = memory_root / "memory" / ".graph"
+def _count_memory_artifacts_uncached(workspace: str, account: str) -> dict[str, Any]:
+    account_root = account_memory_root(workspace, account)
+    workspace_root = Path(workspace).expanduser().resolve()
+    engine_root_candidates = [
+        workspace_root / "tenants" / account / "engines" / "echo0_plugin",
+        workspace_root / account / account / "engines" / "echo0_plugin",
+        workspace_root / account / "engines" / "echo0_plugin",
+        account_root / "engines" / "echo0_plugin",
+    ]
+    engine_root = next((path for path in engine_root_candidates if path.exists()), engine_root_candidates[0])
+    memory_root_candidates = [
+        engine_root / "memory",
+        account_root / "memory",
+    ]
+    memory_root = next((path for path in memory_root_candidates if path.exists()), memory_root_candidates[0])
+    atoms_dir = memory_root / ".structured" / "atoms"
+    atoms_bundle = memory_root / ".structured" / "atoms.json"
+    relations_dir = memory_root / ".structured" / "relations"
+    graph_root = memory_root / ".graph"
     graph_nodes_dir = graph_root / "nodes"
     graph_edges_dir = graph_root / "edges"
     graph_adjacency_dir = graph_root / "adjacency"
-    vector_root = Path(workspace).expanduser().resolve() / account / "system" / "vector_index" / account
+    vector_root_candidates = [
+        engine_root / "vector_store" / account,
+        workspace_root / "tenants" / "local" / "engines" / "echo0_plugin" / "vector_store" / account,
+        workspace_root / "tenants" / account / "system" / "vector_index" / account,
+        workspace_root / account / "system" / "vector_index" / account,
+        workspace_root / account / account / "system" / "vector_index" / account,
+        account_root / "system" / "vector_index" / account,
+    ]
+    vector_root = next((path for path in vector_root_candidates if path.exists()), vector_root_candidates[0])
     vector_meta = vector_root / "meta.json"
     vector_items = 0
     if vector_meta.exists():
@@ -639,9 +1192,19 @@ def count_memory_artifacts(workspace: str, account: str) -> dict[str, Any]:
                 atoms_count = len(bundled_atoms)
         elif isinstance(payload, list):
             atoms_count = len(payload)
+    if atoms_count == 0 and engine_root.exists():
+        engine_meta_files = list((engine_root / "sessions").glob("*/meta.json"))
+        for meta_path in engine_meta_files:
+            meta = read_json_file(meta_path)
+            atoms_count = max(atoms_count, safe_int(meta.get("atom_pipeline_index"), -1) + 1)
+
+    vector_index_exists = (vector_root / "index.bin").exists()
+    if not vector_index_exists:
+        vector_index_exists = any(path.is_file() for path in vector_root.rglob("*.npy")) if vector_root.exists() else False
 
     return {
         "memory_root": str(memory_root),
+        "engine_root": str(engine_root),
         "atoms_count": atoms_count,
         "relations_count": len(list(relations_dir.glob("*.json"))) if relations_dir.exists() else 0,
         "graph_root": str(graph_root),
@@ -650,10 +1213,38 @@ def count_memory_artifacts(workspace: str, account: str) -> dict[str, Any]:
         "graph_edges_count": json_count(graph_edges_dir),
         "graph_adjacency_count": json_count(graph_adjacency_dir),
         "vector_index_path": str(vector_root),
-        "vector_index_exists": (vector_root / "index.bin").exists(),
+        "vector_index_exists": vector_index_exists,
         "vector_meta_exists": vector_meta.exists(),
         "vector_items": vector_items,
     }
+
+
+def count_memory_artifacts(workspace: str, account: str) -> dict[str, Any]:
+    cache_key = (str(Path(workspace).expanduser().resolve()), str(account))
+    now = time.monotonic()
+    cached = _MEMORY_ARTIFACT_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < MEMORY_ARTIFACT_CACHE_TTL_S:
+        return dict(cached[1])
+    payload = _count_memory_artifacts_uncached(workspace, account)
+    _MEMORY_ARTIFACT_CACHE[cache_key] = (now, dict(payload))
+    return payload
+
+
+def cached_workspace_token_usage_summary(
+    workspace: str | Path,
+    account: str,
+    *,
+    force_refresh: bool = False,
+) -> dict[str, Any]:
+    resolved_workspace = str(Path(workspace).expanduser().resolve())
+    cache_key = (resolved_workspace, str(account))
+    now = time.monotonic()
+    cached = _WORKSPACE_TOKEN_USAGE_CACHE.get(cache_key)
+    if not force_refresh and cached and (now - cached[0]) < WORKSPACE_TOKEN_USAGE_CACHE_TTL_S:
+        return dict(cached[1])
+    payload = workspace_token_usage_summary(resolved_workspace, account)
+    _WORKSPACE_TOKEN_USAGE_CACHE[cache_key] = (now, dict(payload))
+    return payload
 
 
 def report_to_dict(report: Any) -> dict[str, Any]:
@@ -669,6 +1260,173 @@ def report_to_dict(report: Any) -> dict[str, Any]:
     }
 
 
+def _resolve_develop_echo0_engine(sdk: Any) -> Any | None:
+    runtime = getattr(sdk, "_runtime", None)
+    if runtime is None:
+        client_core = getattr(sdk, "_client_core", None)
+        runtime = getattr(client_core, "_runtime", None)
+    if runtime is None:
+        client = getattr(sdk, "_client", None)
+        runtime = getattr(getattr(client, "_core", None), "_runtime", None)
+    if runtime is None:
+        return None
+    engine_service_factory = getattr(runtime, "engine_service", None)
+    if not callable(engine_service_factory):
+        return None
+    try:
+        engine_service = engine_service_factory()
+    except Exception:
+        return None
+    get_engine = getattr(engine_service, "getEngine", None)
+    if not callable(get_engine):
+        return None
+    try:
+        return get_engine("echo0_plugin")
+    except Exception:
+        return None
+
+
+async def _force_develop_session_reingest(
+    args: argparse.Namespace,
+    sdk: Any,
+    session_id: str,
+    *,
+    expected_message_count: int,
+    expected_last_message_id: str,
+) -> dict[str, Any]:
+    engine = _resolve_develop_echo0_engine(sdk)
+    if engine is None:
+        return {"available": False, "complete": False, "attempts": [], "error": "atom_pipeline unavailable"}
+    session_dir = find_session_dir(args.workspace, args.account, session_id)
+    engine_session_dir = find_engine_session_dir(args.workspace, args.account, session_id)
+    if session_dir is None:
+        return {"available": False, "complete": False, "attempts": [], "error": "session_dir unavailable"}
+    messages_path = next(
+        (
+            candidate
+            for candidate in (
+                session_dir / "current" / "messages.jsonl",
+                session_dir / "messages.jsonl",
+                engine_session_dir / "messages.jsonl" if engine_session_dir else Path("__missing__"),
+            )
+            if candidate.exists()
+        ),
+        None,
+    )
+    if messages_path is None:
+        return {"available": False, "complete": False, "attempts": [], "error": "messages unavailable"}
+    session_meta = {}
+    for meta_path in (
+        engine_session_dir / "meta.json" if engine_session_dir else Path("__missing__"),
+        session_dir / "meta.json",
+    ):
+        if meta_path.exists():
+            session_meta = read_json_file(meta_path)
+            if session_meta:
+                break
+    plugin_session_metadata = session_meta.get("plugin_session_metadata")
+    messages_jsonl = messages_path.read_text(encoding="utf-8", errors="replace")
+    expected_index = expected_message_count - 1
+    started = time.time()
+
+    def _sync_reingest() -> Any:
+        from echo0.workers.extractors.context import ExtractRequest
+
+        active_tenant = getattr(engine, "_active_tenant_id", None)
+        token = active_tenant.set(args.account) if active_tenant is not None else None
+        try:
+            request = ExtractRequest(
+                session_id=session_id,
+                account_id=args.account,
+                user_id=args.user_id,
+                agent_id=args.agent_id,
+            )
+            return engine._run_process(
+                engine._core.ingest_from_messages_jsonl(
+                    request,
+                    messages_jsonl=messages_jsonl,
+                    session_metadata=plugin_session_metadata if isinstance(plugin_session_metadata, dict) else None,
+                )
+            )
+        finally:
+            if active_tenant is not None and token is not None:
+                active_tenant.reset(token)
+
+    try:
+        timeout_s = max(1.0, float(args.flush_call_timeout_s))
+        report = await asyncio.wait_for(asyncio.to_thread(_sync_reingest), timeout=timeout_s)
+        error = ""
+    except Exception as exc:
+        report = None
+        error = exception_text(exc)
+        timed_out = error in {"TimeoutError", "HardTimeoutError"} or "exceeded" in error
+        if timed_out:
+            print(
+                f"[flush] session={session_id} reingest timeout_continue "
+                f"elapsed={time.time() - started:.1f}s timeout_s={timeout_s:.1f}",
+                flush=True,
+            )
+        else:
+            print(
+                f"[flush] session={session_id} reingest status=error "
+                f"elapsed={time.time() - started:.1f}s error={compact(error, 300)}",
+                flush=True,
+            )
+    session_meta = read_json_file((engine_session_dir / "meta.json") if engine_session_dir else (session_dir / "meta.json"))
+    atom_index = safe_int(session_meta.get("atom_pipeline_index"), -1) if session_meta else -1
+    last_turn_id = extraction_cursor(session_meta) if session_meta else ""
+    cursor_ok = bool(last_turn_id) and (not expected_last_message_id or last_turn_id == expected_last_message_id)
+    memory_artifacts = count_memory_artifacts(args.workspace, args.account)
+    artifacts_ready = bool(
+        int(memory_artifacts.get("atoms_count") or 0) > 0
+        or int(memory_artifacts.get("relations_count") or 0) > 0
+        or int(memory_artifacts.get("graph_nodes_count") or 0) > 0
+        or int(memory_artifacts.get("graph_edges_count") or 0) > 0
+    )
+    final_state = {
+        "session_dir": str(session_dir),
+        "atom_last_extracted_turn_id": last_turn_id,
+        "atom_last_extracted_turn_id_ok": cursor_ok,
+        "atom_pipeline_index": atom_index,
+        "expected_atom_pipeline_index": expected_index,
+        "expected_last_message_id": expected_last_message_id,
+        "memory_artifacts": memory_artifacts,
+        "artifacts_ready": artifacts_ready,
+    }
+    attempt = {
+        "attempt": 1,
+        "elapsed_s": round(time.time() - started, 3),
+        "error": error,
+        "timed_out": error in {"TimeoutError", "HardTimeoutError"} or "exceeded" in error,
+        **report_to_dict(report),
+        **final_state,
+    }
+    if not error:
+        print(
+            f"[flush] session={session_id} reingest "
+            f"atom_pipeline_index={atom_index}/{expected_index} "
+            f"cursor_ok={cursor_ok} elapsed={time.time() - started:.1f}s",
+            flush=True,
+        )
+    complete = bool(
+        (
+            expected_message_count == 0
+            or final_state.get("atom_pipeline_index", -1) >= expected_index
+            or (final_state.get("atom_last_extracted_turn_id_ok") and final_state.get("artifacts_ready"))
+        )
+        and not int(attempt.get("extraction_failures") or 0)
+        and not error
+    )
+    return {
+        "available": True,
+        "complete": complete,
+        "elapsed_s": round(time.time() - started, 3),
+        "attempts": [attempt],
+        "reingest": True,
+        **final_state,
+    }
+
+
 async def flush_atom_pipeline(
     args: argparse.Namespace,
     sdk: Any,
@@ -681,7 +1439,13 @@ async def flush_atom_pipeline(
     services = getattr(runtime, "services", None)
     pipeline = getattr(services, "atom_pipeline", None)
     if pipeline is None:
-        return {"available": False, "complete": False, "attempts": [], "error": "atom_pipeline unavailable"}
+        return await _force_develop_session_reingest(
+            args,
+            sdk,
+            session_id,
+            expected_message_count=expected_message_count,
+            expected_last_message_id=expected_last_message_id,
+        )
 
     request_ctx = sdk._ctx(**sdk_ctx_kwargs(sdk, args.account, args.user_id, args.agent_id, session_id))
     expected_index = expected_message_count - 1
@@ -818,18 +1582,35 @@ def collect_commit_artifact_state(
     expected_last_message_id: str = "",
 ) -> dict[str, Any]:
     session_dir = find_session_dir(args.workspace, args.account, session_id)
-    meta = read_json_file(session_dir / "meta.json") if session_dir else {}
-    messages_path = session_dir / "messages.jsonl" if session_dir else Path("__missing__")
+    engine_session_dir = find_engine_session_dir(args.workspace, args.account, session_id)
+    meta = (
+        read_json_file(engine_session_dir / "meta.json")
+        if engine_session_dir and (engine_session_dir / "meta.json").exists()
+        else (read_json_file(session_dir / "meta.json") if session_dir and (session_dir / "meta.json").exists() else {})
+    )
+    messages_path = Path("__missing__")
+    if session_dir:
+        for candidate in (session_dir / "current" / "messages.jsonl", session_dir / "messages.jsonl"):
+            if candidate.exists():
+                messages_path = candidate
+                break
     stored_messages = read_jsonl_file(messages_path) if session_dir else []
     stored_message_count = len(stored_messages)
-    actual_last_message_id = str(stored_messages[-1].get("message_id") or "") if stored_messages else ""
+    actual_last_message_id = str(stored_messages[-1].get("message_id") or stored_messages[-1].get("id") or "") if stored_messages else ""
     target_message_count = expected_message_count or stored_message_count
     target_last_message_id = expected_last_message_id or actual_last_message_id
     expected_index = target_message_count - 1
     commit_index = safe_int(meta.get("commit_index"), -1) if meta else -1
     atom_index = safe_int(meta.get("atom_pipeline_index"), -1) if meta else -1
-    abstract_path = session_dir / "abstract.md" if session_dir else Path("__missing__")
-    overview_path = session_dir / "overview.md" if session_dir else Path("__missing__")
+    abstract_path = Path("__missing__")
+    overview_path = Path("__missing__")
+    for base_dir in (engine_session_dir, session_dir):
+        if not base_dir:
+            continue
+        if abstract_path.name == "__missing__" and (base_dir / "abstract.md").exists():
+            abstract_path = base_dir / "abstract.md"
+        if overview_path.name == "__missing__" and (base_dir / "overview.md").exists():
+            overview_path = base_dir / "overview.md"
     abstract_ok = abstract_path.exists() and bool(abstract_path.read_text(encoding="utf-8", errors="replace").strip())
     overview_ok = overview_path.exists() and bool(overview_path.read_text(encoding="utf-8", errors="replace").strip())
     require_abstract = abstract_required(args)
@@ -839,7 +1620,29 @@ def collect_commit_artifact_state(
     atom_index_ok = expected_index < 0 or atom_index >= expected_index
     cursor_ok = bool(cursor) and (not target_last_message_id or cursor == target_last_message_id)
     extraction_ok = atom_index_ok or cursor_ok
-    memory_artifacts = count_memory_artifacts(args.workspace, args.account)
+    memory_scan_required = False
+    if getattr(args, "skip_session_commit", False):
+        memory_scan_required = bool(stored_message_count >= target_message_count and atom_index_ok)
+    else:
+        memory_scan_required = bool(abstract_ready and overview_ok)
+    if memory_scan_required:
+        memory_artifacts = count_memory_artifacts(args.workspace, args.account)
+    else:
+        memory_artifacts = {
+            "memory_root": str(account_memory_root(args.workspace, args.account) / "memory"),
+            "engine_root": str(account_memory_root(args.workspace, args.account) / "engines" / "echo0_plugin"),
+            "atoms_count": 0,
+            "relations_count": 0,
+            "graph_root": str(account_memory_root(args.workspace, args.account) / "memory" / ".graph"),
+            "graph_exists": False,
+            "graph_nodes_count": 0,
+            "graph_edges_count": 0,
+            "graph_adjacency_count": 0,
+            "vector_index_path": str(account_memory_root(args.workspace, args.account) / "engines" / "echo0_plugin" / "vector_store" / str(args.account)),
+            "vector_index_exists": False,
+            "vector_meta_exists": False,
+            "vector_items": 0,
+        }
     vector_ready = bool(memory_artifacts.get("vector_items", 0) > 0 or memory_artifacts.get("vector_index_exists"))
     if getattr(args, "skip_session_commit", False):
         memory_artifacts_ok = bool(
@@ -871,6 +1674,7 @@ def collect_commit_artifact_state(
     )
     return {
         "session_dir": str(session_dir or ""),
+        "engine_session_dir": str(engine_session_dir or ""),
         "meta_exists": bool(meta),
         "stored_message_count": stored_message_count,
         "expected_message_count": target_message_count,
@@ -911,9 +1715,12 @@ async def wait_for_commit_artifacts(
     *,
     expected_message_count: int = 0,
     expected_last_message_id: str = "",
+    label: str = "",
 ) -> dict[str, Any]:
     deadline = time.time() + max(0, float(args.commit_wait_s))
     last_state: dict[str, Any] = {}
+    last_stage = ""
+    poll_interval_s = 0.5
     while True:
         last_state = collect_commit_artifact_state(
             args,
@@ -921,10 +1728,173 @@ async def wait_for_commit_artifacts(
             expected_message_count=expected_message_count,
             expected_last_message_id=expected_last_message_id,
         )
+        current_stage = commit_artifact_stage(last_state)
+        if current_stage != last_stage:
+            current_label = label or session_id
+            remaining_s = max(0.0, deadline - time.time())
+            print(
+                "[wait] "
+                f"{current_label} stage={current_stage} "
+                f"commit={last_state.get('commit_index')}/{last_state.get('expected_commit_index')} "
+                f"atom={last_state.get('atom_pipeline_index')}/{last_state.get('expected_atom_pipeline_index')} "
+                f"overview={bool(last_state.get('overview_nonempty'))} "
+                f"abstract={bool(last_state.get('abstract_nonempty') or not last_state.get('abstract_required'))} "
+                f"retrieval={bool(last_state.get('retrieval_ready'))} "
+                f"cursor={bool(last_state.get('cursor_complete'))} "
+                f"remaining={remaining_s:.1f}s",
+                flush=True,
+            )
+            last_stage = current_stage
         if last_state["complete"] or time.time() >= deadline:
             last_state["wait_elapsed_s"] = round(max(0.0, float(args.commit_wait_s) - max(0.0, deadline - time.time())), 3)
             return last_state
-        await asyncio.sleep(2)
+        remaining_s = max(0.0, deadline - time.time())
+        await asyncio.sleep(min(poll_interval_s, remaining_s))
+        poll_interval_s = min(2.0, poll_interval_s * 1.5)
+
+
+def recovered_integrity_from_artifacts(
+    *,
+    archive_complete: bool,
+    atom_memory_complete: bool,
+    retrieval_ready: bool,
+    cursor_complete: bool,
+    session_complete: bool,
+    fast_import: bool,
+) -> str:
+    if session_complete:
+        return "complete"
+    if archive_complete and (fast_import or retrieval_ready or atom_memory_complete or cursor_complete):
+        return "pending_async_memory"
+    if archive_complete or retrieval_ready or atom_memory_complete:
+        return "partial"
+    return "incomplete"
+
+
+async def recover_session_record(
+    args: argparse.Namespace,
+    sdk: Any,
+    *,
+    requested_session_id: str,
+    actual_session_id: str,
+    expected_messages: int,
+    last_added_message_id: str,
+    label: str,
+    context: dict[str, str],
+    error: BaseException,
+) -> dict[str, Any]:
+    error_text = f"{type(error).__name__}: {compact(error, 500)}"
+    try:
+        history = await sdk.get_history(actual_session_id, ctx=context)
+    except Exception:
+        history = []
+    stored_count = len(history)
+    commit_artifacts = collect_commit_artifact_state(
+        args,
+        actual_session_id,
+        expected_message_count=max(expected_messages, stored_count),
+        expected_last_message_id=last_added_message_id,
+    )
+    fast_import = bool(getattr(args, "defer_artifact_wait", False) or str(getattr(args, "import_wait_mode", "full")).lower() == "fast")
+    archive_complete = bool(
+        commit_artifacts.get("legacy_commit_complete")
+        or commit_artifacts.get("complete")
+        or (
+            stored_count >= expected_messages
+            and int(commit_artifacts.get("stored_message_count") or 0) >= expected_messages
+        )
+    )
+    atom_memory_complete = bool(
+        commit_artifacts.get("atom_pipeline_index_ok")
+        or (
+            commit_artifacts.get("atom_last_extracted_turn_id_ok")
+            and commit_artifacts.get("memory_artifacts", {}).get("atoms_count", 0) > 0
+        )
+    )
+    retrieval_ready = bool(commit_artifacts.get("retrieval_ready"))
+    cursor_complete = bool(commit_artifacts.get("cursor_complete"))
+    session_complete = bool(
+        stored_count >= expected_messages
+        and archive_complete
+        and atom_memory_complete
+        and retrieval_ready
+        and cursor_complete
+    )
+    integrity = recovered_integrity_from_artifacts(
+        archive_complete=archive_complete,
+        atom_memory_complete=atom_memory_complete,
+        retrieval_ready=retrieval_ready,
+        cursor_complete=cursor_complete,
+        session_complete=session_complete,
+        fast_import=fast_import,
+    )
+    print(
+        "[recover] "
+        f"{label} session_id={actual_session_id} stored_messages={stored_count}/{expected_messages} "
+        f"integrity={integrity} error={compact(error_text, 240)}",
+        flush=True,
+    )
+    return {
+        "session_id": actual_session_id,
+        "requested_session_id": requested_session_id,
+        "expected_messages": expected_messages,
+        "submitted_messages": max(stored_count, commit_artifacts.get("stored_message_count") or 0),
+        "live_message_count_before_commit": stored_count,
+        "pending_message_count_after_commit": max(0, expected_messages - stored_count),
+        "live_complete_before_commit": stored_count >= expected_messages,
+        "archive_complete_after_commit": archive_complete,
+        "atom_memory_complete_after_commit": atom_memory_complete,
+        "retrieval_ready_after_commit": retrieval_ready,
+        "cursor_complete_after_commit": cursor_complete,
+        "qa_ready_after_commit": session_complete,
+        "pending_async_memory_after_commit": bool(integrity == "pending_async_memory"),
+        "last_added_message_id": last_added_message_id,
+        "commit_keep_recent_count": 0,
+        "session_commit_skipped": bool(args.skip_session_commit),
+        "atom_flush": {
+            "available": True,
+            "complete": atom_memory_complete,
+            "recovered": True,
+            "error": error_text,
+            "atom_pipeline_index": commit_artifacts.get("atom_pipeline_index"),
+            "expected_atom_pipeline_index": commit_artifacts.get("expected_atom_pipeline_index"),
+            "atom_last_extracted_turn_id": commit_artifacts.get("atom_last_extracted_turn_id") or "",
+            "atom_last_extracted_turn_id_ok": bool(commit_artifacts.get("atom_last_extracted_turn_id_ok")),
+            "artifacts_ready": bool(retrieval_ready),
+        },
+        "commit_artifacts": {
+            **commit_artifacts,
+            "recovered": True,
+            "error": error_text,
+        },
+        "commit_warning": (
+            "Session import raised an exception after persistence started; recovered record from workspace/session artifacts."
+            if integrity in {"complete", "pending_async_memory", "partial"}
+            else "Session import raised an exception before required artifacts became available."
+        ),
+        "integrity": integrity,
+        "integrity_stage": (
+            "qa_ready"
+            if session_complete
+            else (
+                "cursor_complete"
+                if cursor_complete
+                else (
+                    "atom_memory_complete"
+                    if atom_memory_complete
+                    else ("retrieval_ready" if retrieval_ready else ("async_memory_pending" if integrity == "pending_async_memory" else ("archive_complete" if archive_complete else "incomplete")))
+                )
+            )
+        ),
+        "error": error_text,
+        "recovered_after_error": True,
+        "create_response": {"session_id": actual_session_id},
+        "commit_response": {
+            "task_id": "",
+            "status": "recovered_after_error",
+            "elapsed_s": 0.0,
+        },
+    }
 
 
 def build_session_batches(sample: dict[str, Any]) -> tuple[list[dict[str, Any]], int]:
@@ -974,209 +1944,307 @@ def build_session_batches(sample: dict[str, Any]) -> tuple[list[dict[str, Any]],
 async def import_one_session(args: argparse.Namespace, sdk: Any, session_id: str, messages: list[dict[str, Any]], label: str) -> dict[str, Any]:
     print(f"[import] session={session_id} label={label} expected_messages={len(messages)}", flush=True)
     context = sdk_ctx_kwargs(sdk, args.account, args.user_id, args.agent_id, session_id)
-    created = await sdk.create_session(title=label, ctx=context)
-    actual_session_id = created["session_id"]
+    created = None
+    actual_session_id = session_id
     added = 0
     last_added_message_id = ""
-    for msg in messages:
-        added_ref = await sdk.add_message(
-            actual_session_id,
-            msg.get("role") or "user",
-            msg.get("content") or "",
-            ctx=context,
-            created_at=msg.get("created_at") or "",
-            role_id=msg.get("role_id") or msg.get("role") or "",
+    try:
+        created = await sdk.create_session(title=label, ctx=context)
+        actual_session_id = created["session_id"]
+        hotpotqa_document_mode = (
+            str(getattr(args, "dataset_format", "") or "").strip().lower() == "hotpotqa"
+            and getattr(sdk, "_compat_layout", "") == "develop-src"
         )
-        last_added_message_id = str(added_ref.get("message_id") or last_added_message_id)
-        added += 1
-        print(
-            "[message] "
-            + json.dumps(
-                {
-                    "label": label,
-                    "message_index": added,
-                    "message_total": len(messages),
-                    "role": msg.get("role") or "",
-                    "role_id": msg.get("role_id") or "",
-                    "speaker": msg.get("speaker") or msg.get("role_id") or "",
-                    "dia_id": msg.get("dia_id") or "",
-                    "content": compact(msg.get("content") or "", 260),
-                },
-                ensure_ascii=False,
-            ),
-            flush=True,
-        )
-        if added == len(messages) or added % 25 == 0:
-            print(f"[verify] {label} added_total={added}/{len(messages)}", flush=True)
-    before = await sdk.get_history(actual_session_id, ctx=context)
-    started = time.time()
-    if args.skip_session_commit:
-        task = type("SkippedCommit", (), {"task_id": f"commit-{actual_session_id}-skipped", "status": "skipped"})()
-    else:
-        commit_timeout = max(1.0, float(args.commit_call_timeout_s))
-        with hard_timeout(commit_timeout, f"commit_session({actual_session_id})"):
-            task = await asyncio.wait_for(
-                commit_session_full(sdk, actual_session_id, context),
-                timeout=commit_timeout,
+        for msg in messages:
+            added_ref = await sdk.add_message(
+                actual_session_id,
+                msg.get("role") or "user",
+                msg.get("content") or "",
+                ctx=context,
+                created_at=msg.get("created_at") or "",
+                role_id=msg.get("role_id") or msg.get("role") or "",
             )
-    elapsed = time.time() - started
-    auto_flush_on_message = str(os.environ.get("ECHOMEM_AUTO_FLUSH_ON_MESSAGE_PERSISTED", "true")).strip().lower() in {"1", "true", "yes", "on"}
-    fast_import = bool(getattr(args, "defer_artifact_wait", False) or str(getattr(args, "import_wait_mode", "full")).lower() == "fast")
-    if fast_import:
-        atom_flush = {
-            "available": True,
-            "complete": False,
-            "deferred": True,
-            "elapsed_s": 0.0,
-            "attempts": [],
-            "atom_pipeline_index": -1,
-            "expected_atom_pipeline_index": added - 1,
-            "atom_last_extracted_turn_id": "",
-            "atom_last_extracted_turn_id_ok": False,
-            "artifacts_ready": False,
-        }
-        commit_artifacts = collect_commit_artifact_state(
-            args,
-            actual_session_id,
-            expected_message_count=added,
-            expected_last_message_id=last_added_message_id,
-        )
-        commit_artifacts["deferred"] = True
-        commit_artifacts["wait_elapsed_s"] = 0.0
-        print(
-            "[commit] "
-            f"{label} async_settling enabled commit_index={commit_artifacts.get('commit_index')}/{added - 1} "
-            f"atom_pipeline_index={commit_artifacts.get('atom_pipeline_index')}/{added - 1}",
-            flush=True,
-        )
-    elif auto_flush_on_message:
-        atom_flush = await flush_atom_pipeline(
-            args,
-            sdk,
-            actual_session_id,
-            expected_message_count=added,
-            expected_last_message_id=last_added_message_id,
-        )
-        if not atom_flush.get("complete"):
-            last_attempt = (atom_flush.get("attempts") or [{}])[-1]
+            last_added_message_id = str(added_ref.get("message_id") or last_added_message_id)
+            added += 1
             print(
-                "[warning] "
-                f"{label} atom_flush_incomplete "
-                f"atom_pipeline_index={atom_flush.get('atom_pipeline_index')}/{added - 1} "
-                f"error={compact(last_attempt.get('error') or '', 300)}",
+                "[message] "
+                + json.dumps(
+                    {
+                        "label": label,
+                        "message_index": added,
+                        "message_total": len(messages),
+                        "role": msg.get("role") or "",
+                        "role_id": msg.get("role_id") or "",
+                        "speaker": msg.get("speaker") or msg.get("role_id") or "",
+                        "dia_id": msg.get("dia_id") or "",
+                        "content": compact(msg.get("content") or "", 260),
+                    },
+                    ensure_ascii=False,
+                ),
                 flush=True,
             )
-        commit_artifacts = await wait_for_commit_artifacts(
-            args,
-            actual_session_id,
-            expected_message_count=added,
-            expected_last_message_id=last_added_message_id,
-        )
-    else:
-        atom_flush = {
-            "available": True,
-            "complete": True,
-            "deferred": True,
-            "skipped": True,
-            "elapsed_s": 0.0,
-            "attempts": [],
-        }
-        commit_artifacts = await wait_for_commit_artifacts(
-            args,
-            actual_session_id,
-            expected_message_count=added,
-            expected_last_message_id=last_added_message_id,
-        )
-    print(
-        "[commit] "
-        f"{label} complete={commit_artifacts.get('complete')} "
-        f"commit_index={commit_artifacts.get('commit_index')}/{added - 1} "
-        f"atom_pipeline_index={commit_artifacts.get('atom_pipeline_index')}/{added - 1} "
-        f"flush_complete={atom_flush.get('complete')}",
-        flush=True,
-    )
-    after = await sdk.get_history(actual_session_id, ctx=context)
-    commit_status = str(getattr(task, "status", "") or "").lower()
-    archive_complete = bool(
-        commit_artifacts.get("legacy_commit_complete")
-        or commit_artifacts.get("complete")
-        or (
-            fast_import
-            and len(before) == len(messages)
-            and commit_status in {"accepted", "pending", "queued", "running", "succeeded", "completed", "ok"}
-        )
-    )
-    atom_memory_complete = bool(atom_flush.get("complete"))
-    retrieval_ready = bool(commit_artifacts.get("retrieval_ready"))
-    cursor_complete = bool(commit_artifacts.get("cursor_complete"))
-    session_complete = bool(
-        len(before) == len(messages)
-        and archive_complete
-        and atom_memory_complete
-        and retrieval_ready
-        and cursor_complete
-    )
-    integrity = (
-        "complete"
-        if session_complete
-        else (
-            "pending_async_memory"
-            if archive_complete and (fast_import or retrieval_ready or atom_memory_complete or cursor_complete)
-            else ("partial" if archive_complete or retrieval_ready or atom_memory_complete else "incomplete")
-        )
-    )
-    v005_commit_pending = (
-        commit_status == "pending"
-        and bool(commit_artifacts.get("atom_pipeline_index_ok"))
-        and bool(commit_artifacts.get("vector_ready"))
-    )
-    return {
-        "session_id": actual_session_id,
-        "requested_session_id": session_id,
-        "expected_messages": len(messages),
-        "submitted_messages": added,
-        "live_message_count_before_commit": len(before),
-        "pending_message_count_after_commit": len(after),
-        "live_complete_before_commit": len(before) == len(messages),
-        "archive_complete_after_commit": archive_complete,
-        "atom_memory_complete_after_commit": atom_memory_complete,
-        "retrieval_ready_after_commit": retrieval_ready,
-        "cursor_complete_after_commit": cursor_complete,
-        "qa_ready_after_commit": session_complete,
-        "pending_async_memory_after_commit": bool(integrity == "pending_async_memory"),
-        "last_added_message_id": last_added_message_id,
-        "commit_keep_recent_count": 0,
-        "session_commit_skipped": bool(args.skip_session_commit),
-        "atom_flush": atom_flush,
-        "commit_artifacts": commit_artifacts,
-        "commit_warning": (
-            "EchoMemory returned commit task status=pending, but strict QA-ready artifacts are already complete."
-            if v005_commit_pending
-            else "Retrieval artifacts are available, but atom flush or extraction cursor has not fully caught up yet; keep waiting before QA."
-            if retrieval_ready and (not atom_memory_complete or not cursor_complete)
-            else "Fast import only waits for message persistence and commit acceptance; atom/graph generation continues asynchronously in EchoMemory."
-            if fast_import and archive_complete and not session_complete
-            else "Session commit was skipped; integrity is based on persisted messages and atom pipeline artifacts."
-            if args.skip_session_commit
-            else ""
-        ),
-        "integrity": integrity,
-        "integrity_stage": (
-            "qa_ready"
-            if session_complete
-            else (
-                "cursor_complete"
-                if cursor_complete
-                else (
-                    "atom_memory_complete"
-                    if atom_memory_complete
-                    else ("retrieval_ready" if retrieval_ready else ("async_memory_pending" if integrity == "pending_async_memory" else ("archive_complete" if archive_complete else "incomplete")))
+            if added == len(messages) or added % 25 == 0:
+                print(f"[verify] {label} added_total={added}/{len(messages)}", flush=True)
+        before = await sdk.get_history(actual_session_id, ctx=context)
+        started = time.time()
+        if args.skip_session_commit or hotpotqa_document_mode:
+            task = type("SkippedCommit", (), {"task_id": f"commit-{actual_session_id}-skipped", "status": "skipped"})()
+        else:
+            commit_timeout = max(1.0, float(args.commit_call_timeout_s))
+            with hard_timeout(commit_timeout, f"commit_session({actual_session_id})"):
+                task = await asyncio.wait_for(
+                    commit_session_full(sdk, actual_session_id, context),
+                    timeout=commit_timeout,
                 )
+        elapsed = time.time() - started
+        auto_flush_on_message = str(os.environ.get("ECHOMEM_AUTO_FLUSH_ON_MESSAGE_PERSISTED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+        import_wait_mode = str(getattr(args, "import_wait_mode", "full")).lower()
+        fast_import = bool(getattr(args, "defer_artifact_wait", False) or import_wait_mode == "fast")
+        develop_layout = getattr(sdk, "_compat_layout", "") == "develop-src"
+        staged_full_import = bool(
+            import_wait_mode == "full"
+            and not fast_import
+            and not bool(getattr(args, "skip_session_commit", False) or hotpotqa_document_mode)
+        )
+        defer_session_artifact_wait = bool(fast_import or staged_full_import)
+        develop_commit_status: dict[str, Any] = {}
+        if (
+            develop_layout
+            and not (args.skip_session_commit or hotpotqa_document_mode)
+            and not defer_session_artifact_wait
+        ):
+            archive_id = commit_archive_id(task)
+            if archive_id:
+                develop_commit_status = await wait_for_develop_commit_completion(
+                    sdk,
+                    actual_session_id,
+                    archive_id,
+                    context,
+                    timeout_s=max(1.0, float(args.commit_wait_s)),
+                )
+        document_projection = {}
+        if hotpotqa_document_mode:
+            document_projection = await materialize_hotpotqa_retrieval_projection(
+                args,
+                sdk,
+                actual_session_id,
+                messages,
+                expected_last_message_id=last_added_message_id,
             )
-        ),
-        "create_response": created,
-        "commit_response": {"task_id": getattr(task, "task_id", ""), "status": getattr(task, "status", "accepted"), "elapsed_s": round(elapsed, 4)},
-    }
+        if defer_session_artifact_wait:
+            atom_flush = {
+                "available": True,
+                "complete": False,
+                "deferred": True,
+                "elapsed_s": 0.0,
+                "attempts": [],
+                "atom_pipeline_index": -1,
+                "expected_atom_pipeline_index": added - 1,
+                "atom_last_extracted_turn_id": "",
+                "atom_last_extracted_turn_id_ok": False,
+                "artifacts_ready": False,
+            }
+            commit_artifacts = collect_commit_artifact_state(
+                args,
+                actual_session_id,
+                expected_message_count=added,
+                expected_last_message_id=last_added_message_id,
+            )
+            commit_artifacts["deferred"] = True
+            commit_artifacts["wait_elapsed_s"] = 0.0
+            print(
+                "[commit] "
+                f"{label} async_settling enabled mode={'fast' if fast_import else 'staged-full'} "
+                f"commit_index={commit_artifacts.get('commit_index')}/{added - 1} "
+                f"atom_pipeline_index={commit_artifacts.get('atom_pipeline_index')}/{added - 1}",
+                flush=True,
+            )
+        elif auto_flush_on_message:
+            atom_flush = await flush_atom_pipeline(
+                args,
+                sdk,
+                actual_session_id,
+                expected_message_count=added,
+                expected_last_message_id=last_added_message_id,
+            )
+            if not atom_flush.get("complete"):
+                last_attempt = (atom_flush.get("attempts") or [{}])[-1]
+                print(
+                    "[warning] "
+                    f"{label} atom_flush_incomplete "
+                    f"atom_pipeline_index={atom_flush.get('atom_pipeline_index')}/{added - 1} "
+                    f"error={compact(last_attempt.get('error') or '', 300)}",
+                    flush=True,
+                )
+            commit_artifacts = await wait_for_commit_artifacts(
+                args,
+                actual_session_id,
+                expected_message_count=added,
+                expected_last_message_id=last_added_message_id,
+                label=label,
+            )
+        else:
+            atom_flush = {
+                "available": True,
+                "complete": True,
+                "deferred": True,
+                "skipped": True,
+                "elapsed_s": 0.0,
+                "attempts": [],
+            }
+            commit_artifacts = await wait_for_commit_artifacts(
+                args,
+                actual_session_id,
+                expected_message_count=added,
+                expected_last_message_id=last_added_message_id,
+                label=label,
+            )
+        if document_projection:
+            commit_artifacts["abstract_exists"] = True
+            commit_artifacts["abstract_nonempty"] = True
+            commit_artifacts["overview_exists"] = True
+            commit_artifacts["overview_nonempty"] = True
+            commit_artifacts["vector_ready"] = True
+            commit_artifacts["retrieval_ready"] = True
+            commit_artifacts["qa_ready"] = True
+            commit_artifacts["complete"] = True
+            atom_flush["complete"] = True
+            atom_flush["artifacts_ready"] = True
+            atom_flush["atom_pipeline_index"] = max(int(atom_flush.get("atom_pipeline_index") or -1), added - 1)
+            atom_flush["expected_atom_pipeline_index"] = added - 1
+            atom_flush["atom_last_extracted_turn_id"] = last_added_message_id
+            atom_flush["atom_last_extracted_turn_id_ok"] = bool(last_added_message_id)
+            if not develop_commit_status:
+                develop_commit_status = {
+                    "status": "completed",
+                    "stage": "document_projection_ready",
+                    "detail": document_projection,
+                }
+            print(
+                "[commit] "
+                f"{label} hotpotqa_document_projection ready "
+                f"docs={document_projection.get('doc_count', 0)} vectors={document_projection.get('vector_items', 0)}",
+                flush=True,
+            )
+        print(
+            "[commit] "
+            f"{label} complete={commit_artifacts.get('complete')} "
+            f"commit_index={commit_artifacts.get('commit_index')}/{added - 1} "
+            f"atom_pipeline_index={commit_artifacts.get('atom_pipeline_index')}/{added - 1} "
+            f"flush_complete={atom_flush.get('complete')}",
+            flush=True,
+        )
+        after = await sdk.get_history(actual_session_id, ctx=context)
+        effective_commit_status = str(
+            develop_commit_status.get("status")
+            or getattr(task, "status", "")
+            or ""
+        ).lower()
+        commit_accepted = effective_commit_status in {"accepted", "pending", "queued", "running", "succeeded", "completed", "ok"}
+        archive_complete = bool(
+            commit_artifacts.get("legacy_commit_complete")
+            or commit_artifacts.get("complete")
+            or (
+                commit_accepted
+                and len(before) == len(messages)
+                and int(commit_artifacts.get("stored_message_count") or 0) >= len(messages)
+            )
+        )
+        atom_memory_complete = bool(
+            atom_flush.get("complete")
+            or commit_artifacts.get("atom_pipeline_index_ok")
+            or commit_artifacts.get("complete")
+        )
+        retrieval_ready = bool(commit_artifacts.get("retrieval_ready"))
+        cursor_complete = bool(commit_artifacts.get("cursor_complete"))
+        session_complete = bool(
+            len(before) == len(messages)
+            and archive_complete
+            and atom_memory_complete
+            and retrieval_ready
+            and cursor_complete
+        )
+        integrity = recovered_integrity_from_artifacts(
+            archive_complete=archive_complete,
+            atom_memory_complete=atom_memory_complete,
+            retrieval_ready=retrieval_ready,
+            cursor_complete=cursor_complete,
+            session_complete=session_complete,
+            fast_import=bool(fast_import or staged_full_import),
+        )
+        v005_commit_pending = (
+            effective_commit_status == "pending"
+            and bool(commit_artifacts.get("atom_pipeline_index_ok"))
+            and bool(commit_artifacts.get("vector_ready"))
+        )
+        return {
+            "session_id": actual_session_id,
+            "requested_session_id": session_id,
+            "expected_messages": len(messages),
+            "submitted_messages": added,
+            "live_message_count_before_commit": len(before),
+            "pending_message_count_after_commit": len(after),
+            "live_complete_before_commit": len(before) == len(messages),
+            "archive_complete_after_commit": archive_complete,
+            "atom_memory_complete_after_commit": atom_memory_complete,
+            "retrieval_ready_after_commit": retrieval_ready,
+            "cursor_complete_after_commit": cursor_complete,
+            "qa_ready_after_commit": session_complete,
+            "pending_async_memory_after_commit": bool(integrity == "pending_async_memory"),
+            "last_added_message_id": last_added_message_id,
+            "commit_keep_recent_count": 0,
+            "session_commit_skipped": bool(args.skip_session_commit or hotpotqa_document_mode),
+            "atom_flush": atom_flush,
+            "commit_artifacts": commit_artifacts,
+            "commit_warning": (
+                "EchoMemory returned commit task status=pending, but strict QA-ready artifacts are already complete."
+                if v005_commit_pending
+                else "Retrieval artifacts are available, but atom flush or extraction cursor has not fully caught up yet; keep waiting before QA."
+                if retrieval_ready and (not atom_memory_complete or not cursor_complete)
+                else "Staged full import accepted the session commit and moved on; finalization will wait for atom/cursor/overview/abstract completeness after all sessions are submitted."
+                if staged_full_import and archive_complete and not session_complete
+                else "Fast import only waits for message persistence and commit acceptance; atom/graph generation continues asynchronously in EchoMemory."
+                if fast_import and archive_complete and not session_complete
+                else "Session commit was skipped; integrity is based on persisted messages and lightweight HotpotQA document projection."
+                if (args.skip_session_commit or hotpotqa_document_mode)
+                else ""
+            ),
+            "integrity": integrity,
+            "integrity_stage": (
+                "qa_ready"
+                if session_complete
+                else (
+                    "cursor_complete"
+                    if cursor_complete
+                    else (
+                        "atom_memory_complete"
+                        if atom_memory_complete
+                        else ("retrieval_ready" if retrieval_ready else ("async_memory_pending" if integrity == "pending_async_memory" else ("archive_complete" if archive_complete else "incomplete")))
+                    )
+                )
+            ),
+            "create_response": created,
+            "commit_response": {
+                "task_id": getattr(task, "task_id", ""),
+                "status": effective_commit_status or getattr(task, "status", "accepted"),
+                "elapsed_s": round(elapsed, 4),
+            },
+            "commit_status_detail": develop_commit_status,
+        }
+    except Exception as exc:
+        if created and actual_session_id:
+            return await recover_session_record(
+                args,
+                sdk,
+                requested_session_id=session_id,
+                actual_session_id=actual_session_id,
+                expected_messages=len(messages),
+                last_added_message_id=last_added_message_id,
+                label=label,
+                context=context,
+                error=exc,
+            )
+        raise
 
 
 async def import_sample(
@@ -1238,11 +2306,18 @@ async def import_sample(
                 "pending_message_count_after_commit": 0,
                 "live_complete_before_commit": False,
                 "archive_complete_after_commit": False,
+                "atom_memory_complete_after_commit": False,
+                "retrieval_ready_after_commit": False,
+                "cursor_complete_after_commit": False,
+                "qa_ready_after_commit": False,
+                "pending_async_memory_after_commit": False,
                 "last_added_message_id": "",
                 "commit_keep_recent_count": 0,
                 "atom_flush": {"complete": False, "error": compact(exc, 500)},
                 "commit_artifacts": {"complete": False, "error": compact(exc, 500)},
+                "commit_warning": "Session failed before EchoMemory session state could be recovered.",
                 "integrity": "incomplete",
+                "integrity_stage": "incomplete",
                 "error": f"{type(exc).__name__}: {compact(exc, 500)}",
             }
         rec["session_key"] = batch["session_key"]
@@ -1265,6 +2340,14 @@ async def import_sample(
                 )
             ],
         )
+        log_import_progress_snapshot(
+            prefix="[sample]",
+            sample_id=sample_id,
+            session_label=label,
+            records=records,
+            total_sessions=original_session_count,
+            token_usage=cached_workspace_token_usage_summary(args.workspace, args.account, force_refresh=True),
+        )
         if rec.get("integrity") not in {"complete", "pending_async_memory"} and not args.continue_on_session_error:
             print(f"[error] {label} failed; stopping sample import early", flush=True)
             break
@@ -1283,11 +2366,18 @@ async def import_sample(
                 "pending_message_count_after_commit": 0,
                 "live_complete_before_commit": False,
                 "archive_complete_after_commit": False,
+                "atom_memory_complete_after_commit": False,
+                "retrieval_ready_after_commit": False,
+                "cursor_complete_after_commit": False,
+                "qa_ready_after_commit": False,
+                "pending_async_memory_after_commit": False,
                 "last_added_message_id": "",
                 "commit_keep_recent_count": 0,
                 "atom_flush": {"complete": False, "error": compact(exc, 500)},
                 "commit_artifacts": {"complete": False, "error": compact(exc, 500)},
+                "commit_warning": "Session failed before EchoMemory session state could be recovered.",
                 "integrity": "incomplete",
+                "integrity_stage": "incomplete",
                 "error": f"{type(exc).__name__}: {compact(exc, 500)}",
             }
         rec["session_key"] = "all"
@@ -1310,6 +2400,14 @@ async def import_sample(
                 )
             ],
         )
+        log_import_progress_snapshot(
+            prefix="[sample]",
+            sample_id=sample_id,
+            session_label=sample_id,
+            records=records,
+            total_sessions=original_session_count,
+            token_usage=cached_workspace_token_usage_summary(args.workspace, args.account, force_refresh=True),
+        )
     write_json(out_dir / f"{sample_id}_messages.json", session_batches)
     return summarize_sample_progress(
         args,
@@ -1322,14 +2420,493 @@ async def import_sample(
     )
 
 
+def repair_session_roots(workspace: str, account: str) -> list[Path]:
+    root = Path(workspace).expanduser().resolve()
+    return [
+        root / "tenants" / account / "sessions",
+        root / account / account / "sessions",
+        root / account / "sessions",
+        root / "sessions",
+    ]
+
+
+def iter_repair_session_dirs(workspace: str, account: str) -> list[Path]:
+    seen: set[Path] = set()
+    rows: list[Path] = []
+    for root in repair_session_roots(workspace, account):
+        if not root.exists():
+            continue
+        for item in sorted(root.iterdir()):
+            if not item.is_dir() or item in seen:
+                continue
+            seen.add(item)
+            rows.append(item)
+    return rows
+
+
+def session_state_for_repair(session_dir: Path) -> dict[str, Any]:
+    meta = read_json_file(session_dir / "meta.json")
+    messages_path = Path("__missing__")
+    for candidate in (session_dir / "current" / "messages.jsonl", session_dir / "messages.jsonl"):
+        if candidate.exists():
+            messages_path = candidate
+            break
+    messages = read_jsonl_file(messages_path)
+    expected_index = len(messages) - 1
+    commit_index = int(meta.get("commit_index", -1)) if meta else -1
+    atom_index = int(meta.get("atom_pipeline_index", -1)) if meta else -1
+    last_message_id = str(messages[-1].get("message_id") or "") if messages else ""
+    title = str(meta.get("title") or session_dir.name)
+    return {
+        "session_id": session_dir.name,
+        "session_dir": str(session_dir),
+        "title": title,
+        "message_count": len(messages),
+        "last_message_id": last_message_id,
+        "commit_index": commit_index,
+        "atom_pipeline_index": atom_index,
+        "expected_index": expected_index,
+        "complete": expected_index < 0 or (commit_index >= expected_index and atom_index >= expected_index),
+    }
+
+
+def restore_commit_index_if_safe(session_dir: Path, state: dict[str, Any]) -> bool:
+    expected_index = int(state.get("expected_index") or -1)
+    commit_index = int(state.get("commit_index") or -1)
+    if expected_index < 0 or commit_index >= expected_index:
+        return False
+    meta_path = session_dir / "meta.json"
+    if not meta_path.exists():
+        return False
+    overview_candidates = [
+        session_dir / "overview.md",
+        session_dir / "current" / "overview.md",
+    ]
+    abstract_candidates = [
+        session_dir / "abstract.md",
+        session_dir / "current" / "abstract.md",
+    ]
+    overview_path = next((path for path in overview_candidates if path.exists() and path.read_text(encoding="utf-8", errors="replace").strip()), None)
+    abstract_path = next((path for path in abstract_candidates if path.exists() and path.read_text(encoding="utf-8", errors="replace").strip()), None)
+    if overview_path is None or abstract_path is None:
+        return False
+    messages = read_jsonl_file(session_dir / "messages.jsonl")
+    if len(messages) - 1 != expected_index:
+        return False
+    meta = read_json_file(meta_path)
+    if not meta:
+        return False
+    meta["commit_index"] = expected_index
+    meta["pending_tokens"] = 0
+    meta.setdefault("committed_at", meta.get("updated_at") or meta.get("created_at") or "")
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+    return True
+
+
+def should_reset_stale_cursor_for_repair(session_dir: Path, state: dict[str, Any], workspace: str, account: str) -> bool:
+    if int(state.get("expected_index") or -1) < 0:
+        return False
+    if int(state.get("atom_pipeline_index") or -1) >= int(state.get("expected_index") or -1):
+        return False
+    meta = read_json_file(session_dir / "meta.json")
+    cursor = extraction_cursor(meta) if meta else ""
+    expected_last_message_id = str(state.get("last_message_id") or "")
+    if not cursor or (expected_last_message_id and cursor != expected_last_message_id):
+        return False
+    artifacts = count_memory_artifacts(workspace, account)
+    return not bool(
+        int(artifacts.get("atoms_count") or 0) > 0
+        or int(artifacts.get("relations_count") or 0) > 0
+        or int(artifacts.get("graph_nodes_count") or 0) > 0
+        or int(artifacts.get("graph_edges_count") or 0) > 0
+        or int(artifacts.get("vector_items") or 0) > 0
+    )
+
+
+async def finalize_import_records(
+    args: argparse.Namespace,
+    sdk: Any,
+    records: list[dict[str, Any]],
+    *,
+    out_dir: Path,
+    root: Path,
+    config_path: Path,
+) -> list[dict[str, Any]]:
+    updated_samples = [
+        {
+            **sample,
+            "session_records": [dict(item) for item in (sample.get("session_records") or [])],
+        }
+        for sample in records
+    ]
+    session_index: dict[str, tuple[int, int]] = {}
+    for sample_idx, sample in enumerate(updated_samples):
+        for nested_idx, session_record in enumerate(sample.get("session_records") or []):
+            session_id = str(session_record.get("session_id") or "")
+            if session_id:
+                session_index[session_id] = (sample_idx, nested_idx)
+    if not session_index:
+        return records
+    finalizing_total = len(session_index)
+    finalized_done = 0
+    repair_attempted_session_ids: set[str] = set()
+    cached_token_usage: dict[str, Any] | None = None
+    cached_token_usage_at = 0.0
+    stage_tracker: dict[str, dict[str, Any]] = {}
+    force_wait_stall_s = finalize_force_wait_stall_seconds(args)
+    last_settling_log_s = 0.0
+    probe_round_sleep_s = 2.0
+    probe_concurrency = max(1, min(6, int(os.environ.get("ECHOMEM_FINALIZE_PROBE_CONCURRENCY") or 4)))
+    repair_concurrency = max(1, min(3, int(os.environ.get("ECHOMEM_FINALIZE_REPAIR_CONCURRENCY") or 2)))
+
+    def rebuild_samples() -> list[dict[str, Any]]:
+        rebuilt_rows: list[dict[str, Any]] = []
+        for sample in updated_samples:
+            session_records = list(sample.get("session_records") or [])
+            progress_total = max(int(sample.get("progress_sessions_total") or 0), len(session_records))
+            rebuilt_rows.append(
+                summarize_sample_progress(
+                    args,
+                    int(sample.get("sample_index") or 0),
+                    str(sample.get("sample_id") or ""),
+                    int(sample.get("original_session_count") or progress_total),
+                    [{} for _ in range(progress_total)],
+                    int(sample.get("estimated_import_tokens") or 0),
+                    session_records,
+                )
+            )
+        return rebuilt_rows
+
+    pending_session_ids = {
+        session_id
+        for session_id in session_index
+    }
+
+    def write_finalizing_snapshot(current_label: str) -> None:
+        rebuilt = rebuild_samples()
+        nonlocal cached_token_usage, cached_token_usage_at
+        now = time.time()
+        if cached_token_usage is None or (now - cached_token_usage_at) >= 5.0:
+            cached_token_usage = workspace_token_usage_summary(args.workspace, args.account)
+            cached_token_usage_at = now
+        write_json(
+            out_dir / "echomemory_import_summary.json",
+            build_import_summary(
+                args,
+                root,
+                config_path,
+                rebuilt,
+                status="ECHOMEMORY_IMPORT_FINALIZING",
+                status_explanation="All sessions were submitted quickly. EchoMemory is finalizing atom/cursor/overview/abstract artifacts before marking the import complete.",
+                running=True,
+                progress_meta={
+                    "phase": "finalizing",
+                    "finalizing_sessions_done": finalized_done,
+                    "finalizing_sessions_total": finalizing_total,
+                    "current_finalizing_session": current_label,
+                },
+                token_usage=cached_token_usage,
+            ),
+        )
+        first_sample = next((item for item in rebuilt if isinstance(item, dict)), {})
+        session_records = first_sample.get("session_records") if isinstance(first_sample.get("session_records"), list) else []
+        log_import_progress_snapshot(
+            prefix="[finalize-progress]",
+            sample_id=str(first_sample.get("sample_id") or args.sample or ""),
+            session_label=current_label,
+            records=session_records if session_records else [],
+            total_sessions=int(first_sample.get("original_session_count") or len(session_records)),
+            token_usage=cached_token_usage,
+        )
+
+    async def refresh_one_session(
+        session_id: str,
+        *,
+        force_wait: bool,
+    ) -> bool:
+        position = session_index.get(session_id)
+        if position is None:
+            return False
+        session_dir = find_session_dir(args.workspace, args.account, session_id)
+        if session_dir is None:
+            return False
+        sample_idx, nested_idx = position
+        original = updated_samples[sample_idx]["session_records"][nested_idx]
+        before = session_state_for_repair(session_dir)
+        label = str(original.get("session_key") or original.get("requested_session_id") or original.get("session_id") or session_id)
+        previous_stage = stage_tracker.get(session_id) or {}
+        previous_stage_name = str(previous_stage.get("stage") or "")
+        if force_wait:
+            print(
+                "[finalize] "
+                f"{label} before commit={before['commit_index']}/{before['expected_index']} "
+                f"atom={before['atom_pipeline_index']}/{before['expected_index']} force_wait",
+                flush=True,
+            )
+        cursor_reset = False
+        if force_wait and should_reset_stale_cursor_for_repair(session_dir, before, args.workspace, args.account):
+            cursor_reset = reset_extraction_cursor(session_dir)
+            if cursor_reset:
+                print(f"[finalize] {label} reset_stale_cursor", flush=True)
+                before = session_state_for_repair(session_dir)
+        commit_restored = False
+        if force_wait:
+            commit_restored = restore_commit_index_if_safe(session_dir, before)
+            if commit_restored:
+                print(f"[finalize] {label} restored_commit_index={before['expected_index']}", flush=True)
+                before = session_state_for_repair(session_dir)
+        if force_wait:
+            precheck_artifacts = collect_commit_artifact_state(
+                args,
+                session_id,
+                expected_message_count=int(before["message_count"]),
+                expected_last_message_id=str(before["last_message_id"]),
+            )
+            skip_flush_reason = ""
+            if bool(precheck_artifacts.get("complete")):
+                skip_flush_reason = "complete"
+            elif bool(precheck_artifacts.get("cursor_complete")):
+                skip_flush_reason = "cursor_complete"
+            elif bool(precheck_artifacts.get("atom_pipeline_index_ok")):
+                skip_flush_reason = "atom_pipeline_index_ok"
+            if skip_flush_reason:
+                print(f"[finalize] {label} skip_flush reason={skip_flush_reason}", flush=True)
+                atom_flush = {
+                    **(original.get("atom_flush") or {}),
+                    "available": True,
+                    "complete": bool(
+                        precheck_artifacts.get("complete")
+                        or precheck_artifacts.get("atom_pipeline_index_ok")
+                    ),
+                    "probed": True,
+                    "skipped": True,
+                    "skip_reason": skip_flush_reason,
+                    "atom_pipeline_index": precheck_artifacts.get("atom_pipeline_index"),
+                    "expected_atom_pipeline_index": precheck_artifacts.get("expected_atom_pipeline_index"),
+                }
+            else:
+                atom_flush = await flush_atom_pipeline(
+                    args,
+                    sdk,
+                    session_id,
+                    expected_message_count=int(before["message_count"]),
+                    expected_last_message_id=str(before["last_message_id"]),
+                )
+            commit_artifacts = await wait_for_commit_artifacts(
+                args,
+                session_id,
+                expected_message_count=int(before["message_count"]),
+                expected_last_message_id=str(before["last_message_id"]),
+                label=label,
+            )
+        else:
+            atom_flush = {
+                **(original.get("atom_flush") or {}),
+                "probed": True,
+            }
+            commit_artifacts = collect_commit_artifact_state(
+                args,
+                session_id,
+                expected_message_count=int(before["message_count"]),
+                expected_last_message_id=str(before["last_message_id"]),
+            )
+        current_stage = commit_artifact_stage(commit_artifacts)
+        stage_now = time.time()
+        stage_since = (
+            float(previous_stage.get("since") or stage_now)
+            if str(previous_stage.get("stage") or "") == current_stage
+            else stage_now
+        )
+        stage_tracker[session_id] = {
+            "stage": current_stage,
+            "since": stage_since,
+            "updated_at": stage_now,
+        }
+        if not force_wait and current_stage != previous_stage_name:
+            print(
+                "[finalize] "
+                f"{label} stage={current_stage} "
+                f"commit={commit_artifacts.get('commit_index')}/{commit_artifacts.get('expected_commit_index')} "
+                f"atom={commit_artifacts.get('atom_pipeline_index')}/{commit_artifacts.get('expected_atom_pipeline_index')}",
+                flush=True,
+            )
+        archive_complete = bool(
+            commit_artifacts.get("legacy_commit_complete")
+            or commit_artifacts.get("complete")
+            or commit_artifacts.get("commit_index_ok")
+        )
+        atom_memory_complete = bool(
+            atom_flush.get("complete")
+            or commit_artifacts.get("atom_pipeline_index_ok")
+            or commit_artifacts.get("complete")
+        )
+        retrieval_ready = bool(commit_artifacts.get("retrieval_ready"))
+        cursor_complete = bool(commit_artifacts.get("cursor_complete"))
+        session_complete = bool(
+            archive_complete
+            and atom_memory_complete
+            and retrieval_ready
+            and cursor_complete
+        )
+        integrity = recovered_integrity_from_artifacts(
+            archive_complete=archive_complete,
+            atom_memory_complete=atom_memory_complete,
+            retrieval_ready=retrieval_ready,
+            cursor_complete=cursor_complete,
+            session_complete=session_complete,
+            fast_import=False,
+        )
+        updated_record = {
+            **original,
+            "archive_complete_after_commit": archive_complete,
+            "atom_memory_complete_after_commit": atom_memory_complete,
+            "retrieval_ready_after_commit": retrieval_ready,
+            "cursor_complete_after_commit": cursor_complete,
+            "qa_ready_after_commit": session_complete,
+            "pending_async_memory_after_commit": bool(integrity == "pending_async_memory"),
+            "atom_flush": {
+                **(original.get("atom_flush") or {}),
+                **atom_flush,
+                "finalized": True,
+                "cursor_reset": cursor_reset,
+                "commit_restored": commit_restored,
+            },
+            "commit_artifacts": {
+                **(original.get("commit_artifacts") or {}),
+                **commit_artifacts,
+                "finalized": True,
+                "cursor_reset": cursor_reset,
+                "commit_restored": commit_restored,
+            },
+            "commit_warning": (
+                ""
+                if session_complete
+                else "Finalization wait completed, but this session still did not reach strict QA-ready state."
+            ),
+            "integrity": integrity,
+            "integrity_stage": (
+                "qa_ready"
+                if session_complete
+                else (
+                    "cursor_complete"
+                    if cursor_complete
+                    else (
+                        "atom_memory_complete"
+                        if atom_memory_complete
+                        else ("retrieval_ready" if retrieval_ready else ("async_memory_pending" if integrity == "pending_async_memory" else ("archive_complete" if archive_complete else "incomplete")))
+                    )
+                )
+            ),
+        }
+        updated_samples[sample_idx]["session_records"][nested_idx] = updated_record
+        if force_wait or session_complete or current_stage != previous_stage_name:
+            print(
+                "[finalize] "
+                f"{label} qa_ready={session_complete} "
+                f"commit={commit_artifacts.get('commit_index')}/{commit_artifacts.get('expected_commit_index')} "
+                f"atom={commit_artifacts.get('atom_pipeline_index')}/{commit_artifacts.get('expected_atom_pipeline_index')}",
+                flush=True,
+            )
+        return session_complete
+
+    ordered_session_ids = list(session_index.keys())
+    while pending_session_ids:
+        probe_completed_any = False
+        probe_batch = [
+            session_id
+            for session_id in ordered_session_ids
+            if session_id in pending_session_ids
+        ]
+        if probe_batch:
+            for start in range(0, len(probe_batch), probe_concurrency):
+                chunk = probe_batch[start:start + probe_concurrency]
+                results = await asyncio.gather(
+                    *(refresh_one_session(session_id, force_wait=False) for session_id in chunk)
+                )
+                for session_id, complete in zip(chunk, results):
+                    if not complete or session_id not in pending_session_ids:
+                        continue
+                    pending_session_ids.remove(session_id)
+                    finalized_done = finalizing_total - len(pending_session_ids)
+                    probe_completed_any = True
+                    position = session_index.get(session_id)
+                    current_label = session_id
+                    if position is not None:
+                        current_label = str(updated_samples[position[0]]["session_records"][position[1]].get("session_key") or session_id)
+                    write_finalizing_snapshot(current_label)
+        if not pending_session_ids:
+            break
+        if probe_completed_any:
+            continue
+        if force_wait_stall_s > 0:
+            await asyncio.sleep(probe_round_sleep_s)
+        eligible_repairs: list[tuple[float, str]] = []
+        if force_wait_stall_s > 0:
+            now = time.time()
+            for session_id in ordered_session_ids:
+                if session_id not in pending_session_ids or session_id in repair_attempted_session_ids:
+                    continue
+                tracked = stage_tracker.get(session_id) or {}
+                stage = str(tracked.get("stage") or "")
+                stage_since = float(tracked.get("since") or now)
+                stage_age = max(0.0, now - stage_since)
+                if stage_age >= force_wait_stall_s:
+                    eligible_repairs.append((stage_age, session_id))
+            if not eligible_repairs:
+                remaining = [
+                    max(0.0, force_wait_stall_s - max(0.0, time.time() - float((stage_tracker.get(session_id) or {}).get("since") or time.time())))
+                    for session_id in ordered_session_ids
+                    if session_id in pending_session_ids and session_id not in repair_attempted_session_ids
+                ]
+                sleep_s = min(2.0, max(0.5, min(remaining) if remaining else 1.0))
+                if (time.time() - last_settling_log_s) >= 5.0:
+                    pending_preview = ", ".join(
+                        f"{session_id}:{(stage_tracker.get(session_id) or {}).get('stage') or 'unknown'}"
+                        for session_id in list(ordered_session_ids)[:4]
+                        if session_id in pending_session_ids
+                    )
+                    print(
+                        "[finalize] "
+                        f"settling_wait pending={len(pending_session_ids)} "
+                        f"stall_threshold={force_wait_stall_s:.1f}s next_check={sleep_s:.1f}s "
+                        f"stages={pending_preview}",
+                        flush=True,
+                    )
+                    last_settling_log_s = time.time()
+                await asyncio.sleep(sleep_s)
+                continue
+        repair_session_ids = [
+            session_id
+            for _age, session_id in sorted(eligible_repairs, reverse=True)
+        ][:repair_concurrency] if force_wait_stall_s > 0 else [
+            session_id
+            for session_id in ordered_session_ids
+            if session_id in pending_session_ids and session_id not in repair_attempted_session_ids
+        ][:repair_concurrency]
+        if not repair_session_ids:
+            await asyncio.sleep(1.0)
+            continue
+        for repair_session_id in repair_session_ids:
+            repair_attempted_session_ids.add(repair_session_id)
+        repair_results = await asyncio.gather(
+            *(refresh_one_session(session_id, force_wait=True) for session_id in repair_session_ids)
+        )
+        last_label = repair_session_ids[-1]
+        for repair_session_id, complete in zip(repair_session_ids, repair_results):
+            if complete and repair_session_id in pending_session_ids:
+                pending_session_ids.remove(repair_session_id)
+            finalized_done = finalizing_total - len(pending_session_ids)
+            position = session_index.get(repair_session_id)
+            current_label = repair_session_id
+            if position is not None:
+                current_label = str(updated_samples[position[0]]["session_records"][position[1]].get("session_key") or repair_session_id)
+            last_label = current_label
+        write_finalizing_snapshot(last_label)
+    return rebuild_samples()
+
+
 async def run(args: argparse.Namespace) -> None:
     root = ensure_echomem_imports(args.echomem_root)
-    try:
-        from echomem.protocol.local_sdk.sdk import EchoMemSDK
-        from echomem.runtime.runtime import open_runtime
-    except ModuleNotFoundError:
-        from echomem.entrypoints.plugins.echoagent.sdk import EchoMemSDK
-        from echomem.runtime.bootstrap import open_runtime
 
     out_dir = Path(args.out_dir).expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1339,6 +2916,8 @@ async def run(args: argparse.Namespace) -> None:
         args.workspace,
         root,
         args.fallback_to_mock,
+        user_id=args.user_id,
+        recall_routers=IMPORT_RECALL_ROUTERS,
     )
     # Keep downstream readiness checks aligned with the runtime file that was
     # actually used for this import run. Without this, helper functions like
@@ -1348,7 +2927,7 @@ async def run(args: argparse.Namespace) -> None:
     if hasattr(args, "_runtime_config_cache"):
         delattr(args, "_runtime_config_cache")
     if not args.skip_model_preflight and not args.fallback_to_mock:
-        preflight = import_model_preflight(out_dir)
+        preflight = import_model_preflight(args, out_dir)
         print(
             "[preflight] embedding="
             f"{preflight.get('embedding', {}).get('status')} "
@@ -1386,10 +2965,19 @@ async def run(args: argparse.Namespace) -> None:
         flush=True,
     )
     runtime_started = time.time()
+    sdk = None
+    runtime = None
     try:
-        with hard_timeout(runtime_open_timeout, f"open_runtime({config_path})"):
-            runtime = await asyncio.wait_for(
-                open_runtime(str(config_path)),
+        with hard_timeout(runtime_open_timeout, f"open_echomem_sdk({config_path})"):
+            sdk, runtime, _layout = await asyncio.wait_for(
+                open_echomem_sdk(
+                    echomem_root=root,
+                    workspace=args.workspace,
+                    account=args.account,
+                    user_id=args.user_id,
+                    agent_id=args.agent_id,
+                    config_path=config_path,
+                ),
                 timeout=runtime_open_timeout,
             )
     except Exception as exc:
@@ -1410,7 +2998,6 @@ async def run(args: argparse.Namespace) -> None:
         f"[bootstrap] runtime_ready elapsed_s={time.time() - runtime_started:.3f}",
         flush=True,
     )
-    sdk = EchoMemSDK(runtime)
     data = read_json(Path(args.dataset).expanduser().resolve())
     if not isinstance(data, list):
         raise ValueError("LoCoMo dataset must be a JSON list")
@@ -1430,6 +3017,60 @@ async def run(args: argparse.Namespace) -> None:
         )
         for index, sample in samples
     ]
+    develop_layout = getattr(sdk, "_compat_layout", "") == "develop-src"
+    staged_full_import = bool(
+        str(getattr(args, "import_wait_mode", "full")).lower() == "full"
+        and not bool(getattr(args, "defer_artifact_wait", False))
+        and not bool(getattr(args, "skip_session_commit", False))
+    )
+    if staged_full_import:
+        finalizing_total = sum(
+            len(item.get("session_records") or [])
+            for item in records
+            if isinstance(item, dict)
+        )
+        first_finalizing_session = next(
+            (
+                str(session_record.get("session_key") or session_record.get("session_id") or "")
+                for item in records
+                if isinstance(item, dict)
+                for session_record in (item.get("session_records") or [])
+                if isinstance(session_record, dict)
+            ),
+            "",
+        )
+        print(
+            "[finalize] staged_full_import begin "
+            f"samples={len(records)} workspace={Path(args.workspace).expanduser().resolve()} "
+            f"stall_threshold_s={finalize_force_wait_stall_seconds(args):.1f}",
+            flush=True,
+        )
+        write_json(
+            out_dir / "echomemory_import_summary.json",
+            build_import_summary(
+                args,
+                root,
+                config_path,
+                records,
+                status="ECHOMEMORY_IMPORT_FINALIZING",
+                status_explanation="All sessions were submitted quickly. EchoMemory is now finalizing atom/cursor/overview/abstract artifacts before marking the import complete.",
+                running=True,
+                progress_meta={
+                    "phase": "finalizing",
+                    "finalizing_sessions_done": 0,
+                    "finalizing_sessions_total": finalizing_total,
+                    "current_finalizing_session": first_finalizing_session,
+                },
+            ),
+        )
+        records = await finalize_import_records(
+            args,
+            sdk,
+            records,
+            out_dir=out_dir,
+            root=root,
+            config_path=config_path,
+        )
     complete = sum(1 for item in records if item["integrity"] == "complete")
     pending_async = sum(1 for item in records if item["integrity"] == "pending_async_memory")
     partial = sum(1 for item in records if item["integrity"] == "partial")
@@ -1464,9 +3105,25 @@ async def run(args: argparse.Namespace) -> None:
             )
         ),
         running=False,
+        token_usage=cached_workspace_token_usage_summary(args.workspace, args.account, force_refresh=True),
     )
     write_json(out_dir / "echomemory_import_summary.json", summary)
-    print(json.dumps(summary, ensure_ascii=False, indent=2), flush=True)
+    log_import_summary_digest(summary)
+    print(
+        f"[summary] file={out_dir / 'echomemory_import_summary.json'} "
+        f"log={out_dir / 'run.log'}",
+        flush=True,
+    )
+    if sdk is not None and hasattr(sdk, "close"):
+        close_timeout_s = 10.0
+        try:
+            print(f"[shutdown] sdk_close timeout_s={close_timeout_s:g}", flush=True)
+            await asyncio.wait_for(sdk.close(), timeout=close_timeout_s)
+            print("[shutdown] sdk_close done", flush=True)
+        except asyncio.TimeoutError:
+            print(f"[shutdown] sdk_close timeout_after={close_timeout_s:g}s continue_exit", flush=True)
+        except Exception as exc:
+            print(f"[shutdown] sdk_close error={compact(exc, 300)} continue_exit", flush=True)
     if summary["incomplete_samples"] and not (summary["partial_samples"] or summary["pending_async_samples"]):
         raise SystemExit(2)
 

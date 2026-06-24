@@ -11,7 +11,7 @@
   </script>
   <link rel="stylesheet" href="/styles.css?v=20260622importedmemorypaths02">
   </head>
-<body>
+<body data-active-view="openvikingView">
   <main class="app-shell">
     <aside class="app-sidebar">
       <div class="brand-block">
@@ -59,12 +59,6 @@
         </div>
       </section>
 
-      <div class="workspace-status-strip" id="accountTaskRow" aria-label="运行任务" hidden>
-        <div class="workspace-status-strip-body">
-          <a class="global-task-chip workspace-task-chip" id="globalTaskChip" href="/?ui_refresh=20260621clarity01&view=runsView" hidden></a>
-          <p class="account-action-status" id="accountActionStatus"></p>
-        </div>
-      </div>
       <section class="workspace-benchmark-banner" id="globalBenchmarkBanner" hidden></section>
 
       <nav class="locomo-flow-grid" id="locomoFlowNav" aria-label="当前数据集评测流程">
@@ -83,10 +77,10 @@
           <strong>判分</strong>
           <small>检查结果文件并判分当前结果</small>
         </button>
-          <button class="flow-card" type="button" data-view-jump="runsView">
+        <button class="flow-card" type="button" data-view-jump="runsView">
           <span>4</span>
-          <strong>导出报告</strong>
-          <small>选择任务并生成评测报告</small>
+          <strong>查看报告</strong>
+          <small>查看结果、原始报告与对比摘要</small>
         </button>
       </nav>
 
@@ -163,7 +157,6 @@
           <div class="import-section-head">
             <div>
               <h3>进度</h3>
-              <p>当前导入进度、耗时和完成状态。</p>
             </div>
           </div>
           <div class="import-readiness-panel" id="importReadinessPanel" aria-label="导入准备状态"></div>
@@ -184,8 +177,10 @@
           <div class="import-section-head">
             <div>
               <h3>日志</h3>
-              <p>当前导入任务的 <code>run.log</code>。</p>
             </div>
+          </div>
+          <div class="path-list compact-path-list" id="importLogPathRow">
+            <p>日志路径会显示在这里。</p>
           </div>
           <pre class="log" id="importLogBox">当前导入任务的 run.log 会显示在这里。</pre>
         </section>
@@ -194,7 +189,6 @@
           <div class="import-section-head">
             <div>
               <h3>异常</h3>
-              <p>模型、限流、API 或导入异常。</p>
             </div>
           </div>
           <div class="import-diagnostic-panel" id="importDiagnosticPanel">
@@ -208,7 +202,6 @@
           <div class="import-section-head">
             <div>
               <h3>结果</h3>
-              <p>检查消息数量、session 和落盘情况。</p>
             </div>
             <button class="secondary" id="checkImportIntegrity">检查导入完整性</button>
           </div>
@@ -426,8 +419,6 @@
           <button class="secondary" id="refreshResult">刷新问答结果</button>
         </div>
         <div class="eval-action-bar eval-secondary-actions">
-          <button class="secondary" id="runPreviousWrong">跑上一轮错题</button>
-          <button class="secondary" id="runTimeQuestions">跑时间题</button>
           <button class="secondary" id="runEval" hidden>本地基线</button>
         </div>
         <div class="progress-bar legacy-eval-progress"><span id="evalProgressBar"></span></div>
@@ -457,7 +448,7 @@
       </section>
     </section>
 
-    <section class="panel view-panel" id="judgeView" data-title="判分" data-subtitle="选择问答结果文件，检查配置，然后判分当前结果。">
+    <section class="panel view-panel" id="judgeView" data-title="判分" data-subtitle="结果路径、历史判分、错题筛选和判分依据。">
       <div class="judge-stage-hero">
         <div>
           <span class="label">判分</span>
@@ -480,113 +471,92 @@
               </div>
             </div>
 
-            <div class="judge-control-stack">
-              <label>
-                <span>结果文件</span>
-                <input id="judgeInput" spellcheck="false" placeholder="运行后自动填入，也可手动粘贴结果路径">
-              </label>
-
-              <div class="judge-config-redirect">
-                <div>
-                  <strong>判分配置统一在系统配置维护</strong>
-                  <p>模型、地址和密钥不在当前页分散修改。</p>
-                </div>
-                <button class="secondary" type="button" data-view-jump="systemConfigView">去系统配置</button>
-              </div>
-
-              <div class="form-grid two" hidden aria-hidden="true">
+              <div class="judge-control-stack">
                 <label>
-                  <span>判分地址</span>
-                  <input id="judgeBaseUrl" spellcheck="false">
+                  <span>结果文件</span>
+                  <input id="judgeInput" spellcheck="false" placeholder="运行后自动填入，也可手动粘贴结果路径">
                 </label>
-                <label>
-                  <span>判分模型</span>
-                  <input id="judgeModel" spellcheck="false">
-                </label>
-              </div>
-
-              <label hidden aria-hidden="true">
-                <span>判分密钥</span>
-                <input id="judgeToken" type="password" spellcheck="false" placeholder="必填">
-              </label>
-
-              <div class="judge-readiness-panel" id="judgeReadinessPanel" aria-live="polite"></div>
 
               <div class="eval-action-bar result-actions">
-                <button class="secondary" id="preflightJudge">检查判分配置</button>
-                <button class="primary" id="runJudgeInline">判分当前结果</button>
-                <button class="secondary" id="retryMissingQa" hidden>补跑缺失题</button>
-                <button class="secondary" id="retryFailedQa" hidden>重跑失败题</button>
+                <button class="primary" id="runJudgeInline">judge</button>
               </div>
 
               <div class="judge-progress-stack">
                 <div class="progress-bar" hidden><span id="judgeProgressBar"></span></div>
                 <small id="judgeProgressText" hidden>等待判分</small>
               </div>
-
-              <div class="check-list preflight-box" id="judgePreflightBox" hidden>
-              </div>
-              <div class="judge-estimate" id="judgeEstimateBox" hidden>
-              </div>
             </div>
-          </section>
-
-          <details class="log-details judge-panel-card" open>
-            <summary>判分日志</summary>
-            <pre class="log" id="judgeLogBox">判分日志会显示在这里。</pre>
-          </details>
-        </aside>
-
-        <div class="judge-main-column">
-          <div class="judge-empty-state" id="judgeEmptyState">
-            <strong>等待判分结果</strong>
-            <p>先选择一个 QA 结果文件，或先到“问答测试”跑出结果；判分完成后，这里会显示摘要、待判分、结果样例和报告产物。</p>
-          </div>
-
-          <section class="judge-panel-card" id="judgeSummaryCard">
-            <div class="judge-panel-head">
-              <div>
-                <span class="label">摘要</span>
-                <h3>当前结果概览</h3>
-              </div>
-            </div>
-            <div class="result-kpis" id="evalResultKpis"></div>
-            <div class="quick-test-status" id="qaDiagnosticsPanel" hidden></div>
           </section>
 
           <section class="judge-panel-card" id="judgePendingCard">
             <div class="judge-panel-head">
               <div>
-                <span class="label">待处理</span>
-                <h3>待判分行</h3>
+                <span class="label">历史判分结果</span>
+                <h3>最近 LoCoMo 结果</h3>
               </div>
             </div>
-            <div class="pending-judge-panel" id="pendingJudgePanel" hidden>
+            <div class="sample-list" id="judgeHistoryList">
+              <article class="workbench-idle-note">
+                <strong>最近 LoCoMo 结果会显示在这里</strong>
+                <p>如果刚跑完 QA，点击右上角刷新判分结果后，可以直接从这里切换历史结果。</p>
+              </article>
+            </div>
+          </section>
+
+        </aside>
+
+        <div class="judge-main-column">
+          <div class="judge-empty-state" id="judgeEmptyState" hidden></div>
+
+          <section class="judge-panel-card" id="judgeSummaryCard">
+            <div class="judge-panel-head">
+              <div>
+                <span class="label">结果文件路径</span>
+                <h3>当前结果</h3>
+              </div>
+            </div>
+            <div class="path-list" id="resultArtifactList">
+              <article class="workbench-idle-note">
+                <strong>还没有结果路径</strong>
+                <p>运行 QA 或从历史结果切换后，这里会展示结果文件、目录和判分摘要。</p>
+              </article>
             </div>
           </section>
 
           <section class="judge-panel-card" id="judgeArtifactCard">
             <div class="judge-panel-head">
               <div>
-                <span class="label">产物</span>
-                <h3>结果与报告路径</h3>
+                <span class="label">筛选错误题目</span>
+                <h3>错题列表</h3>
               </div>
             </div>
-            <div class="path-list" id="resultArtifactList" hidden>
+            <div class="sample-list" id="sampleRows">
+              <article class="workbench-idle-note">
+                <strong>错题列表等待判分</strong>
+                <p>完成 judge 后，这里会只列出 WRONG 题目，方便继续排查。</p>
+              </article>
             </div>
           </section>
 
           <section class="judge-panel-card" id="judgeSamplesCard">
             <div class="judge-panel-head">
               <div>
-                <span class="label">样例</span>
-                <h3>判分明细与证据</h3>
+                <span class="label">判分依据</span>
+                <h3>题目详情</h3>
               </div>
             </div>
-            <div class="sample-list" id="evalSampleRows" hidden></div>
-            <div class="result-kpis" id="resultKpis" hidden></div>
-            <div class="sample-list" id="sampleRows" hidden></div>
+            <div class="question-detail" id="judgeQuestionDetailPane">
+              <article class="workbench-idle-note">
+                <strong>题目详情会显示在这里</strong>
+                <p>点上面的错题后，这里会展开标准答案、模型回答、判分理由和相关记忆证据。</p>
+              </article>
+            </div>
           </section>
+
+          <details class="log-details judge-panel-card judge-log-card">
+            <summary>判分日志</summary>
+            <pre class="log" id="judgeLogBox">判分日志会显示在这里。</pre>
+          </details>
         </div>
       </div>
     </section>
@@ -632,12 +602,12 @@
       </div>
     </section>
 
-    <section class="panel view-panel" id="runsView" data-title="导出报告" data-subtitle="选择一次结果，生成评测报告。">
+    <section class="panel view-panel" id="runsView" data-title="查看报告" data-subtitle="只看近 24 小时 QA 结果，查看报告并对比两个结果文件。">
       <div class="workbench-stage-hero">
         <div>
           <span class="label">报告</span>
           <h2>结果与报告</h2>
-          <p>按时间查看结果，选择一次运行并导出评测报告。</p>
+          <p>只显示近 24 小时内已经产出 QA 结果文件的记录；保留报告查看和 2 份历史结果对比。</p>
         </div>
         <div class="panel-actions">
           <button class="secondary" id="refreshRuns">刷新结果列表</button>
@@ -664,7 +634,7 @@
         <section class="report-main-column">
           <section class="report-empty-state" id="runsEmptyState">
             <strong>等待选择结果</strong>
-            <p id="runsEmptyStateText">先从左侧结果列表选择一条记录，再生成评测报告。</p>
+            <p id="runsEmptyStateText">先从左侧近 24 小时结果里选择一条记录，再查看报告或做结果对比。</p>
           </section>
 
           <div class="report-control-panel" id="runsActionPanel" hidden>
@@ -673,10 +643,17 @@
                 <span class="label">操作</span>
                 <strong>已选结果</strong>
               </div>
-              <div class="report-action-stack compact-single">
-                <button class="primary" id="exportRunReport">生成评测报告</button>
+              <div class="report-action-stack">
+                <button class="primary" id="exportRunReport">查看报告</button>
+                <button class="secondary" id="compareSelectedRuns">对比选中结果</button>
+                <button class="secondary" id="clearSelectedRuns">清空对比选择</button>
+              </div>
+              <div class="native-baseline-status" id="runCompareBaselineNote">
+                <strong>对比规则</strong>
+                <span>只允许选择 2 份 LoCoMo 历史结果做对比。</span>
               </div>
             </section>
+
           </div>
 
           <section class="report-detail-panel" id="runDetailPanel" hidden>
@@ -712,13 +689,13 @@
       </div>
     </section>
 
-    <section class="panel view-panel" id="longMemEvalView" data-title="LongMemEval 评测" data-subtitle="长记忆问答数据的正式 MemoryBench 评测入口。">
+    <section class="panel view-panel" id="longMemEvalView" data-title="LongMemEval 评测" data-subtitle="参考 LoCoMo 的三段式流程：准备、运行、结果。">
       <div class="benchmark-workbench">
         <div class="panel-head">
           <div>
             <span class="label">长记忆问答</span>
             <h2>LongMemEval</h2>
-            <p>选择数据后运行真实 MemoryBench 长记忆问答；任务会跟随当前记忆后端，LongMemEval 官方式摘要会随结果生成。</p>
+            <p>参考 LoCoMo 评测流程，只保留三步：准备数据与记忆、运行问答、查看结果与分析。</p>
           </div>
           <div class="panel-actions">
             <button class="secondary" id="longMemRefreshDatasets">刷新数据集</button>
@@ -727,9 +704,9 @@
         </div>
         <section class="benchmark-stage-panel" data-benchmark-stage="import" aria-label="LongMemEval 记忆导入">
           <div class="benchmark-stage-head">
-            <span class="label">记忆导入</span>
+            <span class="label">1. 准备</span>
             <h3>数据与记忆准备</h3>
-            <p>选择 LongMemEval 数据文件，校验字段和样本范围；正式运行时会先把样本上下文写入当前后端，再进入问答。</p>
+            <p>先确定数据集和当前后端。正式运行时会先把样本上下文写入当前后端，再进入问答。</p>
           </div>
           <div class="benchmark-dataset-grid" id="longMemDatasetCards">
             <p>正在读取 LongMemEval 数据集配置。</p>
@@ -748,27 +725,24 @@
               <input id="longMemImportCount" type="number" min="0" max="1000" value="3">
             </label>
             <label>
-              <span>注入口径</span>
+              <span>注入说明</span>
               <small>已勾选题目时优先注入选中题；否则按注入题数取前 N 条。</small>
             </label>
           </div>
           <div class="result-kpis compact" id="longMemKpis"></div>
           <div class="quick-test-status" id="longMemStatus">
-            <p>完整数据、样本范围 all、题数 0 时作为正式 MemoryBench + LongMemEval 官方式评测；选题或 sample 路径作为小样本核验。</p>
+            <p>建议先用 Oracle 50 题核对链路，再决定是否跑正式全量。</p>
           </div>
           <div id="longMemImportResult" class="analysis-box">
-            <p>点击“注入记忆”后只写入 LongMemEval 原始文档，生成导入摘要；不会调用答案模型或判分。</p>
-          </div>
-          <div class="analysis-box">
-            <p>导入阶段只处理数据集路径、字段校验、后端空间和写入范围；题目加载与模型调用在“问答测试”阶段执行。</p>
+            <p>这里显示注入任务目录、摘要和失败原因。</p>
           </div>
         </section>
 
         <section class="benchmark-stage-panel" data-benchmark-stage="qa" aria-label="LongMemEval 问答测试">
           <div class="benchmark-stage-head">
-            <span class="label">问答测试</span>
+            <span class="label">2. 运行</span>
             <h3>题目选择与运行</h3>
-            <p>加载问题、勾选指定题目或设置题数，然后启动真实记忆问答、答案模型、判分和官方式摘要。</p>
+            <p>默认先跑 50 题做对比；也可以加载题目后勾选指定题目，或改成全量正式运行。</p>
           </div>
           <div class="form-grid three">
             <label>
@@ -779,7 +753,7 @@
             </label>
             <label>
               <span>题数（0=全量）</span>
-              <input id="longMemCount" type="number" min="0" max="1000" value="3">
+              <input id="longMemCount" type="number" min="0" max="1000" value="50">
             </label>
             <label>
               <span>召回数量</span>
@@ -798,10 +772,11 @@
           </div>
           <div class="panel-actions">
             <button class="primary" id="longMemRunSmoke">开始测试</button>
+            <button class="secondary" id="longMemUseOracle50">Oracle 50</button>
+            <button class="secondary" id="longMemUseFullFormal">正式全量</button>
             <button class="secondary" id="longMemLoadPreview">加载题目</button>
             <button class="secondary" id="longMemSelectVisible">选择当前页</button>
             <button class="secondary" id="longMemClearQuestions">清空选择</button>
-            <button class="secondary" id="longMemLatestResults">最新结果</button>
           </div>
           <div class="progress-bar benchmark-progress"><span id="longMemProgressBar"></span></div>
           <small id="longMemProgressText">正在恢复任务状态</small>
@@ -809,40 +784,21 @@
             <summary>运行日志</summary>
             <pre class="log" id="longMemLogBox">运行日志会显示在这里。</pre>
           </details>
-          <div class="analysis-grid two">
-            <section>
-              <h3>题目选择</h3>
-              <div id="longMemQuestionPreview" class="analysis-box"><p>点击“加载题目”后显示前 100 题，可勾选后只跑选中题。</p></div>
-            </section>
-            <section>
-              <h3>结果</h3>
-              <div id="longMemRunResult" class="analysis-box"><p>运行后显示结果文件和任务目录。</p></div>
-            </section>
-          </div>
+          <div id="longMemRunResult" class="analysis-box"><p>这里显示任务目录、结果文件和当前状态。</p></div>
+          <div id="longMemQuestionPreview" class="analysis-box"><p>点击“加载题目”后显示前 100 题，可勾选后只跑选中题。</p></div>
         </section>
 
         <section class="benchmark-stage-panel" data-benchmark-stage="judge" aria-label="LongMemEval 判分">
           <div class="benchmark-stage-head">
-            <span class="label">判分</span>
-            <h3>判分与官方式摘要</h3>
-            <p>LongMemEval 的小样本与正式任务会随任务自动生成判分摘要；模型/API 异常题会在报告中单独归因。</p>
+            <span class="label">3. 结果</span>
+            <h3>结果与分析</h3>
+            <p>这里集中看最终结果、官方摘要和历史报告入口；任务完成后再去 runs 页打开细节。</p>
           </div>
           <div class="analysis-box">
             <p>如果任务完成但没有有效分数，先检查待判分、模型/API 异常和密钥状态；不要把执行链路失败计作准确率。</p>
             <div class="panel-actions">
               <button class="secondary" type="button" data-view-jump="runsView">查看任务/报告</button>
               <button class="secondary" type="button" id="longMemLatestResultsJudge">最新结果</button>
-            </div>
-          </div>
-        </section>
-
-        <section class="benchmark-plan-strip">
-          <h3>测试方案</h3>
-          <div class="analysis-box">
-            <p>小样本核验：选择 sample 或完整数据里的 1-3 题，确认上下文写入、检索、回答、判分和 LongMemEval 官方式摘要都能跑通。</p>
-            <p>正式：使用完整 LongMemEval-S、样本范围全部、题数 0；报告同时展示 MemoryBench 分数和 LongMemEval 官方式摘要。</p>
-            <div class="panel-actions">
-              <a class="secondary button-link" href="/formal-benchmark-plan-20260606.html" target="_blank" rel="noreferrer">查看正式方案</a>
             </div>
           </div>
         </section>
@@ -947,26 +903,25 @@
       </div>
     </section>
 
-    <section class="panel view-panel" id="hotpotQaView" data-title="HotpotQA 评测" data-subtitle="多跳问答数据的测试运行。">
+    <section class="panel view-panel" id="hotpotQaView" data-title="HotpotQA 评测" data-subtitle="Knowledge Base QA / 多跳文档问答测试。">
       <div class="benchmark-workbench generic-benchmark" data-benchmark="hotpotqa">
         <div class="panel-head">
           <div>
             <span class="label">多跳问答</span>
             <h2>HotpotQA</h2>
-            <p>分成准备、问答测试和结果判读三段来跑；正式任务会在问答阶段按题写入上下文并统计注入、QA 和端到端时间。</p>
+            <p>参考 LoCoMo 评测流程，只保留三步：准备数据与模型、运行 50 题、查看历史结果与 OpenViking 对比。</p>
           </div>
-          <div class="panel-actions">
+          <div class="panel-actions hotpotqa-toolbar">
             <button class="secondary" type="button" id="hotpotQaCheckModels">检查模型</button>
-            <button class="secondary" type="button" data-external-href="/generated-reports/hotpotqa_echomemory_live_current.html">Live</button>
-            <button class="secondary" type="button" data-external-href="/generated-reports/hotpotqa_echomemory_live_diagnostic_current.html">诊断</button>
+            <button class="secondary" type="button" data-external-href="/generated-reports/hotpotqa_openviking_vs_echomemory_live_50_current.html">对比</button>
             <button class="secondary" data-view-jump="runsView">查看结果</button>
           </div>
         </div>
-        <section class="benchmark-stage-panel" data-benchmark-stage="import" aria-label="HotpotQA 记忆导入">
+        <section class="benchmark-stage-panel" data-benchmark-stage="import" aria-label="HotpotQA 文档写入">
           <div class="benchmark-stage-head">
-            <span class="label">记忆导入</span>
-            <h3>数据、空间和模型准备</h3>
-            <p>这一段先确定 HotpotQA 数据路径、当前账户、模型状态和 MemoryBench 运行口径。HotpotQA 目前没有独立的预导入任务；正式运行时会在问答阶段按题写入上下文并统计注入时间。</p>
+            <span class="label">1. 准备</span>
+            <h3>数据路径、模型和后端</h3>
+            <p>这里只做 HotpotQA 题目级文档问答准备，不做历史对话记忆导入。</p>
           </div>
           <div class="path-input-action">
             <label>
@@ -977,49 +932,45 @@
           </div>
           <div class="result-kpis compact" id="hotpotQaKpis"></div>
           <div class="quick-test-status" id="hotpotQaStatus">
-            <p>完整 HotpotQA dev/distractor 路径会运行 MemoryBench 记忆问答、判分与答案 EM/F1；当前不是完整官方联合 F1 指标。</p>
+            <p>运行链路是逐题文档写入、检索、回答、判分和答案 EM/F1；当前不输出 supporting-fact / joint 指标。</p>
           </div>
           <div id="hotpotQaRunConfig" class="analysis-box">
-            <p>当前运行配置会显示在这里。</p>
+            <p><strong>当前运行配置</strong></p>
+            <p class="dataset-next-step">数据集、账户、后端和计分口径会显示在这里。</p>
           </div>
           <div id="hotpotQaModelReadiness" class="analysis-box">
-            <p>启动前模型检查会显示在这里。</p>
-          </div>
-          <div class="analysis-box">
-            <p>导入阶段只负责确认数据集、账户隔离空间、回答模型和判分模型是否可用；真正的逐题上下文写入和检索在“问答测试”阶段发生。</p>
+            <p><strong>启动前模型检查</strong></p>
+            <p class="dataset-next-step">回答模型和判分模型状态会显示在这里。</p>
+            <p class="dataset-next-step">这一步只做预检，不会启动任务。</p>
           </div>
         </section>
 
         <section class="benchmark-stage-panel" data-benchmark-stage="qa" aria-label="HotpotQA 问答测试">
           <div class="benchmark-stage-head">
-            <span class="label">问答测试</span>
-            <h3>题目选择、运行和 Live 进度</h3>
-            <p>加载题目后可以按题数、关键词或显式勾选来跑；正式任务会记录注入时间、记忆落稳等待、QA 时间和端到端时间。</p>
+            <span class="label">2. 运行</span>
+            <h3>先跑 50 题</h3>
+            <p>默认按 50 题跑正式链路：逐题写入文档、检索证据、回答、判分，并落历史报告。</p>
           </div>
           <div class="form-grid three">
             <label>
               <span>测试题数（0=全量）</span>
-              <input id="hotpotQaCount" type="number" min="0" max="10000" value="3">
+              <input id="hotpotQaCount" type="number" min="0" max="10000" value="50">
             </label>
             <label>
-              <span>题目搜索</span>
+              <span>题目搜索（可选）</span>
               <input id="hotpotqaQuestionSearch" class="generic-question-search" data-benchmark="hotpotqa" spellcheck="false" placeholder="question_id / 关键词 / 答案">
             </label>
             <label>
-              <span>模式</span>
+              <span>运行模式</span>
               <select id="hotpotQaMode">
-                <option value="formal">EchoMemory + 大模型 + 判分 + 答案 EM/F1</option>
+                <option value="formal">正式 50 题</option>
               </select>
             </label>
           </div>
           <div class="panel-actions">
             <button class="primary generic-run-adapter" type="button" data-benchmark="hotpotqa">开始测试</button>
-            <button class="secondary generic-use-formal-preset" type="button" data-benchmark="hotpotqa" data-count="0">正式全量</button>
             <button class="secondary generic-use-formal-preset" type="button" data-benchmark="hotpotqa" data-count="50">正式 50</button>
-            <button class="secondary generic-use-full-count" type="button" data-benchmark="hotpotqa">全量 0</button>
             <button class="secondary generic-preview" type="button" data-benchmark="hotpotqa">加载题目</button>
-            <button class="secondary generic-select-visible" type="button" data-benchmark="hotpotqa">选择当前页</button>
-            <button class="secondary generic-clear-selection" type="button" data-benchmark="hotpotqa">清空选择</button>
           </div>
           <small id="hotpotqaSelectedText">未加载题目。</small>
           <div class="progress-bar benchmark-progress"><span id="hotpotQaProgressBar"></span></div>
@@ -1029,43 +980,25 @@
             <pre class="log" id="hotpotQaLogBox">运行日志会显示在这里。</pre>
           </details>
           <div id="hotpotQaNativeSummary" class="analysis-box">
-            <p>当前运行总览会显示在这里。</p>
+            <p>当前运行总览和实时统计会显示在这里。</p>
           </div>
-          <section class="benchmark-live-embed">
-            <div class="panel-head compact">
-              <div>
-                <span class="label">平台内 Live</span>
-                <h3>当前运行快照</h3>
-                <p id="hotpotQaLiveInlineMeta">这里会在有活跃任务时显示当前运行的 live 报告；当前没有任务时只保留空闲提示。</p>
-              </div>
-              <div class="panel-actions">
-                <a class="secondary button-link" id="hotpotQaLiveInlineOpen" href="/generated-reports/hotpotqa_echomemory_live_current.html" target="_blank" rel="noreferrer">新窗口打开</a>
-                <button class="secondary" type="button" data-external-href="/generated-reports/hotpotqa_echomemory_live_diagnostic_current.html">诊断页</button>
-              </div>
-            </div>
-            <div id="hotpotQaLiveInlineIdle" class="analysis-box">
-              <p>当前没有运行中的 HotpotQA 任务。</p>
-              <p><a href="/generated-reports/hotpotqa_echomemory_completed_current.html" target="_blank" rel="noreferrer">打开最近完成报告</a> · <a href="/generated-reports/hotpotqa_echomemory_completed_diagnostic_current.html" target="_blank" rel="noreferrer">打开最近完成诊断</a></p>
-            </div>
-            <iframe id="hotpotQaLiveInlineFrame" class="benchmark-live-iframe" src="/generated-reports/hotpotqa_echomemory_live_current.html" title="HotpotQA Live 报告" hidden></iframe>
-          </section>
           <div class="analysis-grid two">
             <section>
-              <h3>题目选择</h3>
-              <div id="hotpotQaPreview" class="analysis-box"><p>点击“加载题目”后显示前 100 条样本，可勾选后只跑选中题。</p></div>
+              <h3>题目预览</h3>
+              <div id="hotpotQaPreview" class="analysis-box"><p>点击“加载题目”后显示前 100 条样本；默认直接跑 50 题。</p></div>
             </section>
             <section>
-              <h3>结果</h3>
-              <div id="hotpotQaRunResult" class="analysis-box"><p>点击“开始测试”后显示结果文件、任务目录和计分口径。</p></div>
+              <h3>运行与结果</h3>
+              <div id="hotpotQaRunResult" class="analysis-box"><p>点击“开始测试”后显示结果文件、任务目录和历史入口。</p></div>
             </section>
           </div>
         </section>
 
         <section class="benchmark-stage-panel" data-benchmark-stage="judge" aria-label="HotpotQA 判分">
           <div class="benchmark-stage-head">
-            <span class="label">判分</span>
-            <h3>健康、产物和问题摘要</h3>
-            <p>任务结束后，这一段集中看模型错误、import_failed、pending_async、最终报告状态和问题样本摘要；不要把执行链路失败误判成准确率。</p>
+            <span class="label">3. 历史与分析</span>
+            <h3>历史报告、对比和问题摘要</h3>
+            <p>这里集中看最终产物、历史 run、OpenViking 对比，以及 EchoMemory 为什么回答差。</p>
           </div>
           <div id="hotpotQaRunHealth" class="analysis-box">
             <p>当前运行健康会显示在这里。</p>
@@ -1075,20 +1008,6 @@
           </div>
           <div id="hotpotQaProblemDigest" class="analysis-box">
             <p>当前问题样本摘要会显示在这里。</p>
-          </div>
-          <div class="analysis-box">
-            <p>如果页面里看到的是启动前模型错误，先修回答模型或判分模型配置；如果已经进入运行态，再结合 Live 报告和诊断页判断是不是导入超时、模型服务异常或异步落稳问题。</p>
-          </div>
-        </section>
-
-        <section class="benchmark-plan-strip">
-          <h3>测试方案</h3>
-          <div class="analysis-box">
-            <p>小样本核验：先跑 1-3 题，确认上下文写入、检索、回答、自动判分和答案 EM/F1 都能启动。</p>
-            <p>正式：使用 HotpotQA dev/distractor 全量，题数 0；当前平台对齐的是答案 EM/F1，不是官方完整联合指标。</p>
-            <div class="panel-actions">
-              <a class="secondary button-link" href="/formal-benchmark-plan-20260606.html" target="_blank" rel="noreferrer">查看正式方案</a>
-            </div>
           </div>
         </section>
       </div>
@@ -1439,7 +1358,7 @@
             </label>
             <label>
               <span>模型名称</span>
-              <input id="systemMemoryModel" spellcheck="false" placeholder="deepseek-v4-flash">
+              <input id="systemMemoryModel" spellcheck="false" placeholder="">
             </label>
             <label>
               <span>API 密钥</span>
@@ -1578,396 +1497,6 @@
 
   </main>
   <div class="toast" id="toast"></div>
-  <script src="/app.js?v=20260622workspacepaths01"></script>
-  <script>
-    (() => {
-      function parseProgressLabel(value) {
-        const match = String(value || "").match(/(\d+)\s*\/\s*(\d+)/);
-        if (!match) return null;
-        const current = Number(match[1] || 0);
-        const total = Number(match[2] || 0);
-        return { current, total, pct: total > 0 ? Math.max(0, Math.min(100, (current / total) * 100)) : 0 };
-      }
-
-      async function readHotpotQaLiveDoc(frame) {
-        const liveDoc = frame?.contentDocument;
-        if (liveDoc?.querySelector("article.card")) return liveDoc;
-        const response = await fetch("/generated-reports/hotpotqa_echomemory_live_current.html", { cache: "no-store" });
-        if (!response.ok) throw new Error(`live report unavailable: ${response.status}`);
-        const text = await response.text();
-        return new DOMParser().parseFromString(text, "text/html");
-      }
-
-      function readLiveReportCard(doc, label) {
-        if (!doc) return "";
-        const cards = Array.from(doc.querySelectorAll("article.card"));
-        const card = cards.find((item) => item.querySelector(".label")?.textContent?.trim() === label);
-        return card?.querySelector(".stat")?.textContent?.trim() || "";
-      }
-
-      function readStrongCodeValue(doc, label) {
-        if (!doc) return "";
-        const strongs = Array.from(doc.querySelectorAll("strong"));
-        const strong = strongs.find((item) => item.textContent?.trim() === label);
-        const valueNode = strong?.nextElementSibling;
-        return valueNode?.textContent?.trim() || "";
-      }
-
-      function readLiveWarningLines(doc) {
-        if (!doc) return [];
-        const sections = Array.from(doc.querySelectorAll("section.card"));
-        const warningSection = sections.find((item) => item.querySelector("strong")?.textContent?.trim() === "运行风险提示");
-        if (!warningSection) return [];
-        return Array.from(warningSection.querySelectorAll("p")).map((item) => item.textContent?.trim() || "").filter(Boolean);
-      }
-
-      function readArtifactStatuses(doc) {
-        if (!doc) return [];
-        const sections = Array.from(doc.querySelectorAll("section.card"));
-        const artifactSection = sections.find((item) => item.querySelector("strong")?.textContent?.trim() === "最终产物状态");
-        if (!artifactSection) return [];
-        const labels = Array.from(artifactSection.querySelectorAll(".path-grid strong"));
-        return labels.map((strong) => {
-          const label = strong.textContent?.trim() || "";
-          const value = strong.nextElementSibling?.textContent?.trim() || "";
-          return label && value ? `${label} ${value}` : "";
-        }).filter(Boolean);
-      }
-
-      function renderHotpotQaLiveKpis(rows) {
-        const kpis = document.getElementById("hotpotQaKpis");
-        if (!kpis) return;
-        const visibleRows = (rows || []).filter(([, value]) => value !== undefined && value !== null && value !== "");
-        kpis.innerHTML = visibleRows.map(([label, value]) => `
-          <div class="kpi"><span>${label}</span><strong>${value}</strong></div>
-        `).join("");
-        kpis.hidden = !visibleRows.length;
-      }
-
-      async function readActiveHotpotQaTaskState() {
-        try {
-          const response = await fetch("/api/tasks", { cache: "no-store" });
-          const data = await response.json();
-          const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
-          const activeStatuses = new Set(["queued", "running", "starting"]);
-          const activeTask = tasks.find((task) => {
-            const format = String(task?.dataset_format || "").trim().toLowerCase();
-            const status = String(task?.status || "").trim().toLowerCase();
-            return format === "hotpotqa" && activeStatuses.has(status);
-          });
-          return {
-            active: Boolean(activeTask),
-            taskId: String(activeTask?.id || "").trim(),
-          };
-        } catch (_) {
-          return { active: false, taskId: "" };
-        }
-      }
-
-      async function syncHotpotQaDiagnosticDigest() {
-        const digest = document.getElementById("hotpotQaProblemDigest");
-        const configBox = document.getElementById("hotpotQaRunConfig");
-        const healthBox = document.getElementById("hotpotQaRunHealth");
-        if (!digest) return;
-        const taskState = await readActiveHotpotQaTaskState();
-        const hasActiveTask = Boolean(taskState.active);
-        if (!hasActiveTask) {
-          if (digest.dataset.hotpotqaIdleRendered === "1" && configBox?.dataset.hotpotqaIdleRendered === "1" && healthBox?.dataset.hotpotqaIdleRendered === "1") {
-            return;
-          }
-          digest.dataset.hotpotqaIdleRendered = "1";
-          if (configBox) configBox.dataset.hotpotqaIdleRendered = "1";
-          if (healthBox) healthBox.dataset.hotpotqaIdleRendered = "1";
-          digest.innerHTML = `
-            <p><strong>问题样本摘要</strong></p>
-            <p>当前没有运行中的 HotpotQA 任务。</p>
-          `;
-          if (configBox) {
-            configBox.innerHTML = `
-              <p><strong>当前运行配置</strong></p>
-              <p>当前没有运行中的 HotpotQA 任务。</p>
-            `;
-          }
-          if (healthBox) {
-            healthBox.innerHTML = `
-              <p><strong>当前运行健康</strong></p>
-              <p>当前没有运行中的 HotpotQA 任务。</p>
-            `;
-          }
-          return;
-        }
-        digest.dataset.hotpotqaIdleRendered = "0";
-        if (configBox) configBox.dataset.hotpotqaIdleRendered = "0";
-        if (healthBox) healthBox.dataset.hotpotqaIdleRendered = "0";
-        try {
-          const response = await fetch("/generated-reports/hotpotqa_echomemory_live_diagnostic_current.html", { cache: "no-store" });
-          const text = await response.text();
-          const doc = new DOMParser().parseFromString(text, "text/html");
-          const pathGrid = doc.querySelector(".path-grid");
-          const pathPairs = pathGrid ? Array.from(pathGrid.querySelectorAll("strong")).map((strong) => {
-            const label = strong.textContent?.trim() || "";
-            const value = strong.nextElementSibling?.textContent?.trim() || "";
-            return { label, value };
-          }).filter((item) => item.label && item.value) : [];
-          if (configBox) {
-            const keepLabels = new Set(["Task ID", "Run Dir", "当前样本", "更新于", "运行态新鲜度", "Import Timeout", "Settle Timeout", "Stable Hits", "Timed Out", "Commit Call Timeout"]);
-            const visiblePairs = pathPairs.filter((item) => keepLabels.has(item.label));
-            configBox.innerHTML = `
-              <p><strong>当前运行配置</strong></p>
-              ${visiblePairs.length ? `<p>${visiblePairs.map((item) => `${item.label} ${item.value}`).join(" · ")}</p>` : "<p>当前还没有读取到运行配置。</p>"}
-              <p><a href="/generated-reports/hotpotqa_echomemory_live_diagnostic_current.html" target="_blank" rel="noreferrer">打开诊断页</a> · <a href="/generated-reports/hotpotqa_echomemory_live_current.html" target="_blank" rel="noreferrer">打开 Live 报告</a></p>
-            `;
-          }
-          if (healthBox) {
-            const metricsLabels = new Set(["当前进度", "当前阶段", "运行态新鲜度", "pending_async", "import_failed"]);
-            const statCards = Array.from(doc.querySelectorAll(".stat-card"));
-            const metrics = statCards.map((card) => {
-              const label = card.querySelector(".stat-label")?.textContent?.trim() || "";
-              const value = card.querySelector(".stat-value")?.textContent?.trim() || "";
-              return { label, value };
-            }).filter((item) => metricsLabels.has(item.label) && item.value);
-            const healthPairs = pathPairs.filter((item) => new Set(["当前样本", "更新于", "Stable Hits", "Timed Out"]).has(item.label));
-            const warningLines = Array.from(doc.querySelectorAll(".callout")).map((item) => item.textContent?.trim() || "").filter(Boolean).slice(0, 6);
-            healthBox.innerHTML = `
-              <p><strong>当前运行健康</strong></p>
-              ${metrics.length ? `<p>${metrics.map((item) => `${item.label} ${item.value}`).join(" · ")}</p>` : "<p>当前还没有读取到运行健康摘要。</p>"}
-              ${healthPairs.length ? `<p>${healthPairs.map((item) => `${item.label} ${item.value}`).join(" · ")}</p>` : ""}
-              ${warningLines.length ? `<p class="bad-text">${warningLines.join(" ")}</p>` : "<p>当前没有额外健康告警。</p>"}
-              <p><a href="/generated-reports/hotpotqa_echomemory_live_diagnostic_current.html" target="_blank" rel="noreferrer">打开诊断页</a> · <a href="/generated-reports/hotpotqa_echomemory_live_current.html" target="_blank" rel="noreferrer">打开 Live 报告</a></p>
-            `;
-          }
-          const snapshot = doc.getElementById("diagnosticSnapshotSection");
-          const snapshotPairs = snapshot ? Array.from(snapshot.querySelectorAll(".path-grid strong")).slice(0, 6).map((strong) => {
-            const label = strong.textContent?.trim() || "";
-            const value = strong.nextElementSibling?.textContent?.trim() || "";
-            return label && value ? `${label} ${value}` : "";
-          }).filter(Boolean) : [];
-          const cards = Array.from(doc.querySelectorAll(".problem-detail-card")).slice(0, 3).map((card) => {
-            const qid = card.getAttribute("data-question-id") || card.querySelector("h3")?.textContent?.trim() || "-";
-            const paragraphs = Array.from(card.querySelectorAll("p")).map((p) => p.textContent?.trim() || "").filter(Boolean);
-            return `
-              <article class="memory-hit">
-                <strong>${qid}</strong>
-                ${paragraphs.slice(0, 3).map((line) => `<p>${line}</p>`).join("")}
-              </article>
-            `;
-          });
-          digest.innerHTML = `
-            <p><strong>问题样本摘要</strong></p>
-            ${snapshotPairs.length ? `<p>${snapshotPairs.join(" · ")}</p>` : "<p>当前没有可用快照摘要。</p>"}
-            ${cards.length ? cards.join("") : "<p>当前没有新的问题样本详情。</p>"}
-            <p><a href="/generated-reports/hotpotqa_echomemory_live_diagnostic_current.html" target="_blank" rel="noreferrer">打开完整诊断页</a></p>
-          `;
-        } catch (_) {
-          digest.innerHTML = `<p><strong>问题样本摘要</strong></p><p>暂时还没有读取到诊断页内容。</p>`;
-          if (configBox) {
-            configBox.innerHTML = `<p><strong>当前运行配置</strong></p><p>暂时还没有读取到运行配置。</p>`;
-          }
-          if (healthBox) {
-            healthBox.innerHTML = `<p><strong>当前运行健康</strong></p><p>暂时还没有读取到运行健康摘要。</p>`;
-          }
-        }
-      }
-
-      async function syncHotpotQaLiveSummary() {
-        if (document.body?.dataset?.hotpotqaLaunchBlocked === "1") return;
-        const frame = document.getElementById("hotpotQaLiveInlineFrame");
-        const liveSection = frame?.closest(".benchmark-live-embed");
-        const idleBox = document.getElementById("hotpotQaLiveInlineIdle");
-        const progressText = document.getElementById("hotpotQaProgressText");
-        const progressBar = document.getElementById("hotpotQaProgressBar");
-        const status = document.getElementById("hotpotQaStatus");
-        const meta = document.getElementById("hotpotQaLiveInlineMeta");
-        const nativeSummary = document.getElementById("hotpotQaNativeSummary");
-        const artifactStatus = document.getElementById("hotpotQaArtifactStatus");
-        const taskState = await readActiveHotpotQaTaskState();
-        const hasActiveTask = Boolean(taskState.active);
-        document.body.dataset.hotpotqaLiveActive = hasActiveTask ? "1" : "0";
-        document.body.dataset.hotpotqaLiveTaskId = taskState.taskId || "";
-        if (!hasActiveTask) {
-          if (document.body.dataset.hotpotqaLiveIdleRendered === "1") return;
-          document.body.dataset.hotpotqaLiveIdleRendered = "1";
-          if (liveSection) liveSection.hidden = false;
-          if (idleBox) idleBox.hidden = false;
-          if (frame) frame.hidden = true;
-          if (progressText) progressText.textContent = "当前没有运行中的 HotpotQA 任务";
-          if (progressBar) {
-            progressBar.style.width = "0%";
-            progressBar.style.animation = "none";
-          }
-          if (status) {
-            status.innerHTML = `
-              <p><strong>HotpotQA 当前空闲</strong></p>
-              <p class="dataset-next-step">当前没有运行中的 HotpotQA 任务。</p>
-              <p class="dataset-next-step">任务启动后这里会切换为实时进度，不会保留历史快照进度。</p>
-            `;
-          }
-          if (meta) meta.textContent = "当前没有运行中的 HotpotQA 任务";
-          if (nativeSummary) {
-            nativeSummary.innerHTML = `
-              <p><strong>当前没有运行中的 HotpotQA 任务</strong></p>
-              <p>这里只保留空闲状态，不显示历史快照进度。</p>
-            `;
-          }
-          if (artifactStatus) {
-            artifactStatus.innerHTML = `
-              <p><strong>最终产物状态</strong></p>
-              <p>当前没有运行中的 HotpotQA 任务。</p>
-            `;
-          }
-          return;
-        }
-        document.body.dataset.hotpotqaLiveIdleRendered = "0";
-        if (liveSection) liveSection.hidden = false;
-        if (idleBox) idleBox.hidden = true;
-        if (frame) frame.hidden = false;
-        if (!progressText || !progressBar || !status || !meta || !nativeSummary || !artifactStatus) return;
-        let progress = "";
-        let stage = "";
-        let rows = "";
-        let pendingAsync = "";
-        let importFailed = "";
-        let taskId = "";
-        let currentImport = "";
-        let finishEta = "";
-        let freshness = "";
-        let avgInjection = "";
-        let totalInjection = "";
-        let avgQa = "";
-        let totalQa = "";
-        let avgEndToEnd = "";
-        let totalEndToEnd = "";
-        let warnings = [];
-        let artifacts = [];
-        try {
-          const liveDoc = await readHotpotQaLiveDoc(frame);
-          progress = readLiveReportCard(liveDoc, "当前进度");
-          stage = readLiveReportCard(liveDoc, "当前阶段");
-          rows = readLiveReportCard(liveDoc, "结果行数");
-          pendingAsync = readStrongCodeValue(liveDoc, "pending_async 行");
-          importFailed = readStrongCodeValue(liveDoc, "import_failed 行");
-          taskId = readStrongCodeValue(liveDoc, "Task ID");
-          currentImport = readStrongCodeValue(liveDoc, "当前记忆写入");
-          finishEta = readStrongCodeValue(liveDoc, "预计完成");
-          freshness = readStrongCodeValue(liveDoc, "运行态新鲜度");
-          avgInjection = readLiveReportCard(liveDoc, "平均注入时间");
-          totalInjection = readLiveReportCard(liveDoc, "总注入时间");
-          avgQa = readLiveReportCard(liveDoc, "平均 QA 时间");
-          totalQa = readLiveReportCard(liveDoc, "总 QA 时间");
-          avgEndToEnd = readLiveReportCard(liveDoc, "平均端到端");
-          totalEndToEnd = readLiveReportCard(liveDoc, "总端到端");
-          warnings = readLiveWarningLines(liveDoc);
-          artifacts = readArtifactStatuses(liveDoc);
-        } catch (_) {
-          return;
-        }
-        const liveTaskId = taskState.taskId || taskId;
-        if (!progress && !stage && !rows) return;
-        const parsed = parseProgressLabel(progress);
-        if (parsed) progressBar.style.width = `${parsed.pct.toFixed(1)}%`;
-        renderHotpotQaLiveKpis([
-          ["当前进度", progress],
-          ["平均注入", avgInjection],
-          ["总注入", totalInjection],
-          ["平均 QA", avgQa],
-          ["总 QA", totalQa],
-          ["平均端到端", avgEndToEnd],
-          ["总端到端", totalEndToEnd],
-          ["运行态新鲜度", freshness],
-          ["pending_async", pendingAsync],
-          ["import_failed", importFailed],
-        ]);
-        progressText.textContent = [
-          progress ? `Live 进度 ${progress}` : "",
-          stage ? `阶段 ${stage}` : "",
-          rows ? `已写 ${rows} 行` : "",
-        ].filter(Boolean).join(" · ") || "HotpotQA live 已连接";
-        status.innerHTML = `
-          <p><strong>HotpotQA live 进度已接管显示</strong>${liveTaskId ? ` · ${liveTaskId}` : ""}</p>
-          <p class="dataset-next-step">${[
-            progress ? `当前进度 ${progress}` : "",
-            stage ? `当前阶段 ${stage}` : "",
-            rows ? `结果行数 ${rows}` : "",
-            freshness ? `运行态新鲜度 ${freshness}` : "",
-            avgInjection ? `平均注入 ${avgInjection}` : "",
-            avgQa ? `平均 QA ${avgQa}` : "",
-            avgEndToEnd ? `平均端到端 ${avgEndToEnd}` : "",
-            pendingAsync ? `pending_async ${pendingAsync}` : "",
-            importFailed ? `import_failed ${importFailed}` : "",
-          ].filter(Boolean).join(" · ")}</p>
-          ${warnings.length ? `<p class="dataset-next-step bad-text">${warnings.join(" ")}</p>` : ""}
-          <p class="dataset-next-step">上面的数字直接从内嵌 live 报告同步，主任务卡片没刷新时这里仍会继续更新。</p>
-        `;
-        nativeSummary.innerHTML = `
-          <p><strong>当前运行总览</strong>${liveTaskId ? ` · <code>${liveTaskId}</code>` : ""}</p>
-          <p>${[
-            progress ? `进度 ${progress}` : "",
-            stage ? `阶段 ${stage}` : "",
-            rows ? `结果行数 ${rows}` : "",
-            currentImport ? `当前样本 ${currentImport}` : "",
-            freshness ? `运行态新鲜度 ${freshness}` : "",
-            finishEta ? `预计完成 ${finishEta}` : "",
-          ].filter(Boolean).join(" · ")}</p>
-          <p>${[
-            avgInjection ? `平均注入 ${avgInjection}` : "",
-            totalInjection ? `总注入 ${totalInjection}` : "",
-            avgQa ? `平均 QA ${avgQa}` : "",
-            totalQa ? `总 QA ${totalQa}` : "",
-            avgEndToEnd ? `平均端到端 ${avgEndToEnd}` : "",
-            totalEndToEnd ? `总端到端 ${totalEndToEnd}` : "",
-          ].filter(Boolean).join(" · ")}</p>
-          <p>${[
-            pendingAsync ? `pending_async ${pendingAsync}` : "",
-            importFailed ? `import_failed ${importFailed}` : "",
-          ].filter(Boolean).join(" · ")}</p>
-          ${warnings.length ? `<p class="bad-text">${warnings.join(" ")}</p>` : ""}
-          <p><a href="/generated-reports/hotpotqa_echomemory_live_current.html" target="_blank" rel="noreferrer">打开 Live 报告</a> · <a href="/generated-reports/hotpotqa_echomemory_live_diagnostic_current.html" target="_blank" rel="noreferrer">打开诊断页</a> · <a href="/generated-reports/hotpotqa_echomemory_completed_current.html" target="_blank" rel="noreferrer">完成固定报告</a> · <a href="/generated-reports/hotpotqa_echomemory_completed_diagnostic_current.html" target="_blank" rel="noreferrer">完成固定诊断</a></p>
-        `;
-        artifactStatus.innerHTML = `
-          <p><strong>最终产物状态</strong></p>
-          ${artifacts.length ? `<p>${artifacts.join(" · ")}</p>` : "<p>当前还没有读取到最终产物状态。</p>"}
-          <p><a href="/generated-reports/hotpotqa_echomemory_live_current.html" target="_blank" rel="noreferrer">打开 Live 报告</a> · <a href="/generated-reports/hotpotqa_echomemory_completed_current.html" target="_blank" rel="noreferrer">完成固定报告</a></p>
-        `;
-        meta.textContent = [
-          liveTaskId ? `当前任务 ${liveTaskId}` : "",
-          progress ? `进度 ${progress}` : "",
-          rows ? `已写 ${rows} 行` : "",
-          freshness ? `新鲜度 ${freshness}` : "",
-          avgInjection ? `注入 ${avgInjection}` : "",
-          avgQa ? `QA ${avgQa}` : "",
-          pendingAsync ? `pending_async ${pendingAsync}` : "",
-        ].filter(Boolean).join(" · ");
-      }
-
-      function scheduleHotpotQaLiveSummarySync() {
-        const hasActiveTask = document.body?.dataset?.hotpotqaLiveActive === "1";
-        const delay = hasActiveTask ? 5000 : 30000;
-        window.setTimeout(async () => {
-          await syncHotpotQaLiveSummary().catch(() => {});
-          scheduleHotpotQaLiveSummarySync();
-        }, delay);
-      }
-
-      function scheduleHotpotQaDiagnosticDigestSync() {
-        const hasActiveTask = document.body?.dataset?.hotpotqaLiveActive === "1";
-        const delay = hasActiveTask ? 15000 : 45000;
-        window.setTimeout(async () => {
-          await syncHotpotQaDiagnosticDigest().catch(() => {});
-          scheduleHotpotQaDiagnosticDigestSync();
-        }, delay);
-      }
-
-      window.addEventListener("load", () => {
-        const frame = document.getElementById("hotpotQaLiveInlineFrame");
-        if (!frame) return;
-        frame.addEventListener("load", () => { syncHotpotQaLiveSummary().catch(() => {}); });
-        frame.addEventListener("load", () => { syncHotpotQaDiagnosticDigest().catch(() => {}); });
-        syncHotpotQaLiveSummary().catch(() => {});
-        syncHotpotQaDiagnosticDigest().catch(() => {});
-        scheduleHotpotQaLiveSummarySync();
-        scheduleHotpotQaDiagnosticDigestSync();
-      });
-    })();
-  </script>
+  <script src="/app.js?v=20260624disableprefetch01"></script>
 </body>
 </html>

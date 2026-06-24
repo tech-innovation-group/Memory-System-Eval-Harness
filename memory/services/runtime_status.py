@@ -6,10 +6,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from ..backend_profiles import backend_profile
+
 
 def looks_like_echomem_root(path: Path) -> bool:
     return (
         ((path / "packages" / "echomem" / "src").exists() and (path / "packages" / "echofs" / "src").exists())
+        or ((path / "src" / "echomem").exists() and (path / "src" / "echo0").exists() and (path / "pyproject.toml").exists())
         or ((path / "echomem").exists() and (path / "pyproject.toml").exists())
     )
 
@@ -25,20 +28,26 @@ class RuntimeStatusContext:
 
 def discover_echomem_roots(config: dict[str, Any], *, context: RuntimeStatusContext) -> list[dict[str, Any]]:
     repo_root = context.repo_root
+    cwd_root_develop = (Path.cwd() / "EchoMem_develop").expanduser().resolve()
     cwd_root_v010 = (Path.cwd() / "echo_memory_v010").expanduser().resolve()
     cwd_root_main = (Path.cwd() / "echo_memory").expanduser().resolve()
     cwd_root_tag = (Path.cwd() / "echo_memory_v007_tag").expanduser().resolve()
     cwd_root = (Path.cwd() / "echo_memory_v007").expanduser().resolve()
+    repo_root_develop = (repo_root.parent / "EchoMem_develop").expanduser().resolve()
     repo_root_v010 = (repo_root.parent / "echo_memory_v010").expanduser().resolve()
     repo_root_main = (repo_root.parent / "echo_memory").expanduser().resolve()
     repo_root_tag = (repo_root.parent / "echo_memory_v007_tag").expanduser().resolve()
     repo_root_legacy = (repo_root.parent / "echo_memory_v007").expanduser().resolve()
+    home_root_develop = (Path.home() / "Code" / "echomemory" / "EchoMem_develop").expanduser().resolve()
     home_root_v010 = (Path.home() / "Code" / "echomemory" / "echo_memory_v010").expanduser().resolve()
     home_root_main = (Path.home() / "Code" / "echomemory" / "echo_memory").expanduser().resolve()
     home_root_tag = (Path.home() / "Code" / "echomemory" / "echo_memory_v007_tag").expanduser().resolve()
     home_root = (Path.home() / "Code" / "echomemory" / "echo_memory_v007").expanduser().resolve()
     preferred_default = context.first_existing_path(
         [
+            home_root_develop,
+            cwd_root_develop,
+            repo_root_develop,
             home_root_v010,
             cwd_root_v010,
             repo_root_v010,
@@ -59,6 +68,9 @@ def discover_echomem_roots(config: dict[str, Any], *, context: RuntimeStatusCont
         config.get("echomem_root"),
         os.environ.get("ECHOMEM_ROOT"),
         os.environ.get("ECHOMEMORY_ROOT"),
+        home_root_develop,
+        repo_root_develop,
+        cwd_root_develop,
         home_root_v010,
         repo_root_v010,
         cwd_root_v010,
@@ -102,6 +114,7 @@ def discover_echomem_roots(config: dict[str, Any], *, context: RuntimeStatusCont
 def echomem_git_info(root: str | Path) -> dict[str, Any]:
     path = Path(str(root)).expanduser()
     required_tag = "version_0.1.0"
+    is_develop_layout = (path / "src" / "echomem").exists() and (path / "src" / "echo0").exists() and (path / "pyproject.toml").exists()
     if not path.exists():
         return {"tag": "", "commit": "", "describe": "", "required_tag": required_tag, "version_ok": False}
 
@@ -126,8 +139,9 @@ def echomem_git_info(root: str | Path) -> dict[str, Any]:
         "commit": commit,
         "short_commit": commit[:12] if commit else "",
         "describe": describe,
-        "required_tag": required_tag,
-        "version_ok": tag == required_tag or describe == required_tag,
+        "required_tag": "version_0.1.0 or EchoMem_develop" if is_develop_layout else required_tag,
+        "version_ok": is_develop_layout or tag == required_tag or describe == required_tag,
+        "layout": "develop-src" if is_develop_layout else "",
     }
 
 
@@ -138,7 +152,8 @@ def backend_runtime_status(
     *,
     context: RuntimeStatusContext,
 ) -> dict[str, Any]:
-    if backend == "openviking":
+    profile = backend_profile(backend)
+    if profile.id == "openviking":
         host = str(config.get("ovHost") or defaults.get("server_host") or "127.0.0.1").strip() or "127.0.0.1"
         default_port = str(defaults.get("server_port") or "19080")
         port = str(config.get("ovPort") or default_port).strip() or default_port
@@ -150,7 +165,7 @@ def backend_runtime_status(
         return {
             "status": "ok" if probe.get("ok") else "warn",
             "kind": "service",
-            "label": "OpenViking 服务",
+            "label": profile.runtime_label,
             "url": f"http://{host}:{port}",
             "probe": probe,
         }
@@ -218,11 +233,12 @@ def backend_runtime_status(
             missing.append("chat token")
         message = "缺少 " + "、".join(missing) + "；可在 .env.local 中配置。"
     else:
-        message = f"EchoMemory SDK {required_tag}、embedding/chat token 均已检测到。"
+        accepted_target = source.get("required_tag") or required_tag
+        message = f"EchoMemory SDK {accepted_target}、embedding/chat token 均已检测到。"
     return {
         "status": status,
         "kind": "local-sdk",
-        "label": "EchoMemory 本地 SDK",
+        "label": profile.runtime_label,
         "root": root,
         "source": source,
         "root_exists": root_exists,

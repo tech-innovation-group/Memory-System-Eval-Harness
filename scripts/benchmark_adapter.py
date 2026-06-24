@@ -6,7 +6,7 @@ import csv
 import json
 import re
 from dataclasses import dataclass, asdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -381,6 +381,16 @@ def get_locomo_sample_question_time(sample: dict[str, Any]) -> str:
     return ""
 
 
+def parse_longmemeval_datetime(date_str: str) -> datetime | None:
+    value = str(date_str or "").strip()
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y/%m/%d (%a) %H:%M")
+    except ValueError:
+        return None
+
+
 def locomo_memory_users(sample: dict[str, Any]) -> list[str]:
     conv = sample.get("conversation") or {}
     users: list[str] = []
@@ -503,6 +513,59 @@ def collect_longmemeval_events(item: dict[str, Any]) -> list[dict[str, str]]:
     return events
 
 
+def collect_longmemeval_session_batches(item: dict[str, Any]) -> list[dict[str, Any]]:
+    batches: list[dict[str, Any]] = []
+    sessions = item.get("haystack_sessions") or item.get("sessions") or item.get("conversation") or []
+    dates = item.get("haystack_dates") or []
+    session_ids = item.get("haystack_session_ids") or []
+    if not isinstance(sessions, list):
+        return batches
+
+    for session_index, session in enumerate(sessions):
+        session_time = compact(dates[session_index] if session_index < len(dates) else "", 80)
+        session_id = compact(session_ids[session_index] if session_index < len(session_ids) else f"session_{session_index}", 120)
+        session_dt = parse_longmemeval_datetime(session_time)
+        messages = session.get("messages") or session.get("conversation") or session.get("turns") or [] if isinstance(session, dict) else session
+        if not isinstance(messages, list):
+            messages = [messages]
+        rows: list[dict[str, Any]] = []
+        for message_index, message in enumerate(messages):
+            if isinstance(message, dict):
+                role = str(message.get("role") or message.get("speaker") or message.get("user") or "user").strip() or "user"
+                content = str(message.get("content") or message.get("text") or message.get("message") or "").strip()
+            else:
+                role = "user"
+                content = str(message).strip()
+            if not content:
+                continue
+            rows.append(
+                {
+                    "role": role,
+                    "content": content,
+                    "parts": [{"type": "text", "text": content}],
+                    "speaker": role,
+                    "dia_id": f"{session_id}:{message_index}",
+                    "created_at": (
+                        (session_dt.replace(second=0, microsecond=0)).isoformat()
+                        if session_dt is not None
+                        else None
+                    ),
+                }
+            )
+            if session_dt is not None:
+                rows[-1]["created_at"] = session_dt.replace(second=0, microsecond=0).isoformat()
+                session_dt = session_dt.replace(second=0, microsecond=0) + timedelta(seconds=1)
+        if rows:
+            batches.append(
+                {
+                    "session_key": session_id or f"session_{session_index}",
+                    "date_time": session_time,
+                    "messages": rows,
+                }
+            )
+    return batches
+
+
 def collect_longmemeval_documents(item: dict[str, Any]) -> list[dict[str, str]]:
     documents: list[dict[str, str]] = []
     sessions = item.get("haystack_sessions") or item.get("sessions") or item.get("conversation") or []
@@ -596,6 +659,7 @@ def longmemeval_job_plan(raw: Any, index: int, sample_filter: str = "all") -> tu
         "events": events,
         "preview_events": events[:20],
         "memory_documents": memory_documents,
+        "session_batches": collect_longmemeval_session_batches(item),
     }
     job = Job(
         dataset_format="longmemeval",
