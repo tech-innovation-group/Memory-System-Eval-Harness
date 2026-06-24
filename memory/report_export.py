@@ -15,6 +15,9 @@ from .backend_profiles import backend_profile, normalize_backend_id
 from .plugins.service import plugin_service
 from .tasking import redacted_command
 
+ROOT = Path(__file__).resolve().parent.parent
+GENERATED_REPORTS_DIR = ROOT / "generated-reports"
+
 
 def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -2139,4 +2142,596 @@ def export_report(run_dir: Path, active_run_ids: set[str] | None = None) -> dict
         "report_html_file": str(report_html_path),
         "text": report_text,
         **graph_report_artifacts,
+    }
+
+
+def _compare_score_value(value: Any) -> float | None:
+    if value in (None, "", "-"):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _compare_delta_text(value: Any) -> str:
+    score = _compare_score_value(value)
+    if score is None:
+        return "-"
+    sign = "+" if score > 0 else ""
+    return f"{sign}{score * 100:.1f} pts"
+
+
+def _compare_rows_output_csv(run_dir: Path, row: dict[str, Any]) -> Path | None:
+    output_file = str(row.get("output_file") or "").strip()
+    candidates: list[Path] = []
+    if output_file:
+        candidates.append(Path(output_file).expanduser())
+    candidates.extend([
+        run_dir / "openviking_memory_qa_results.csv",
+        run_dir / "echomemory_memory_qa_results.csv",
+        run_dir / "openviking_generic_qa_results.csv",
+        run_dir / "echomemory_generic_qa_results.csv",
+    ])
+    for candidate in candidates:
+        if candidate.exists() and candidate.suffix.lower() == ".csv":
+            return candidate
+    return None
+
+
+def _compare_run_sidecar_summary(run_dir: Path) -> dict[str, Any]:
+    for name in ("summary.json", "judge_summary.json", "manifest.json", "report.html", "run.log"):
+        path = run_dir / name
+        if path.exists():
+            try:
+                data = read_json(path)
+            except Exception:
+                if name == "report.html":
+                    try:
+                        text = path.read_text(encoding="utf-8", errors="ignore")
+                    except Exception:
+                        continue
+                    sidecar: dict[str, Any] = {}
+                    answer_model = re.search(r"模型[:：]\s*<strong>([^<]+)</strong>", text)
+                    judge_model = re.search(r"判分[:：]\s*<code>([^<]+)</code>", text)
+                    if answer_model:
+                        sidecar["answer_model"] = answer_model.group(1).strip()
+                    if judge_model:
+                        sidecar["judge_model"] = judge_model.group(1).strip()
+                    if sidecar:
+                        return sidecar
+                elif name == "run.log":
+                    try:
+                        text = path.read_text(encoding="utf-8", errors="ignore")
+                    except Exception:
+                        continue
+                    sidecar = {}
+                    match = re.search(r"\[judge\].*model=([^\s]+)", text)
+                    if match:
+                        sidecar["judge_model"] = match.group(1).strip()
+                    match = re.search(r"--answer-model\s+([^\s]+)", text)
+                    if match:
+                        sidecar["answer_model"] = match.group(1).strip()
+                    if sidecar:
+                        return sidecar
+                continue
+            if isinstance(data, dict):
+                return data
+    return {}
+
+
+def _compare_int(value: Any) -> int | None:
+    if value in (None, "", "-"):
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _compare_metric_card(label: str, value: str, detail: str = "") -> str:
+    detail_html = f"<small>{html.escape(detail)}</small>" if detail else ""
+    return (
+        "<article class='metric-card'>"
+        f"<span>{html.escape(label)}</span>"
+        f"<strong>{html.escape(value)}</strong>"
+        f"{detail_html}"
+        "</article>"
+    )
+
+
+def _compare_html_table(rows: list[tuple[str, str]]) -> str:
+    body = "".join(
+        "<tr>"
+        f"<th>{html.escape(label)}</th>"
+        f"<td>{html.escape(value)}</td>"
+        "</tr>"
+        for label, value in rows
+    )
+    return f"<table class='compact-table'><tbody>{body}</tbody></table>"
+
+
+def _compare_model_summary(row: dict[str, Any], sidecar: dict[str, Any]) -> list[tuple[str, str]]:
+    answer_model = display_value(
+        row.get("answer_model") or sidecar.get("answer_model"),
+        "-",
+    )
+    judge_model = display_value(
+        row.get("judge_model") or sidecar.get("judge_model"),
+        "-",
+    )
+    return [
+        ("回答模型", answer_model),
+        ("判分模型", judge_model),
+    ]
+
+
+def _compare_history_label(current: dict[str, Any], historical: dict[str, Any]) -> str:
+    current_name = display_value(current.get("id"), "-")
+    historical_name = display_value(historical.get("id"), "-")
+    return f"{current_name} vs {historical_name}"
+
+
+def _compare_csv_stats(row: dict[str, Any], run_dir: Path) -> dict[str, Any]:
+    csv_path = _compare_rows_output_csv(run_dir, row)
+    stats = {
+        "csv_path": str(csv_path) if csv_path else "",
+        "answer_total_tokens": _compare_int(row.get("answer_tokens")),
+        "retrieval_tokens_est_total": _compare_int(row.get("retrieval_tokens")),
+        "injection_tokens_est_total": _compare_int(row.get("injection_tokens")),
+        "both_correct_candidates": [],
+        "current_only_correct_candidates": [],
+        "baseline_only_correct_candidates": [],
+        "rows_by_qid": {},
+    }
+    if not csv_path or not csv_path.exists():
+        return stats
+    rows = csv_rows_limited(csv_path, 50000)
+    answer_total = 0
+    answer_count = 0
+    retrieval_total = 0
+    retrieval_count = 0
+    injection_total = 0
+    injection_count = 0
+    rows_by_qid: dict[str, dict[str, str]] = {}
+    for item in rows:
+        qid = str(item.get("question_id") or item.get("sample_id") or "").strip()
+        if qid:
+            rows_by_qid[qid] = item
+        value = _compare_int(item.get("answer_total_tokens"))
+        if value is not None:
+            answer_total += value
+            answer_count += 1
+        value = _compare_int(item.get("retrieval_tokens_est"))
+        if value is not None:
+            retrieval_total += value
+            retrieval_count += 1
+        value = _compare_int(item.get("injection_tokens_est"))
+        if value is not None:
+            injection_total += value
+            injection_count += 1
+    if answer_count:
+        stats["answer_total_tokens"] = answer_total
+    if retrieval_count:
+        stats["retrieval_tokens_est_total"] = retrieval_total
+    if injection_count:
+        stats["injection_tokens_est_total"] = injection_total
+    stats["rows_by_qid"] = rows_by_qid
+    return stats
+
+
+def _compare_question_groups(current_stats: dict[str, Any], baseline_stats: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
+    current_rows = current_stats.get("rows_by_qid") or {}
+    baseline_rows = baseline_stats.get("rows_by_qid") or {}
+    both_correct: list[dict[str, str]] = []
+    current_only: list[dict[str, str]] = []
+    baseline_only: list[dict[str, str]] = []
+    for qid in sorted(set(current_rows) & set(baseline_rows)):
+        current_row = current_rows[qid]
+        baseline_row = baseline_rows[qid]
+        current_result = str(current_row.get("result") or "").upper()
+        baseline_result = str(baseline_row.get("result") or "").upper()
+        item = {
+            "question_id": qid,
+            "question": str(current_row.get("question") or baseline_row.get("question") or "").strip(),
+            "current_result": current_result,
+            "baseline_result": baseline_result,
+            "current_response": str(current_row.get("response") or current_row.get("answer") or "").strip(),
+            "baseline_response": str(baseline_row.get("response") or baseline_row.get("answer") or "").strip(),
+            "gold_answer": str(current_row.get("answer") or baseline_row.get("answer") or "").strip(),
+            "current_memory": _compare_memory_preview(current_row),
+            "baseline_memory": _compare_memory_preview(baseline_row),
+        }
+        if current_result == "CORRECT" and baseline_result == "CORRECT":
+            both_correct.append(item)
+        elif current_result == "CORRECT" and baseline_result != "CORRECT":
+            current_only.append(item)
+        elif baseline_result == "CORRECT" and current_result != "CORRECT":
+            baseline_only.append(item)
+    return {
+        "both_correct": both_correct,
+        "current_only_correct": current_only,
+        "baseline_only_correct": baseline_only,
+    }
+
+
+def _compare_memory_preview(row: dict[str, str]) -> str:
+    evidence = first_json_list(row.get("relevant_memory") or "", 2)
+    if evidence:
+        snippets = []
+        for item in evidence:
+            abstract = compact_text(item.get("abstract") or item.get("text") or item.get("uri") or "", 120)
+            if abstract:
+                snippets.append(abstract)
+        if snippets:
+            return " | ".join(snippets)
+    return compact_text(row.get("relevant_memory") or row.get("memory_uri") or "", 160)
+
+
+def _compare_question_card(item: dict[str, str], current_label: str, baseline_label: str) -> str:
+    return f"""
+    <article class="question-card">
+      <div class="question-head">
+        <strong>{html.escape(display_value(item.get("question_id"), "-"))}</strong>
+      </div>
+      <p class="question-text">{html.escape(compact_text(item.get("question"), 240))}</p>
+      <div class="question-grid">
+        <section>
+          <span>{html.escape(current_label)} · {html.escape(display_value(item.get("current_result"), "-"))}</span>
+          <p>{html.escape(compact_text(item.get("current_response"), 220))}</p>
+          <small>检索记忆: {html.escape(compact_text(item.get("current_memory"), 180))}</small>
+        </section>
+        <section>
+          <span>{html.escape(baseline_label)} · {html.escape(display_value(item.get("baseline_result"), "-"))}</span>
+          <p>{html.escape(compact_text(item.get("baseline_response"), 220))}</p>
+          <small>检索记忆: {html.escape(compact_text(item.get("baseline_memory"), 180))}</small>
+        </section>
+      </div>
+      <small>标准答案: {html.escape(compact_text(item.get("gold_answer"), 160))}</small>
+    </article>
+    """
+
+
+def export_run_compare_report(run_dirs: list[Path]) -> dict[str, Any]:
+    if len(run_dirs) < 2:
+        raise ValueError("at least two run_dirs are required")
+    compare = run_service.compare_run_dirs(run_dirs)
+    rows = compare.get("runs") if isinstance(compare, dict) else []
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("no comparable runs found")
+
+    generated_at = datetime.now().isoformat(timespec="seconds")
+    slug = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_path = GENERATED_REPORTS_DIR / f"locomo_run_compare_{slug}.html"
+    report_public_url = f"/generated-reports/{report_path.name}"
+    GENERATED_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    row_entries = []
+    for row in rows:
+        run_dir = Path(str(row.get("run_dir") or "")).expanduser()
+        sidecar = _compare_run_sidecar_summary(run_dir) if run_dir else {}
+        stats = _compare_csv_stats(row, run_dir) if run_dir else {}
+        row_entries.append({**row, "_sidecar": sidecar, "_stats": stats})
+
+    current_run = row_entries[0]
+    baseline_run = row_entries[1] if len(row_entries) > 1 else row_entries[0]
+    current_stats = current_run.get("_stats") or {}
+    baseline_stats = baseline_run.get("_stats") or {}
+    groups = _compare_question_groups(current_stats, baseline_stats)
+    both_correct = groups["both_correct"][:3]
+    current_only_correct = groups["current_only_correct"][:3]
+    baseline_only_correct = groups["baseline_only_correct"][:3]
+
+    current_answer_tokens = _compare_int(current_stats.get("answer_total_tokens")) or _compare_int(current_run.get("answer_tokens")) or 0
+    baseline_answer_tokens = _compare_int(baseline_stats.get("answer_total_tokens")) or _compare_int(baseline_run.get("answer_tokens")) or 0
+    current_retrieval_tokens = _compare_int(current_stats.get("retrieval_tokens_est_total")) or _compare_int(current_run.get("retrieval_tokens")) or 0
+    baseline_retrieval_tokens = _compare_int(baseline_stats.get("retrieval_tokens_est_total")) or _compare_int(baseline_run.get("retrieval_tokens")) or 0
+    current_injection_tokens = _compare_int(current_stats.get("injection_tokens_est_total")) or _compare_int(current_run.get("injection_tokens")) or 0
+    baseline_injection_tokens = _compare_int(baseline_stats.get("injection_tokens_est_total")) or _compare_int(baseline_run.get("injection_tokens")) or 0
+    current_graded = _compare_int(current_run.get("graded")) or 0
+    baseline_graded = _compare_int(baseline_run.get("graded")) or 0
+    current_accuracy = current_run.get("accuracy")
+    baseline_accuracy = baseline_run.get("accuracy")
+    current_correct = _compare_int(current_run.get("correct")) or 0
+    baseline_correct = _compare_int(baseline_run.get("correct")) or 0
+    current_wrong = _compare_int(current_run.get("wrong")) or 0
+    baseline_wrong = _compare_int(baseline_run.get("wrong")) or 0
+    current_model_summary = _compare_model_summary(current_run, current_run.get("_sidecar") or {})
+    baseline_model_summary = _compare_model_summary(baseline_run, baseline_run.get("_sidecar") or {})
+    current_total_tokens = current_answer_tokens + current_retrieval_tokens + current_injection_tokens
+    baseline_total_tokens = baseline_answer_tokens + baseline_retrieval_tokens + baseline_injection_tokens
+    current_label = "结果 A"
+    baseline_label = "结果 B"
+    compare_title = _compare_history_label(current_run, baseline_run)
+    html_report = f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>LoCoMo 结果对比 · {html.escape(slug)}</title>
+  <style>
+    :root {{
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --line: #d8deea;
+      --text: #142033;
+      --muted: #5c667a;
+      --accent: #2457ff;
+      --ok: #1f7a42;
+      --warn: #a56100;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }}
+    .page {{
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 28px;
+    }}
+    .hero, .panel, .subpanel {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 20px;
+    }}
+    .hero {{
+      margin-bottom: 16px;
+    }}
+    h1, h2, h3, p {{
+      margin: 0;
+    }}
+    .hero p {{
+      margin-top: 8px;
+      color: var(--muted);
+    }}
+    .kpis {{
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin: 16px 0;
+    }}
+    .kpi {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px 14px;
+      background: #f9fbff;
+    }}
+    .kpi span {{
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }}
+    .kpi strong {{
+      font-size: 18px;
+    }}
+    .sections {{
+      display: grid;
+      gap: 14px;
+    }}
+    .grid-2 {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }}
+    .metric-card {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px 14px;
+      background: #f9fbff;
+    }}
+    .metric-card span {{
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }}
+    .metric-card strong {{
+      display: block;
+      font-size: 16px;
+      line-height: 1.35;
+    }}
+    .meta {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }}
+    .meta article {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px 14px;
+    }}
+    .meta span {{
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }}
+    .compact-table {{
+      width: 100%;
+      border-collapse: collapse;
+    }}
+    .compact-table th, .compact-table td {{
+      text-align: left;
+      border-bottom: 1px solid var(--line);
+      padding: 12px 10px;
+      vertical-align: top;
+    }}
+    .compact-table th {{
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+      background: #f8faff;
+    }}
+    .metric-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }}
+    .pair-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }}
+    .question-list {{
+      display: grid;
+      gap: 12px;
+    }}
+    .question-card {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px 14px;
+      background: #fff;
+    }}
+    .question-head {{
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+    }}
+    .question-text {{
+      margin-top: 6px;
+      color: var(--text);
+    }}
+    .question-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 10px;
+    }}
+    .question-grid section {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #f9fbff;
+    }}
+    .question-grid span {{
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }}
+    .question-grid p {{
+      margin: 0;
+    }}
+    .question-card small {{
+      display: block;
+      color: var(--muted);
+      margin-top: 8px;
+    }}
+    code {{
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      word-break: break-all;
+    }}
+    .badge {{
+      display: inline-flex;
+      align-items: center;
+      padding: 1px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+    }}
+    .badge.baseline {{
+      border-color: #bfd0ff;
+      color: var(--accent);
+      background: #eef3ff;
+    }}
+    .section-title {{
+      margin-bottom: 8px;
+    }}
+    .muted {{
+      color: var(--muted);
+    }}
+    .footer {{
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 12px;
+    }}
+    @media (max-width: 960px) {{
+      .grid-2, .metric-grid, .meta, .question-grid {{
+        grid-template-columns: minmax(0, 1fr);
+      }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <h1>LoCoMo 结果对比报告</h1>
+      <p>生成时间 {html.escape(generated_at)} · 对比 {html.escape(compare_title)}</p>
+      <div class="pair-grid" style="margin-top:16px">
+        {_compare_metric_card("结果 A", f"{current_label} · {display_value(current_run.get('id'), '-')}", f"准确率 {format_metric_percent(current_accuracy, '待判分')} · 已判 {current_graded}/{display_value(current_run.get('rows'), '-')}" )}
+        {_compare_metric_card("结果 B", f"{baseline_label} · {display_value(baseline_run.get('id'), '-')}", f"准确率 {format_metric_percent(baseline_accuracy, '待判分')} · 已判 {baseline_graded}/{display_value(baseline_run.get('rows'), '-')}" )}
+      </div>
+    </section>
+
+    <div class="sections">
+      <section class="panel">
+        <div class="section-title">
+          <h2>模型</h2>
+        </div>
+        <div class="pair-grid">
+          <div class="subpanel">
+            <h3>结果 A</h3>
+            {_compare_html_table(current_model_summary)}
+          </div>
+          <div class="subpanel">
+            <h3>结果 B</h3>
+            {_compare_html_table(baseline_model_summary)}
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-title">
+          <h2>Token</h2>
+        </div>
+        <div class="metric-grid">
+          {_compare_metric_card("answer tokens", f"{current_answer_tokens:,}", f"历史 {baseline_answer_tokens:,} · 差值 {current_answer_tokens - baseline_answer_tokens:+,}")}
+          {_compare_metric_card("总 tokens", f"{current_total_tokens:,}", f"历史 {baseline_total_tokens:,} · 差值 {current_total_tokens - baseline_total_tokens:+,}")}
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-title">
+          <h2>注入记忆 token</h2>
+        </div>
+        <div class="metric-grid">
+          {_compare_metric_card("注入 token", f"{current_injection_tokens:,}", f"历史 {baseline_injection_tokens:,} · 差值 {current_injection_tokens - baseline_injection_tokens:+,}")}
+          {_compare_metric_card("retrieval token", f"{current_retrieval_tokens:,}", f"历史 {baseline_retrieval_tokens:,} · 差值 {current_retrieval_tokens - baseline_retrieval_tokens:+,}")}
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-title">
+          <h2>题目对比</h2>
+        </div>
+        <h3>两者都答对</h3>
+        <div class="question-list">
+          {''.join(_compare_question_card(item, current_label, baseline_label) for item in both_correct) or '<p class="muted">暂无</p>'}
+        </div>
+        <h3 style="margin-top:16px">其中一个答对</h3>
+        <div class="question-list">
+          {''.join(_compare_question_card(item, current_label, baseline_label) for item in current_only_correct + baseline_only_correct) or '<p class="muted">暂无</p>'}
+        </div>
+      </section>
+    </div>
+
+    <p class="footer">本报告来自评测平台当前 run 元数据与结果摘要，适合做横向复盘和分享。</p>
+  </div>
+</body>
+</html>
+"""
+    report_path.write_text(html_report, encoding="utf-8")
+    return {
+        "report_html_file": str(report_path),
+        "report_public_url": report_public_url,
+        "generated_at": generated_at,
     }

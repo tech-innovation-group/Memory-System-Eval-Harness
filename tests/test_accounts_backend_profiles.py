@@ -19,11 +19,11 @@ def test_prepare_account_workspace_creates_openviking_layout(tmp_path: Path) -> 
 def test_prepare_account_workspace_creates_echomemory_layout(tmp_path: Path) -> None:
     paths = accounts.prepare_account_workspace(tmp_path, "acct", user_id="alice", agent_id="bot", backend="echomemory")
 
-    assert Path(paths["storage_root"]) == tmp_path / "acct" / "acct"
+    assert Path(paths["storage_root"]) == tmp_path / "tenants" / "acct"
     assert Path(paths["session_root"]).is_dir()
-    assert Path(paths["user_root"]) == tmp_path / "acct" / "acct" / "users" / "alice"
+    assert Path(paths["user_root"]) == tmp_path / "tenants" / "acct" / "users" / "alice"
     assert Path(paths["user_memories"]).is_dir()
-    assert Path(paths["agent_root"]) == tmp_path / "acct" / "acct" / "agents" / "bot"
+    assert Path(paths["agent_root"]) == tmp_path / "tenants" / "acct" / "agents" / "bot"
     assert Path(paths["agent_memories"]).is_dir()
 
 
@@ -79,7 +79,7 @@ def test_account_view_reports_echomemory_isolation(tmp_path: Path) -> None:
     isolation = view["isolation"]
 
     assert isolation["backend"] == "echomemory"
-    assert isolation["storage_root"] == str(workspace / "acct" / "acct")
+    assert isolation["storage_root"] == str(workspace / "tenants" / "acct")
     assert isolation["viking_root"] == ""
     assert isolation["workspace_exists"] is True
     assert isolation["session_root_exists"] is True
@@ -129,4 +129,18 @@ def test_public_state_marks_shared_workspace(tmp_path: Path) -> None:
 
 def test_storage_root_normalizes_echomem_alias(tmp_path: Path) -> None:
     root = accounts.storage_root(tmp_path, "acct", "echomem")
-    assert root == tmp_path / "acct" / "acct"
+    assert root == tmp_path / "tenants" / "acct"
+
+
+def test_resolve_workspace_root_accepts_openviking_account_dir(tmp_path: Path) -> None:
+    workspace = tmp_path / "ov"
+    account_root = workspace / "viking" / "acct"
+
+    assert accounts.resolve_workspace_root(account_root, "acct", "openviking") == str(workspace)
+
+
+def test_resolve_workspace_root_accepts_echomemory_account_dir(tmp_path: Path) -> None:
+    workspace = tmp_path / "echo"
+    account_root = workspace / "tenants" / "acct"
+
+    assert accounts.resolve_workspace_root(account_root, "acct", "echomemory") == str(workspace)

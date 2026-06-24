@@ -193,6 +193,51 @@ def account_root(workspace: str | Path, account: str) -> Path:
     return Path(workspace).expanduser() / "viking" / slug_account(account)
 
 
+def _path_from_parts(parts: tuple[str, ...], fallback: Path) -> Path:
+    if parts:
+        return Path(*parts)
+    if fallback.anchor:
+        return Path(fallback.anchor)
+    return Path(".")
+
+
+def resolve_workspace_root(workspace: str | Path | None, account: str, backend: str = "openviking") -> str:
+    raw = str(workspace or "").strip()
+    if not raw:
+        return ""
+    workspace_path = Path(raw).expanduser()
+    parts = workspace_path.parts
+    account_id = slug_account(account)
+    normalized_backend = normalize_backend(backend)
+
+    if normalized_backend == "openviking":
+        for idx, part in enumerate(parts):
+            if part != "viking":
+                continue
+            if idx + 1 < len(parts) and parts[idx + 1] == account_id:
+                return str(_path_from_parts(parts[:idx], workspace_path))
+            if idx == len(parts) - 1:
+                return str(_path_from_parts(parts[:idx], workspace_path))
+        return str(workspace_path)
+
+    for idx, part in enumerate(parts):
+        if part == "tenants":
+            if idx + 1 < len(parts) and parts[idx + 1] == account_id:
+                return str(_path_from_parts(parts[:idx], workspace_path))
+            if idx == len(parts) - 1:
+                return str(_path_from_parts(parts[:idx], workspace_path))
+
+    for idx in range(len(parts) - 1):
+        if parts[idx] == account_id and parts[idx + 1] == account_id:
+            return str(_path_from_parts(parts[:idx], workspace_path))
+
+    for idx in range(len(parts) - 1):
+        if parts[idx] == account_id and parts[idx + 1] in {"memory", "sessions", "users", "agents"}:
+            return str(_path_from_parts(parts[:idx], workspace_path))
+
+    return str(workspace_path)
+
+
 def storage_root(workspace: str | Path, account: str, backend: str = "openviking") -> Path:
     return backend_profile(backend).storage_root(workspace, account)
 

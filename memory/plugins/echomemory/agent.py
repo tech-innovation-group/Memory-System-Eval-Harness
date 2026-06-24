@@ -48,6 +48,7 @@ def normalize_retrieval_mode(value: Any) -> str:
 def looks_like_echomem_root(path: Path) -> bool:
     return (
         ((path / "packages" / "echomem" / "src").exists() and (path / "packages" / "echofs" / "src").exists())
+        or ((path / "src" / "echomem").exists() and (path / "src" / "echo0").exists() and (path / "pyproject.toml").exists())
         or ((path / "echomem").exists() and (path / "pyproject.toml").exists())
     )
 
@@ -57,8 +58,11 @@ def discover_echomem_root(raw_root: str = "") -> Path:
         raw_root,
         os.environ.get("ECHOMEM_ROOT"),
         os.environ.get("ECHOMEMORY_ROOT"),
+        str(Path.home() / "Code" / "echomemory" / "EchoMem_develop"),
         str(Path.home() / "Code" / "echomemory" / "echo_memory_v010"),
         str(Path.home() / "Code" / "echomemory" / "echo_memory"),
+        str(Path.cwd() / "EchoMem_develop"),
+        str(Path.cwd().parent / "EchoMem_develop"),
         str(Path.cwd() / "echo_memory_v010"),
         str(Path.cwd().parent / "echo_memory_v010"),
         str(Path.cwd() / "echo_memory"),
@@ -396,6 +400,7 @@ async def open_echomem(settings: dict[str, Any]):
             expected = [
                 str(root / "packages" / "echomem" / "src"),
                 str(root / "packages" / "echofs" / "src"),
+                str(root / "src"),
                 str(root / "echomem"),
             ]
             raise ModuleNotFoundError(

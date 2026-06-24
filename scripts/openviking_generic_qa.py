@@ -4,12 +4,14 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import importlib.util
 import os
 import re
 import subprocess
 import sys
 import time
 import uuid
+import hashlib
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -28,10 +30,22 @@ from openviking_memory_qa import (
     token_estimate,
 )
 
+LONGMEMEVAL_TIME_FORMAT = "%Y/%m/%d (%a) %H:%M"
+
 
 def safe_slug(value: Any, limit: int = 72) -> str:
     text = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(value or "").strip()).strip("-._")
     return (text or "sample")[:limit]
+
+
+def build_longmemeval_agent_id(sample_id: str | int) -> str:
+    digest = hashlib.md5(str(sample_id).encode("utf-8")).hexdigest()[:12]
+    return f"lm_{digest}"
+
+
+def build_longmemeval_user_id(sample_id: str | int) -> str:
+    digest = hashlib.md5(f"user:{sample_id}".encode("utf-8")).hexdigest()[:12]
+    return f"lm_user_{digest}"
 
 
 def bool_text(value: bool) -> str:
@@ -156,11 +170,79 @@ def event_messages(dataset_format: str, sample_id: str, namespace: str, events: 
 
 
 def sample_identity(args: argparse.Namespace, sample_id: str) -> tuple[str, str]:
+    if str(getattr(args, "dataset_format", "") or "").strip().lower() == "longmemeval":
+        return build_longmemeval_user_id(sample_id), build_longmemeval_agent_id(sample_id)
     if args.identity_mode == "fixed":
         return args.user_id or "default", args.agent_id or "default"
     base = safe_slug(args.namespace, 40)
     sample = safe_slug(sample_id, 64)
     return f"{safe_slug(args.user_prefix)}-{base}-{sample}", f"{safe_slug(args.agent_prefix)}-{base}-{sample}"
+
+
+def load_official_longmemeval_prompt_builder() -> Any | None:
+    candidates = [
+        Path.home() / "Code" / "openviking" / "versions" / "v0.4.4" / "benchmark" / "longmemeval" / "openviking" / "longmemeval_prompts.py",
+    ]
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location("openviking_longmemeval_prompts", path)
+            if not spec or not spec.loader:
+                continue
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            helper = getattr(module, "get_answer_generation_prompt", None)
+            if callable(helper):
+                return helper
+        except Exception:
+            continue
+    return None
+
+
+OFFICIAL_LONGMEMEVAL_PROMPT_BUILDER = load_official_longmemeval_prompt_builder()
+
+
+def load_official_longmemeval_runner() -> Any | None:
+    candidates = [
+        Path.home() / "Code" / "openviking" / "versions" / "v0.4.4" / "benchmark" / "longmemeval" / "openviking" / "run_eval.py",
+    ]
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location("openviking_longmemeval_run_eval", path)
+            if not spec or not spec.loader:
+                continue
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            helper = getattr(module, "run_single_search_context_answer", None)
+            if callable(helper):
+                return helper
+        except Exception:
+            continue
+    return None
+
+
+OFFICIAL_LONGMEMEVAL_RUNNER = load_official_longmemeval_runner()
+
+
+def parse_longmemeval_datetime(date_str: str) -> Any | None:
+    try:
+        from datetime import datetime
+
+        return datetime.strptime(str(date_str or "").strip(), LONGMEMEVAL_TIME_FORMAT)
+    except Exception:
+        return None
+
+
+def effective_document_import_mode(args: argparse.Namespace) -> str:
+    mode = str(getattr(args, "document_import_mode", "") or "").strip().lower()
+    if mode and mode != "auto":
+        return mode
+    if str(getattr(args, "dataset_format", "") or "").strip().lower() == "longmemeval":
+        return "session_commit"
+    return "source_documents"
 
 
 def user_memory_uri(user_id: str) -> str:
@@ -387,6 +469,9 @@ def ensure_document_memory(
 ) -> dict[str, Any]:
     if not args.document_memory:
         return record
+    import_mode = effective_document_import_mode(args)
+    if import_mode == "session_commit":
+        return record
     existing_uris = json_list(record.get("document_memory_uris"))
     if existing_uris and str(record.get("document_memory_status") or "") in {"ok", "partial"}:
         return record
@@ -394,11 +479,20 @@ def ensure_document_memory(
     agent_id = str(record.get("agent_id") or sample_identity(args, sample_id)[1])
     doc_record = materialize_benchmark_documents(args, sample_id, plan, user_id, agent_id, import_dir)
     record.update(doc_record)
+    doc_status = str(doc_record.get("document_memory_status") or "")
     if doc_record.get("document_memory_count"):
-        record["status"] = str(record.get("status") or "OPENVIKING_IMPORT_DONE")
+        if doc_status == "ok":
+            record["status"] = "OPENVIKING_DOCUMENT_IMPORT_DONE"
+            record["integrity"] = "complete"
+        elif doc_status == "partial":
+            record["status"] = "OPENVIKING_DOCUMENT_IMPORT_PARTIAL"
+            record["integrity"] = "partial"
+        else:
+            record["status"] = str(record.get("status") or "OPENVIKING_IMPORT_DONE")
         record["memory_uri"] = user_memory_uri(user_id)
-    elif doc_record.get("document_memory_status") == "failed" and record.get("integrity") != "complete":
+    elif doc_status == "failed" and record.get("integrity") != "complete":
         record["status"] = "OPENVIKING_IMPORT_FAILED"
+        record["integrity"] = "failed"
     return record
 
 
@@ -410,7 +504,8 @@ def import_sample_memory(
 ) -> dict[str, Any]:
     user_id, agent_id = sample_identity(args, sample_id)
     events = list(plan.get("events") or [])
-    if args.document_memory and args.document_import_mode == "source_documents" and source_documents_from_plan(plan, args):
+    import_mode = effective_document_import_mode(args)
+    if args.document_memory and import_mode == "source_documents" and source_documents_from_plan(plan, args):
         return {
             "sample_id": sample_id,
             "user_id": user_id,
@@ -424,6 +519,93 @@ def import_sample_memory(
             "estimated_import_tokens": 0,
             "error": "",
         }
+    session_batches = list(plan.get("session_batches") or [])
+    if import_mode == "session_commit" and session_batches:
+        client = OpenVikingHTTP(
+            args.openviking_url,
+            args.openviking_api_key,
+            args.account,
+            user_id,
+            agent_id,
+            args.timeout_s,
+        )
+        session_records: list[dict[str, Any]] = []
+        estimated_import_tokens = 0
+        try:
+            for batch in session_batches:
+                batch_messages = list(batch.get("messages") or [])
+                session_key = str(batch.get("session_key") or f"session_{len(session_records) + 1}")
+                if not batch_messages:
+                    continue
+                estimated_import_tokens += sum(token_estimate(str(msg.get("content") or "")) for msg in batch_messages)
+                session_id = (
+                    f"longmemeval-{safe_slug(sample_id, 40)}-{safe_slug(session_key, 40)}-{uuid.uuid4().hex[:8]}"
+                )
+                rec = import_one_openviking_session(
+                    args,
+                    client,
+                    session_id,
+                    batch_messages,
+                    f"{args.dataset_format}/{sample_id}/{session_key}",
+                )
+                rec["session_key"] = session_key
+                rec["date_time"] = str(batch.get("date_time") or "")
+                session_records.append(rec)
+            if not session_records:
+                raise RuntimeError("no session batches were imported")
+            expected_messages = sum(int(item.get("expected_messages") or 0) for item in session_records)
+            submitted_messages = sum(int(item.get("submitted_messages") or 0) for item in session_records)
+            pending_messages = sum(int(item.get("pending_message_count_after_commit") or 0) for item in session_records)
+            integrity = (
+                "complete"
+                if session_records and all(str(item.get("integrity") or "") == "complete" for item in session_records)
+                else "incomplete"
+            )
+            record = {
+                "sample_id": sample_id,
+                "user_id": user_id,
+                "agent_id": agent_id,
+                "status": "OPENVIKING_IMPORT_DONE" if integrity == "complete" else "OPENVIKING_IMPORT_INCOMPLETE",
+                "integrity": integrity,
+                "session_id": session_records[0]["session_id"] if len(session_records) == 1 else f"longmemeval-{safe_slug(sample_id, 40)}-*",
+                "session_count": len(session_records),
+                "session_records": session_records,
+                "expected_messages": expected_messages,
+                "submitted_messages": submitted_messages,
+                "live_message_count_before_commit": expected_messages,
+                "pending_message_count_after_commit": pending_messages,
+                "live_complete_before_commit": submitted_messages == expected_messages,
+                "archive_complete_after_commit": pending_messages == 0,
+                "memory_uri": user_memory_uri(user_id),
+                "estimated_import_tokens": estimated_import_tokens,
+                "error": "",
+                "document_import_mode_used": import_mode,
+            }
+            (import_dir / f"{safe_slug(sample_id)}_messages.json").write_text(
+                json.dumps(session_batches, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            return record
+        except Exception as exc:
+            return {
+                "sample_id": sample_id,
+                "user_id": user_id,
+                "agent_id": agent_id,
+                "status": "OPENVIKING_IMPORT_FAILED",
+                "integrity": "failed",
+                "expected_messages": sum(len(list(batch.get("messages") or [])) for batch in session_batches),
+                "submitted_messages": 0,
+                "session_id": "",
+                "memory_uri": user_memory_uri(user_id),
+                "estimated_import_tokens": sum(
+                    token_estimate(str(msg.get("content") or ""))
+                    for batch in session_batches
+                    for msg in list(batch.get("messages") or [])
+                ),
+                "error": str(exc),
+                "document_import_mode_used": import_mode,
+            }
+
     messages = event_messages(args.dataset_format, sample_id, args.namespace, events)
     if not messages:
         return {
@@ -456,6 +638,7 @@ def import_sample_memory(
                 "status": "OPENVIKING_IMPORT_DONE" if record.get("integrity") == "complete" else "OPENVIKING_IMPORT_INCOMPLETE",
                 "memory_uri": user_memory_uri(user_id),
                 "estimated_import_tokens": sum(token_estimate(str(msg.get("content") or "")) for msg in messages),
+                "document_import_mode_used": import_mode,
             }
         )
         (import_dir / f"{safe_slug(sample_id)}_messages.json").write_text(json.dumps(messages, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -473,6 +656,7 @@ def import_sample_memory(
             "memory_uri": user_memory_uri(user_id),
             "estimated_import_tokens": sum(token_estimate(str(msg.get("content") or "")) for msg in messages),
             "error": str(exc),
+            "document_import_mode_used": import_mode,
         }
 
 
@@ -753,7 +937,40 @@ def question_prompt(job: benchmark_adapter.Job) -> str:
     return job.question
 
 
-def build_answer_messages(job: benchmark_adapter.Job, evidence: str) -> list[dict[str, str]]:
+def job_question_type(job: benchmark_adapter.Job) -> str:
+    return str(getattr(job, "question_type", "") or getattr(job, "category", "") or "").strip()
+
+
+def build_answer_messages(
+    job: benchmark_adapter.Job,
+    evidence: str,
+    items: list[dict[str, Any]] | None = None,
+) -> tuple[list[dict[str, str]], str]:
+    if (
+        str(job.dataset_format or "").strip().lower() == "longmemeval"
+        and callable(OFFICIAL_LONGMEMEVAL_PROMPT_BUILDER)
+    ):
+        search_results = []
+        for item in items or []:
+            memory = str(item.get("abstract") or item.get("content") or "").strip()
+            if not memory:
+                continue
+            search_results.append(
+                {
+                    "memory": memory,
+                    "score": item.get("score", 0.0),
+                    "raw_rank": item.get("rank"),
+                }
+            )
+        prompt = OFFICIAL_LONGMEMEVAL_PROMPT_BUILDER(
+            question=job.question,
+            search_results=search_results,
+            question_date=job.query_time or "unknown",
+        )
+        question_type = job_question_type(job)
+        if question_type:
+            prompt = f"Question Type: {question_type}\n\n{prompt}"
+        return [{"role": "user", "content": prompt}], "official_longmemeval_v044_prompt"
     system = (
         "You are answering a formal memory benchmark question.\n"
         "Use only the retrieved OpenViking memories provided in the user message.\n"
@@ -768,7 +985,7 @@ def build_answer_messages(job: benchmark_adapter.Job, evidence: str) -> list[dic
         f"Retrieved OpenViking memories:\n{evidence}\n\n"
         "Answer:"
     )
-    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}], "strict_openviking_memory"
 
 
 def simple_grade(expected: str, actual: str) -> str:
@@ -784,10 +1001,109 @@ def answer_job(
     user_id = str(import_record.get("user_id") or sample_identity(args, job.sample_id)[0])
     agent_id = str(import_record.get("agent_id") or sample_identity(args, job.sample_id)[1])
     target_uri = user_memory_uri(user_id)
+    if (
+        str(job.dataset_format or "").strip().lower() == "longmemeval"
+        and callable(OFFICIAL_LONGMEMEVAL_RUNNER)
+    ):
+        (
+            response,
+            token_usage,
+            time_cost,
+            iteration,
+            tools_used_names,
+            retrieved_uris_by_iteration,
+            model_input_prompt,
+        ) = OFFICIAL_LONGMEMEVAL_RUNNER(
+            question=job.question,
+            question_type=job_question_type(job),
+            question_time=job.query_time,
+            sender_id=user_id,
+            session_id=agent_id,
+            openviking_url=args.openviking_url,
+            timeout=args.timeout_s,
+            single_search_context_limit=int(getattr(args, "single_search_context_limit", 10) or 10),
+            single_search_rerank_limit=int(getattr(args, "single_search_rerank_limit", 10) or 10),
+            single_search_max_context_chars=int(getattr(args, "single_search_max_context_chars", 4000) or 4000),
+            debug_print_model_input=bool(getattr(args, "debug_print_model_input", False)),
+        )
+        response = str(response or "").strip()
+        model_error = response if response.startswith("[SINGLE SEARCH ERROR]") else ""
+        retrieval_lists = list(retrieved_uris_by_iteration or [])
+        retrieval_ok = any((item.get("context_uris") or item.get("retrieved_uris") or []) for item in retrieval_lists if isinstance(item, dict))
+        answer_ok = bool(response) and response.lower() != "unknown" and not model_error
+        health = "ok" if retrieval_ok and answer_ok and not model_error else ("retrieval_empty" if not retrieval_ok else "model_failed")
+        relevant_memory = []
+        for payload in retrieval_lists:
+            if not isinstance(payload, dict):
+                continue
+            for uri in payload.get("context_uris") or payload.get("retrieved_uris") or []:
+                relevant_memory.append({"uri": uri})
+        return {
+            **benchmark_adapter.asdict(job),
+            "response": response,
+            "simple_grade": simple_grade(job.answer, response),
+            "result": "",
+            "reasoning": "; ".join(
+                [
+                    "official OpenViking LongMemEval single_search_context",
+                    f"backend=openviking",
+                    f"import_status={import_record.get('status')}",
+                    "pending judge",
+                ]
+            ),
+            "time_cost": f"{time_cost:.4f}",
+            "backend": "openviking",
+            "eval_engine": "openviking_generic_qa",
+            "namespace": args.namespace,
+            "dataset_path": str(args.dataset_path),
+            "memory_uri": target_uri,
+            "qa_user_id": user_id,
+            "qa_agent_id": agent_id,
+            "identity_mode": args.identity_mode,
+            "import_session_id": str(import_record.get("session_id") or ""),
+            "import_status": str(import_record.get("status") or ""),
+            "import_integrity": str(import_record.get("integrity") or ""),
+            "import_expected_messages": str(import_record.get("expected_messages") or 0),
+            "import_submitted_messages": str(import_record.get("submitted_messages") or 0),
+            "import_error": str(import_record.get("error") or ""),
+            "document_memory_status": str(import_record.get("document_memory_status") or ""),
+            "document_memory_count": str(import_record.get("document_memory_count") or 0),
+            "document_memory_uris": json.dumps(json_list(import_record.get("document_memory_uris")), ensure_ascii=False),
+            "document_memory_errors": json.dumps(json_list(import_record.get("document_memory_errors")), ensure_ascii=False),
+            "relevant_memory": json.dumps(relevant_memory, ensure_ascii=False),
+            "retrieval_query_plan": json.dumps([question_prompt(job)], ensure_ascii=False),
+            "retrieval_mode": "official_openviking_single_search_context",
+            "retrieval_count": str(sum(len((item.get("context_uris") or item.get("retrieved_uris") or [])) for item in retrieval_lists if isinstance(item, dict))),
+            "memory_hit_count": str(sum(len((item.get("context_uris") or item.get("retrieved_uris") or [])) for item in retrieval_lists if isinstance(item, dict))),
+            "archive_fallback_count": "0",
+            "retrieval_tokens_est": str(int(token_usage.get("memory_prompt_tokens") or 0)),
+            "context_preview": compact(json.dumps(retrieval_lists, ensure_ascii=False), 3000),
+            "prompt_mode": "official_longmemeval_v044_prompt",
+            "openviking_tool_loop_enabled": "false",
+            "openviking_tool_set": json.dumps(tools_used_names, ensure_ascii=False),
+            "openviking_content_read_enabled": bool_text(True),
+            "prompt_message_count": "1",
+            "prompt_preview": compact(model_input_prompt, 5000),
+            "answer_prompt_tokens": str(token_usage.get("prompt_tokens") or 0),
+            "answer_completion_tokens": str(token_usage.get("completion_tokens") or 0),
+            "answer_total_tokens": str(token_usage.get("total_tokens") or 0),
+            "model_status": "ok" if not model_error else "failed",
+            "model_retry_count": "0",
+            "model_error_kind": "single_search_error" if model_error else "",
+            "model_error": model_error,
+            "retrieval_status": "ok" if retrieval_ok else "empty",
+            "retrieval_error": model_error,
+            "answer_status": "ok" if answer_ok else ("failed" if model_error else "empty_or_unknown"),
+            "health_status": health,
+            "tools_used_names": json.dumps(tools_used_names, ensure_ascii=False),
+            "retrieved_uris_by_iteration": json.dumps(retrieved_uris_by_iteration, ensure_ascii=False),
+            "iteration": str(iteration),
+        }
+
     items, retrieval_error = evidence_items(args, job, import_record, user_id, agent_id)
     retrieval_ok = bool(items)
     evidence = evidence_block(items, args.evidence_chars)
-    messages = build_answer_messages(job, evidence)
+    messages, prompt_mode = build_answer_messages(job, evidence, items)
     model_result: dict[str, Any]
     if args.answer_token:
         try:
@@ -871,7 +1187,7 @@ def answer_job(
         "archive_fallback_count": "0",
         "retrieval_tokens_est": str(token_estimate(evidence)),
         "context_preview": compact(evidence, 3000),
-        "prompt_mode": "strict_openviking_memory",
+        "prompt_mode": prompt_mode,
         "openviking_tool_loop_enabled": "false",
         "openviking_tool_set": "search_find_content_read",
         "openviking_content_read_enabled": bool_text(bool(args.read_openviking_content)),
@@ -1205,8 +1521,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-document-write-wait", dest="document_write_wait", action="store_false")
     parser.add_argument("--document-write-retries", type=int, default=20)
     parser.add_argument("--document-write-interval-s", type=float, default=1.0)
-    parser.add_argument("--document-import-mode", choices=["source_documents", "session_commit", "both"], default="source_documents")
+    parser.add_argument("--document-import-mode", choices=["auto", "source_documents", "session_commit", "both"], default="auto")
     parser.add_argument("--document-group-chars", type=int, default=60000, help="Group LongMemEval source documents into larger OpenViking content writes; 0 disables grouping.")
+    parser.add_argument("--single-search-context-limit", type=int, default=10)
+    parser.add_argument("--single-search-rerank-limit", type=int, default=10)
+    parser.add_argument("--single-search-max-context-chars", type=int, default=4000)
+    parser.add_argument("--debug-print-model-input", action="store_true")
     parser.add_argument("--evidence-chars", type=int, default=9000)
     parser.add_argument("--evidence-item-chars", type=int, default=1800)
     parser.add_argument("--answer-base-url", default=os.environ.get("JUDGE_BASE_URL", ""))

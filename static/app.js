@@ -29,10 +29,17 @@ const state = {
   datasetRegistry: [],
   lastValidation: null,
   lastReportFile: "",
+  lastCompareReportFile: "",
+  nativeOpenVikingBaseline: null,
+  includeNativeOpenVikingBaseline: true,
   lastChatContextData: null,
   chatContextPreviewKey: "",
   chatContextPreviewLoading: false,
   selectedRunSummary: null,
+  selectedRunDetailLoading: false,
+  selectedRunDetailPromise: null,
+  selectedRunReportLoading: false,
+  runCompareLoading: false,
   lastJudgeSummary: null,
   lastQaDiagnostics: null,
   lastQaDiagnosticsInput: "",
@@ -57,7 +64,6 @@ const state = {
   recentRuns: [],
   runsLoading: false,
   selectedRunCompareIds: new Set(),
-  nativeOpenVikingBaseline: null,
   activeWorkflowKey: "import",
   activeDatasetFormat: "",
   activeDatasetPath: "",
@@ -115,7 +121,8 @@ const ACCOUNT_LIST_KEY = "locomoEval.accountList";
 const ACTIVE_ACCOUNT_KEY = "locomoEval.activeAccount";
 const ACCOUNT_CONFIG_PREFIX = "locomoEval.accountConfig.";
 const CHAT_DRAFT_PREFIX = "locomoEval.chatDraft.";
-const UI_REFRESH_VERSION = "20260622qataskstrip01";
+const UI_REFRESH_VERSION = "20260624disableprefetch01";
+const RUN_COMPARE_BASELINE_KEY = "locomoEval.runCompareIncludeNativeBaseline";
 const TASK_PROGRESS_TOTAL_HINT_PREFIX = "locomoEval.taskProgressTotal.";
 const TASK_STOP_OVERRIDE_TTL_MS = 30 * 1000;
 const ACTIVE_TASK_STATUSES = new Set(["queued", "running", "stopping"]);
@@ -133,6 +140,18 @@ function isTaskRunningStatus(task = {}) {
   return status === "queued" || status === "running";
 }
 
+function taskManifestStatus(task = {}) {
+  return String(task?.manifest_status || task?.manifestStatus || "").toLowerCase();
+}
+
+function isManifestRunningTask(task = {}) {
+  return taskManifestStatus(task) === "running";
+}
+
+function isImportTaskInBackground(task = {}) {
+  return isMemoryImportKind(task?.kind || "") && (isTaskActive(task) || isManifestRunningTask(task));
+}
+
 function normalizeSlashes(value = "") {
   return String(value || "").replace(/\\/g, "/");
 }
@@ -147,7 +166,7 @@ function relativeDatasetPath(path = "") {
   if (normalized === "locomo10.json") return "./dataset/locomo10.json";
   if (normalized === "locomo.json") return "./dataset/locomo.json";
   if (normalized === "full/locomo.json") return "./dataset/full/locomo.json";
-  const root = normalizeSlashes(state.config?.root || "");
+  const root = normalizeSlashes(state.config?.repo || state.config?.root || "");
   const datasetRoot = root ? `${root}/dataset/` : "";
   if (datasetRoot && normalized.startsWith(datasetRoot)) {
     return `./dataset/${normalized.slice(datasetRoot.length)}`;
@@ -177,6 +196,15 @@ function datasetPathMatches(left = "", right = "") {
   return leftVariants.some((value) => rightVariants.includes(value));
 }
 
+function readStoredBool(key, fallback = false) {
+  try {
+    const value = window.localStorage.getItem(key);
+    if (value === "true") return true;
+    if (value === "false") return false;
+  } catch {}
+  return fallback;
+}
+
 function preferredLocomoDatasetPath() {
   const rows = Array.isArray(state.datasetRegistry) ? state.datasetRegistry.filter((item) => normalizeDatasetFormat(item.format) === "locomo") : [];
   const full = rows.find((item) => item.exists && /(^|\/)full\/locomo\.json$/i.test(normalizeSlashes(item.path || item.resolved_path || "")));
@@ -184,6 +212,8 @@ function preferredLocomoDatasetPath() {
   const fallback = rows.find((item) => item.exists) || rows[0] || null;
   return relativeDatasetPath(full?.path || full?.resolved_path || bundled?.path || bundled?.resolved_path || fallback?.path || fallback?.resolved_path || state.config?.data || "");
 }
+
+state.includeNativeOpenVikingBaseline = readStoredBool(RUN_COMPARE_BASELINE_KEY, true);
 
 function uiActionLocked(key) {
   return UI_ACTION_LOCKS.has(String(key || ""));
@@ -320,13 +350,17 @@ function refreshImportActionLabels() {
   const datasetFormat = normalizeDatasetFormat(currentLocomoDataset()?.format || "");
   const locomoReady = datasetFormat === "locomo";
   const selection = parseImportSampleSelection();
-  const importBusy = isMemoryImportKind(state.currentImportTask?.kind || "") && isTaskActive(state.currentImportTask);
+  const importBusy = isImportTaskInBackground(state.currentImportTask || {});
+  const imported = currentImportedMemoryStatus();
+  const existingImportInWorkspace = !importBusy && Number(imported.summary_count || 0) > 0;
   const sampleName = selection.sampleId || selection.baseValue || "当前 conv";
   const commitButton = $("commitImport");
   if (commitButton) {
-    commitButton.disabled = !locomoReady || importBusy;
+    commitButton.disabled = !locomoReady || importBusy || existingImportInWorkspace;
     commitButton.textContent = selection.smoke ? "运行单 session 测试" : "导入所选对话";
-    commitButton.title = importBusy
+    commitButton.title = existingImportInWorkspace
+      ? "当前目录已经有历史导入结果。请先点“自动生成目录”，或手动切换到新的记忆目录。"
+      : importBusy
       ? "导入任务运行中，请稍候"
       : (
         selection.smoke
@@ -396,8 +430,8 @@ function locomoQaLaunchGate(preflight = state.systemPreflight, options = {}) {
   const qaKind = locomoQaTaskKind();
   const account = currentAccount();
   const workspace = effectiveOpenVikingWorkspace(qaKind);
-  const importReady = qaImportReadiness(backend, account, workspace, readCurrentAccountLastImport());
-  if (importReady.tone !== "ok") {
+  const importReady = qaImportReadiness(backend, account, workspace, currentWorkspaceScopedLastImport());
+  if (importReady.blocking) {
     return {
       value: importReady.value,
       detail: importReady.detail,
@@ -439,7 +473,7 @@ function locomoQaLaunchGate(preflight = state.systemPreflight, options = {}) {
   if (preflight.workspace?.status === "fail") {
     return {
       value: "记忆目录不可用",
-      detail: (preflight.workspace?.storage_root || preflight.workspace?.workspace || preflight.workspace?.message || "").trim(),
+      detail: (preflight.workspace?.storage_root || preflight.workspace?.workspace || preflight.workspace?.input_workspace || preflight.workspace?.message || "").trim(),
       tone: "bad",
       blocking: true,
     };
@@ -493,9 +527,10 @@ function locomoQaLaunchGate(preflight = state.systemPreflight, options = {}) {
       };
     }
   }
+  const workspaceLabel = (preflight.workspace?.storage_root || preflight.workspace?.workspace || "").trim();
   return {
     value: "可启动",
-    detail: "模型、记忆目录 和记忆导入状态已就绪。",
+    detail: workspaceLabel ? `当前使用 ${compactPath(workspaceLabel, 42, 38)}` : "模型、记忆目录 和记忆导入状态已就绪。",
     tone: "ok",
     blocking: false,
   };
@@ -530,7 +565,7 @@ function refreshLocomoQaActionLabels() {
     ? `当前不可启动：${launchGate.value}${launchGate.detail ? `。${launchGate.detail}` : ""}`
     : "";
   const selectedInScope = currentScopeSelectedQuestionIds().length;
-  const disabled = clickLocked || launchPending || submitting || loading || Boolean(busyTask) || launchGate.blocking;
+  const disabled = clickLocked || launchPending || submitting || loading || Boolean(busyTask);
   const runOneBusy = (submitting || launchPending)
     ? launchSource === "selected"
     : busyTaskMode === "selected";
@@ -747,7 +782,7 @@ const BenchmarkRegistry = (() => {
       defaultDatasetId: "hotpotqa-sample",
       preferredDatasetIds: ["hotpotqa-dev-distractor", "hotpotqa-sample"],
       emptyPathHint: "请填写 HotpotQA JSON / JSONL。",
-      metricNote: "运行后自动输出 HotpotQA 答案 EM/F1；支持事实 / 联合 F1 指标需要后续生成支持句预测后才可对比官方完整榜。",
+      metricNote: "运行后自动输出 HotpotQA Knowledge Base QA 的答案 EM/F1；支持事实 / 联合 F1 指标需要后续生成支持句预测后才可对比官方完整榜。",
       officialEvalAfter: true,
       requiresOfficialRunner: false,
     },
@@ -915,6 +950,7 @@ function artifactHref(path) {
   const value = String(path || "");
   const root = String(state.config?.root || "").replace(/\/+$/, "");
   const runsDir = String(state.config?.runs_dir || state.config?.output_dir || "").replace(/\/+$/, "");
+  const generatedReportsDir = root ? `${root}/generated-reports` : "";
   const candidates = [
     runsDir,
     root ? `${root}/runs` : "",
@@ -928,34 +964,20 @@ function artifactHref(path) {
   const marker = "/runs/";
   const index = value.indexOf(marker);
   if (index >= 0) return `/runs/${value.slice(index + marker.length).split("/").map(encodeURIComponent).join("/")}`;
+  if (generatedReportsDir) {
+    if (value === generatedReportsDir) return "/generated-reports/";
+    if (value.startsWith(`${generatedReportsDir}/`)) {
+      return `/generated-reports/${value.slice(generatedReportsDir.length + 1).split("/").map(encodeURIComponent).join("/")}`;
+    }
+  }
+  const reportsMarker = "/generated-reports/";
+  const reportsIndex = value.indexOf(reportsMarker);
+  if (reportsIndex >= 0) return `/generated-reports/${value.slice(reportsIndex + reportsMarker.length).split("/").map(encodeURIComponent).join("/")}`;
   return "";
 }
 
 function readLastImport() {
-  const account = safeAccountSlug(currentAccount());
-  const scopedKey = `${LAST_IMPORT_KEY}.${account}`;
-  try {
-    const current = JSON.parse(localStorage.getItem(scopedKey) || "{}");
-    if (current && Object.keys(current).length) return current;
-    const all = Object.keys(localStorage)
-      .filter((key) => key.startsWith(`${LAST_IMPORT_KEY}.`))
-      .map((key) => {
-        try {
-          return JSON.parse(localStorage.getItem(key) || "{}");
-        } catch {
-          return null;
-        }
-      })
-      .filter((item) => item && item.backend === currentMemoryBackend() && (item.workspace || item.output_file))
-      .sort((a, b) => String(b.saved_at || "").localeCompare(String(a.saved_at || "")));
-    if (all[0]) return all[0];
-    const scoped = localStorage.getItem(scopedKey);
-    if (scoped) return JSON.parse(scoped || "{}");
-    if (account === "default") return JSON.parse(localStorage.getItem(LAST_IMPORT_KEY) || "{}");
-    return {};
-  } catch {
-    return {};
-  }
+  return readScopedLastImport(currentAccount());
 }
 
 function readScopedLastImport(account = currentAccount()) {
@@ -973,35 +995,53 @@ function readScopedLastImport(account = currentAccount()) {
 
 function latestMemoryImportTask(tasks = [], options = {}) {
   const preferredKind = locomoImportTaskKind();
+  const backend = normalizeMemoryBackend(options.backend || currentMemoryBackend());
+  const workspaceScoped = options.workspaceScoped !== false;
   const scoped = currentAccountOnlyEnabled("taskCurrentAccountOnly")
     ? tasks.filter(matchesCurrentAccount)
     : tasks;
   if (options.strictAccount && currentAccountOnlyEnabled("taskCurrentAccountOnly") && !scoped.length) return null;
   const pool = scoped.length ? scoped : tasks;
   const fallbackPool = options.strictAccount ? pool : tasks;
-  return pool.find((task) => task.kind === preferredKind && isTaskActive(task))
+  const hasWorkspaceScope = workspaceScoped && Boolean(normalizeWorkspacePath(currentConfiguredWorkspace(backend)));
+  const scopedPool = hasWorkspaceScope ? pool.filter((task) => importRecordMatchesCurrentWorkspace(task, backend)) : pool;
+  const scopedFallbackPool = hasWorkspaceScope ? fallbackPool.filter((task) => importRecordMatchesCurrentWorkspace(task, backend)) : fallbackPool;
+  return scopedPool.find((task) => task.kind === preferredKind && isImportTaskInBackground(task))
+    || scopedPool.find((task) => isMemoryImportKind(task.kind) && isImportTaskInBackground(task))
+    || scopedPool.find((task) => task.kind === preferredKind && isTaskActive(task))
+    || scopedPool.find((task) => isMemoryImportKind(task.kind) && isTaskActive(task))
+    || scopedPool.find((task) => task.kind === preferredKind && task.status === "succeeded")
+    || scopedPool.find((task) => isMemoryImportKind(task.kind) && task.status === "succeeded")
+    || scopedPool.find((task) => task.kind === preferredKind)
+    || scopedPool.find((task) => isMemoryImportKind(task.kind))
+    || scopedFallbackPool.find((task) => isMemoryImportKind(task.kind))
+    || null;
+}
+
+function latestAnyMemoryImportTask(tasks = [], options = {}) {
+  const backend = normalizeMemoryBackend(options.backend || currentMemoryBackend());
+  const hasWorkspaceScope = options.workspaceScoped !== false && Boolean(normalizeWorkspacePath(currentConfiguredWorkspace(backend)));
+  const pool = hasWorkspaceScope ? tasks.filter((task) => importRecordMatchesCurrentWorkspace(task, backend)) : tasks;
+  return pool.find((task) => isMemoryImportKind(task.kind) && isImportTaskInBackground(task))
     || pool.find((task) => isMemoryImportKind(task.kind) && isTaskActive(task))
-    || pool.find((task) => task.kind === preferredKind && task.status === "succeeded")
     || pool.find((task) => isMemoryImportKind(task.kind) && task.status === "succeeded")
-    || pool.find((task) => task.kind === preferredKind)
     || pool.find((task) => isMemoryImportKind(task.kind))
-    || fallbackPool.find((task) => isMemoryImportKind(task.kind));
+    || null;
 }
 
-function latestAnyMemoryImportTask(tasks = []) {
-  return tasks.find((task) => isMemoryImportKind(task.kind) && isTaskActive(task))
-    || tasks.find((task) => isMemoryImportKind(task.kind) && task.status === "succeeded")
-    || tasks.find((task) => isMemoryImportKind(task.kind));
-}
-
-function latestMemoryImportRun(runs = []) {
+function latestMemoryImportRun(runs = [], options = {}) {
   const preferredKind = locomoImportTaskKind();
+  const backend = normalizeMemoryBackend(options.backend || currentMemoryBackend());
   const scoped = currentAccountOnlyEnabled("runsCurrentAccountOnly")
     ? runs.filter(matchesCurrentAccount)
     : runs;
   const pool = scoped.length ? scoped : runs;
-  return pool.find((run) => run.kind === preferredKind)
-    || pool.find((run) => isMemoryImportKind(run.kind || ""))
+  const hasWorkspaceScope = options.workspaceScoped !== false && Boolean(normalizeWorkspacePath(currentConfiguredWorkspace(backend)));
+  const scopedPool = hasWorkspaceScope ? pool.filter((run) => importRecordMatchesCurrentWorkspace(run, backend)) : pool;
+  return scopedPool.find((run) => run.kind === preferredKind && isImportTaskInBackground(run))
+    || scopedPool.find((run) => isMemoryImportKind(run.kind || "") && isImportTaskInBackground(run))
+    || scopedPool.find((run) => run.kind === preferredKind)
+    || scopedPool.find((run) => isMemoryImportKind(run.kind || ""))
     || null;
 }
 
@@ -1016,7 +1056,7 @@ async function latestMemoryImportRecord() {
     state.recentRuns = runs;
     state.runsLoadedAt = Date.now();
   }
-  return latestMemoryImportRun(runs);
+  return latestMemoryImportRun(runs, {workspaceScoped: true});
 }
 
 function runCreatedAtMs(run = {}) {
@@ -1031,8 +1071,23 @@ function isRecentWithinDays(run = {}, days = 3) {
   return createdMs >= (Date.now() - days * 24 * 60 * 60 * 1000);
 }
 
+function isRecentWithinHours(run = {}, hours = 24) {
+  const createdMs = runCreatedAtMs(run);
+  if (!Number.isFinite(createdMs)) return false;
+  return createdMs >= (Date.now() - hours * 60 * 60 * 1000);
+}
+
 function isRecentLocomoQaRun(run = {}) {
   const kind = String(run.kind || "").trim();
+  const format = normalizeDatasetFormat(benchmarkFormatFromRecord(run));
+  return (kind === "openviking_qa" || kind === "echomemory_qa")
+    && (!format || format === "locomo");
+}
+
+function isQaRunWithOutputFile(run = {}) {
+  const kind = String(run.kind || "").trim();
+  const hasOutputFile = Boolean(String(run.output_file || "").trim());
+  if (!hasOutputFile) return false;
   const format = normalizeDatasetFormat(benchmarkFormatFromRecord(run));
   return (kind === "openviking_qa" || kind === "echomemory_qa")
     && (!format || format === "locomo");
@@ -1176,6 +1231,118 @@ function readCurrentAccountLastImport() {
   return readScopedLastImport(currentAccount());
 }
 
+function normalizeWorkspacePath(value = "") {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function importRecordBackend(record = {}, fallback = currentMemoryBackend()) {
+  const explicit = normalizeMemoryBackend(
+    record?.meta?.config?.backend
+    || record?.config?.backend
+    || record?.backend
+    || ""
+  );
+  if (explicit) return explicit;
+  return String(record?.kind || "").startsWith("echomemory_") ? "echomemory" : normalizeMemoryBackend(fallback);
+}
+
+function importRecordWorkspace(record = {}) {
+  return String(
+    record?.meta?.config?.workspace
+    || record?.config?.workspace
+    || record?.workspace
+    || ""
+  ).trim();
+}
+
+function currentWorkspaceScopedLastImport(backend = currentMemoryBackend()) {
+  const lastImport = readCurrentAccountLastImport();
+  const expectedBackend = normalizeMemoryBackend(backend);
+  const currentWorkspace = normalizeWorkspacePath(currentConfiguredWorkspace(expectedBackend));
+  const lastBackend = normalizeMemoryBackend(lastImport.backend || expectedBackend);
+  const lastWorkspace = normalizeWorkspacePath(lastImport.workspace || "");
+  if (lastBackend !== expectedBackend) return {};
+  if (currentWorkspace && lastWorkspace && currentWorkspace !== lastWorkspace) return {};
+  return lastImport;
+}
+
+function importRecordMatchesCurrentWorkspace(record = {}, backend = currentMemoryBackend()) {
+  const expectedBackend = normalizeMemoryBackend(backend);
+  if (importRecordBackend(record, expectedBackend) !== expectedBackend) return false;
+  const currentWorkspace = normalizeWorkspacePath(currentConfiguredWorkspace(expectedBackend));
+  if (!currentWorkspace) return true;
+  const recordWorkspace = normalizeWorkspacePath(importRecordWorkspace(record));
+  return !recordWorkspace || recordWorkspace === currentWorkspace;
+}
+
+function clearImportedMemoryStatusForWorkspace(workspace = "", account = currentAccount()) {
+  state.importedMemoryStatus = {
+    workspace,
+    account: safeAccountSlug(account || currentAccount()),
+    sample_id: currentImportNamespace().sampleId || "",
+    session_count: 0,
+    summary_count: 0,
+    complete_count: 0,
+    latest_summary_path: "",
+    latest_integrity: "",
+  };
+}
+
+function currentImportedMemoryStatus() {
+  const imported = state.importedMemoryStatus || {};
+  const current = safeAccountSlug(currentAccount());
+  const importedAccount = safeAccountSlug(imported.account || "");
+  if (importedAccount && importedAccount !== current) return {};
+  const currentWorkspace = normalizeWorkspacePath(currentConfiguredWorkspace(currentMemoryBackend()));
+  const importedWorkspace = normalizeWorkspacePath(imported.workspace || "");
+  if (currentWorkspace && importedWorkspace && importedWorkspace !== currentWorkspace) return {};
+  return imported;
+}
+
+function locomoImportDisplayState(lastImport = currentWorkspaceScopedLastImport(), imported = currentImportedMemoryStatus()) {
+  const importedComplete = Number(imported.complete_count || 0) > 0;
+  const summaryCount = Number(imported.summary_count || 0);
+  const integrity = String(lastImport.integrity || "").toLowerCase();
+  const sameWorkspace = !imported.workspace || !lastImport.workspace || String(imported.workspace) === String(lastImport.workspace);
+  const latestSummaryPath = String(imported.latest_summary_path || "").trim();
+  const currentSummaryPath = String(lastImport.output_file || "").trim();
+  const running = isImportTaskInBackground(state.currentImportTask || {});
+  const summaryMatched = Boolean(currentSummaryPath && latestSummaryPath && latestSummaryPath === currentSummaryPath);
+  const currentRunComplete = !running && (
+    (summaryMatched && importedComplete)
+    || (sameWorkspace && integrity === "complete" && (!latestSummaryPath || !currentSummaryPath || summaryMatched))
+  );
+  const historicalComplete = !currentRunComplete && importedComplete;
+  const historicalSeen = !currentRunComplete && summaryCount > 0;
+  return {
+    currentRunComplete,
+    historicalComplete,
+    historicalSeen,
+    importedComplete,
+    summaryCount,
+    sameWorkspace,
+    latestSummaryPath,
+    currentSummaryPath,
+  };
+}
+
+function locomoImportCompleteState(lastImport = currentWorkspaceScopedLastImport(), imported = currentImportedMemoryStatus()) {
+  return locomoImportDisplayState(lastImport, imported).currentRunComplete;
+}
+
+function setImportedMemoryRunningStatus({workspace = "", account = "", sampleId = ""} = {}) {
+  state.importedMemoryStatus = {
+    workspace,
+    account: safeAccountSlug(account || currentAccount()),
+    sample_id: sampleId || currentImportNamespace().sampleId || "",
+    session_count: 0,
+    summary_count: 0,
+    complete_count: 0,
+    latest_summary_path: "",
+    latest_integrity: "",
+  };
+}
+
 function chatDraftKey(account = currentAccount()) {
   return `${CHAT_DRAFT_PREFIX}${safeAccountSlug(account)}`;
 }
@@ -1252,6 +1419,22 @@ function compactPath(value = "", head = 34, tail = 34) {
   if (!text) return "-";
   if (text.length <= head + tail + 3) return text;
   return `${text.slice(0, head)}...${text.slice(-tail)}`;
+}
+
+function displayPath(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const normalized = normalizeSlashes(text);
+  const repoRoot = normalizeSlashes(state.config?.repo || state.config?.root || "");
+  const runsDir = normalizeSlashes(state.config?.runs_dir || state.config?.output_dir || "");
+  const homeDir = normalizeSlashes(state.config?.home || "");
+  if (repoRoot && normalized === repoRoot) return ".";
+  if (repoRoot && normalized.startsWith(`${repoRoot}/`)) return `./${normalized.slice(repoRoot.length + 1)}`;
+  if (runsDir && normalized === runsDir) return "./runs";
+  if (runsDir && normalized.startsWith(`${runsDir}/`)) return `./runs/${normalized.slice(runsDir.length + 1)}`;
+  if (homeDir && normalized.startsWith(`${homeDir}/`)) return `./${normalized.slice(homeDir.length + 1)}`;
+  if (normalized.startsWith("/Users/chx/")) return `./${normalized.slice("/Users/chx/".length)}`;
+  return text;
 }
 
 function shellQuote(value = "") {
@@ -1404,13 +1587,20 @@ function syncEvalTaskContainersForView(viewId = activeViewId()) {
   }
 }
 
-function configuredWorkspaceForBackend(backend = currentMemoryBackend()) {
+function configuredWorkspaceForBackend(backend = currentMemoryBackend(), options = {}) {
   const normalized = normalizeMemoryBackend(backend);
   const cfg = readAccountConfig(currentAccount());
   const ovInput = $("ovWorkspace")?.value.trim() || "";
   const memoryInput = $("memoryWorkspace")?.value.trim() || "";
+  const preferSavedConfig = Boolean(options.preferSavedConfig);
   if (normalized === "echomemory") {
+    if (preferSavedConfig) {
+      return cfg.memoryWorkspace || cfg.ovWorkspace || memoryInput || ovInput || "";
+    }
     return memoryInput || cfg.memoryWorkspace || ovInput || cfg.ovWorkspace || "";
+  }
+  if (preferSavedConfig) {
+    return cfg.ovWorkspace || cfg.memoryWorkspace || ovInput || memoryInput || "";
   }
   return ovInput || cfg.ovWorkspace || memoryInput || cfg.memoryWorkspace || "";
 }
@@ -1422,17 +1612,14 @@ function effectiveOpenVikingWorkspace(kind, extra = {}) {
     extra.backend
       || (String(kind || "").startsWith("echomemory_") ? "echomemory" : currentMemoryBackend())
   );
-  const inputWorkspace = configuredWorkspaceForBackend(backend);
-  const lastImport = readCurrentAccountLastImport();
-  if (
-    isMemoryQaKind(kind)
-    && lastImport.workspace
-    && !inputWorkspace
-    && normalizeMemoryBackend(lastImport.backend || backend) === backend
-  ) {
-    return lastImport.workspace;
-  }
-  return inputWorkspace || lastImport.workspace || "";
+  const lastImport = currentWorkspaceScopedLastImport(backend);
+  const importWorkspace = normalizeMemoryBackend(lastImport.backend || backend) === backend
+    ? String(lastImport.workspace || "").trim()
+    : "";
+  const inputWorkspace = configuredWorkspaceForBackend(backend, {
+    preferSavedConfig: isMemoryQaKind(kind),
+  });
+  return inputWorkspace || importWorkspace || "";
 }
 
 function vikingbotAlignedQaPayload() {
@@ -1805,6 +1992,7 @@ function taskStatusLabel(task = {}) {
   if (status === "running") return "运行中";
   if (status === "queued") return "排队中";
   if (status === "stopping") return "停止中";
+  if (isMemoryImportKind(task.kind || "") && isManifestRunningTask(task) && !ACTIVE_TASK_STATUSES.has(status)) return "后台处理中";
   if (status === "succeeded") return "已完成";
   if (status === "failed") return "失败";
   if (status === "interrupted") return "已中断";
@@ -1977,6 +2165,12 @@ function benchmarkCurrentImportLabel(task = {}) {
   return parts.join(" · ");
 }
 
+function shortSessionLabel(label = "") {
+  const value = String(label || "").trim();
+  if (!value) return "";
+  return value.includes("/") ? value.split("/").pop() : value;
+}
+
 function parseActiveTaskQuestionDetail(detailText = "") {
   const firstLine = String(detailText || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean)[0] || "";
   if (!firstLine) return {questionId: "", question: ""};
@@ -2011,6 +2205,17 @@ function normalizeActiveTaskQaPreviewRow(row = {}, outputFile = "") {
   const questionId = String(row.question_id || row.sample_id || "").trim();
   const resultPath = String(outputFile || row.output_file || "").trim();
   if (!question && !answer && !questionId && !resultPath) return null;
+  return {questionId, question, answer, resultPath};
+}
+
+function normalizeActiveTaskProgressQaPreview(progress = {}, task = {}) {
+  const preview = progress?.qa_preview;
+  if (!preview || typeof preview !== "object") return null;
+  const questionId = String(preview.question_id || "").trim();
+  const question = String(preview.question || "").trim();
+  const answer = String(preview.answer || "").trim();
+  const resultPath = String(task.output_file || "").trim();
+  if (!questionId && !question && !answer) return null;
   return {questionId, question, answer, resultPath};
 }
 
@@ -2532,7 +2737,7 @@ function workspacePrefixForBackend(backend = currentMemoryBackend()) {
 
 function timestampWorkspaceForAccount(account, backend = currentMemoryBackend()) {
   const base = state.config?.home || "~";
-  return `${base}/${workspacePrefixForBackend(backend)}_${safeAccountSlug(account)}_${slugTime()}`;
+  return `${base}/${workspacePrefixForBackend(backend)}_${compactAccountSlug(account)}_${slugTime()}`;
 }
 
 function isGeneratedMemoryWorkspace(workspace) {
@@ -2782,7 +2987,7 @@ function accountConfigDefaults() {
     ovPort: state.config.server_port || "19080",
     ovWorkspace: "",
     memoryWorkspace: "",
-    echomemRoot: "",
+    echomemRoot: "/Users/chx/Code/echomemory/EchoMem_develop",
     memoryUserId: "default",
     memoryAgentId: "default",
     ovApiKey: "",
@@ -2791,7 +2996,7 @@ function accountConfigDefaults() {
     agentBaseUrl: state.config.judge_base_url || "https://codexcs.ysaikeji.cn/v1",
     agentModel: state.config.judge_model || "gpt-5.5",
     memoryInjectBaseUrl: state.config.vlm_base_url || "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    memoryInjectModel: state.config.vlm_model || "deepseek-v4-flash",
+    memoryInjectModel: state.config.vlm_model || "",
     chatTopK: "30",
   };
 }
@@ -2832,7 +3037,7 @@ function memoryInjectModelConfig() {
   const cfg = readAccountConfig(currentAccount());
   return {
     baseUrl: $("systemMemoryBaseUrl")?.value.trim() || cfg.memoryInjectBaseUrl || $("ovVlmBaseUrl")?.value.trim() || "",
-    model: $("systemMemoryModel")?.value.trim() || cfg.memoryInjectModel || $("ovVlmModel")?.value.trim() || "deepseek-v4-flash",
+    model: $("systemMemoryModel")?.value.trim() || cfg.memoryInjectModel || $("ovVlmModel")?.value.trim() || "",
     token: $("systemMemoryToken")?.value.trim() || $("ovVlmApiKey")?.value.trim() || cfg.memoryInjectToken || "",
   };
 }
@@ -3135,8 +3340,35 @@ function storageRootForBackend(workspace = "", account = "", backend = "openviki
   if (!workspace) return "";
   const accountId = account || "default";
   const normalized = normalizeMemoryBackend(backend);
-  if (normalized === "echomemory") return `${workspace}/${accountId}/${accountId}`;
+  if (normalized === "echomemory") return `${workspace}/tenants/${accountId}`;
   return `${workspace}/viking/${accountId}`;
+}
+
+function importPathRowsForBackend({workspace = "", account = "", backend = "openviking", userId = "default", agentId = "default"} = {}) {
+  const normalized = normalizeMemoryBackend(backend);
+  const root = storageRootForBackend(workspace, account, normalized);
+  if (!root) return [];
+  if (normalized === "echomemory") {
+    return [
+      {label: "记忆写入目录", value: root, copy: true, open: true},
+    ];
+  }
+  return [
+    {label: "记忆写入目录", value: root, copy: true, open: true},
+  ];
+}
+
+function workspaceDisplayPath(workspace = "", account = "", backend = "openviking") {
+  return String(workspace || "").trim() || storageRootForBackend(workspace, account, backend) || "";
+}
+
+function currentConfiguredWorkspace(backend = currentMemoryBackend()) {
+  return String(
+    configuredWorkspaceForBackend(backend)
+    || $("ovWorkspace")?.value
+    || $("memoryWorkspace")?.value
+    || ""
+  ).trim();
 }
 
 function setAccountCreateExpanded(expanded) {
@@ -4433,7 +4665,7 @@ function renderAgentAlignment(data, targetId = "agentAlignmentPanel") {
       <span>下一步</span>
       <strong>${nextActions.length ? "按提示处理" : "可以进入后端差异分析"}</strong>
       <ul class="setup-pack-list">
-        ${(nextActions.length ? nextActions : ["继续跑 LoCoMo 小样本核验或全量运行，并导出报告。"]).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+        ${(nextActions.length ? nextActions : ["继续跑 LoCoMo 小样本核验或全量运行，并到查看报告页核对结果。"]).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
       </ul>
     </article>
   `;
@@ -4979,9 +5211,12 @@ function renderSystemPreflight(data = state.systemPreflight) {
       backendAdapter.missing_recommended_capabilities?.length ? `建议补齐能力：${backendAdapter.missing_recommended_capabilities.join(", ")}` : "",
       backendAdapter.missing_optional_methods?.length ? `建议补齐方法：${backendAdapter.missing_optional_methods.join(", ")}` : "",
     ])}
-    ${preflightCard("目录", workspace.status, workspace.storage_root || workspace.workspace || "-", [
+    ${preflightCard("目录", workspace.status, workspace.storage_root || workspace.workspace || workspace.input_workspace || "-", [
+      workspace.input_workspace ? `输入：${workspace.input_workspace}` : "",
+      workspace.workspace ? `实际 workspace：${workspace.workspace}` : "",
       workspace.workspace_exists ? "目录存在" : "目录不存在",
       workspace.storage_root_exists ? "存储根目录存在" : "存储根目录未创建",
+      workspace.workspace_was_normalized ? "已按当前账户自动归一化旧目录" : "",
       workspace.layout ? `布局：${workspace.layout}` : "",
     ])}
     ${preflightCard("数据集", dataset.status, datasetLabel, [
@@ -5667,7 +5902,7 @@ const LOCOMO_FLOW_CARDS = [
   {key: "openvikingView", view: "openvikingView", title: "记忆导入", detail: "读取数据、导入 conv、检查完整性"},
   {key: "evalView", view: "evalView", title: "问答测试", detail: "选择问答、查看相关记忆"},
   {key: "judgeView", view: "judgeView", title: "判分", detail: "检查结果文件并判分当前结果"},
-  {key: "runsView", view: "runsView", title: "导出报告", detail: "选择任务并生成评测报告"},
+  {key: "runsView", view: "runsView", title: "查看报告", detail: "查看结果、原始报告与对比摘要"},
 ];
 
 function benchmarkFlowContext(viewId = "") {
@@ -5687,11 +5922,23 @@ function benchmarkFlowContext(viewId = "") {
 function benchmarkFlowCards(context = {}) {
   const targetView = context.view || "runsView";
   const label = context.label || datasetTypeLabel(context.format) || "当前数据集";
+  const normalizedFormat = normalizeDatasetFormat(context.format || "");
+  if (normalizedFormat === "longmemeval") {
+    return [
+      {key: "import", view: targetView, title: "准备", detail: `${label}：选数据集，确认后端与导入口径`},
+      {key: "qa", view: targetView, title: "运行", detail: "Oracle 50 / 全量运行，加载题目并启动任务"},
+      {key: "judge", view: targetView, title: "结果", detail: "查看最新结果、官方摘要和失败分析"},
+    ];
+  }
+  const importTitle = normalizedFormat === "hotpotqa" ? "文档写入" : "记忆导入";
+  const importDetail = normalizedFormat === "hotpotqa"
+    ? `${label}：选择数据、配置后端，按题写入上下文文档`
+    : `${label}：选择数据、配置后端、准备写入记忆`;
   return [
-    {key: "import", view: targetView, title: "记忆导入", detail: `${label}：选择数据、配置后端、准备写入记忆`},
+    {key: "import", view: targetView, title: importTitle, detail: importDetail},
     {key: "qa", view: targetView, title: "问答测试", detail: "加载题目、勾选样本、启动真实模型链路"},
     {key: "judge", view: targetView, title: "判分", detail: "自动判分 / 官方指标摘要随任务生成"},
-    {key: "report", view: "runsView", title: "导出报告", detail: "进入结果中心查看任务、摘要和报告"},
+    {key: "report", view: "runsView", title: "查看报告", detail: "进入结果中心查看任务、摘要、原始报告和对比"},
   ];
 }
 
@@ -5883,7 +6130,8 @@ function flowArtifactRows(data = {}) {
   return [
     ["数据集", dataset.path],
     ["工作空间", workspace.storage_root || workspace.workspace],
-    ["记忆根目录", imported.memory_root || imported.account_path],
+    ["账户目录", imported.account_path],
+    ["长期记忆目录", imported.memory_root],
     ["QA 结果 CSV", latestQa.output_file],
     ["报告", latestReport.report_html],
   ].filter(([, value]) => value);
@@ -6048,12 +6296,15 @@ function renderLocomoFlowStatusPanel(data) {
 function renderImportStageRail(status = {}) {
   const rail = $("importStageRail");
   if (!rail) return;
-  const lastImport = readLastImport();
+  const lastImport = currentWorkspaceScopedLastImport();
+  const imported = currentImportedMemoryStatus();
   const task = state.currentImportTask || {};
-  const running = isTaskRunningStatus(task);
-  const complete = status.complete || String(lastImport.integrity || "").toLowerCase() === "complete";
-  const warned = status.warn || (lastImport.integrity && String(lastImport.integrity).toLowerCase() !== "complete");
-  const activeStage = running ? "commit" : (complete ? "smoke" : (lastImport.output_file ? "verify" : "parse"));
+  const running = isImportTaskInBackground(task);
+  const importDisplay = locomoImportDisplayState(lastImport, imported);
+  const complete = status.complete || importDisplay.currentRunComplete;
+  const historical = importDisplay.historicalSeen;
+  const warned = status.warn || historical || (lastImport.integrity && String(lastImport.integrity).toLowerCase() !== "complete");
+  const activeStage = running ? "commit" : (complete ? "smoke" : ((historical || lastImport.output_file) ? "verify" : "parse"));
   const doneStages = new Set();
   if (currentLocomoDataset()) doneStages.add("parse");
   if (lastImport.workspace || task.id) {
@@ -6101,8 +6352,8 @@ function renderLocomoWorkbenchTrack() {
   const summaryTarget = $("locomoWorkbenchSummary");
   if (!target && !summaryTarget) return;
   const dataset = currentLocomoDataset();
-  const lastImport = readLastImport();
-  const imported = state.importedMemoryStatus || {};
+  const lastImport = currentWorkspaceScopedLastImport();
+  const imported = currentImportedMemoryStatus();
   const outputCsv = currentLocomoResultCsv();
   const reportPath = state.lastReportFile || "";
   const task = state.currentLocomoTask || {};
@@ -6111,20 +6362,28 @@ function renderLocomoWorkbenchTrack() {
   const summary = state.selectedRunSummary || task.summary || {};
   const pending = summary.result_counts?.UNSCORED ?? (summary.rows && summary.graded != null ? Math.max(0, Number(summary.rows) - Number(summary.graded)) : "-");
   const datasetReady = Boolean(dataset);
-  const importComplete = String(lastImport.integrity || "").toLowerCase() === "complete" || Number(imported.complete_count || 0) > 0;
-  const importRan = Boolean(lastImport.output_file || state.currentImportTask?.output_file || state.currentImportTask?.id);
+  const importDisplay = locomoImportDisplayState(lastImport, imported);
+  const importComplete = importDisplay.currentRunComplete;
+  const importHistorical = importDisplay.historicalSeen;
+  const importRan = Boolean(lastImport.output_file || state.currentImportTask?.output_file || state.currentImportTask?.id || importHistorical);
   const backendLabel = memoryBackendLabel(currentMemoryBackend());
   const qaProgress = taskRunning && taskProgress.total
     ? `${taskProgress.current}/${taskProgress.total} · ${Number(taskProgress.pct || 0).toFixed(1)}%`
     : (taskRunning ? taskStatusLabel(task) : (outputCsv ? "CSV 已生成" : "等待 QA"));
   const judgeReady = outputCsv && summary.accuracy != null;
-  const importStatus = importComplete ? "已完成" : (importRan ? "需确认" : (datasetReady ? "可导入" : "待加载"));
+  const importStatus = importComplete
+    ? "已完成"
+    : (importHistorical ? "已有历史导入" : (importRan ? "需确认" : (datasetReady ? "可导入" : "待加载")));
   const importDetail = [
     datasetReady ? `数据集 ${dataset.samples ?? "-"} conv / ${dataset.questions ?? "-"} QA` : "先读取 LoCoMo JSON",
     `${backendLabel} · 账户 ${currentAccount()}`,
-    importComplete ? "完整性已完成" : (importRan ? "导入已运行，请检查完整性" : "选择 conv 或全量导入"),
+    importComplete
+      ? "最近一次导入已完成"
+      : (importHistorical
+        ? "当前目录已存在历史导入；重新导入前请先点“自动生成目录”"
+        : (importRan ? "导入已运行，请检查完整性" : "选择 conv 或全量导入")),
   ].join(" · ");
-  const importMetric = importComplete
+  const importMetric = (importComplete || importHistorical)
     ? `摘要 ${imported.complete_count ?? "-"} / ${imported.summary_count ?? "-"} · 记忆文件 ${imported.memory_files ?? "-"}`
     : (lastImport.sample_id || lastImport.sample || (datasetReady ? "选择 conv 或全量" : "LoCoMo JSON"));
   const cards = [
@@ -6134,7 +6393,7 @@ function renderLocomoWorkbenchTrack() {
       status: importStatus,
       detail: importDetail,
       metric: importMetric,
-      tone: importComplete ? "ok" : (importRan ? "warn" : "todo"),
+      tone: importComplete ? "ok" : ((importHistorical || importRan) ? "warn" : "todo"),
       view: "openvikingView",
       action: importComplete ? "查看导入" : "读取并导入",
     },
@@ -6156,13 +6415,13 @@ function renderLocomoWorkbenchTrack() {
       metric: `结果行 ${summary.rows ?? "-"} · 待判 ${pending}`,
       tone: judgeReady ? "ok" : (outputCsv ? "warn" : "todo"),
       view: "judgeView",
-      action: judgeReady ? "查看判分" : "判分当前结果",
+      action: judgeReady ? "查看判分" : "judge",
     },
     {
       step: "4",
       title: "查看报告",
       status: reportPath ? "可打开" : (judgeReady ? "待生成" : "等待判分"),
-      detail: reportPath || "生成评测报告，展示配置、Token 用量、证据、上下文和错误归因。",
+      detail: reportPath || "查看评测报告，展示配置、Token 用量、证据、上下文和错误归因。",
       metric: reportPath ? "评测报告文件" : "评测报告 + 证据追踪",
       tone: reportPath ? "ok" : (judgeReady ? "warn" : "todo"),
       view: "runsView",
@@ -6211,8 +6470,8 @@ function renderLocomoOverview() {
     return;
   }
   const dataset = currentLocomoDataset();
-  const lastImport = readLastImport();
-  const imported = state.importedMemoryStatus || {};
+  const lastImport = currentWorkspaceScopedLastImport();
+  const imported = currentImportedMemoryStatus();
   const outputCsv = currentLocomoResultCsv();
   const reportPath = state.lastReportFile || "";
   const task = state.currentLocomoTask || {};
@@ -6221,8 +6480,10 @@ function renderLocomoOverview() {
   const summary = state.selectedRunSummary || task.summary || {};
   const pending = summary.result_counts?.UNSCORED ?? (summary.rows && summary.graded != null ? Math.max(0, Number(summary.rows) - Number(summary.graded)) : "-");
   const datasetReady = Boolean(dataset);
-  const importComplete = String(lastImport.integrity || "").toLowerCase() === "complete" || Number(imported.complete_count || 0) > 0;
-  const importTone = importComplete ? "ok" : (lastImport.output_file ? "warn" : "");
+  const importDisplay = locomoImportDisplayState(lastImport, imported);
+  const importComplete = importDisplay.currentRunComplete;
+  const importHistorical = importDisplay.historicalSeen;
+  const importTone = importComplete ? "ok" : ((importHistorical || lastImport.output_file) ? "warn" : "");
   const qaTone = taskRunning ? "active" : (outputCsv ? "ok" : "");
   const runAccuracy = summary.accuracy == null ? "待判分" : percent(summary.accuracy);
   const taskProgressText = taskRunning && taskProgress.total
@@ -6232,14 +6493,14 @@ function renderLocomoOverview() {
     <article class="overview-card ${importComplete ? "ok" : importTone}">
       <div class="overview-card-head">
         <span>记忆导入</span>
-        <strong>${importComplete ? "导入完成" : (datasetReady ? "可导入" : "等待数据集")}</strong>
+        <strong>${importComplete ? "导入完成" : (importHistorical ? "目录已有导入" : (datasetReady ? "可导入" : "等待数据集"))}</strong>
       </div>
       <div class="overview-metrics">
         ${locomoOverviewMetric("Conv", dataset?.samples ?? "-")}
         ${locomoOverviewMetric("QA", dataset?.questions ?? "-")}
-        ${locomoOverviewMetric("完整性", lastImport.integrity === "complete" ? "完整" : (imported.complete_count ? "完整" : "-"), importTone)}
+        ${locomoOverviewMetric("完整性", importComplete ? "完整" : (importHistorical ? "历史结果" : "-"), importTone)}
       </div>
-      <p>${escapeHtml(lastImport.workspace || dataset?.path || dataset?.resolved_path || "在记忆导入块填写 LoCoMo JSON，读取后选择 conv 并归档。")}</p>
+      <p>${escapeHtml(workspaceDisplayPath(currentConfiguredWorkspace(currentMemoryBackend()) || effectiveOpenVikingWorkspace(locomoImportTaskKind()), currentAccount(), currentMemoryBackend()) || lastImport.workspace || dataset?.path || dataset?.resolved_path || "在记忆导入块填写 LoCoMo JSON，读取后选择 conv 并归档。")}</p>
     </article>
     <article class="overview-card ${importTone}">
       <div class="overview-card-head">
@@ -6382,6 +6643,62 @@ function escapeHtml(value) {
     "&": "&amp;",
     '"': "&quot;",
   }[c]));
+}
+
+function filterVisibleTaskLogText(text = "", task = null, logBoxId = "") {
+  const raw = String(text || "");
+  if (!raw) return "";
+  const kind = String(task?.kind || "").trim();
+  const shouldFilterImportNoise = isMemoryImportKind(kind) || logBoxId === "importLogBox";
+  if (!shouldFilterImportNoise) return raw;
+  const lines = raw.split(/\r?\n/);
+  const kept = [];
+  let suppressedEmbeddingZeroToken = 0;
+  const promoted = [];
+  for (const line of lines) {
+    const isZeroTokenEmbedding = /\[LLM\]\s+call_site=embedding\b/.test(line)
+      && /\binput=0\b/.test(line)
+      && /\boutput=0\b/.test(line)
+      && /\btotal=0\b/.test(line);
+    if (isZeroTokenEmbedding) {
+      suppressedEmbeddingZeroToken += 1;
+      continue;
+    }
+    if (
+      /\[(sample|finalize-progress|finalize|wait|flush|commit-status)\]/.test(line)
+      || /\[(atom|atom-extract|atom-extract-call|summary)\]/.test(line)
+      || (/\[LLM\]/.test(line) && /\bcall_site=(atom_extraction|overview_generation|abstract_generation|entity_merge|search_intent)\b/.test(line))
+    ) {
+      promoted.push(line);
+      continue;
+    }
+    kept.push(line);
+  }
+  if (!suppressedEmbeddingZeroToken && !promoted.length) return raw;
+  const folded = suppressedEmbeddingZeroToken ? `[log-filter] folded ${suppressedEmbeddingZeroToken} embedding rows with zero tokens` : "";
+  const merged = promoted.concat(kept);
+  if (!folded && merged.length) return `${merged.join("\n")}${raw.endsWith("\n") ? "\n" : ""}`;
+  if (!merged.length) return `${folded}\n`;
+  const trailingNewline = raw.endsWith("\n") ? "\n" : "";
+  return `${folded}\n${merged.join("\n")}${trailingNewline}`;
+}
+
+function summarizeImportTokenUsage(task = null) {
+  const usage = task?.log_diagnostics?.token_usage
+    || task?.summary
+    || task
+    || {};
+  const callSites = usage.call_sites || {};
+  const parts = [];
+  for (const site of ["atom_extraction", "overview_generation", "abstract_generation", "entity_merge"]) {
+    const bucket = callSites[site];
+    if (!bucket) continue;
+    const totalTokens = Number(bucket.total_tokens || 0);
+    const callCount = Number(bucket.call_count || 0);
+    if (!totalTokens && !callCount) continue;
+    parts.push(`${site} ${formatInt(totalTokens)} tokens / ${formatInt(callCount)} calls`);
+  }
+  return parts;
 }
 
 function normalizeVisibleMemoryBackendName(value) {
@@ -6590,6 +6907,10 @@ function renderJudgeEstimate(summary = {}) {
   box.hidden = !(pending || estimateTokens || avgTokens);
 }
 
+function hasJudgeScore(summary = {}) {
+  return summary?.accuracy !== undefined && summary?.accuracy !== null && summary?.accuracy !== "";
+}
+
 function pendingCount(summary = {}) {
   const rows = Number(summary.rows || 0);
   return Number(summary.result_counts?.UNSCORED ?? Math.max(0, rows - Number(summary.graded || 0)));
@@ -6648,7 +6969,7 @@ function judgeReportReadiness(summary = {}, input = currentLocomoResultCsv()) {
   if (!input) {
     return {
       value: "等待 QA 结果",
-      detail: "QA 完成后会自动填入结果文件，再从结果中心生成评测报告。",
+      detail: "QA 完成后会自动填入结果文件，再从结果中心查看评测报告。",
       tone: "warn",
     };
   }
@@ -6716,10 +7037,11 @@ function renderJudgeReadinessPanel(summary = state.lastJudgeSummary || {}, task 
         <p>${escapeHtml(card.detail || "")}</p>
       </article>
     `).join("")}
-    <p class="judge-readiness-note">${escapeHtml(preflightText)}；报告在“导出报告”页生成。</p>
+    <p class="judge-readiness-note">${escapeHtml(preflightText)}；报告在“查看报告”页查看。</p>
   `;
   const emptyState = $("judgeEmptyState");
   if (emptyState) {
+    const hasHistory = Boolean($("judgeHistoryList")?.querySelector("[data-output-file]"));
     const hasVisibleJudgeOutput = Boolean(
       input
       || rows
@@ -6730,9 +7052,107 @@ function renderJudgeReadinessPanel(summary = state.lastJudgeSummary || {}, task 
       || !($("evalSampleRows")?.hidden ?? true)
       || !($("sampleRows")?.hidden ?? true)
     );
+    if (hasVisibleJudgeOutput) {
+      emptyState.innerHTML = "";
+    } else {
+      emptyState.innerHTML = `
+        <span class="label">开始判分</span>
+        <strong>${input ? "当前结果还没生成判分内容" : "先选一个 QA 结果"}</strong>
+        <p>${input
+          ? "点击左侧 judge 后，右侧会补齐错题、判分依据和结果摘要。"
+          : (hasHistory
+            ? "左侧可直接粘贴结果文件，也可以从“最近 LoCoMo 结果”里切换一条历史结果。"
+            : "先到“问答测试”运行 QA，生成结果文件后再回到这里做正式判分。")}</p>
+        <div class="workbench-empty-grid">
+          <article>
+            <span>1</span>
+            <strong>${input ? "确认当前结果" : "准备结果文件"}</strong>
+            <p>${input ? "结果路径已经就绪，可以直接执行判分。" : "支持手动粘贴 CSV，或者从历史结果中切换。"}</p>
+          </article>
+          <article>
+            <span>2</span>
+            <strong>执行 judge</strong>
+            <p>预检通过后运行正式判分，准确率和错题列表会同步刷新。</p>
+          </article>
+          <article>
+            <span>3</span>
+            <strong>查看错题依据</strong>
+            <p>判分完成后，右侧工作区会展示错题、证据和题目详情。</p>
+          </article>
+        </div>
+      `;
+    }
     emptyState.hidden = hasVisibleJudgeOutput;
+    $("judgeSummaryCard")?.classList.toggle("is-idle", !hasVisibleJudgeOutput);
+    $("judgeArtifactCard")?.classList.toggle("is-idle", !hasVisibleJudgeOutput);
+    $("judgeSamplesCard")?.classList.toggle("is-idle", !hasVisibleJudgeOutput);
   }
+  renderJudgeIdleCards({input, hasSummaryRows: rows > 0});
   updateJudgeAndReportActionButtons({input, judgeRunning});
+}
+
+function renderJudgeIdleCards({input = currentLocomoResultCsv(), hasSummaryRows = false} = {}) {
+  const artifactList = $("resultArtifactList");
+  if (artifactList && artifactList.hidden) {
+    artifactList.hidden = false;
+    artifactList.innerHTML = `
+      <article class="workbench-idle-note">
+        <strong>${input ? "结果路径待刷新" : "还没有结果路径"}</strong>
+        <p>${input ? "点击右上角“刷新判分结果”后，这里会展示结果文件、目录和判分摘要。" : "运行 QA 或从历史结果切换后，这里会展示结果文件和相关产物路径。"}</p>
+      </article>
+    `;
+  }
+
+  const historyList = $("judgeHistoryList");
+  if (historyList && !historyList.querySelector("[data-output-file]")) {
+    historyList.innerHTML = `
+      <article class="workbench-idle-note">
+        <strong>最近 LoCoMo 结果还没加载出来</strong>
+        <p>这里会列出可直接切换的历史结果；如果刚跑完 QA，点右上角刷新即可补进来。</p>
+      </article>
+    `;
+  }
+
+  const sampleRows = $("sampleRows");
+  if (sampleRows && sampleRows.hidden) {
+    sampleRows.hidden = false;
+    sampleRows.innerHTML = `
+      <article class="workbench-idle-note">
+        <strong>${hasSummaryRows ? "当前结果还没有错题" : "错题列表等待判分"}</strong>
+        <p>${hasSummaryRows ? "如果正式判分后没有 WRONG，这里会保持为空。" : "完成 judge 后，这里会只列出 WRONG 题目，方便继续排查。"}<\/p>
+      </article>
+    `;
+  }
+
+  const detailPane = $("judgeQuestionDetailPane");
+  if (detailPane && !String(detailPane.textContent || "").trim()) {
+    detailPane.innerHTML = "<p class=\"muted-list-note\">点上面的错题后，这里显示判分依据。</p>";
+  }
+}
+
+function renderJudgeViewIdleState() {
+  const input = currentLocomoResultCsv();
+  const summary = state.lastJudgeSummary || {};
+  const rows = Number(summary.rows ?? summary.summary_json?.count ?? 0);
+  const emptyState = $("judgeEmptyState");
+  if (emptyState) {
+    emptyState.hidden = true;
+    emptyState.innerHTML = "";
+  }
+  $("judgeSummaryCard")?.classList.toggle("is-idle", !input);
+  $("judgeArtifactCard")?.classList.toggle("is-idle", !input);
+  $("judgeSamplesCard")?.classList.toggle("is-idle", !input);
+  renderJudgeIdleCards({input, hasSummaryRows: rows > 0});
+}
+
+async function hydrateJudgeView() {
+  const input = currentLocomoResultCsv() || await ensureCurrentLocomoResultInput({forceRuns: true}).catch(() => "");
+  await renderJudgeHistoryList(input);
+  if (input) {
+    await refreshResult();
+    return;
+  }
+  renderJudgeViewIdleState();
 }
 
 function updateJudgeAndReportActionButtons({input = currentLocomoResultCsv(), judgeRunning = false} = {}) {
@@ -6772,10 +7192,67 @@ function updateJudgeAndReportActionButtons({input = currentLocomoResultCsv(), ju
   const exportButton = $("exportRunReport");
   if (exportButton) {
     const hasRun = Boolean(state.selectedRunDir);
-    exportButton.disabled = !hasRun;
-    exportButton.title = hasRun ? "为当前选中的结果目录生成报告" : "请先在结果列表里选择一个任务";
+    exportButton.disabled = !hasRun || state.selectedRunDetailLoading || state.selectedRunReportLoading;
+    exportButton.textContent = state.selectedRunReportLoading ? "正在生成报告..." : "查看报告";
+    exportButton.title = !hasRun
+      ? "请先在结果列表里选择一个任务"
+      : (state.selectedRunDetailLoading
+        ? "当前结果详情读取中，请稍候"
+        : (state.selectedRunReportLoading ? "报告生成中，请稍候" : "查看并在需要时刷新当前选中结果的报告"));
+  }
+  const compareButton = $("compareSelectedRuns");
+  if (compareButton) {
+    const compareState = compareSelectionState();
+    const compareCount = compareState.selectedCount;
+    compareButton.disabled = state.runCompareLoading || compareState.effectiveCount < 2;
+    compareButton.textContent = state.runCompareLoading
+      ? "正在生成对比..."
+      : (compareCount ? `对比选中结果 (${compareCount}/2)` : "对比选中结果");
+    compareButton.title = compareState.effectiveCount >= 2
+      ? (state.runCompareLoading ? "正在读取摘要并生成对比报告" : "对比 2 个 LoCoMo 历史结果，并生成 HTML 报告")
+      : "请至少勾选 2 个 LoCoMo 历史结果";
+  }
+  const clearButton = $("clearSelectedRuns");
+  if (clearButton) {
+    clearButton.disabled = !state.selectedRunCompareIds.size;
+    clearButton.title = state.selectedRunCompareIds.size ? "清空当前结果对比选择" : "当前没有已勾选的对比结果";
   }
   renderRunsSelectionState();
+}
+
+function compareSelectionState() {
+  const selected = state.recentRuns
+    .filter((run) => state.selectedRunCompareIds.has(runCompareKey(run)))
+    .filter((run) => isRecentLocomoQaRun(run))
+    .slice(0, 2);
+  const selectedRunDirs = selected.map((run) => String(run.run_dir || "").trim()).filter(Boolean);
+  const uniqueRunDirs = [...new Set(selectedRunDirs)];
+  return {
+    selected,
+    selectedRunDirs,
+    uniqueRunDirs,
+    selectedCount: selected.length,
+    effectiveCount: uniqueRunDirs.length,
+  };
+}
+
+function renderRunCompareBaselineStatus() {
+  const note = $("runCompareBaselineNote");
+  if (!note) return;
+  note.innerHTML = "<strong>对比规则</strong><span>只允许选择 2 份 LoCoMo 历史结果做对比。</span>";
+  note.title = "";
+  note.className = "native-baseline-status";
+}
+
+async function refreshNativeOpenVikingBaseline() {
+  try {
+    const data = await api("/api/native-openviking-baseline");
+    state.nativeOpenVikingBaseline = data || null;
+  } catch {
+    state.nativeOpenVikingBaseline = null;
+  }
+  renderRunCompareBaselineStatus();
+  updateJudgeAndReportActionButtons();
 }
 
 function resetRunsDetailPanels() {
@@ -6789,6 +7266,10 @@ function resetRunsDetailPanels() {
     const el = $(id);
     if (el) el.innerHTML = "";
   });
+  ["failureAttributionPanel", "evidenceContractPanel", "runArtifactList"].forEach((id) => {
+    const el = $(id);
+    if (el) el.hidden = true;
+  });
   if ($("runDetailPanel")) $("runDetailPanel").hidden = true;
   if ($("runReportDetails")) {
     $("runReportDetails").hidden = true;
@@ -6798,21 +7279,75 @@ function resetRunsDetailPanels() {
 
 function renderRunsSelectionState() {
   const empty = $("runsEmptyState");
-  const emptyText = $("runsEmptyStateText");
   const actionPanel = $("runsActionPanel");
   if (!empty || !actionPanel) return;
   const hasSelectedRun = Boolean(state.selectedRunDir);
   const hasRuns = Array.isArray(state.recentRuns) && state.recentRuns.length > 0;
   const loading = Boolean(state.runsLoading);
+  const detailPanel = $("runDetailPanel");
+  const analysisStack = document.querySelector("#runsView .report-analysis-stack");
   empty.hidden = hasSelectedRun || loading;
-  actionPanel.hidden = !hasSelectedRun;
-  if (emptyText) {
-    emptyText.textContent = loading
-      ? "正在读取结果列表。"
-      : hasRuns
-      ? "先从左侧结果列表选择一条记录，再生成评测报告。"
-      : (currentAccountOnlyEnabled("runsCurrentAccountOnly") ? "当前账户还没有结果，先运行问答测试或取消“只看当前空间”。" : "还没有结果，先运行问答测试。");
+  actionPanel.hidden = !hasRuns || !hasSelectedRun;
+  if (detailPanel && !hasSelectedRun) detailPanel.hidden = true;
+  if (analysisStack) analysisStack.hidden = !hasSelectedRun;
+  if (!hasSelectedRun && !loading) {
+    const currentAccountOnly = currentAccountOnlyEnabled("runsCurrentAccountOnly");
+    empty.innerHTML = hasRuns
+      ? `
+        <span class="label">结果工作台</span>
+        <strong>先从左侧选择一条结果</strong>
+        <p>选中后这里会显示结果摘要、文件路径、题目详情，以及 HTML 报告和两份历史结果对比。</p>
+        <div class="workbench-empty-grid">
+          <article>
+            <span>1</span>
+            <strong>选择结果</strong>
+            <p>左侧列表只保留近 24 小时内已经产出 QA 结果文件的记录。</p>
+          </article>
+          <article>
+            <span>2</span>
+            <strong>查看报告</strong>
+            <p>单条结果会展开摘要、产物路径和题目级详情。</p>
+          </article>
+          <article>
+            <span>3</span>
+            <strong>对比两份结果</strong>
+            <p>最多勾选 2 条 LoCoMo 历史结果，生成对比摘要。</p>
+          </article>
+        </div>
+      `
+      : `
+        <span class="label">结果工作台</span>
+        <strong>近 24 小时还没有可用结果</strong>
+        <p>${currentAccountOnly ? "当前账户范围内还没有可展示的 QA 结果；先运行问答测试，或者取消“只看当前空间”。" : "当前范围内还没有可展示的 QA 结果；先运行问答测试后再回来查看报告。"}</p>
+        <div class="workbench-empty-grid">
+          <article>
+            <span>QA</span>
+            <strong>先生成结果文件</strong>
+            <p>报告页只收录已经写出结果文件的 QA 任务，不展示仅导入或未完成任务。</p>
+          </article>
+          <article>
+            <span>24h</span>
+            <strong>只看最近结果</strong>
+            <p>这里默认只看近 24 小时记录，历史更早的结果不会进入当前列表。</p>
+          </article>
+          <article>
+            <span>范围</span>
+            <strong>${currentAccountOnly ? "当前仅看本空间" : "当前看全部空间"}</strong>
+            <p>${currentAccountOnly ? "如果结果在别的账户，取消左侧的“只看当前空间”再刷新。" : "如果要缩小到当前账户，勾选左侧的“只看当前空间”。"}</p>
+          </article>
+        </div>
+      `;
   }
+  renderRunCompareBaselineStatus();
+}
+
+function setIncludeNativeBaselineForCompare(enabled) {
+  state.includeNativeOpenVikingBaseline = Boolean(enabled);
+  try {
+    window.localStorage.setItem(RUN_COMPARE_BASELINE_KEY, state.includeNativeOpenVikingBaseline ? "true" : "false");
+  } catch {}
+  renderRunCompareBaselineStatus();
+  updateJudgeAndReportActionButtons();
 }
 
 function renderJudgeConfirmation(input, summary = {}, options = {}) {
@@ -6931,7 +7466,7 @@ function showView(viewId, options = {}) {
   if (isStandaloneBenchmarkView(viewId)) {
     const standaloneFormat = datasetFormatForView(viewId);
     if (standaloneFormat === "hotpotqa") updateHotpotQaInlineLiveReport(null);
-    if (standaloneFormat === "hotpotqa") refreshHotpotQaModelReadiness().catch(() => null);
+    if (standaloneFormat === "hotpotqa") renderHotpotQaModelReadiness();
     if (standaloneFormat) {
       forceRefreshStandaloneBenchmarkView(standaloneFormat).catch(() => null);
     }
@@ -6942,6 +7477,10 @@ function showView(viewId, options = {}) {
   }
   if (viewId === "judgeView" || viewId === "runsView") {
     updateJudgeAndReportActionButtons();
+  }
+  if (viewId === "judgeView") {
+    renderJudgeViewIdleState();
+    hydrateJudgeView().catch((e) => toast(e.message));
   }
   if (viewId === "runsView") {
     const emptyRuns = !document.querySelector("#runsList .run-card");
@@ -7036,10 +7575,20 @@ function updateLocomoFlowNav(viewId) {
   if ($("locomoOverviewPanel")) $("locomoOverviewPanel").hidden = true;
   if (benchmarkContext) {
     nav.setAttribute("aria-label", `${benchmarkContext.label || "当前数据集"} 评测流程`);
-    const activeStage = viewId === "runsView"
+    const cards = benchmarkFlowCards(benchmarkContext);
+    const activeStage = viewId === "runsView" && cards.some((card) => card.key === "report")
       ? "report"
       : normalizeBenchmarkFlowStage(state.activeBenchmarkFlowStage) || defaultBenchmarkFlowStage(viewId);
-    renderFlowNavCards(nav, benchmarkFlowCards(benchmarkContext), activeStage);
+    renderFlowNavCards(nav, cards, activeStage);
+    nav.querySelectorAll(".flow-card").forEach((button) => {
+      if (button.dataset.viewJumpBound === "1") return;
+      button.dataset.viewJumpBound = "1";
+      button.addEventListener("click", () => {
+        const flowKey = button.dataset.flowKey || "";
+        const targetView = button.dataset.viewJump || benchmarkContext.view || viewId;
+        showView(targetView, {benchmarkStage: flowKey, flowStage: flowKey, preserveScroll: true});
+      });
+    });
     return;
   }
   nav.setAttribute("aria-label", "LoCoMo 评测流程");
@@ -7098,6 +7647,19 @@ function slugTime() {
 
 function safeAccountSlug(account) {
   return String(account || "default").replace(/[^A-Za-z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "") || "default";
+}
+
+function compactAccountSlug(account) {
+  const slug = safeAccountSlug(account);
+  if (slug.length <= 18) return slug;
+  const parts = slug.split("-").filter(Boolean);
+  if (parts.length >= 2) {
+    const head = parts[0].slice(0, 12);
+    const tail = parts[1].slice(0, 5);
+    const compact = `${head}-${tail}`.replace(/-+$/g, "");
+    if (compact) return compact;
+  }
+  return slug.slice(0, 18).replace(/-+$/g, "") || "default";
 }
 
 function recordAccount(record = {}) {
@@ -7224,7 +7786,7 @@ async function loadTaskLogIntoBox(task, kind = "") {
   const data = await api(`/api/tasks/${encodeURIComponent(taskRecord.id)}/log?offset=0`);
   state.logOffsets[taskRecord.id] = data.offset || 0;
   box.dataset.taskId = String(taskRecord.id || "");
-  box.textContent = data.text || "这个任务还没有写出日志。";
+  box.textContent = filterVisibleTaskLogText(data.text || "", taskRecord, ui.logBox) || "这个任务还没有写出日志。";
   box.scrollTop = box.scrollHeight;
   box.closest(".log-details")?.setAttribute("open", "");
   return data.task || taskRecord;
@@ -7248,9 +7810,10 @@ async function loadLogPathIntoBox(path, logBoxId = "importLogBox") {
   const box = openTaskLogBox(logBoxId);
   if (!box) return false;
   box.dataset.logPath = logPath;
+  renderImportLogPath(logPath);
   try {
-    const data = await api(`/api/log-tail?path=${encodeURIComponent(logPath)}&limit=80000`);
-    box.textContent = data.text || "这个日志文件还没有内容。";
+    const data = await api(`/api/log-tail?path=${encodeURIComponent(logPath)}&limit=240000`);
+    box.textContent = filterVisibleTaskLogText(data.text || "", null, logBoxId) || "这个日志文件还没有内容。";
     box.scrollTop = box.scrollHeight;
     return Boolean(data.exists);
   } catch (error) {
@@ -7259,17 +7822,39 @@ async function loadLogPathIntoBox(path, logBoxId = "importLogBox") {
   }
 }
 
+function renderImportLogPath(path = "") {
+  const target = $("importLogPathRow");
+  if (!target) return;
+  const logPath = String(path || "").trim();
+  if (!logPath) {
+    target.innerHTML = "<p>日志路径会显示在这里。</p>";
+    return;
+  }
+  target.innerHTML = `
+    <article class="path-row">
+      <span>日志文件</span>
+      <code>${escapeHtml(displayPath(logPath))}</code>
+      <div class="path-row-actions">
+        <button class="path-copy" type="button" data-copy="${escapeHtml(logPath)}">复制</button>
+        <button class="path-open" type="button" data-path="${escapeHtml(logPath)}">打开</button>
+      </div>
+    </article>
+  `;
+  bindCopyButtons("#importLogPathRow");
+  bindOpenButtons("#importLogPathRow");
+}
+
 async function loadLatestImportLogFallback() {
   const box = $("importLogBox");
   if (!box || !/日志会显示在这里|这个任务还没有写出日志/.test(String(box.textContent || "").trim())) return;
-  const lastImport = readLastImport();
+  const lastImport = currentWorkspaceScopedLastImport();
   const lastLog = runLogPathFromRecord(lastImport);
   if (lastLog && await loadLogPathIntoBox(lastLog, "importLogBox")) return;
   const data = await api("/api/runs?include_history=1&limit=80").catch((error) => {
     box.textContent = `历史日志查询失败：${error.message || error}`;
     return {};
   });
-  const run = (data.runs || []).find((item) => isMemoryImportKind(item.kind || ""));
+  const run = (data.runs || []).find((item) => isMemoryImportKind(item.kind || "") && importRecordMatchesCurrentWorkspace(item, currentMemoryBackend()));
   const runLog = runLogPathFromRecord(run || {});
   if (runLog) {
     await loadLogPathIntoBox(runLog, "importLogBox");
@@ -7336,10 +7921,14 @@ function generateWorkspaceForCurrentAccount() {
   const generated = timestampWorkspaceForAccount(account, backend);
   if ($("ovWorkspace")) $("ovWorkspace").value = generated;
   if ($("memoryWorkspace")) $("memoryWorkspace").value = generated;
+  state.currentImportTask = null;
+  clearImportedMemoryStatusForWorkspace(generated, account);
   persistCurrentAccountConfig();
   renderImportPaths();
   renderImportReadinessPanel();
   renderQaReadinessPanel();
+  refreshImportActionLabels();
+  refreshImportedMemories().catch(() => {});
   toast(`已生成新的${memoryBackendLabel(backend)}记忆目录`);
   return generated;
 }
@@ -7370,7 +7959,7 @@ function initializeCleanAccountConfig(account, inherited = {}) {
 
 async function loadConfig() {
   const cfg = await api("/api/config");
-  const lastImport = readLastImport();
+  const lastImport = readCurrentAccountLastImport();
   const lastDataset = readLastLocomoDataset();
   const initialView = initialViewFromUrl();
   state.bootRequestedView = initialView || "openvikingView";
@@ -7379,8 +7968,8 @@ async function loadConfig() {
   state.config = cfg;
   applyUiContract(cfg.ui_contract || {});
   $("data").value = relativeDatasetPath(lastDataset.path || cfg.data || "");
-  $("judgeBaseUrl").value = cfg.judge_base_url || "";
-  $("judgeModel").value = cfg.judge_model || "gpt-5.5";
+  setInputValue("judgeBaseUrl", cfg.judge_base_url || "");
+  setInputValue("judgeModel", cfg.judge_model || "gpt-5.5");
   $("ovHost").value = cfg.server_host || "127.0.0.1";
   $("ovPort").value = cfg.server_port || "19080";
   const bootAccountRecords = Array.isArray(cfg.accounts) ? cfg.accounts : [];
@@ -7435,7 +8024,12 @@ async function loadConfig() {
   const needsLocomoDataset = !initialView || ["workbenchView", "datasetView", "openvikingView", "evalView", "judgeView", "memoryView"].includes(initialView);
   if (needsLocomoDataset) await loadDataset(true);
   else renderLocomoOverview();
-  if (lastImport.sample_value && $("importSample")) $("importSample").value = lastImport.sample_value;
+  window.setTimeout(() => {
+    ensureLocomoDatasetLoadedForView(activeViewId() || initialView || "openvikingView");
+  }, 300);
+  if (lastImport.sample_value && lastImport.sample_value !== "all" && $("importSample")) {
+    $("importSample").value = lastImport.sample_value;
+  }
   renderImportPaths();
   setConnection(true, "已就绪");
   state.tasksHydrating = true;
@@ -7610,8 +8204,10 @@ function renderLongMemDatasetCards() {
   if (!target) return;
   const rows = state.datasetRegistry.filter((item) => String(item.format || "").toLowerCase() === "longmemeval");
   if ($("longMemData") && !$("longMemData").value.trim()) {
-    const firstExisting = rows.find((item) => item.exists) || rows[0];
-    if (firstExisting?.path) $("longMemData").value = firstExisting.path;
+    const preferred = rows.find((item) => /oracle/i.test(String(item.id || "")) && item.exists)
+      || rows.find((item) => /oracle/i.test(String(item.name || "")) && item.exists)
+      || rows.find((item) => item.exists) || rows[0];
+    if (preferred?.path) $("longMemData").value = preferred.path;
   }
   target.innerHTML = rows.map((item) => `
     <article class="dataset-card ${item.exists ? "" : "missing"}" data-path="${escapeHtml(item.path || "")}">
@@ -7703,26 +8299,25 @@ function renderHotpotQaModelReadiness(data = state.hotpotQaModelReadiness) {
   const agentCfg = agentModelConfig();
   const judgeCfg = judgeModelConfig();
   const launchError = genericBenchmarkLaunchError("hotpotqa");
-  if (state.hotpotQaModelReadinessLoading && !data) {
-    target.innerHTML = `
-      <p><strong>启动前模型检查</strong></p>
-      <p>正在检查回答模型和判分模型可用性...</p>
-    `;
-    return;
-  }
   const checkedAt = data?.checkedAt ? formatDateTimeLocal(data.checkedAt) : "";
   const answer = data?.answer || null;
   const judge = data?.judge || null;
-  const answerSummary = answer
-    ? (answer.ok
-      ? `可用 · ${answer.model || agentCfg.model || "-"}`
-      : `${friendlyUiError(answer.error || "", "回答模型不可用")} · status ${answer.status || "-"}`)
-    : "尚未检查";
-  const judgeSummary = judge
-    ? (judge.ok
-      ? `可用 · ${judge.model || judgeCfg.model || "-"}`
-      : `${friendlyUiError(judge.error || "", "判分模型不可用")} · status ${judge.status || "-"}`)
-    : "尚未检查";
+  const answerSummary = state.hotpotQaModelReadinessLoading
+    ? "正在检查..."
+    : answer
+      ? (answer.ok
+        ? `可用 · ${answer.model || agentCfg.model || "-"}`
+        : `${friendlyUiError(answer.error || "", "回答模型不可用")} · status ${answer.status || "-"}`)
+      : "尚未检查";
+  const judgeSummary = state.hotpotQaModelReadinessLoading
+    ? "正在检查..."
+    : judge
+      ? (judge.ok
+        ? `可用 · ${judge.model || judgeCfg.model || "-"}`
+        : `${friendlyUiError(judge.error || "", "判分模型不可用")} · status ${judge.status || "-"}`)
+      : "尚未检查";
+  if (state.hotpotQaModelReadinessLoading) target.dataset.loading = "1";
+  else delete target.dataset.loading;
   target.innerHTML = `
     <p><strong>启动前模型检查</strong>${checkedAt ? ` · ${escapeHtml(checkedAt)}` : ""}</p>
     <p class="dataset-next-step">回答模型 ${escapeHtml(agentCfg.model || "-")} @ ${escapeHtml(agentCfg.baseUrl || "-")}</p>
@@ -7796,11 +8391,10 @@ function renderLongMemEntryStatus(path = "", record = {}) {
   const size = datasetSizeLabel(record);
   const backendLabel = memoryBackendLabel(currentMemoryBackend());
   $("longMemStatus").innerHTML = `
-    <p><strong>已进入 LongMemEval 评测页</strong>${size ? ` · ${escapeHtml(size)}` : ""}</p>
+    <p><strong>当前数据集</strong>${size ? ` · ${escapeHtml(size)}` : ""}</p>
     <p class="dataset-next-step">${escapeHtml(path || "请先选择或填写 LongMemEval JSON。")}</p>
-    <p class="dataset-next-step">这里是 LongMemEval 专用入口；当前会通过 ${escapeHtml(backendLabel)} 运行。正式评测要求完整 LongMemEval-S、全部样本、题数 0。</p>
+    <p class="dataset-next-step">当前后端：${escapeHtml(backendLabel)}。建议先用 Oracle 50 题做对比，再决定是否跑正式全量。</p>
     <div class="panel-actions">
-      ${benchmarkPlanLinkHtml()}
       <button class="secondary" type="button" data-view-jump="runsView">查看任务/报告</button>
     </div>
   `;
@@ -7815,10 +8409,13 @@ function renderGenericEntryStatus(key, path = "", record = {}) {
   const size = datasetSizeLabel(record);
   const gate = genericBenchmarkRunGate(key, path, record);
   const backendLabel = memoryBackendLabel(currentMemoryBackend());
+  const workflowText = config.adapterFormat === "hotpotqa"
+    ? `该入口会固定停留在当前数据集页面，启动后运行正式 ${backendLabel} HotpotQA 文档问答：逐题写入上下文文档、检索证据、调用答案模型、自动判分，并可在查看报告页打开结果和原始报告。`
+    : `该入口会固定停留在当前数据集页面，启动后运行正式 MemoryBench ${backendLabel} 记忆问答：导入上下文、检索证据、调用答案模型、自动判分，并可在查看报告页打开结果和原始报告。`;
   $(config.status).innerHTML = `
     <p><strong>已进入 ${escapeHtml(config.label)} 评测页</strong>${size ? ` · ${escapeHtml(size)}` : ""}</p>
     <p class="dataset-next-step">${escapeHtml(path || config.emptyPathHint)}</p>
-    <p class="dataset-next-step">${escapeHtml(gate.ok ? `该入口会固定停留在当前数据集页面，启动后运行正式 MemoryBench ${backendLabel} 记忆问答：导入上下文、检索证据、调用答案模型、自动判分并可导出报告。` : gate.reason)}</p>
+    <p class="dataset-next-step">${escapeHtml(gate.ok ? workflowText : gate.reason)}</p>
     <p class="dataset-next-step">${escapeHtml(benchmarkMetricNote(config))}</p>
   `;
   if (config.adapterFormat === "hotpotqa") updateHotpotQaInlineLiveReport(null);
@@ -7831,7 +8428,7 @@ function updateHotpotQaInlineLiveReport(task = null, options = {}) {
   const meta = $("hotpotQaLiveInlineMeta");
   const idle = $("hotpotQaLiveInlineIdle");
   if (!frame || !open || !meta) return;
-  const fallbackHref = "/generated-reports/hotpotqa_echomemory_live_current.html";
+  const fallbackHref = "/generated-reports/hotpotqa_openviking_vs_echomemory_live_50_current.html";
   const reportPath = task?.run_dir ? `${task.run_dir}/report.html` : "";
   const reportHref = artifactHref(reportPath);
   const hasReportHtml = Boolean(options.reportReady || options.summary?._artifact_status?.report_html?.exists);
@@ -7966,6 +8563,9 @@ async function validateGenericBenchmark(key) {
   if ($(config.status)) {
     const backendLabel = memoryBackendLabel(currentMemoryBackend());
     const warnings = [];
+    const workflowNote = config.adapterFormat === "hotpotqa"
+      ? `运行正式 ${backendLabel} HotpotQA 文档问答：逐题写入样本上下文文档、检索证据、调用答案模型，并自动执行判分。`
+      : `运行正式 MemoryBench ${backendLabel} 记忆问答：写入样本上下文、检索证据、调用答案模型，并自动执行判分。`;
     if (!data.questions || data.questions === 0) warnings.push("没有识别到 question/query/input 字段");
     if (!data.memory_events_total || data.memory_events_total === 0) warnings.push("没有识别到 events/messages/context 字段");
     const sampleLike = /(^|[/.])[^/]*sample[^/]*\.(jsonl?|ndjson)$/i.test(path);
@@ -7978,7 +8578,7 @@ async function validateGenericBenchmark(key) {
 	    $(config.status).innerHTML = `
 	      ${warningHtml}
 	      <p><strong>${escapeHtml(config.label)} 校验完成</strong> · 格式 ${escapeHtml(String(data.format || "").toLowerCase() === "generic" ? config.adapterFormat : (data.format || "-"))} · ${escapeHtml(data.resolved_path || path)}</p>
-	      <p class="dataset-next-step">${escapeHtml(datasetRunnerNote(data.format, data.runner_note, `运行正式 MemoryBench ${backendLabel} 记忆问答：写入样本上下文、检索证据、调用答案模型，并自动执行判分。`))}</p>
+	      <p class="dataset-next-step">${escapeHtml(datasetRunnerNote(data.format, data.runner_note, workflowNote))}</p>
 	      ${sampleHtml}
 	      ${gate.ok ? "" : `<p class="dataset-next-step bad-text">${escapeHtml(gate.reason)}</p>`}
 	      <p class="dataset-next-step">${escapeHtml(benchmarkMetricNote(config))}</p>
@@ -8083,6 +8683,9 @@ async function runGenericBenchmark(key) {
   const output = task?.output_file || "";
   const runDir = task?.run_dir || dirname(output);
   if ($(config.result)) {
+    const runningNote = config.adapterFormat === "hotpotqa"
+      ? `这一步运行 ${backendLabel} HotpotQA 文档问答：逐题写入文档、检索当前题证据、调用答案模型、自动判分。${benchmarkMetricNote(config)} 当前页会保留；右上角运行中入口显示进度，结果中心查看报告。若输入仍是 sample 文件，本次结果只代表小样本核验。`
+      : `这一步运行 MemoryBench ${backendLabel} 记忆问答：写入会话并提交、检索长期记忆、调用答案模型、自动判分。${benchmarkMetricNote(config)} 当前页会保留；右上角运行中入口显示进度，结果中心查看报告。若输入仍是 sample 文件，本次结果只代表小样本核验。`;
     $(config.result).innerHTML = `
       <article class="path-row">
         <span>任务</span>
@@ -8099,7 +8702,7 @@ async function runGenericBenchmark(key) {
         <code>${escapeHtml(runDir)}</code>
         <button class="path-copy" type="button" data-copy="${escapeHtml(runDir)}">复制</button>
       </article>
-	      <p>这一步运行 MemoryBench ${escapeHtml(backendLabel)} 记忆问答：写入会话并提交、检索长期记忆、调用答案模型、自动判分。${escapeHtml(benchmarkMetricNote(config))} 当前页会保留；右上角运行中入口显示进度，结果中心查看报告。若输入仍是 sample 文件，本次结果只代表小样本核验。</p>
+	      <p>${escapeHtml(runningNote)}</p>
 	      ${gate.ok ? "" : `<p class="dataset-next-step bad-text">正式分数门禁：${escapeHtml(gate.reason)} 本次仍作为小样本核验运行。</p>`}
 	      <p class="dataset-next-step">选题：${escapeHtml(selectedQuestions ? `${benchmarkQuestionState(key).selected.size} 题` : benchmarkCountLabel(effectiveCount))}</p>
       <div class="panel-actions">
@@ -8450,7 +9053,7 @@ function renderGenericBenchmarkRunningSummary(task = {}, format = "", options = 
   const runDir = task.run_dir || dirname(output);
   const reportHtml = runDir ? `${runDir}/report.html` : "";
   const reportHtmlHref = artifactHref(reportHtml);
-  const stableLiveReportHref = "/generated-reports/hotpotqa_echomemory_live_current.html";
+  const stableLiveReportHref = "/generated-reports/hotpotqa_openviking_vs_echomemory_live_50_current.html";
   const artifactStatus = summary._artifact_status || {};
   const runningSummaryPath = output ? `${dirname(output)}/running_summary.json` : "";
   const runningSummaryHref = artifactHref(runningSummaryPath);
@@ -8712,7 +9315,7 @@ async function loadDataset(silent = false) {
       $("activeDatasetPill").classList.toggle("muted", true);
     }
     refreshImportActionLabels();
-    $("runTimeQuestions").disabled = true;
+    if ($("runTimeQuestions")) $("runTimeQuestions").disabled = true;
     renderKpis("datasetKpis", [
       ["LoCoMo 状态", "未选择"],
       ["识别到的格式", datasetTypeLabel(data.format)],
@@ -8766,6 +9369,7 @@ async function loadDataset(silent = false) {
   }
   $("sample").innerHTML = `<option value='all'>${LOCOMO_ALL_SESSIONS_LABEL}</option>`;
   $("importSample").innerHTML = `<option value='all'>${LOCOMO_ALL_SESSIONS_LABEL}</option>`;
+  let defaultImportSampleValue = "all";
   for (const row of data.sample_rows || []) {
     const opt = document.createElement("option");
     opt.value = row.index;
@@ -8777,21 +9381,21 @@ async function loadDataset(silent = false) {
     importOpt.textContent = locomoImportSampleOptionLabel(row);
     $("importSample").appendChild(importOpt);
     if (String(row.sample_id || "").trim() === "conv-30") {
+      defaultImportSampleValue = String(row.index);
       const smokeOpt = document.createElement("option");
       smokeOpt.value = `${row.index}${IMPORT_SINGLE_SESSION_SUFFIX}`;
       smokeOpt.textContent = `${row.index} · conv-30 · 单 session 测试 · 1 段 session`;
       $("importSample").appendChild(smokeOpt);
     }
   }
+  if ($("importSample")) $("importSample").value = defaultImportSampleValue;
   refreshImportActionLabels();
-  $("runTimeQuestions").disabled = !isLocomo;
+  if ($("runTimeQuestions")) $("runTimeQuestions").disabled = !isLocomo;
   renderDatasetCategories(data);
   if ($("datasetRunnerNote")) {
-    // 校验数据集完整性
     const validationIssues = [];
     const validationWarnings = [];
 
-    // 检查基本字段
     if (!data.samples || data.samples === 0) {
       validationIssues.push("❌ 没有对话数据");
     }
@@ -8802,7 +9406,6 @@ async function loadDataset(silent = false) {
       validationWarnings.push("⚠️ 未识别数据集格式");
     }
 
-    // 检查 LoCoMo 特定字段
     if (data.format === "locomo") {
       if (!data.categories || Object.keys(data.categories).length === 0) {
         validationWarnings.push("⚠️ 没有分类信息");
@@ -8819,17 +9422,19 @@ async function loadDataset(silent = false) {
       }
     }
 
-    // 生成校验报告
-    let validationReport = "";
-    if (validationIssues.length > 0) {
-      validationReport += `<div style="color: #e74c3c; margin-bottom: 8px;">${validationIssues.join("<br>")}</div>`;
-    }
-    if (validationWarnings.length > 0) {
-      validationReport += `<div style="color: #f39c12; margin-bottom: 8px;">${validationWarnings.join("<br>")}</div>`;
-    }
-
-    const avgQuestionsPerConv = data.samples && data.questions ? Math.round(data.questions / data.samples) : 0;
-    $("datasetRunnerNote").innerHTML = `${validationReport}`;
+    const summaryLine = validationIssues.length
+      ? `<p class="bad-text"><strong>LoCoMo 校验未通过</strong> · ${escapeHtml(data.samples ?? "-")} 个对话样本 · ${escapeHtml(data.questions ?? "-")} 题</p>`
+      : `<p><strong>LoCoMo 已读取</strong> · ${escapeHtml(data.samples ?? "-")} 个对话样本 · 共 ${escapeHtml(data.questions ?? "-")} 题</p>`;
+    const nextStepLine = validationIssues.length
+      ? `<p class="dataset-next-step bad-text">请先修复数据集问题，再继续导入或问答测试。</p>`
+      : `<p class="dataset-next-step">${escapeHtml(datasetRunnerNote(data.format, data.runner_note, "数据已读取；请选择要导入的会话，确认目录后点击“导入所选对话”。"))}</p>`;
+    const issuesHtml = validationIssues.length
+      ? `<div style="color: #e74c3c; margin-bottom: 8px;">${validationIssues.join("<br>")}</div>`
+      : "";
+    const warningsHtml = validationWarnings.length
+      ? `<div style="color: #f39c12; margin-bottom: 8px;">${validationWarnings.join("<br>")}</div>`
+      : "";
+    $("datasetRunnerNote").innerHTML = `${summaryLine}${nextStepLine}${issuesHtml}${warningsHtml}`;
   }
   if (data.runner_status === "large_dataset_lazy") {
     state.questions = [];
@@ -8902,10 +9507,11 @@ async function validateLongMemDataset() {
   ]);
   const sampleLike = /(^|[/.])[^/]*sample[^/]*\.(jsonl?|ndjson)$/i.test(path);
   const backendLabel = memoryBackendLabel(currentMemoryBackend());
+  const size = datasetSizeLabel(data);
   $("longMemStatus").innerHTML = `
-    <p><strong>${escapeHtml(datasetTypeLabel(data.format))} 校验完成</strong> · ${escapeHtml(data.resolved_path || path)}</p>
-    <p class="dataset-next-step">${escapeHtml(datasetRunnerNote(data.format, data.runner_note, `运行正式 MemoryBench ${backendLabel} 记忆问答：写入样本上下文、检索证据、调用答案模型，并自动执行判分。`))}</p>
-    <p class="dataset-next-step">运行后会额外输出 LongMemEval 官方式摘要：overall accuracy、task-averaged accuracy 和 abstention accuracy。</p>
+    <p><strong>${escapeHtml(datasetTypeLabel(data.format))} 校验完成</strong>${size ? ` · ${escapeHtml(size)}` : ""}</p>
+    <p class="dataset-next-step">${escapeHtml(data.resolved_path || path)}</p>
+    <p class="dataset-next-step">${escapeHtml(sampleLike ? "当前是 sample，只适合小样本核验。" : `当前会通过 ${backendLabel} 运行；建议先用 Oracle 50 题做对比。`)}</p>
     ${sampleLike ? `<p class="dataset-next-step bad-text">当前路径是内置 sample。它用于小样本核验，不作为正式 LongMemEval 分数。</p>` : ""}
   `;
   const sample = $("longMemSample");
@@ -8996,6 +9602,29 @@ function selectVisibleLongMemQuestions() {
 function clearLongMemQuestionSelection() {
   state.selectedLongMemQuestions.clear();
   renderLongMemQuestionSelection();
+}
+
+function useLongMemOracle50Preset() {
+  const oracleRecord = state.datasetRegistry.find((item) => item.id === "longmemeval-oracle-full" && item.exists)
+    || state.datasetRegistry.find((item) => String(item.path || "").includes("longmemeval_oracle.json"));
+  if ($("longMemData") && oracleRecord?.path) $("longMemData").value = oracleRecord.path;
+  if ($("longMemSample")) $("longMemSample").value = "all";
+  if ($("longMemCount")) $("longMemCount").value = "50";
+  if ($("longMemImportCount")) $("longMemImportCount").value = "50";
+  state.selectedLongMemQuestions.clear();
+  renderLongMemQuestionSelection();
+  renderLongMemEntryStatus($("longMemData")?.value.trim() || "", datasetRecordForPath($("longMemData")?.value.trim() || "", "longmemeval"));
+  validateLongMemDataset().catch((e) => toast(e.message));
+  toast("已切到 LongMemEval Oracle 50 题预设");
+}
+
+function useLongMemFormalPreset() {
+  if ($("longMemSample")) $("longMemSample").value = "all";
+  if ($("longMemCount")) $("longMemCount").value = "0";
+  if ($("longMemImportCount")) $("longMemImportCount").value = "0";
+  state.selectedLongMemQuestions.clear();
+  renderLongMemQuestionSelection();
+  toast("已切到 LongMemEval 正式全量预设");
 }
 
 async function runLongMemDiagnostic() {
@@ -9133,6 +9762,7 @@ async function loadQuestions() {
   } finally {
     if (requestSeq === state.locomoQuestionLoadSeq) {
       state.locomoQuestionsLoading = false;
+      renderQuestions();
       refreshLocomoQaActionLabels();
       renderQaReadinessPanel();
     }
@@ -9184,6 +9814,55 @@ function filteredQuestions() {
   });
 }
 
+function hasActiveLocomoQuestionFilters() {
+  return Boolean(($("questionSearch")?.value || "").trim() || ($("questionCategory")?.value || "all") !== "all");
+}
+
+function activeLocomoQuestionFilterSummary() {
+  const keyword = ($("questionSearch")?.value || "").trim();
+  const category = $("questionCategory")?.value || "all";
+  const parts = [];
+  if (keyword) parts.push(`搜索：${keyword}`);
+  if (category !== "all") parts.push(`类别：${datasetCategoryLabel("locomo", category)}`);
+  return parts.join("；");
+}
+
+function resetLocomoQuestionFilters(mode = "all") {
+  if (mode === "all" || mode === "search") {
+    const search = $("questionSearch");
+    if (search) search.value = "";
+  }
+  if (mode === "all" || mode === "category") {
+    const category = $("questionCategory");
+    if (category) category.value = "all";
+  }
+  renderQuestions();
+}
+
+function renderLocomoQuestionEmptyState(rows = []) {
+  if (rows.length) return "";
+  if (state.locomoQuestionsLoading) {
+    return "<p>当前范围题目仍在加载中。</p>";
+  }
+  const scope = currentLocomoSampleScope();
+  const loadedCount = state.questions.length;
+  if (loadedCount > 0 && hasActiveLocomoQuestionFilters()) {
+    const summary = activeLocomoQuestionFilterSummary();
+    return `
+      <div class="empty-question-state">
+        <p><strong>${escapeHtml(scope.label)}</strong> 已加载 ${escapeHtml(formatInt(loadedCount))} 题，但被当前筛选条件隐藏了。</p>
+        <p>${escapeHtml(summary || "请清空搜索或重置类别筛选。")}</p>
+        <div class="panel-actions compact-actions">
+          <button class="secondary" type="button" data-reset-question-filters="search">清空搜索</button>
+          <button class="secondary" type="button" data-reset-question-filters="category">重置类别</button>
+          <button class="secondary" type="button" data-reset-question-filters="all">显示全部</button>
+        </div>
+      </div>
+    `;
+  }
+  return "<p>当前范围没有可选问题。</p>";
+}
+
 function renderQuestions() {
   const rows = filteredQuestions();
   state.filteredQuestions = rows;
@@ -9205,13 +9884,16 @@ function renderQuestions() {
         <em>标准答案：${escapeHtml(q.answer || "-")}</em>
       </span>
     </label>
-  `).join("") || "<p>当前范围没有可选问题。</p>";
+  `).join("") || renderLocomoQuestionEmptyState(rows);
   document.querySelectorAll("#questionPicker input[type='checkbox']").forEach((box) => {
     box.addEventListener("change", () => {
       if (box.checked) state.selectedQuestions.add(box.dataset.questionId);
       else state.selectedQuestions.delete(box.dataset.questionId);
       updateQuestionKpis();
     });
+  });
+  document.querySelectorAll("#questionPicker [data-reset-question-filters]").forEach((button) => {
+    button.addEventListener("click", () => resetLocomoQuestionFilters(button.dataset.resetQuestionFilters || "all"));
   });
   refreshLocomoQaActionLabels();
   renderMemoryMismatchWarning();
@@ -9268,41 +9950,65 @@ function qaSelectionReadiness() {
   };
 }
 
-function qaImportReadiness(backend, account, workspace, lastImport = readCurrentAccountLastImport()) {
-  const imported = state.importedMemoryStatus || {};
+function qaImportReadiness(backend, account, workspace, lastImport = currentWorkspaceScopedLastImport(backend)) {
+  const imported = currentImportedMemoryStatus();
   const mismatchInfo = memoryMismatchInfo();
   const selectedSamples = mismatchInfo.selectedSamples || [];
   const importedSample = mismatchInfo.importedSample || (lastImport.sample_value === "all" ? LOCOMO_ALL_SESSIONS_LABEL : "");
   const importBackend = normalizeMemoryBackend(lastImport.backend || backend);
   const backendMatches = importBackend === backend;
-  const importWorkspace = lastImport.workspace || imported.workspace || workspace || "";
+  const importWorkspace = currentConfiguredWorkspace(backend) || workspace || lastImport.workspace || imported.workspace || "";
   const completeCount = Number(imported.complete_count || 0);
+  const integrity = String(lastImport.integrity || "").trim().toLowerCase();
+  const hasWorkspace = Boolean(importWorkspace);
   const hasImport = Boolean(importWorkspace || lastImport.output_file || completeCount);
   if (mismatchInfo.mismatch) {
     return {
-      value: "导入范围不匹配",
-      detail: `最后导入 ${mismatchInfo.importedSample}，本次题目来自 ${mismatchInfo.selectedSamples.join(", ")}。`,
-      tone: "bad",
+      value: "沿用旧记忆目录",
+      detail: `当前目录 ${compactPath(workspaceDisplayPath(importWorkspace, account, backend), 42, 38)}；最后导入 ${mismatchInfo.importedSample}，本次题目来自 ${mismatchInfo.selectedSamples.join(", ")}。`,
+      tone: "warn",
+      blocking: false,
     };
   }
-  if (!hasImport) {
+  if (!hasWorkspace && !hasImport) {
     return {
-      value: "待导入",
-      detail: "先完成导入和完整性检查，再运行正式测试。",
+      value: "未配置记忆目录",
+      detail: "先填写可用 workspace，或先完成一次导入。",
       tone: "warn",
+      blocking: true,
     };
   }
   if (!backendMatches) {
     return {
-      value: "后端不一致",
-      detail: `最后导入使用 ${memoryBackendLabel(importBackend)}，当前选择 ${memoryBackendLabel(backend)}。请先切到一致后端，或重新导入。`,
+      value: "沿用旧记忆目录",
+      detail: `当前目录 ${compactPath(workspaceDisplayPath(importWorkspace, account, backend), 42, 38)}；最后导入使用 ${memoryBackendLabel(importBackend)}，当前选择 ${memoryBackendLabel(backend)}。`,
       tone: "warn",
+      blocking: false,
+    };
+  }
+  if (integrity && integrity !== "complete" && integrity !== "pending_async_memory") {
+    return {
+      value: "沿用旧记忆目录",
+      detail: `当前目录 ${compactPath(workspaceDisplayPath(importWorkspace, account, backend), 42, 38)}；上次导入完整性是 ${integrity}。仍可直接问答，但正式评测前建议修复。`,
+      tone: "warn",
+      blocking: false,
+    };
+  }
+  if (!integrity && completeCount <= 0) {
+    return {
+      value: "已配置记忆目录",
+      detail: `当前目录 ${compactPath(workspaceDisplayPath(importWorkspace, account, backend), 42, 38)}；已经记录到目录，但还没有通过完整性检查。`,
+      tone: "warn",
+      blocking: false,
     };
   }
   return {
-    value: selectedSamples.length ? (importedSample || "已记录导入") : (lastImport.sample_value === "all" ? LOCOMO_ALL_SESSIONS_LABEL : "已记录导入"),
-    detail: compactPath(importWorkspace || storageRootForBackend(workspace, account, backend), 42, 38),
-    tone: "ok",
+    value: hasImport
+      ? (selectedSamples.length ? (importedSample || "已记录导入") : (lastImport.sample_value === "all" ? LOCOMO_ALL_SESSIONS_LABEL : "已记录导入"))
+      : "已配置记忆目录",
+    detail: compactPath(workspaceDisplayPath(importWorkspace, account, backend), 42, 38),
+    tone: integrity === "pending_async_memory" ? "warn" : "ok",
+    blocking: false,
   };
 }
 
@@ -9342,7 +10048,7 @@ function memoryInjectModelReadiness(backend = currentMemoryBackend()) {
 function renderQaReadinessPanel(task = null) {
   const target = $("qaReadinessPanel");
   if (!target) return;
-  const storedImport = readCurrentAccountLastImport();
+  const storedImport = currentWorkspaceScopedLastImport();
   const candidateImportTask = isMemoryImportKind(state.currentImportTask?.kind || "") ? state.currentImportTask : null;
   const candidateScope = candidateImportTask ? importScopeFromTask(candidateImportTask, storedImport) : {};
   const importTask = candidateImportTask
@@ -9408,7 +10114,7 @@ function selectedQuestionSamples() {
   return [];
 }
 
-function importedSampleFromLastImport(lastImport = readCurrentAccountLastImport()) {
+function importedSampleFromLastImport(lastImport = currentWorkspaceScopedLastImport()) {
   const label = lastImport.sample_label || "";
   const match = label.match(/·\s*([^·]+?)\s*·/) || String(lastImport.session_id || "").match(/locomo-(conv-\d+)/);
   return match ? match[1].trim() : "";
@@ -9506,7 +10212,7 @@ async function probeOpenViking() {
 }
 
 function currentEchoMemoryImportMode() {
-  return "fast";
+  return "full";
 }
 
 function isSingleSessionImportSummary(summary = {}) {
@@ -9576,10 +10282,12 @@ function taskPayload(kind, extra = {}) {
       session_mode: "locomo",
       import_wait_mode: echoImportMode,
       defer_artifact_wait: echoFastImport,
-      commit_wait_s: echoFastImport ? 8 : 300,
-      commit_call_timeout_s: echoFastImport ? 300 : 300,
-      flush_call_timeout_s: echoFastImport ? 15 : 600,
-      flush_attempts: echoFastImport ? 0 : 2,
+      ...(echoFastImport ? {
+        commit_wait_s: 8,
+        commit_call_timeout_s: 300,
+        flush_call_timeout_s: 15,
+        flush_attempts: 0,
+      } : {}),
     } : {}),
     ...(isMemoryImportKind(kind) && importSmoke ? {
       max_sessions: 1,
@@ -9598,16 +10306,18 @@ function taskPayload(kind, extra = {}) {
       agent_memory_budget_chars: 2000,
       vikingboat_compat: false,
       vikingboat_tool_loop: true,
-      initial_tool_prefetch: true,
+      initial_tool_prefetch: false,
       fallback_to_one_shot: true,
     } : {}),
     ...(kind === "echomemory_generic_qa" ? {
       import_wait_mode: echoImportMode,
       defer_artifact_wait: echoImportMode === "fast",
-      commit_wait_s: echoImportMode === "fast" ? 8 : 300,
-      commit_call_timeout_s: echoImportMode === "fast" ? 900 : 900,
-      flush_call_timeout_s: echoImportMode === "fast" ? 15 : 600,
-      flush_attempts: echoImportMode === "fast" ? 0 : 2,
+      ...(echoImportMode === "fast" ? {
+        commit_wait_s: 8,
+        commit_call_timeout_s: 900,
+        flush_call_timeout_s: 15,
+        flush_attempts: 0,
+      } : {}),
       runtime_recycle_every: 50,
       import_timeout_s: 900,
     } : {}),
@@ -9905,9 +10615,11 @@ function renderActiveTaskStrip(task = null) {
   const displayStatusLabel = progressComplete ? statusLabel : statusLabel;
   const questionMeta = parseActiveTaskQuestionDetail(detailText);
   const previewKey = activeTaskQaPreviewCacheKey(task, questionMeta.questionId);
-  const qaPreview = previewKey ? state.activeTaskQaPreview[previewKey] || null : null;
+  const progressQaPreview = normalizeActiveTaskProgressQaPreview(progress, task);
+  const cachedQaPreview = previewKey ? state.activeTaskQaPreview[previewKey] || null : null;
+  const qaPreview = cachedQaPreview || progressQaPreview;
   const qaQuestion = qaPreview?.question || questionMeta.question || detailText || "-";
-  const qaAnswer = qaPreview?.answer || "-";
+  const qaAnswer = qaPreview?.answer || (isTaskActive(task) ? "等待当前题答案..." : "-");
   const qaResultPath = qaPreview?.resultPath || task.output_file || "";
   const progressWidth = `${Math.max(0, Math.min(100, pct || 0)).toFixed(1)}%`;
   const rows = execution?.total_questions
@@ -9989,7 +10701,7 @@ function renderActiveTaskStrip(task = null) {
     `}
   `;
   bindCopyButtons("#activeTaskStrip");
-  if (isQaTask && task.output_file && questionMeta.questionId && !qaPreview && !state.activeTaskQaPreviewLoading[previewKey]) {
+  if (isQaTask && task.output_file && questionMeta.questionId && !cachedQaPreview && !state.activeTaskQaPreviewLoading[previewKey]) {
     ensureActiveTaskQaPreview(task, questionMeta.questionId).then((preview) => {
       if (!preview) return;
       const activeStrip = $("activeTaskStrip");
@@ -10130,10 +10842,16 @@ function shouldShowGlobalTaskChip(task = {}) {
 function renderGlobalBenchmarkBanner(task = null) {
   const banner = $("globalBenchmarkBanner");
   if (!banner) return;
+  const activeView = document.body?.dataset?.activeView || "";
   const clear = () => {
+    delete banner.dataset.renderKey;
     banner.hidden = true;
     banner.innerHTML = "";
   };
+  if (activeView === "hotpotQaView") {
+    clear();
+    return;
+  }
   if (!task?.id) {
     clear();
     return;
@@ -10180,9 +10898,17 @@ function renderGlobalBenchmarkBanner(task = null) {
     normalizedFailure,
   ].filter(Boolean).join(" · ");
   const targetView = benchmarkViewForTask({...task, dataset_format: normalized}, "runsView");
-  const liveHref = normalized === "hotpotqa" ? "/generated-reports/hotpotqa_echomemory_live_current.html" : "";
-  banner.hidden = false;
-  banner.innerHTML = `
+  const liveHref = normalized === "hotpotqa" ? "/generated-reports/hotpotqa_openviking_vs_echomemory_live_50_current.html" : "";
+  const renderKey = JSON.stringify({
+    mode: "task",
+    taskId: task.id || "",
+    normalized,
+    detail: detailParts,
+    warningText,
+    targetView,
+    liveHref,
+  });
+  const nextHtml = `
     <div class="benchmark-banner-main">
       <div class="benchmark-banner-title">${escapeHtml(config?.label || datasetTypeLabel(normalized) || "运行中评测")}</div>
       <div class="benchmark-banner-detail">${escapeHtml(detailParts.join(" · ") || taskStatusLabel(task) || "运行中")}</div>
@@ -10193,12 +10919,24 @@ function renderGlobalBenchmarkBanner(task = null) {
       ${liveHref ? `<a class="benchmark-banner-link" href="${escapeHtml(liveHref)}" target="_blank" rel="noreferrer">Live 报告</a>` : ""}
     </div>
   `;
+  if (!banner.hidden && banner.dataset.renderKey === renderKey && banner.innerHTML === nextHtml) return;
+  banner.hidden = false;
+  banner.dataset.renderKey = renderKey;
+  banner.innerHTML = nextHtml;
 }
 
 function renderGlobalBenchmarkBannerFromRun(run = null) {
   const banner = $("globalBenchmarkBanner");
   if (!banner) return;
+  const activeView = document.body?.dataset?.activeView || "";
   if (!run?.id) {
+    delete banner.dataset.renderKey;
+    banner.hidden = true;
+    banner.innerHTML = "";
+    return;
+  }
+  if (activeView === "hotpotQaView") {
+    delete banner.dataset.renderKey;
     banner.hidden = true;
     banner.innerHTML = "";
     return;
@@ -10207,6 +10945,7 @@ function renderGlobalBenchmarkBannerFromRun(run = null) {
   const key = genericBenchmarkKeyForFormat(format);
   const config = key ? benchmarkConfig(key) : null;
   if (!config) {
+    delete banner.dataset.renderKey;
     banner.hidden = true;
     banner.innerHTML = "";
     return;
@@ -10232,10 +10971,18 @@ function renderGlobalBenchmarkBannerFromRun(run = null) {
     : "当前没有运行中的同类任务；这里显示最近一次终态。";
   const targetView = config.view || "runsView";
   const completedHref = format === "hotpotqa"
-    ? "/generated-reports/hotpotqa_echomemory_completed_current.html"
+    ? "/generated-reports/hotpotqa_openviking_vs_echomemory_live_50_current.html"
     : "";
-  banner.hidden = false;
-  banner.innerHTML = `
+  const renderKey = JSON.stringify({
+    mode: "run",
+    runId: run.id || "",
+    format,
+    detail: detailParts,
+    warningText,
+    targetView,
+    completedHref,
+  });
+  const nextHtml = `
     <div class="benchmark-banner-main">
       <div class="benchmark-banner-title">${escapeHtml(config.label || datasetTypeLabel(format) || "最近评测")}</div>
       <div class="benchmark-banner-detail">${escapeHtml(detailParts.join(" · ") || "最近终态")}</div>
@@ -10246,6 +10993,10 @@ function renderGlobalBenchmarkBannerFromRun(run = null) {
       ${completedHref ? `<a class="benchmark-banner-link" href="${escapeHtml(completedHref)}" target="_blank" rel="noreferrer">固定报告</a>` : ""}
     </div>
   `;
+  if (!banner.hidden && banner.dataset.renderKey === renderKey && banner.innerHTML === nextHtml) return;
+  banner.hidden = false;
+  banner.dataset.renderKey = renderKey;
+  banner.innerHTML = nextHtml;
 }
 
 async function refreshTasks() {
@@ -10300,11 +11051,11 @@ async function refreshTasks() {
   }
   const importTask = activeView === "evalView"
     ? null
-    : (latestMemoryImportTask(tasks) || latestAnyMemoryImportTask(allTasks));
+    : (latestMemoryImportTask(tasks, {workspaceScoped: true}) || latestAnyMemoryImportTask(allTasks, {workspaceScoped: true}));
   if (importTask) {
     state.currentImportTask = importTask;
-    if (isTaskActive(importTask)) syncImportTaskFields(importTask);
-    if (isTaskActive(importTask)) ensureTaskPolling(importTask, importTask.kind || "");
+    if (isImportTaskInBackground(importTask)) syncImportTaskFields(importTask);
+    if (isImportTaskInBackground(importTask)) ensureTaskPolling(importTask, importTask.kind || "");
     renderImportPaths(importTask);
     if (taskShouldUseLocomoTaskStrip(importTask.kind || "", importTask, enrichTaskDatasetFormat(importTask, state.taskDatasetFormats[importTask.id] || ""))) {
       renderActiveTaskStrip(importTask);
@@ -10312,12 +11063,12 @@ async function refreshTasks() {
     updateProgress(importTask, importTask.kind || state.taskKind);
     renderImportDiagnostics(importTask);
     const importLogBox = $("importLogBox");
-    if (!isTaskActive(importTask) && importLogBox && /日志会显示在这里|这个任务还没有写出日志/.test(String(importLogBox.textContent || "").trim())) {
+    if (!isImportTaskInBackground(importTask) && importLogBox && /日志会显示在这里|这个任务还没有写出日志/.test(String(importLogBox.textContent || "").trim())) {
       loadTaskLogIntoBox(importTask, importTask.kind || "openviking_import").catch(() => {});
     }
   } else if (activeView !== "evalView") {
     const trackedActiveImport = [state.currentImportTask, state.currentRunningTask, state.currentLocomoTask]
-      .find((task) => task?.id && isMemoryImportKind(task.kind || "") && isTaskActive(task));
+      .find((task) => task?.id && isMemoryImportKind(task.kind || "") && isImportTaskInBackground(task));
     if (trackedActiveImport) {
       state.currentImportTask = trackedActiveImport;
       renderImportPaths(trackedActiveImport);
@@ -10325,7 +11076,7 @@ async function refreshTasks() {
       updateProgress(trackedActiveImport, trackedActiveImport.kind || locomoImportTaskKind());
     } else {
       const fallbackImport = (
-        isMemoryImportKind(state.currentImportTask?.kind || "") && !isTaskActive(state.currentImportTask)
+        isMemoryImportKind(state.currentImportTask?.kind || "") && !isImportTaskInBackground(state.currentImportTask)
           ? state.currentImportTask
           : null
       ) || await latestMemoryImportRecord().catch(() => null);
@@ -10542,14 +11293,19 @@ function renderImportReadinessPanel(task = null) {
   const backend = normalizeMemoryBackend(taskConfig.backend || (task?.kind === "echomemory_import" ? "echomemory" : currentMemoryBackend()));
   const backendLabel = memoryBackendLabel(backend);
   const dataset = currentLocomoDataset();
-  const workspace = taskConfig.workspace
+  const workspace = currentConfiguredWorkspace(backend)
+    || taskConfig.workspace
     || (taskConfig.workspace_mode === "new_each_import" ? taskConfig.openviking_workspace : "")
     || ns.workspace;
   const account = taskScope.account || ns.account;
-  const lastImport = readLastImport();
-  const imported = state.importedMemoryStatus || {};
-  const importRunning = isMemoryImportKind(task?.kind || state.currentImportTask?.kind || "") && (task?.status || state.currentImportTask?.status) === "running";
+  const lastImport = currentWorkspaceScopedLastImport(backend);
+  const imported = currentImportedMemoryStatus();
+  const importDisplay = locomoImportDisplayState(lastImport, imported);
+  const importRunning = isImportTaskInBackground(task || state.currentImportTask || {});
+  const existingImportInWorkspace = !importRunning && Number(imported.summary_count || 0) > 0;
   const importScope = currentImportSampleScope();
+  const importScopeParts = String(importScope.optionText || "").split("·").map((part) => part.trim()).filter(Boolean);
+  const importScopeStructure = importScopeParts.length >= 3 ? importScopeParts[2] : "";
   const sampleLabel = importScope.isAll
     ? "全部对话"
     : (importScope.smoke
@@ -10561,10 +11317,10 @@ function renderImportReadinessPanel(task = null) {
         ? `全部对话样本；${formatInt(dataset.samples || 0)} 个样本 / ${formatInt(dataset.questions || 0)} 题。`
         : (importScope.smoke
           ? `仅验证 1 个 session 的注入链路。`
-          : `${importScope.label}${importScope.questionCount ? ` · ${formatInt(importScope.questionCount)} 题` : ""}。`)
+          : `${importScopeStructure || "当前导入范围"}。`)
     )
     : "";
-  const workspaceHint = workspaceBackendNameHint(workspace);
+  const activeRunDir = String(task?.run_dir || "").trim();
   const cards = [
     {
       label: "导入范围",
@@ -10573,12 +11329,20 @@ function renderImportReadinessPanel(task = null) {
       tone: dataset ? "ok" : "warn",
     },
     {
-      label: "目录",
-      value: compactPath(workspace || "请到系统配置确认目录", 42, 24),
-      detail: "",
-      tone: workspace ? "ok" : "warn",
+      label: "导入任务目录",
+      value: compactPath(activeRunDir || "任务启动后显示", 42, 24),
+      detail: activeRunDir ? "这里是本次导入任务的运行目录，不是记忆目录。" : "",
+      tone: activeRunDir ? "ok" : "warn",
     },
   ];
+  if (existingImportInWorkspace) {
+    cards.push({
+      label: "目录状态",
+      value: importDisplay.importedComplete ? "目录已有历史导入" : "目录已有历史记录",
+      detail: "当前 workspace 已经有这个范围的旧结果。若要重新导入，请先点“自动生成目录”，不要继续写入这个目录。",
+      tone: "warn",
+    });
+  }
   target.innerHTML = cards.map((card) => `
     <article class="${escapeHtml(card.tone || "")}">
       <span>${escapeHtml(card.label)}</span>
@@ -10626,7 +11390,8 @@ function renderImportDiagnostics(task = state.currentImportTask || null) {
   const panel = $("importDiagnosticPanel");
   if (!panel) return;
   const items = importDiagnosticItems(task);
-  if (!task || !items.length) {
+  const tokenSummary = summarizeImportTokenUsage(task);
+  if (!task || (!items.length && !tokenSummary.length)) {
     panel.innerHTML = `
       <article class="log-diagnostic ok">
         <strong>暂无异常</strong>
@@ -10642,12 +11407,19 @@ function renderImportDiagnostics(task = state.currentImportTask || null) {
     ["Embedding 超时", diagnostics.embedding_timeout_count],
     ["熔断", diagnostics.embedding_circuit_breaker_count],
   ].filter(([, value]) => Number(value || 0) > 0);
-  const summaryText = counts.map(([label, value]) => `${label} ${value}`).join(" · ") || taskStatusLabel(task);
+  const summaryText = counts.map(([label, value]) => `${label} ${value}`).join(" · ")
+    || (items.length ? taskStatusLabel(task) : "未检测到导入异常");
   panel.innerHTML = `
     <div class="import-diagnostic-summary">
-      <strong>检测到 ${escapeHtml(items.length)} 条异常线索</strong>
+      <strong>${escapeHtml(items.length ? `检测到 ${items.length} 条异常线索` : "暂无异常")}</strong>
       <span>${escapeHtml(summaryText)}</span>
     </div>
+    ${tokenSummary.length ? `
+      <div class="import-diagnostic-summary">
+        <strong>关键记忆调用</strong>
+        <span>${escapeHtml(tokenSummary.join(" · "))}</span>
+      </div>
+    ` : ""}
     ${items.slice(-8).reverse().map((item) => `
       <article class="log-diagnostic ${escapeHtml(item.severity || "warn")}">
         <strong>${escapeHtml(item.label)}</strong>
@@ -10659,16 +11431,15 @@ function renderImportDiagnostics(task = state.currentImportTask || null) {
 
 function renderImportPaths(task = null) {
   const ns = currentImportNamespace();
-  const lastImport = readLastImport();
   const taskConfig = task?.meta?.config || {};
   const taskScope = task ? importScopeFromTask(task, ns) : ns;
   const realWorkspace = taskConfig.workspace || (taskConfig.workspace_mode === "new_each_import" ? taskConfig.openviking_workspace : "");
   const backend = normalizeMemoryBackend(
     taskConfig.backend
     || taskScope.backend
-    || lastImport.backend
     || (task?.kind === "echomemory_import" ? "echomemory" : currentMemoryBackend())
   );
+  const lastImport = currentWorkspaceScopedLastImport(backend);
   const backendMatchesCurrent = backend === currentMemoryBackend();
   if (realWorkspace && backendMatchesCurrent && $("ovWorkspace")) $("ovWorkspace").value = realWorkspace;
   if (realWorkspace && backendMatchesCurrent && $("memoryWorkspace")) $("memoryWorkspace").value = realWorkspace;
@@ -10679,24 +11450,32 @@ function renderImportPaths(task = null) {
   const summaryPath = task?.output_file || lastImport.output_file || "";
   const importFolder = summaryPath ? dirname(summaryPath) : "";
   const account = taskScope.account || lastImport.account || ns.account;
+  const userId = String(taskConfig.user_id || taskConfig.em_user_id || taskConfig.ov_user_id || ns.userId || "default").trim() || "default";
+  const agentId = String(taskConfig.agent_id || taskConfig.em_agent_id || taskConfig.ov_agent_id || ns.agentId || "default").trim() || "default";
   const hasWorkspace = workspace && !workspace.includes("自动生成");
   const samplePattern = ns.sampleId ? `*${ns.sampleId}*` : "*";
   const importKind = task?.kind && isMemoryImportKind(task.kind) ? task.kind : importTaskKindForBackend(backend);
   const importScript = importScriptForBackend(backend);
   const importStageLabel = taskStageLabel(importKind);
   const backendRoot = hasWorkspace ? storageRootForBackend(workspace, account, backend) : "";
+  const backendPathRows = hasWorkspace
+    ? importPathRowsForBackend({workspace, account, backend, userId, agentId})
+    : [];
   const effectiveLogFile = task?.log_file || runLogPathFromRecord(lastImport) || "";
+  const runDir = String(task?.run_dir || dirname(effectiveLogFile) || (importFolder ? dirname(importFolder) : "")).trim();
+  renderImportLogPath(effectiveLogFile);
   const rows = [
     {label: "当前进度", value: importStageLabel, copy: false, open: false},
-    {label: "记忆目录", value: backendRoot || workspace, copy: true, open: true},
-    {label: "导入脚本", value: importScript, copy: true, open: true},
-    {label: "日志文件", value: effectiveLogFile, copy: true, open: true},
+    {label: "记忆目录", value: workspace, copy: true, open: true},
+    {label: "运行目录", value: runDir, copy: true, open: true},
+    ...backendPathRows.filter((item) => item.value && item.value !== workspace && item.value !== backendRoot),
     {label: "摘要文件", value: summaryPath, copy: true, open: true},
+    {label: "日志文件", value: effectiveLogFile, copy: true, open: true},
   ].filter((item) => item.value);
   $("importPathList").innerHTML = rows.map((item) => `
     <article class="path-row">
       <span>${escapeHtml(item.label)}</span>
-      <code>${escapeHtml(item.value)}</code>
+      <code>${escapeHtml(displayPath(item.value))}</code>
       ${item.copy || item.open ? `
         <div class="path-row-actions">
           ${item.copy ? `<button class="path-copy" type="button" data-copy="${escapeHtml(item.value)}">复制</button>` : ""}
@@ -10717,7 +11496,7 @@ function renderImportPaths(task = null) {
 }
 
 async function refreshImportedMemories() {
-  const lastImport = readLastImport();
+  const lastImport = currentWorkspaceScopedLastImport();
   const taskWorkspace = state.currentImportTask?.meta?.config?.workspace || "";
   const currentBackend = currentMemoryBackend();
   const activeTaskBackend = normalizeMemoryBackend(state.currentImportTask?.meta?.config?.backend || "");
@@ -10738,32 +11517,25 @@ async function refreshImportedMemories() {
     refreshLocomoFlowStatus(true).catch(() => {});
     return;
   }
-  if (isMemoryImportKind(state.currentImportTask?.kind) && isTaskActive(state.currentImportTask)) {
+  if (isImportTaskInBackground(state.currentImportTask || {})) {
     const activeAccountRoot = storageRootForBackend(workspace, account, currentBackend);
     $("importedMemoryList").innerHTML = `
       <article class="path-row">
-        <span>Workspace 根目录</span>
-        <code>${escapeHtml(workspace)}</code>
+        <span>记忆目录</span>
+        <code>${escapeHtml(displayPath(workspace))}</code>
         <button class="path-copy" type="button" data-copy="${escapeHtml(workspace)}">复制</button>
       </article>
       ${activeAccountRoot ? `
       <article class="path-row">
-        <span>${escapeHtml(currentBackend === "echomemory" ? "账户存储根" : "账户目录")}</span>
-        <code>${escapeHtml(activeAccountRoot)}</code>
+        <span>${escapeHtml(currentBackend === "echomemory" ? "记忆写入目录" : "账户目录")}</span>
+        <code>${escapeHtml(displayPath(activeAccountRoot))}</code>
         <button class="path-copy" type="button" data-copy="${escapeHtml(activeAccountRoot)}">复制</button>
       </article>
       ` : ""}
       <p>导入还在进行中。这里只显示当前账户的结果。</p>
     `;
     bindCopyButtons("#importedMemoryList");
-    state.importedMemoryStatus = {
-      workspace,
-      account,
-      sample_id: sampleId,
-      session_count: 0,
-      summary_count: 0,
-      complete_count: 0,
-    };
+    setImportedMemoryRunningStatus({workspace, account, sampleId});
     updateWorkflowGuide();
     refreshLocomoFlowStatus(true).catch(() => {});
     return;
@@ -10780,6 +11552,8 @@ async function refreshImportedMemories() {
     session_count: sessions.length,
     summary_count: summaries.length,
     complete_count: completeCount,
+    latest_summary_path: summaries[0]?.summary_path || "",
+    latest_integrity: summaries[0]?.integrity || "",
   };
   updateWorkflowGuide();
   refreshLocomoFlowStatus(true).catch(() => {});
@@ -10811,18 +11585,26 @@ async function refreshImportedMemories() {
     `;
   }).join("");
   const workspaceRoot = data.workspace || workspace;
-  const accountRoot = data.account_path || data.memory_root || storageRootForBackend(workspaceRoot, account, data.backend || backend);
+  const accountRoot = data.account_path || storageRootForBackend(workspaceRoot, account, data.backend || backend);
+  const memoryRoot = data.memory_root || (accountRoot ? `${accountRoot}/memory` : "");
   $("importedMemoryList").innerHTML = `
     <article class="path-row">
-      <span>Workspace 根目录</span>
-      <code>${escapeHtml(workspaceRoot || "")}</code>
+      <span>记忆目录</span>
+      <code>${escapeHtml(displayPath(workspaceRoot || ""))}</code>
       <button class="path-copy" type="button" data-copy="${escapeHtml(workspaceRoot || "")}">复制</button>
     </article>
     ${accountRoot ? `
     <article class="path-row">
-      <span>${escapeHtml(data.backend === "echomemory" ? "账户存储根" : "账户目录")}</span>
-      <code>${escapeHtml(accountRoot)}</code>
+      <span>${escapeHtml(data.backend === "echomemory" ? "记忆写入目录" : "账户目录")}</span>
+      <code>${escapeHtml(displayPath(accountRoot))}</code>
       <button class="path-copy" type="button" data-copy="${escapeHtml(accountRoot)}">复制</button>
+    </article>
+    ` : ""}
+    ${memoryRoot ? `
+    <article class="path-row">
+      <span>长期记忆目录</span>
+      <code>${escapeHtml(displayPath(memoryRoot))}</code>
+      <button class="path-copy" type="button" data-copy="${escapeHtml(memoryRoot)}">复制</button>
     </article>
     ` : ""}
     ${sessionRows || "<p>当前账户下没有已导入内容。</p>"}
@@ -10865,6 +11647,20 @@ async function startTask(kind, extra = {}) {
       await ensureLocomoQaLaunchReady();
     }
     if (isMemoryImportKind(kind)) {
+      await refreshImportedMemories().catch(() => {});
+      const imported = currentImportedMemoryStatus();
+      const importDisplay = locomoImportDisplayState(currentWorkspaceScopedLastImport(), imported);
+      const existingImportInWorkspace = Number(imported.summary_count || 0) > 0;
+      if (!isImportTaskInBackground(state.currentImportTask || {}) && (existingImportInWorkspace || importDisplay.historicalSeen)) {
+        const backend = currentMemoryBackend();
+        const workspaceLabel = workspaceDisplayPath(
+          currentConfiguredWorkspace(backend) || effectiveOpenVikingWorkspace(kind, extra),
+          currentAccount(),
+          backend,
+        ) || "当前目录";
+        renderImportReadinessPanel();
+        throw new Error(`当前目录已有历史导入：${compactPath(workspaceLabel, 42, 28)}。请先点“自动生成目录”，再启动导入。`);
+      }
       $("commitImport").disabled = true;
       renderImportDiagnostics(null);
     }
@@ -10917,8 +11713,15 @@ async function startTask(kind, extra = {}) {
           run_dir: task.run_dir || "",
           log_file: task.log_file || runLogPathFromRecord(task),
           output_file: task.output_file || "",
+          session_id: "",
+          integrity: "",
           backend: scope.backend || (task.kind === "echomemory_import" ? "echomemory" : "openviking"),
         });
+        setImportedMemoryRunningStatus({
+          workspace: scope.workspace || taskWorkspace,
+          account: scope.account || "default",
+        });
+        refreshImportedMemories().catch(() => {});
         updateWorkflowGuide();
         refreshLocomoFlowStatus(true).catch(() => {});
       }
@@ -10980,7 +11783,8 @@ async function pollTask(taskId = state.taskId, kind = state.taskKind) {
     const switchedTaskLog = Boolean(logBox.dataset.taskId && logBox.dataset.taskId !== taskId);
     logBox.dataset.taskId = taskId;
     if (data.text && !staleFullReplay) {
-      logBox.textContent = switchedTaskLog ? data.text : `${logBox.textContent}${data.text}`;
+      const filteredText = filterVisibleTaskLogText(data.text, task, ui.logBox);
+      logBox.textContent = switchedTaskLog ? filteredText : `${logBox.textContent}${filteredText}`;
       logBox.scrollTop = logBox.scrollHeight;
     }
   }
@@ -11011,8 +11815,16 @@ async function pollTask(taskId = state.taskId, kind = state.taskKind) {
         run_dir: task.run_dir || "",
         log_file: task.log_file || runLogPathFromRecord(task),
         output_file: task.output_file || "",
+        session_id: "",
+        integrity: "",
         backend: scope.backend || (task.kind === "echomemory_import" ? "echomemory" : "openviking"),
       });
+      if (isTaskActive(task)) {
+        setImportedMemoryRunningStatus({
+          workspace: scope.workspace || taskWorkspace,
+          account: scope.account || "default",
+        });
+      }
       updateWorkflowGuide();
     }
   }
@@ -11047,6 +11859,12 @@ async function pollTask(taskId = state.taskId, kind = state.taskKind) {
       await refreshEchoMemoryImportSummary(task.output_file);
     } else if (locomoResultTask && currentLocomoResultCsv()) {
       await refreshResult();
+      const finishedSummary = task.summary || {};
+      const rows = finishedSummary.rows ?? "-";
+      const accuracyLabel = hasJudgeScore(finishedSummary) ? percent(finishedSummary.accuracy) : "待判分";
+      toast(`问答已完成 · ${rows} 题 · ${accuracyLabel}`);
+      refreshRuns().catch(() => null);
+      renderRecentLocomoRuns({force: true}).catch(() => null);
     } else if (isGenericBenchmarkQaTask(task, taskFormat)) {
       await renderGenericBenchmarkResultSummary(task, taskFormat);
     } else if ((task.kind === "judge" || effectiveKind === "judge") && currentLocomoResultCsv()) {
@@ -11132,7 +11950,7 @@ function updateProgress(task, kind = state.taskKind) {
     }
     const phase = String(progress.phase || "");
     const taskStatus = String(task?.status || "").toLowerCase();
-    const liveRunning = taskStatus === "running";
+    const liveRunning = isImportTaskInBackground(task);
     const isCommit = phase.startsWith("commit");
     const unit = progress.unit || "messages";
     const sessionProgressCurrent = String(unit) === "sessions" ? Math.max(0, Number(progress.current || 0)) : 0;
@@ -11142,14 +11960,14 @@ function updateProgress(task, kind = state.taskKind) {
       : pct;
     const totalSamples = Number(progress.total_samples || 0);
     const completedSamples = Number(progress.completed_samples || 0);
-    const sessionLabel = String(progress.session_label || progress.current_import?.session || "").trim();
+    const sessionLabel = shortSessionLabel(progress.session_label || progress.current_import?.session || "");
     const importMessage = taskImportMessageCounts(progress);
     const importMessageText = importMessage.total
-      ? ` · 当前会话消息 ${importMessage.index}/${importMessage.total}`
+      ? ` · 本 session 第 ${importMessage.index}/${importMessage.total} 条消息`
       : "";
-    const sessionText = sessionLabel ? ` · 当前会话 ${sessionLabel}` : "";
+    const sessionText = sessionLabel ? ` · 当前 session ${sessionLabel}` : "";
     const sessionProgressText = sessionProgressTotal > 0
-      ? ` · 已完成会话 ${sessionProgressCurrent}/${sessionProgressTotal}`
+      ? ` · 已完成 ${importSmoke ? Math.min(sessionProgressCurrent, 1) : sessionProgressCurrent}/${importSmoke ? 1 : sessionProgressTotal} 个 session`
       : "";
     const scopeText = importSmoke
       ? ` · 模式 单 session 测试`
@@ -11184,6 +12002,7 @@ function updateProgress(task, kind = state.taskKind) {
     return;
   }
   bar.style.width = `${pct}%`;
+  const eta = progress?.eta_seconds != null ? ` · 剩余 ${formatDuration(progress.eta_seconds)}` : "";
   if (execution?.total_questions) {
     const currentQuestion = execution.current_question || execution.answered_questions || 0;
     const answeredQuestions = execution.answered_questions || 0;
@@ -11251,7 +12070,7 @@ function refreshLiveTaskDisplays() {
     renderGlobalTaskChip(null);
     const terminalImportTask = activeView !== "evalView"
       && isMemoryImportKind(state.currentImportTask?.kind || "")
-      && !isTaskActive(state.currentImportTask)
+      && !isImportTaskInBackground(state.currentImportTask)
       ? state.currentImportTask
       : null;
     if (terminalImportTask) {
@@ -11370,8 +12189,20 @@ async function refreshEchoMemoryImportSummary(path) {
   const pendingAsync = Number(summary.pending_async_samples || 0);
   const retrievalReady = Number(summary.retrieval_ready_samples || 0);
   const status = String(summary.status || "").trim();
-  const complete = incomplete === 0 && pendingAsync === 0;
-  const asyncSettling = status === "ECHOMEMORY_IMPORT_ASYNC_SETTLING" || pendingAsync > 0;
+  const terminalTask = state.currentImportTask?.output_file === path ? state.currentImportTask : null;
+  const terminalStatus = String(terminalTask?.status || "").toLowerCase();
+  const stopped = ["stopping", "interrupted", "cancelled", "canceled"].includes(terminalStatus);
+  const failed = terminalStatus === "failed";
+  const hasSummaryEvidence = Boolean(
+    status
+    || records.length
+    || summary.samples != null
+    || summary.expected_messages != null
+    || summary.submitted_messages != null
+  );
+  const complete = hasSummaryEvidence && incomplete === 0 && pendingAsync === 0 && !stopped && !failed;
+  const finalizing = status === "ECHOMEMORY_IMPORT_FINALIZING";
+  const asyncSettling = status === "ECHOMEMORY_IMPORT_ASYNC_SETTLING" || pendingAsync > 0 || finalizing;
   const expected = summary.expected_messages ?? records.reduce((acc, item) => acc + Number(item.expected_messages || 0), 0);
   const submitted = summary.submitted_messages ?? records.reduce((acc, item) => acc + Number(item.submitted_messages || 0), 0);
   const workspace = summary.workspace || $("ovWorkspace").value.trim();
@@ -11379,11 +12210,19 @@ async function refreshEchoMemoryImportSummary(path) {
   const banner = $("importCompletionBanner");
   if (banner) {
     banner.hidden = false;
-    banner.className = `completion-banner ${complete ? "ok" : (asyncSettling ? "warn" : "warn")}`;
-    banner.textContent = complete
+    banner.className = `completion-banner ${complete ? "ok" : "warn"}`;
+    banner.textContent = stopped
+      ? `EchoMemory 导入已中断：${submitted || "-"} / ${expected || "-"} 条对话消息已提交，请检查日志和已写入内容。`
+      : failed
+        ? `EchoMemory 导入失败：${submitted || "-"} / ${expected || "-"} 条对话消息已提交，请检查日志。`
+      : complete
       ? (smoke
         ? `EchoMemory 单 session 注入测试完成：${submitted || "-"} / ${expected || "-"} 条对话消息已提交，检索产物已就绪。`
         : `EchoMemory 导入完成：${submitted || "-"} / ${expected || "-"} 条对话消息已提交，检索产物已就绪。`)
+      : finalizing
+        ? (smoke
+          ? `EchoMemory 单 session 注入测试已提交：${submitted || "-"} / ${expected || "-"} 条对话消息，正在 finalizing 完整性。`
+          : `EchoMemory 导入已提交：${submitted || "-"} / ${expected || "-"} 条对话消息，正在 finalizing 完整性。`)
       : asyncSettling
         ? (smoke
           ? `EchoMemory 单 session 注入测试已提交：${submitted || "-"} / ${expected || "-"} 条对话消息，记忆仍在后台生成。`
@@ -11396,7 +12235,7 @@ async function refreshEchoMemoryImportSummary(path) {
     sample_value: $("importSample").value || "",
     sample_label: $("importSample")?.selectedOptions?.[0]?.textContent || "",
     output_file: path,
-    integrity: complete ? "complete" : (asyncSettling ? "pending_async_memory" : "incomplete"),
+    integrity: complete ? "complete" : (asyncSettling && !stopped && !failed ? "pending_async_memory" : "incomplete"),
     backend: "echomemory",
   });
   if ($("ovWorkspace") && workspace) $("ovWorkspace").value = workspace;
@@ -11416,17 +12255,18 @@ async function refreshEchoMemoryImportSummary(path) {
     output_file: path,
     log_file: runLogPathFromRecord({output_file: path}),
     meta: {config: {workspace, account, backend: "echomemory"}},
+    status: terminalStatus || undefined,
   });
   $("importProgressBar").style.width = complete ? "100%" : $("importProgressBar").style.width;
-  $("importProgressText").textContent = complete
-    ? (smoke
-      ? `EchoMemory 单 session 注入测试完成：对话消息 ${submitted || "-"} / ${expected || "-"}，检索产物已就绪。`
-      : `EchoMemory 导入完成：对话消息 ${submitted || "-"} / ${expected || "-"}，检索产物已就绪。`)
+  $("importProgressText").textContent = stopped
+    ? "导入已中断"
+    : failed
+      ? "导入失败"
+      : complete
+    ? "导入完成"
     : asyncSettling
-      ? (smoke
-        ? `EchoMemory 单 session 注入测试已完成写入：对话消息 ${submitted || "-"} / ${expected || "-"}，后台仍在生成 atom / graph。`
-        : `EchoMemory 导入已提交：对话消息 ${submitted || "-"} / ${expected || "-"}，后台仍在生成 atom / graph。`)
-      : `EchoMemory 导入结束但需要检查：未完成样本 ${incomplete}。`;
+      ? "已提交，后台生成中"
+      : "导入结束，需检查";
   renderKpis("commitKpis", [
     ["模式", smoke ? "单 session 测试" : "正式导入"],
     ["完整性", complete ? "完整" : (asyncSettling ? "后台补齐中" : "未完成")],
@@ -11449,7 +12289,11 @@ async function refreshEchoMemoryImportSummary(path) {
     </article>
   `).join("");
   toast(
-    complete
+    stopped
+      ? "EchoMemory 导入已中断，请检查已写入内容"
+      : failed
+        ? "EchoMemory 导入失败，请检查日志"
+      : complete
       ? (smoke ? "EchoMemory 单 session 注入测试完成" : "EchoMemory 导入完成")
       : (asyncSettling
         ? (smoke ? "EchoMemory 单 session 注入测试已提交，记忆仍在后台生成" : "EchoMemory 导入已提交，记忆仍在后台生成")
@@ -11462,7 +12306,6 @@ async function refreshResult() {
   if (!input) return toast("请先运行或选择 LoCoMo 结果文件");
   const data = await api(`/api/results?path=${encodeURIComponent(input)}`);
   const summary = data.summary || {};
-  const sj = summary.summary_json || {};
   const format = summaryDatasetFormat(summary);
   if (format && format !== "locomo") {
     toast(`当前结果是 ${datasetTypeLabel(format)}，LoCoMo 页面不加载它`);
@@ -11470,46 +12313,17 @@ async function refreshResult() {
   }
   markLocomoOutputFile(input);
   state.lastJudgeSummary = summary;
-  const judged = (summary.graded || 0) > 0;
-  const simpleReference = summary.exact_match_reference ?? sj.exact_match_rate ?? summary.simple_accuracy;
-  const simpleCorrect = summary.simple_correct ?? sj.exact_match_count ?? "-";
-  const formalAccuracy = judged ? percent(summary.accuracy) : "待判分";
-  renderKpis("resultKpis", [
-    ["正式准确率", formalAccuracy],
-    ["题数", summary.rows ?? "-"],
-    ["判对", summary.correct ?? "-"],
-    ["待判", summary.result_counts?.UNSCORED ?? "-"],
-      ["总 Token", summary.total_injection_tokens_est ?? sj.total_injection_tokens_est ?? "-"],
-      ["平均 Token", summary.avg_injection_tokens_est ?? sj.avg_injection_tokens_est ?? "-"],
-  ]);
-  if ($("evalResultKpis")) {
-    renderKpis("evalResultKpis", [
-      ["正式准确率", formalAccuracy],
-      ["题数", summary.rows ?? "-"],
-      ["判对", summary.correct ?? "-"],
-      ["待判", summary.result_counts?.UNSCORED ?? "-"],
-      ["精确匹配参考", simpleReference == null ? "-" : `${simpleCorrect}/${summary.rows ?? sj.count ?? "-"} · ${percent(simpleReference)}`],
-      ["Token 用量", summary.total_injection_tokens_est ?? sj.total_injection_tokens_est ?? "-"],
-    ]);
-  }
-  renderJudgeEstimate(summary);
-  renderJudgeReadinessPanel(summary);
-  await renderQaDiagnostics(input).catch((error) => {
-    const panel = $("qaDiagnosticsPanel");
-    if (panel) panel.innerHTML = `<p class="bad-text">结果读取失败：${escapeHtml(error.message)}</p>`;
-  });
-  const summaryJson = summary.summary_json || {};
   const baseDir = dirname(input);
   renderArtifactList([
     ["结果文件", input],
     ["目录", baseDir],
-    ["摘要", summaryJson.output_csv ? `${dirname(summaryJson.output_csv)}/summary.json` : `${baseDir}/summary.json`],
     ["判分摘要", `${baseDir}/judge_summary.json`],
-    ["错题分析", `${input.replace(/\\.csv$/i, ".wrong_analysis.json")}`],
+    ["错题分析", `${input.replace(/\.csv$/i, ".wrong_analysis.json")}`],
   ]);
-  await renderPendingJudgePanel(input);
-  await renderPreview(input);
-  refreshLocomoFlowStatus(true).catch(() => {});
+  await Promise.all([
+    renderJudgeHistoryList(input),
+    renderWrongOnlyPreview(input),
+  ]);
 }
 
 async function refreshLocomoResultAction(buttonId = "refreshResult") {
@@ -11533,8 +12347,7 @@ async function refreshLocomoResultAction(buttonId = "refreshResult") {
     }
     await refreshResult();
     const summary = state.lastJudgeSummary || {};
-    const judged = Number(summary.graded || 0) > 0;
-    const accuracyLabel = judged ? percent(summary.accuracy) : "待判分";
+    const accuracyLabel = hasJudgeScore(summary) ? percent(summary.accuracy) : "待判分";
     toast(`已刷新问答结果 · ${summary.rows ?? "-"} 题 · ${accuracyLabel}`);
   } catch (error) {
     toast(error.message || String(error || "刷新失败"));
@@ -11617,7 +12430,7 @@ async function renderPendingJudgePanel(path) {
       <div class="panel-actions">
         <button class="secondary" id="refreshPendingPreview">刷新示例</button>
         <button class="secondary" id="exportPendingCsv">导出待判 CSV</button>
-        <button class="primary" id="pendingRunJudge">判分当前结果</button>
+        <button class="primary" id="pendingRunJudge">judge</button>
       </div>
     </div>
     <div class="form-grid four compact-form">
@@ -11692,14 +12505,33 @@ async function refreshCommitSummary(path) {
   const smoke = isSingleSessionImportSummary(summary);
   const status = summary.status || "-";
   const first = (summary.records || [])[0] || {};
-  const complete = (first.integrity || "").toLowerCase() === "complete" && Number(first.pending_message_count_after_commit ?? 0) === 0;
+  const terminalTask = state.currentImportTask?.output_file === path ? state.currentImportTask : null;
+  const terminalStatus = String(terminalTask?.status || "").toLowerCase();
+  const stopped = ["stopping", "interrupted", "cancelled", "canceled"].includes(terminalStatus);
+  const failed = terminalStatus === "failed";
+  const hasSummaryEvidence = Boolean(
+    first.session_id
+    || summary.expected_messages != null
+    || summary.submitted_messages != null
+    || summary.samples != null
+    || status !== "-"
+  );
+  const complete = hasSummaryEvidence
+    && (first.integrity || "").toLowerCase() === "complete"
+    && Number(first.pending_message_count_after_commit ?? 0) === 0
+    && !stopped
+    && !failed;
   const expected = summary.expected_messages ?? first.expected_messages ?? "-";
   const submitted = summary.submitted_messages ?? first.submitted_messages ?? "-";
   const banner = $("importCompletionBanner");
   if (banner) {
     banner.hidden = false;
     banner.className = `completion-banner ${complete ? "ok" : "warn"}`;
-    banner.textContent = complete
+    banner.textContent = stopped
+      ? `导入已中断：${submitted}/${expected} 条对话消息已写入，请检查日志和已落盘内容。`
+      : failed
+        ? `导入失败：${submitted}/${expected} 条对话消息已写入，请检查日志。`
+      : complete
       ? (smoke
         ? `单 session 注入测试完成：${submitted}/${expected} 条对话消息已写入，记忆已落盘。`
         : `导入完成：${submitted}/${expected} 条对话消息已写入，记忆已落盘。`)
@@ -11717,12 +12549,22 @@ async function refreshCommitSummary(path) {
   if ($("memoryWorkspace")) $("memoryWorkspace").value = $("ovWorkspace").value.trim();
   if ($("memoryAccount")) $("memoryAccount").value = $("ovAccount").value.trim() || "default";
   $("importProgressBar").style.width = complete ? "100%" : $("importProgressBar").style.width;
-  $("importProgressText").textContent = complete
-    ? (smoke
-      ? `单 session 注入测试完成：对话消息 ${submitted}/${expected} 条，归档后待处理 ${first.pending_message_count_after_commit ?? "-"}。`
-      : `导入完成：对话消息 ${submitted}/${expected} 条，归档后待处理 ${first.pending_message_count_after_commit ?? "-"}。`)
-    : `导入结束但需要检查：对话消息 ${submitted}/${expected} 条，完整性 ${first.integrity || "-"}.`;
-  toast(complete ? (smoke ? "单 session 注入测试完成，记忆已落盘" : "导入完成，记忆已落盘") : "导入结束，请检查完整性");
+  $("importProgressText").textContent = stopped
+    ? "导入已中断"
+    : failed
+      ? "导入失败"
+      : complete
+        ? "导入完成"
+        : "导入结束，需检查";
+  toast(
+    stopped
+      ? "导入已中断，请检查已写入内容"
+      : failed
+        ? "导入失败，请检查日志"
+        : complete
+          ? (smoke ? "单 session 注入测试完成，记忆已落盘" : "导入完成，记忆已落盘")
+          : "导入结束，请检查完整性"
+  );
   renderKpis("commitKpis", [
     ["模式", smoke ? "单 session 测试" : "正式导入"],
     ["完整性", first.integrity === "complete" ? "完整" : (first.integrity === "incomplete" ? "未完成" : (summary.incomplete_samples ? "未完成" : "完整"))],
@@ -11806,12 +12648,17 @@ function renderIntegrity(data) {
     </details>
     <div class="path-row">
       <span>摘要</span>
-      <code>${escapeHtml(data.summary_path || "")}</code>
+      <code>${escapeHtml(displayPath(data.summary_path || ""))}</code>
       <button class="path-copy" type="button" data-copy="${escapeHtml(data.summary_path || "")}">复制</button>
     </div>
     <div class="path-row">
-      <span>${escapeHtml(data.backend === "echomemory" ? "EchoMemory 根目录" : "记忆根目录")}</span>
-      <code>${escapeHtml(data.memory_root || "")}</code>
+      <span>${escapeHtml(data.backend === "echomemory" ? "记忆写入目录" : "账户目录")}</span>
+      <code>${escapeHtml(displayPath(data.account_path || ""))}</code>
+      <button class="path-copy" type="button" data-copy="${escapeHtml(data.account_path || "")}">复制</button>
+    </div>
+    <div class="path-row">
+      <span>${escapeHtml(data.backend === "echomemory" ? "长期记忆目录" : "记忆根目录")}</span>
+      <code>${escapeHtml(displayPath(data.memory_root || ""))}</code>
       <button class="path-copy" type="button" data-copy="${escapeHtml(data.memory_root || "")}">复制</button>
     </div>
   `;
@@ -11893,6 +12740,89 @@ async function renderPreview(path) {
   document.querySelectorAll(".judge-row-button").forEach((button) => {
     button.addEventListener("click", () => runJudgeForCurrentResult().catch((e) => toast(e.message)));
   });
+}
+
+async function renderWrongOnlyPreview(path) {
+  const data = await api(`/api/csv-preview?path=${encodeURIComponent(path)}&limit=240`);
+  const rows = (data.rows || []).filter((row) => String(row.result || row.simple_grade || "").toUpperCase() === "WRONG");
+  const target = $("sampleRows");
+  if (!target) return;
+  target.hidden = false;
+  target.innerHTML = rows.map((row, index) => `
+    <article class="memory-hit wrong" data-question-id="${escapeHtml(row.question_id || "")}" data-row-index="${index}" data-csv-path="${escapeHtml(path)}">
+      <strong>${escapeHtml(row.question_id || `row-${index + 1}`)} · ${escapeHtml(row.sample_id || "-")} · C${escapeHtml(row.category || "")}</strong>
+      <p>${escapeHtml(row.question || "-")}</p>
+    </article>
+  `).join("") || "<p class=\"muted-list-note\">当前结果没有错题。</p>";
+  document.querySelectorAll("#sampleRows .memory-hit").forEach((card) => {
+    card.addEventListener("click", () => openQuestionDetail(
+      card.dataset.csvPath || "",
+      card.dataset.questionId || "",
+      card.dataset.rowIndex || "",
+      "judgeQuestionDetailPane",
+    ).catch((e) => toast(e.message)));
+  });
+  if (rows.length) {
+    const first = rows[0] || {};
+    if ($("judgeQuestionDetailPane")) {
+      $("judgeQuestionDetailPane").innerHTML = "<p class=\"muted-list-note\">正在加载判分依据...</p>";
+    }
+    openQuestionDetail(path, first.question_id || "", "0", "judgeQuestionDetailPane").catch((e) => {
+      if ($("judgeQuestionDetailPane")) {
+        $("judgeQuestionDetailPane").innerHTML = `<p class="bad-text">${escapeHtml(e.message || "加载判分依据失败")}</p>`;
+      }
+      toast(e.message);
+    });
+  } else if ($("judgeQuestionDetailPane")) {
+    $("judgeQuestionDetailPane").innerHTML = "<p class=\"muted-list-note\">当前结果没有错题可查看判分依据。</p>";
+  }
+}
+
+async function renderJudgeHistoryList(currentInput = "") {
+  const target = $("judgeHistoryList");
+  if (!target) return;
+  const data = await api("/api/runs?limit=80");
+  const runs = (data.runs || [])
+    .filter((run) => isRecentLocomoQaRun(run) && (run.output_file || ""))
+    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))
+    .slice(0, 12);
+  target.innerHTML = runs.map((run) => {
+    const selected = String(run.output_file || "") === String(currentInput || "");
+    const summary = run.summary || {};
+    const score = hasJudgeScore(summary) ? percent(summary.accuracy) : "待判分";
+    const inferredTitle = runDisplayTitle(run) || "";
+    const title = /^\d+$/.test(inferredTitle)
+      ? (run.name || run.id || inferredTitle)
+      : (inferredTitle || run.name || run.id || "LoCoMo 结果");
+    const rows = runDatasetMeta(run).rows ?? summary.rows;
+    const createdAt = formatDateTimeLocal(run.created_at || run.updated_at || run.ended_at || "");
+    const statusLabel = hasJudgeScore(summary) ? "已判分" : "等待判分";
+    const tone = hasJudgeScore(summary) ? "ok" : "pending";
+    return `
+      <article class="memory-hit judge-history-card ${tone} ${selected ? "selected ok" : ""}" data-output-file="${escapeHtml(run.output_file || "")}">
+        <div class="judge-history-head">
+          <strong>${escapeHtml(title)}</strong>
+          <span class="judge-history-status">${escapeHtml(statusLabel)}</span>
+        </div>
+        <div class="judge-history-meta">
+          <span><b>结果</b>${escapeHtml(score)}</span>
+          <span><b>题数</b>${escapeHtml(formatInt(rows))}</span>
+          <span class="judge-history-time" title="${escapeHtml(run.created_at || run.updated_at || run.ended_at || "-")}"><b>时间</b>${escapeHtml(createdAt)}</span>
+        </div>
+      </article>
+    `;
+  }).join("") || "<p class=\"muted-list-note\">还没有可用的 LoCoMo 历史判分结果。</p>";
+  document.querySelectorAll("#judgeHistoryList .memory-hit[data-output-file]").forEach((card) => {
+    card.addEventListener("click", async () => {
+      const output = card.dataset.outputFile || "";
+      if (!output || !$("judgeInput")) return;
+      $("judgeInput").value = output;
+      markLocomoOutputFile(output);
+      await refreshResult();
+      toast("已切换到该历史结果");
+    });
+  });
+  renderJudgeIdleCards({input: currentInput, hasSummaryRows: Number((state.lastJudgeSummary || {}).rows || 0) > 0});
 }
 
 function renderChat() {
@@ -13530,16 +14460,6 @@ function renderRunCompareToggle(run = {}) {
   `;
 }
 
-function isNativeOpenVikingBaselineRun(run = {}) {
-  const baseline = state.nativeOpenVikingBaseline?.baseline || {};
-  const runDir = String(run.run_dir || "");
-  const outputFile = String(run.output_file || "");
-  return Boolean(
-    (runDir && runDir === String(baseline.run_dir || "")) ||
-    (outputFile && outputFile === String(baseline.output_file || ""))
-  );
-}
-
 function runFormalScore(run = {}) {
   const summary = run.summary || {};
   const summaryJson = summary.summary_json || {};
@@ -13554,9 +14474,6 @@ function runHasFormalScore(run = {}) {
 
 function renderRunCard(run = {}) {
   const datasetFormat = benchmarkFormatFromRecord(run);
-  const baselineBadge = isNativeOpenVikingBaselineRun(run)
-    ? `<span class="run-baseline-badge">原生基线</span>`
-    : "";
   const pathLabel = runPathLabel(run);
   const pathDisplay = runPathDisplayLabel(run);
   return `
@@ -13564,8 +14481,8 @@ function renderRunCard(run = {}) {
       <div class="run-card-primary">
         <div>
           ${renderRunDatasetMeta(run)}
-          ${baselineBadge}
         </div>
+        ${renderRunCompareToggle(run)}
       </div>
       ${renderRunOperationalMeta(run)}
       ${pathLabel ? `<p class="run-path" title="${escapeHtml(pathLabel)}">${escapeHtml(pathDisplay)}</p>` : ""}
@@ -13767,14 +14684,26 @@ function runCompareCell(value, fallback = "-") {
 }
 
 function updateRunCompareControls() {
-  const count = state.selectedRunCompareIds.size;
-  const button = $("compareSelectedRuns");
-  if (button) button.textContent = count ? `对比选中结果 (${count})` : "对比选中结果";
   document.querySelectorAll(".run-card").forEach((card) => {
     const selected = state.selectedRunCompareIds.has(card.dataset.runKey || "");
     card.classList.toggle("selected-for-compare", selected);
     const checkbox = card.querySelector(".run-compare-check");
     if (checkbox) checkbox.checked = selected;
+  });
+  syncSelectedRunCards();
+  updateJudgeAndReportActionButtons();
+}
+
+function syncSelectedRunCards() {
+  const selectedRunDir = String(state.selectedRunDir || state.selectedRunRecord?.run_dir || "");
+  const selectedOutputFile = String(state.selectedRunRecord?.output_file || "");
+  document.querySelectorAll("#runsList .run-card").forEach((card) => {
+    const selected = Boolean(
+      (selectedRunDir && card.dataset.runDir === selectedRunDir)
+      || (!selectedRunDir && selectedOutputFile && card.dataset.outputFile === selectedOutputFile)
+    );
+    card.classList.toggle("selected", selected);
+    card.setAttribute("aria-selected", selected ? "true" : "false");
   });
 }
 
@@ -13785,116 +14714,23 @@ function scoreDeltaText(score, baselineScore) {
   return `${sign}${(delta * 100).toFixed(1)} pts`;
 }
 
-function renderNativeBaselinePanel() {
-  const data = state.nativeOpenVikingBaseline || {};
-  const baseline = data.baseline || null;
-  const status = $("nativeBaselineStatus");
-  const body = $("nativeBaselineBody");
-  if (status) {
-    status.textContent = baseline ? "已固定" : "未固定";
-    status.classList.toggle("ready", Boolean(baseline));
-  }
-  if (!body) return;
-  if (baseline) {
-    body.innerHTML = `
-      <div class="native-baseline-kpis">
-        <article>
-          <span>数据集 / 题量</span>
-          <strong>${escapeHtml(baseline.dataset_format || "locomo")} · ${escapeHtml(baseline.rows ?? "-")} 题</strong>
-        </article>
-        <article>
-          <span>正式分数</span>
-          <strong>${baseline.accuracy === undefined || baseline.accuracy === null ? "待判分" : percent(baseline.accuracy)}</strong>
-        </article>
-        <article>
-          <span>测试时间</span>
-          <strong class="run-time">${escapeHtml(baseline.created_at || "-")}</strong>
-        </article>
-      </div>
-      <p class="native-baseline-title">${escapeHtml(baseline.id || baseline.name || "原生 OpenViking")}</p>
-      <p class="native-baseline-path">${escapeHtml(baseline.run_dir || baseline.output_file || "")}</p>
-    `;
-    return;
-  }
-  const candidates = data.candidates || [];
-  body.innerHTML = `
-    <p>还没有固定原生 OpenViking 基线。可以勾选左侧已跑完的原生结果后固定，或让系统自动寻找候选。</p>
-    ${candidates.length ? `
-      <div class="native-baseline-candidates">
-        <strong>候选</strong>
-        ${candidates.slice(0, 3).map((row) => `
-          <span>${escapeHtml(row.id || row.name || "-")} · ${row.accuracy === undefined || row.accuracy === null ? "待判分" : percent(row.accuracy)}</span>
-        `).join("")}
-      </div>
-    ` : ""}
+function reportPathRow(label, path, options = {}) {
+  const value = String(path || "").trim();
+  if (!value) return "";
+  const href = typeof options.href === "string"
+    ? options.href
+    : (options.href === false ? "" : artifactHref(value));
+  const openLabel = options.openLabel || "打开";
+  const browserLabel = options.browserLabel || "浏览器打开";
+  return `
+    <article class="path-row">
+      <span>${escapeHtml(label)}</span>
+      <code>${escapeHtml(displayPath(value))}</code>
+      <button class="path-copy" type="button" data-copy="${escapeHtml(value)}">复制</button>
+      ${href ? `<a class="path-link" href="${escapeHtml(href)}" target="_blank" rel="noreferrer">${escapeHtml(browserLabel)}</a>` : ""}
+      <button class="path-open" type="button" data-path="${escapeHtml(value)}">${escapeHtml(openLabel)}</button>
+    </article>
   `;
-}
-
-async function refreshNativeOpenVikingBaseline({silent = false} = {}) {
-  const data = await api("/api/native-openviking-baseline");
-  state.nativeOpenVikingBaseline = data;
-  renderNativeBaselinePanel();
-  if (!silent) toast(data.configured ? "已刷新原生 OpenViking 基线" : "还没有固定原生 OpenViking 基线");
-  return data;
-}
-
-function selectedRunForNativeBaseline() {
-  const selected = state.recentRuns.filter((run) => state.selectedRunCompareIds.has(runCompareKey(run)));
-  if (selected.length) return selected[0];
-  if (state.selectedRunDir) {
-    return state.recentRuns.find((run) => run.run_dir === state.selectedRunDir) || state.selectedRunRecord || null;
-  }
-  return state.recentRuns[0] || null;
-}
-
-async function pinSelectedNativeOpenVikingBaseline() {
-  const run = selectedRunForNativeBaseline();
-  if (!run?.run_dir) return toast("请先在左侧勾选或打开一个原生 OpenViking 结果");
-  const data = await api("/api/native-openviking-baseline", {
-    method: "POST",
-    body: JSON.stringify({run_dir: run.run_dir, note: "pinned from report UI"}),
-  });
-  state.nativeOpenVikingBaseline = data;
-  renderNativeBaselinePanel();
-  await refreshRuns();
-  toast("已固定为原生 OpenViking 基线");
-}
-
-async function autoPinNativeOpenVikingBaseline() {
-  const data = await api("/api/native-openviking-baseline", {
-    method: "POST",
-    body: JSON.stringify({auto: true, note: "auto selected from report UI"}),
-  });
-  state.nativeOpenVikingBaseline = data;
-  renderNativeBaselinePanel();
-  await refreshRuns();
-  toast("已自动固定原生 OpenViking 基线");
-}
-
-async function compareRunsWithNativeBaseline(runs = []) {
-  const baseline = state.nativeOpenVikingBaseline?.baseline || {};
-  if (!baseline.run_dir) {
-    await refreshNativeOpenVikingBaseline({silent: true});
-  }
-  const activeBaseline = state.nativeOpenVikingBaseline?.baseline || {};
-  if (!activeBaseline.run_dir) return toast("请先固定原生 OpenViking 基线");
-  const candidateRuns = runs.length
-    ? runs
-    : state.recentRuns.filter((run) => state.selectedRunCompareIds.has(runCompareKey(run)));
-  const runDirs = candidateRuns.map((run) => run.run_dir).filter(Boolean);
-  if (!runDirs.length && state.selectedRunDir) runDirs.push(state.selectedRunDir);
-  const uniqueRunDirs = [...new Set(runDirs.filter((runDir) => runDir !== activeBaseline.run_dir))];
-  if (!uniqueRunDirs.length) return toast("请再选择至少一个待比较结果");
-  $("runCompareResult").innerHTML = "<p>正在与原生 OpenViking 基线对比...</p>";
-  const data = await api("/api/run-compare", {
-    method: "POST",
-    body: JSON.stringify({
-      run_dirs: uniqueRunDirs,
-      include_native_openviking_baseline: true,
-    }),
-  });
-  renderRunCompareSummary(data.runs || [], {auto: false, baselineLabel: "原生 OpenViking"});
-  toast(`已与原生 OpenViking 基线对比 ${uniqueRunDirs.length} 个结果`);
 }
 
 function renderRunCompareSummary(rows = [], options = {}) {
@@ -13946,123 +14782,111 @@ function renderRunCompareSummary(rows = [], options = {}) {
     output_file: row.output_file || "",
     run_dir: row.run_dir || "",
   }));
-  const baseline = normalized.find((row) => row.score !== undefined && row.score !== null);
-  const scoredRows = normalized.filter((row) => row.score !== undefined && row.score !== null);
-  const best = scoredRows.length ? scoredRows.reduce((a, b) => (Number(a.score) >= Number(b.score) ? a : b)) : null;
+  const compareReportPath = String(options.reportHtmlFile || "").trim();
+  const compareReportUrl = String(options.reportPublicUrl || "").trim();
+  const generatedAt = String(options.generatedAt || "").trim();
+  const current = normalized[0] || {};
+  const historical = normalized[1] || normalized[0] || {};
   target.dataset.touched = options.auto ? "" : "1";
   target.innerHTML = `
     <div class="report-digest run-compare-digest">
       <div class="report-digest-head">
-        <strong>${options.auto ? "最近结果摘要" : "选中结果对比"}</strong>
-        <span>${escapeHtml(normalized.length)} 个结果 · 对照 ${escapeHtml(baseline?.id || "-")}</span>
+        <strong>${options.auto ? "最近 judge 结果" : "LoCoMo judge 对比"}</strong>
+        <span>${escapeHtml(normalized.length)} 个结果</span>
       </div>
-      <div class="result-kpis compact">
-        <div class="kpi"><span>结果数</span><strong>${escapeHtml(normalized.length)}</strong></div>
-        <div class="kpi"><span>最高分</span><strong>${best ? percent(best.score) : "待判分"}</strong></div>
-        <div class="kpi"><span>最佳结果</span><strong>${escapeHtml(best?.id || "-")}</strong></div>
-        <div class="kpi"><span>未判分</span><strong>${escapeHtml(normalized.filter((row) => row.score === undefined || row.score === null).length)}</strong></div>
+      ${compareReportPath ? `
+        <div class="path-list">
+          ${reportPathRow("对比 HTML 报告", compareReportPath, {
+            browserLabel: "浏览器打开",
+            openLabel: "本机打开",
+            href: compareReportUrl || undefined,
+          })}
+        </div>
+      ` : ""}
+      ${generatedAt ? `<p class="analysis-box-note"><strong>生成时间</strong>${escapeHtml(generatedAt)}</p>` : ""}
+      <div class="grid-2">
+        <div class="subpanel">
+          <h3>结果 A</h3>
+          <table class="compact-table"><tbody>
+            <tr><th>结果</th><td>${runCompareCell(current.id)} · ${runCompareCell(current.score === undefined || current.score === null ? "待判分" : percent(current.score))}</td></tr>
+            <tr><th>模型</th><td>回答 ${runCompareCell(current.answer_model)} / 判分 ${runCompareCell(current.judge_model)}</td></tr>
+            <tr><th>token</th><td>回答 ${runCompareCell(current.answer_tokens)} / 召回 ${runCompareCell(current.retrieval_tokens)}</td></tr>
+            <tr><th>注入 token</th><td>${runCompareCell(current.injection_tokens)}</td></tr>
+          </tbody></table>
+        </div>
+        <div class="subpanel">
+          <h3>结果 B</h3>
+          <table class="compact-table"><tbody>
+            <tr><th>结果</th><td>${runCompareCell(historical.id)} · ${runCompareCell(historical.score === undefined || historical.score === null ? "待判分" : percent(historical.score))}</td></tr>
+            <tr><th>模型</th><td>回答 ${runCompareCell(historical.answer_model)} / 判分 ${runCompareCell(historical.judge_model)}</td></tr>
+            <tr><th>token</th><td>回答 ${runCompareCell(historical.answer_tokens)} / 召回 ${runCompareCell(historical.retrieval_tokens)}</td></tr>
+            <tr><th>注入 token</th><td>${runCompareCell(historical.injection_tokens)}</td></tr>
+          </tbody></table>
+        </div>
       </div>
-      <div class="run-compare-table-wrap">
-        <table class="run-compare-table">
-          <thead>
-            <tr>
-              <th>Run</th>
-              <th>类型</th>
-              <th>题数</th>
-              <th>分数 / 变化</th>
-              <th>精确匹配</th>
-              <th>耗时</th>
-              <th>模型</th>
-              <th>召回</th>
-              <th>Token 用量</th>
-              <th>状态</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${normalized.map((row) => `
-              <tr>
-                <td>
-                  <strong>${runCompareCell(row.id)}</strong>
-                  <small>${runCompareCell(row.status)} · ${runCompareCell(row.kind)}</small>
-                  <small>${runCompareCell(row.config_source)}</small>
-                </td>
-                <td>${runCompareCell(row.agent)}</td>
-                <td>${runCompareCell(row.rows)}<small>已判 ${runCompareCell(row.graded)}</small></td>
-                <td>
-	                  <strong>${row.score === undefined || row.score === null ? "待判分" : percent(row.score)}</strong>
-	                  <small>${runCompareCell(row.official_metric || "formal_judge")}${row.official_metric_scope ? ` · ${runCompareCell(row.official_metric_scope)}` : ""}</small>
-	                  <small>${runCompareCell(scoreDeltaText(row.score, baseline?.score))}</small>
-                </td>
-                <td>${row.exact === undefined || row.exact === null ? "-" : percent(row.exact)}</td>
-                <td>${row.duration_s === undefined || row.duration_s === null ? "-" : escapeHtml(formatDuration(row.duration_s))}</td>
-                <td>
-                  <small>回答 ${runCompareCell(row.answer_model)}</small>
-                  <small>判分 ${runCompareCell(row.judge_model)}</small>
-                  <small>向量 ${runCompareCell(row.embedding_model)}</small>
-                </td>
-                <td>
-                  <small>${runCompareCell(row.retrieval_mode)}</small>
-                  <small>检索 ${runCompareCell(row.top_k)} · 命中 ${runCompareCell(row.avg_memory_hits)}</small>
-                  <small>${runCompareCell(row.prompt_mode)} · 工具集合 ${runCompareCell(row.openviking_tool_set)}</small>
-                  <small>工具循环 ${escapeHtml(reportBoolLabel(row.openviking_tool_loop))} · 内容读取 ${escapeHtml(reportBoolLabel(row.openviking_content_read))} · 迭代 ${runCompareCell(row.avg_iteration)}/${runCompareCell(row.max_iterations)}</small>
-                  <small>工具调用 ${runCompareCell(row.tool_call_total)} · 结果行 ${runCompareCell(row.tool_call_rows)}</small>
-                  <small>qe ${escapeHtml(reportBoolLabel(row.query_expansion))} · lex ${escapeHtml(reportBoolLabel(row.lexical_fallback))} · archive ${escapeHtml(reportBoolLabel(row.archive_fallback))} · file ${escapeHtml(reportBoolLabel(row.memory_file_read))}</small>
-                </td>
-                <td>
-                  <small>回答 ${runCompareCell(row.answer_tokens)}</small>
-                  <small>召回 ${runCompareCell(row.retrieval_tokens)}</small>
-                  <small>注入 ${runCompareCell(row.injection_tokens)}</small>
-                </td>
-                <td>${runCompareCell(row.health)}</td>
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
-      </div>
-      ${options.auto ? "<p class=\"analysis-box-note\"><strong>提示</strong>勾选左侧结果后，可以生成自定义对比。</p>" : ""}
     </div>
   `;
+  bindCopyButtons("#runCompareResult");
+  bindOpenButtons("#runCompareResult");
 }
 
 async function compareSelectedRuns() {
-  const selected = state.recentRuns.filter((run) => state.selectedRunCompareIds.has(runCompareKey(run)));
-  if (state.nativeOpenVikingBaseline?.baseline?.run_dir && selected.length >= 1) {
-    await compareRunsWithNativeBaseline(selected);
-    return;
+  const compareState = compareSelectionState();
+  if (compareState.effectiveCount < 2) {
+    return toast("请至少勾选 2 个 LoCoMo 历史结果");
   }
-  if (selected.length < 2) return toast("请至少勾选 2 个结果，或先固定原生 OpenViking 基线");
   $("runCompareResult").innerHTML = "<p>正在读取结果摘要...</p>";
-  const runDirs = selected.map((run) => run.run_dir).filter(Boolean);
-  if (runDirs.length >= 2) {
-    try {
-      const data = await api("/api/run-compare", {
-        method: "POST",
-        body: JSON.stringify({run_dirs: runDirs}),
-      });
-      renderRunCompareSummary(data.runs || [], {auto: false});
-      toast(`已对比 ${data.count || runDirs.length} 个报告`);
-      return;
-    } catch {
-      // Fall through to per-run detail loading for older servers.
+  state.runCompareLoading = true;
+  updateJudgeAndReportActionButtons();
+  try {
+    const runDirs = compareState.selected.map((run) => run.run_dir).filter(Boolean);
+    if (compareState.effectiveCount >= 2) {
+      try {
+        const data = await api("/api/run-compare", {
+          method: "POST",
+          body: JSON.stringify({
+            run_dirs: runDirs,
+            export_html: true,
+          }),
+        });
+        state.lastCompareReportFile = data.report_html_file || "";
+        renderRunCompareSummary(data.runs || [], {
+          auto: false,
+          baselineId: data.baseline || "",
+          reportHtmlFile: data.report_html_file || "",
+          reportPublicUrl: data.report_public_url || "",
+          generatedAt: data.generated_at || "",
+        });
+        const comparedCount = data.count || compareState.effectiveCount;
+        toast(data.report_html_file ? `已对比 ${comparedCount} 个结果，并生成对比报告` : `已对比 ${comparedCount} 个结果`);
+        return;
+      } catch {
+        // Fall through to per-run detail loading for older servers.
+      }
     }
+    const fallbackRuns = [...compareState.selected].slice(0, 2);
+    const rows = await Promise.all(fallbackRuns.map(async (run) => {
+      if (!run.run_dir) return summarizeRunForCompare({record: run}, run);
+      try {
+        const detail = await api(`/api/run-detail?run_dir=${encodeURIComponent(run.run_dir)}`);
+        const snapshot = await api(`/api/config-snapshot?run_dir=${encodeURIComponent(run.run_dir)}`).catch(() => null);
+        if (snapshot?.config) detail.config_snapshot = snapshot.config;
+        return summarizeRunForCompare(detail, run);
+      } catch {
+        return summarizeRunForCompare({record: run}, run);
+      }
+    }));
+    renderRunCompareSummary(rows, {auto: false});
+    toast(`已对比 ${rows.length} 个报告`);
+  } finally {
+    state.runCompareLoading = false;
+    updateJudgeAndReportActionButtons();
   }
-  const rows = await Promise.all(selected.map(async (run) => {
-    if (!run.run_dir) return summarizeRunForCompare({record: run}, run);
-    try {
-      const detail = await api(`/api/run-detail?run_dir=${encodeURIComponent(run.run_dir)}`);
-      const snapshot = await api(`/api/config-snapshot?run_dir=${encodeURIComponent(run.run_dir)}`).catch(() => null);
-      if (snapshot?.config) detail.config_snapshot = snapshot.config;
-      return summarizeRunForCompare(detail, run);
-    } catch {
-      return summarizeRunForCompare({record: run}, run);
-    }
-  }));
-  renderRunCompareSummary(rows, {auto: false});
-  toast(`已对比 ${rows.length} 个报告`);
 }
 
 function clearSelectedRuns() {
   state.selectedRunCompareIds.clear();
+  state.lastCompareReportFile = "";
   updateRunCompareControls();
   const target = $("runCompareResult");
   if (target) {
@@ -14077,15 +14901,22 @@ async function refreshRuns() {
   state.runsLoading = true;
   renderRunsSelectionState();
   if (runsList && !runsList.querySelector(".run-card")) {
-    runsList.innerHTML = `<p class="muted-list-note">正在读取结果列表...</p>`;
+    runsList.innerHTML = `
+      <article class="workbench-idle-note run-list-idle-note">
+        <strong>正在同步结果</strong>
+        <p>读取近 24 小时内已经产出 QA 结果文件的记录，请稍候。</p>
+      </article>
+    `;
   }
   try {
-    await refreshNativeOpenVikingBaseline({silent: true}).catch(() => renderNativeBaselinePanel());
+    await refreshNativeOpenVikingBaseline();
     const data = await api("/api/runs?limit=80");
     const allRuns = data.runs || [];
     const runs = allRuns
       .filter((run) => !currentAccountOnlyEnabled("runsCurrentAccountOnly") || matchesCurrentAccount(run))
-      .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+      .filter((run) => isRecentWithinHours(run, 24))
+      .filter((run) => isQaRunWithOutputFile(run))
+      .sort(recentLocomoRunSort);
     state.recentRuns = runs;
     const visibleKeys = new Set(runs.map(runCompareKey));
     [...state.selectedRunCompareIds].forEach((key) => {
@@ -14096,8 +14927,13 @@ async function refreshRuns() {
     const pendingRuns = runs.filter((run) => !runHasFormalScore(run));
     if (runsList) {
       runsList.innerHTML = runs.length
-      ? `${renderRunGroup("已有分数", scoredRuns)}${renderRunGroup("待判分", pendingRuns)}`
-      : `<p class="muted-list-note">${currentAccountOnlyEnabled("runsCurrentAccountOnly") ? "当前空间暂无结果。" : "暂无结果。"}</p>`;
+      ? `${renderRunGroup("近 24 小时已判分", scoredRuns)}${renderRunGroup("近 24 小时待判分", pendingRuns)}`
+      : `
+        <article class="workbench-idle-note run-list-idle-note">
+          <strong>${currentAccountOnlyEnabled("runsCurrentAccountOnly") ? "当前空间近 24 小时暂无 QA 结果" : "近 24 小时暂无 QA 结果"}</strong>
+          <p>${currentAccountOnlyEnabled("runsCurrentAccountOnly") ? "先运行问答测试，或者取消“只看当前空间”后再刷新。" : "先运行问答测试，生成结果文件后再回来查看报告。"}</p>
+        </article>
+      `;
     }
     document.querySelectorAll("#runsList .memory-hit").forEach((card) => {
       card.addEventListener("click", () => loadRunDetail(card.dataset.runDir || "", card.dataset.outputFile || "", card.dataset.datasetFormat || "").catch((e) => toast(e.message)));
@@ -14111,8 +14947,16 @@ async function refreshRuns() {
         const card = event.currentTarget.closest(".run-card");
         const key = card?.dataset.runKey || "";
         if (!key) return;
-        if (event.currentTarget.checked) state.selectedRunCompareIds.add(key);
-        else state.selectedRunCompareIds.delete(key);
+        if (event.currentTarget.checked) {
+          if (!state.selectedRunCompareIds.has(key) && state.selectedRunCompareIds.size >= 2) {
+            event.currentTarget.checked = false;
+            toast("只能选择 2 份 LoCoMo 历史结果");
+            return;
+          }
+          state.selectedRunCompareIds.add(key);
+        } else {
+          state.selectedRunCompareIds.delete(key);
+        }
         updateRunCompareControls();
       });
     });
@@ -14122,7 +14966,7 @@ async function refreshRuns() {
       : null;
     if (selected) {
       await loadRunDetail(selected.run_dir || "", selected.output_file || "", benchmarkFormatFromRecord(selected));
-    } else {
+    } else if (!state.selectedRunDir) {
       resetRunsDetailPanels();
     }
   } finally {
@@ -14298,8 +15142,10 @@ function renderEvidenceContract(data = null) {
   if (!target) return;
   if (!data) {
     target.innerHTML = "";
+    target.hidden = true;
     return;
   }
+  target.hidden = false;
   const tone = evidenceContractTone(data.status);
   const checks = Array.isArray(data.checks) ? data.checks : [];
   const checkHtml = checks.map((check) => {
@@ -14361,8 +15207,10 @@ async function loadEvidenceContract(outputFile = "", record = {}) {
   const path = String(outputFile || record.output_file || "").trim();
   if (!path || !/\.csv$/i.test(path)) {
     target.innerHTML = "";
+    target.hidden = true;
     return;
   }
+  target.hidden = false;
   target.innerHTML = `
     <section class="run-audit-card evidence-contract-card">
       <div class="run-audit-head">
@@ -14459,8 +15307,10 @@ function renderFailureAttribution(data = {}, targetId = "failureAttributionPanel
   const buckets = Array.isArray(attribution.buckets) ? attribution.buckets : [];
   if (!attribution.total && !buckets.length) {
     target.innerHTML = "";
+    target.hidden = true;
     return;
   }
+  target.hidden = false;
   const badCount = Number((attribution.severity_counts || {}).bad || 0);
   const warnCount = Number((attribution.severity_counts || {}).warn || 0);
   const tone = badCount > 0 ? "bad" : (warnCount > 0 ? "warn" : "ok");
@@ -14532,8 +15382,10 @@ async function loadFailureAttribution(outputFile = "", targetId = "failureAttrib
   const path = String(outputFile || "").trim();
   if (!path || !/\.csv$/i.test(path)) {
     target.innerHTML = "";
+    target.hidden = true;
     return null;
   }
+  target.hidden = false;
   target.innerHTML = `
     <section class="run-audit-card failure-attribution-card">
       <div class="run-audit-head">
@@ -14683,12 +15535,27 @@ function renderRunAudit(detail = {}, candidateRecord = {}, summary = {}, runDir 
 }
 
 async function loadRunDetail(runDir, outputFile, datasetFormat = "") {
+  const detailPromise = (async () => {
   if ($("runDetailPanel")) $("runDetailPanel").hidden = false;
   $("questionDetailPane").innerHTML = "";
   let detail = null;
   let record = {};
   let summary = {};
   const formatHint = normalizeDatasetFormat(datasetFormat);
+  state.selectedRunDetailLoading = true;
+  const pendingRun = (state.recentRuns || []).find((item) => item.run_dir === runDir || item.output_file === outputFile) || null;
+  if (runDir) {
+    state.selectedRunDir = runDir;
+    if (pendingRun) {
+      state.selectedRunRecord = pendingRun;
+      state.selectedRunDatasetFormat = fallbackDatasetFormatForRecord(pendingRun, formatHint);
+      rememberBenchmarkRecord(pendingRun, state.selectedRunDatasetFormat);
+      rememberEvidenceScope(pendingRun, pendingRun.output_file || outputFile || "");
+    }
+    syncSelectedRunCards();
+    renderRunsSelectionState();
+    updateJudgeAndReportActionButtons();
+  }
   if (runDir) {
     detail = await api(`/api/run-detail?run_dir=${encodeURIComponent(runDir)}`);
     record = detail.record || {};
@@ -14704,7 +15571,7 @@ async function loadRunDetail(runDir, outputFile, datasetFormat = "") {
     rememberEvidenceScope(candidateRecord, candidateRecord.output_file || outputFile);
   } else {
     state.selectedRunDir = runDir || state.selectedRunDir || "";
-    const run = (state.recentRuns || []).find((item) => item.output_file === outputFile || item.run_dir === runDir);
+    const run = pendingRun || (state.recentRuns || []).find((item) => item.output_file === outputFile || item.run_dir === runDir);
     if (run) {
       state.selectedRunRecord = run;
       state.selectedRunDatasetFormat = fallbackDatasetFormatForRecord(run, formatHint);
@@ -14714,6 +15581,9 @@ async function loadRunDetail(runDir, outputFile, datasetFormat = "") {
       }
       rememberEvidenceScope(run, outputFile || run.output_file || "");
     }
+    syncSelectedRunCards();
+    renderRunsSelectionState();
+    updateJudgeAndReportActionButtons();
   }
   if (outputFile) {
     if (state.selectedRunDatasetFormat === "locomo" && /\.csv$/i.test(outputFile)) {
@@ -14775,30 +15645,39 @@ async function loadRunDetail(runDir, outputFile, datasetFormat = "") {
     renderRunAudit(detail, auditRecord, summary, runDir, resolvedOutputFile);
     await loadFailureAttribution(resolvedOutputFile);
     await loadEvidenceContract(resolvedOutputFile, auditRecord);
-    $("runArtifactList").innerHTML = [
-      ["结果文件", record.output_file || outputFile || "", artifactStatus.output_file],
-      ["结果目录", record.run_dir || runDir || "", artifactStatus.run_dir],
-      ["日志", record.log_file || "", artifactStatus.log_file],
-      ["任务清单", record.manifest_file || "", artifactStatus.manifest_file],
-      ["配置快照", runDir ? `${runDir}/config_snapshot.json` : "", artifactStatus.config_snapshot],
-      ["运行摘要", artifactStatus.summary?.path || "", artifactStatus.summary],
-      ["LongMemEval 官方摘要", artifactStatus.longmemeval_official_summary?.path || "", artifactStatus.longmemeval_official_summary],
-      ["HotpotQA 回答摘要", artifactStatus.hotpotqa_answer_summary?.path || "", artifactStatus.hotpotqa_answer_summary],
-      ["Markdown 报告", runDir ? `${runDir}/report.md` : "", artifactStatus.report],
-      ["报告文件", runDir ? `${runDir}/report.html` : "", artifactStatus.report_html],
-    ].filter(([, value, info]) => value && (info?.exists ?? true)).map(([label, value]) => `
-      <article class="path-row">
-        <span>${escapeHtml(label)}</span>
-        <code>${escapeHtml(value)}</code>
-        <button class="path-copy" type="button" data-copy="${escapeHtml(value)}">复制</button>
-      </article>
-    `).join("") || "<p>这个结果没有可显示文件。</p>";
+    const artifactRows = [
+      reportPathRow("结果文件", record.output_file || outputFile || "", {href: false}),
+      reportPathRow("结果目录", record.run_dir || runDir || "", {href: false}),
+      reportPathRow("日志", record.log_file || "", {href: false}),
+      reportPathRow("任务清单", record.manifest_file || "", {href: false}),
+      reportPathRow("配置快照", runDir ? `${runDir}/config_snapshot.json` : "", {href: false}),
+      reportPathRow("运行摘要", artifactStatus.summary?.path || "", {href: false}),
+      reportPathRow("LongMemEval 官方摘要", artifactStatus.longmemeval_official_summary?.path || "", {href: false}),
+      reportPathRow("HotpotQA 回答摘要", artifactStatus.hotpotqa_answer_summary?.path || "", {href: false}),
+      reportPathRow("Markdown 报告", runDir ? `${runDir}/report.md` : "", {href: false}),
+      reportPathRow("HTML 报告", runDir ? `${runDir}/report.html` : ""),
+      reportPathRow("图谱报告", artifactStatus.graph_report_html?.path || "", {browserLabel: "浏览器打开"}),
+    ].filter(Boolean);
+    $("runArtifactList").hidden = false;
+    $("runArtifactList").innerHTML = artifactRows.join("") || "<p>这个结果没有可显示文件。</p>";
     bindCopyButtons("#runArtifactList");
+    bindOpenButtons("#runArtifactList");
     await loadConfigSnapshot(runDir).catch(() => {
       $("configSnapshotResult").innerHTML = "<p>这个结果没有配置快照。</p>";
     });
     updateJudgeAndReportActionButtons();
     updateWorkflowGuide();
+  }
+  })();
+  state.selectedRunDetailPromise = detailPromise;
+  try {
+    await detailPromise;
+  } finally {
+    if (state.selectedRunDetailPromise === detailPromise) {
+      state.selectedRunDetailLoading = false;
+      state.selectedRunDetailPromise = null;
+      updateJudgeAndReportActionButtons();
+    }
   }
 }
 
@@ -14816,92 +15695,92 @@ async function loadConfigSnapshot(runDir) {
 }
 
 async function exportRunReport() {
-  const runDir = state.selectedRunDir;
+  if (state.selectedRunDetailPromise) {
+    await state.selectedRunDetailPromise.catch(() => {});
+  }
+  const runDir = state.selectedRunDir || state.selectedRunRecord?.run_dir || "";
   if (!runDir) return toast("请先选择一个历史结果");
   if ($("runReportDetails")) $("runReportDetails").hidden = false;
-  const data = await api(`/api/report?run_dir=${encodeURIComponent(runDir)}`);
-  state.lastReportFile = data.report_html_file || data.report_file || "";
-  renderJudgeReadinessPanel();
-  const text = String(data.text || "");
-  const reportRows = Array.from(text.matchAll(/^- ([^:\n]+): `?([^`\n]+)`?/gm)).map((m) => [m[1], m[2]]);
-  const reportField = (label) => (reportRows.find(([key]) => key === label) || [label, "-"])[1];
-  const gateRows = Array.from(text.matchAll(/^- (Run completion|VikingBoat parameter alignment|VikingBot parameter alignment|Memory import integrity|Import log failures|QA coverage|Judge completion|Model final failures|QA log warnings): `([^`]+)` · ([^\n]+)/gm))
-    .map((m) => ({label: m[1], status: m[2], detail: m[3]}));
-  const digestRows = [
-    ["门禁", reportField("Gate status")],
-    ["结论", reportField("Gate verdict")],
-    ["审计", reportField("Audit status")],
-    ["应测题数", reportField("Dataset expected questions")],
-    ["结果行", reportField("Rows")],
-    ["缺失题数", reportField("Missing questions")],
-    ["可重跑失败题", reportField("Retryable failed questions")],
-    ["待判分", reportField("Pending Judge rows") !== "-" ? reportField("Pending Judge rows") : reportField("Pending Judge")],
-    ["正式判分", reportField("Formal Judge score")],
-    ["模型重试", reportField("Model/API retry warnings")],
-    ["重试行数", reportField("Model retry rows")],
-    ["完整样本", reportField("Complete samples")],
-    ["导入日志", reportField("Import log failures")],
-    ["QA 日志", reportField("QA log warnings")],
-    ["提交消息", reportField("Submitted messages")],
-    ["抽取记忆", reportField("Extracted memories")],
-  ];
-  const wrongCount = (text.match(/^### \d+\. `/gm) || []).length;
-  const clusterLines = text.split("\n").filter((line) => line.startsWith("- ") && line.includes(" cases")).slice(0, 4);
-  const reportHtmlHref = artifactHref(data.report_html_file || "");
-  $("runReportResult").innerHTML = `
-    <div class="path-row">
-      <span>报告</span>
-      <code>${escapeHtml(data.report_file || "")}</code>
-      <button class="path-copy" type="button" data-copy="${escapeHtml(data.report_file || "")}">复制</button>
-    </div>
-    ${data.report_html_file ? `
-      <div class="path-row">
-        <span>打开</span>
-        <code>${escapeHtml(data.report_html_file || "")}</code>
-        <button class="path-copy" type="button" data-copy="${escapeHtml(data.report_html_file || "")}">复制</button>
-        ${reportHtmlHref ? `<a class="path-link" href="${escapeHtml(reportHtmlHref)}" target="_blank" rel="noreferrer">浏览器打开</a>` : ""}
-        <button class="path-open" type="button" data-path="${escapeHtml(data.report_html_file || "")}">本机打开</button>
-      </div>
-    ` : ""}
-    <div class="report-digest">
-      <div class="report-digest-head">
-        <strong>报告摘要</strong>
-        <span>${wrongCount ? `${wrongCount} 个错题示例` : "暂无错题示例"}</span>
-      </div>
-      <div class="report-kv">
-        ${digestRows.map(([label, value]) => `
-          <article>
-            <span>${escapeHtml(label)}</span>
-            <strong>${escapeHtml(value)}</strong>
-          </article>
-        `).join("")}
-      </div>
-      ${gateRows.length ? `
-        <div class="report-gate-list">
-          ${gateRows.map((row) => `
-            <article class="${escapeHtml(row.status)}">
-              <span>${escapeHtml(row.status)}</span>
-              <strong>${escapeHtml(row.label)}</strong>
-              <p>${escapeHtml(row.detail)}</p>
+  $("runReportDetails")?.setAttribute("open", "");
+  $("runReportResult").innerHTML = "<p>正在生成报告，请稍候...</p>";
+  $("runReportResult")?.scrollIntoView({behavior: "smooth", block: "start"});
+  state.selectedRunReportLoading = true;
+  updateJudgeAndReportActionButtons();
+  try {
+    const data = await api(`/api/report?run_dir=${encodeURIComponent(runDir)}`);
+    state.lastReportFile = data.report_html_file || data.report_file || "";
+    renderJudgeReadinessPanel();
+    const text = String(data.text || "");
+    const reportRows = Array.from(text.matchAll(/^- ([^:\n]+): `?([^`\n]+)`?/gm)).map((m) => [m[1], m[2]]);
+    const reportField = (label) => (reportRows.find(([key]) => key === label) || [label, "-"])[1];
+    const gateRows = Array.from(text.matchAll(/^- (Run completion|VikingBoat parameter alignment|VikingBot parameter alignment|Memory import integrity|Import log failures|QA coverage|Judge completion|Model final failures|QA log warnings): `([^`]+)` · ([^\n]+)/gm))
+      .map((m) => ({label: m[1], status: m[2], detail: m[3]}));
+    const digestRows = [
+      ["门禁", reportField("Gate status")],
+      ["结论", reportField("Gate verdict")],
+      ["审计", reportField("Audit status")],
+      ["应测题数", reportField("Dataset expected questions")],
+      ["结果行", reportField("Rows")],
+      ["缺失题数", reportField("Missing questions")],
+      ["可重跑失败题", reportField("Retryable failed questions")],
+      ["待判分", reportField("Pending Judge rows") !== "-" ? reportField("Pending Judge rows") : reportField("Pending Judge")],
+      ["正式判分", reportField("Formal Judge score")],
+      ["模型重试", reportField("Model/API retry warnings")],
+      ["重试行数", reportField("Model retry rows")],
+      ["完整样本", reportField("Complete samples")],
+      ["导入日志", reportField("Import log failures")],
+      ["QA 日志", reportField("QA log warnings")],
+      ["提交消息", reportField("Submitted messages")],
+      ["抽取记忆", reportField("Extracted memories")],
+    ];
+    const wrongCount = (text.match(/^### \d+\. `/gm) || []).length;
+    const clusterLines = text.split("\n").filter((line) => line.startsWith("- ") && line.includes(" cases")).slice(0, 4);
+    const graphReportPath = runDir ? `${runDir}/graph_report.html` : "";
+    $("runReportResult").innerHTML = `
+      ${reportPathRow("报告文本", data.report_file || "", {href: false})}
+      ${data.report_html_file ? reportPathRow("HTML 报告", data.report_html_file || "", {browserLabel: "浏览器打开", openLabel: "本机打开"}) : ""}
+      ${graphReportPath ? reportPathRow("图谱报告", graphReportPath, {browserLabel: "浏览器打开"}) : ""}
+      <div class="report-digest">
+        <div class="report-digest-head">
+          <strong>报告摘要</strong>
+          <span>${wrongCount ? `${wrongCount} 个错题示例` : "暂无错题示例"}</span>
+        </div>
+        <div class="report-kv">
+          ${digestRows.map(([label, value]) => `
+            <article>
+              <span>${escapeHtml(label)}</span>
+              <strong>${escapeHtml(value)}</strong>
             </article>
           `).join("")}
         </div>
-      ` : ""}
-      <div class="report-clusters">
-        ${clusterLines.length ? clusterLines.map((line) => `<p>${escapeHtml(line.replace(/^-\\s*/, ""))}</p>`).join("") : "<p>没有错题聚类。</p>"}
+        ${gateRows.length ? `
+          <div class="report-gate-list">
+            ${gateRows.map((row) => `
+              <article class="${escapeHtml(row.status)}">
+                <span>${escapeHtml(row.status)}</span>
+                <strong>${escapeHtml(row.label)}</strong>
+                <p>${escapeHtml(row.detail)}</p>
+              </article>
+            `).join("")}
+          </div>
+        ` : ""}
+        <div class="report-clusters">
+          ${clusterLines.length ? clusterLines.map((line) => `<p>${escapeHtml(line.replace(/^-\\s*/, ""))}</p>`).join("") : "<p>没有错题聚类。</p>"}
+        </div>
       </div>
-    </div>
-    <details class="report-raw">
-      <summary>完整报告文本</summary>
-      <pre>${escapeHtml(text.slice(0, 12000))}</pre>
-    </details>
-  `;
-  $("runReportDetails")?.setAttribute("open", "");
-  $("runReportResult")?.scrollIntoView({behavior: "smooth", block: "start"});
-  bindCopyButtons("#runReportResult");
-  bindOpenButtons("#runReportResult");
-  updateWorkflowGuide();
-  toast("报告已生成");
+      <details class="report-raw">
+        <summary>完整报告文本</summary>
+        <pre>${escapeHtml(text.slice(0, 12000))}</pre>
+      </details>
+    `;
+    bindCopyButtons("#runReportResult");
+    bindOpenButtons("#runReportResult");
+    updateWorkflowGuide();
+    toast("报告已更新");
+  } finally {
+    state.selectedRunReportLoading = false;
+    updateJudgeAndReportActionButtons();
+  }
 }
 
 async function loadLongMemBaselineComparison() {
@@ -15039,7 +15918,7 @@ async function loadRunQuestions(csvPath) {
   }
 }
 
-async function openQuestionDetail(csvPath, questionId, rowIndex) {
+async function openQuestionDetail(csvPath, questionId, rowIndex, targetId = "questionDetailPane") {
   const qs = new URLSearchParams({path: csvPath});
   if (questionId) qs.set("question_id", questionId);
   else qs.set("index", rowIndex);
@@ -15048,7 +15927,34 @@ async function openQuestionDetail(csvPath, questionId, rowIndex) {
   const memories = data.relevant_memory || [];
   const judgeResult = data.judge?.result || "待判分";
   const judgeClass = String(judgeResult).toUpperCase() === "CORRECT" ? "correct" : (String(judgeResult).toUpperCase() === "WRONG" ? "wrong" : "pending");
-  $("questionDetailPane").innerHTML = `
+  const target = $(targetId);
+  if (!target) return;
+  if (targetId === "judgeQuestionDetailPane") {
+    target.innerHTML = `
+      <div class="question-report">
+        <header class="question-report-head">
+          <div>
+            <span>${escapeHtml(row.question_id || `row-${data.index + 1}`)}</span>
+            <h4>${escapeHtml(row.question || "-")}</h4>
+            ${locomoCategoryBadge(row.category)}
+          </div>
+          <strong class="judge-chip ${judgeClass}">${escapeHtml(judgeResult)}</strong>
+        </header>
+        <div class="answer-grid detail-answer-grid">
+          <section><span>标准答案</span><p>${escapeHtml(row.answer || "-")}</p></section>
+          <section><span>模型回答</span><p>${escapeHtml(row.response || "-")}</p></section>
+        </div>
+        <section class="judge-detail ${judgeClass}">
+          <span>判分依据</span>
+          <p>${escapeHtml(data.judge?.reasoning || "尚未判分。")}</p>
+        </section>
+      </div>
+    `;
+    bindCopyButtons(`#${targetId}`);
+    bindOpenButtons(`#${targetId}`);
+    return;
+  }
+  target.innerHTML = `
     <div class="question-report">
       <header class="question-report-head">
         <div>
@@ -15084,8 +15990,8 @@ async function openQuestionDetail(csvPath, questionId, rowIndex) {
       </details>
     </div>
   `;
-  bindCopyButtons("#questionDetailPane");
-  bindOpenButtons("#questionDetailPane");
+  bindCopyButtons(`#${targetId}`);
+  bindOpenButtons(`#${targetId}`);
 }
 
 async function runDiff() {
@@ -15129,6 +16035,7 @@ async function runDiff() {
 
 function revealReportAnalysisPanel(panelId) {
   const panel = $(panelId);
+  if (panel) panel.hidden = false;
   const details = panel?.closest("details");
   if (details) {
     details.hidden = false;
@@ -15422,8 +16329,10 @@ async function preflightJudge() {
       ${item.ok ? "通过" : "失败"} · ${escapeHtml(item.name)} · ${escapeHtml(item.message)}
     </span>
   `).join("");
-  judgePreflightBox.innerHTML = checksHtml;
-  judgePreflightBox.hidden = !checksHtml;
+  if (judgePreflightBox) {
+    judgePreflightBox.innerHTML = checksHtml;
+    judgePreflightBox.hidden = !checksHtml;
+  }
   if (input) {
     const result = await api(`/api/results?path=${encodeURIComponent(input)}`).catch(() => null);
     if (result?.summary) {
@@ -15572,11 +16481,19 @@ function bind() {
     refreshImportedMemories().catch(() => {});
   });
   $("ovWorkspace")?.addEventListener("input", () => {
+    state.currentImportTask = null;
+    clearImportedMemoryStatusForWorkspace($("ovWorkspace")?.value.trim() || "", currentAccount());
     renderImportPaths();
+    refreshImportActionLabels();
+    refreshImportedMemories().catch(() => {});
     persistCurrentAccountConfig();
   });
   $("ovWorkspace")?.addEventListener("change", () => {
     if ($("memoryWorkspace")) $("memoryWorkspace").value = $("ovWorkspace").value;
+    state.currentImportTask = null;
+    clearImportedMemoryStatusForWorkspace($("ovWorkspace")?.value.trim() || "", currentAccount());
+    refreshImportActionLabels();
+    refreshImportedMemories().catch(() => {});
     persistCurrentAccountConfig();
   });
   $("generateImportWorkspace")?.addEventListener("click", () => {
@@ -15752,7 +16669,14 @@ function bind() {
     state.selectedLongMemQuestions.clear();
     loadLongMemQuestionPreview().catch(() => renderLongMemQuestionSelection());
   });
-  $("longMemRunSmoke")?.addEventListener("click", () => runLongMemDiagnostic().catch((e) => toast(e.message)));
+  $("longMemRunSmoke")?.addEventListener("click", () => runWithUiActionLock(
+    "longMemQaLaunch",
+    ["longMemRunSmoke", "longMemUseOracle50", "longMemUseFullFormal"],
+    () => runLongMemDiagnostic().catch((e) => toast(e.message)),
+    "LongMemEval 任务正在启动，请勿重复点击",
+  ));
+  $("longMemUseOracle50")?.addEventListener("click", useLongMemOracle50Preset);
+  $("longMemUseFullFormal")?.addEventListener("click", useLongMemFormalPreset);
   $("longMemLatestResults")?.addEventListener("click", () => {
     showView("runsView");
     loadLatestLongMemResults().catch((e) => toast(e.message));
@@ -15834,10 +16758,6 @@ function bind() {
   $("exportRunReport")?.addEventListener("click", () => exportRunReport().catch((e) => toast(e.message)));
   $("compareSelectedRuns")?.addEventListener("click", () => compareSelectedRuns().catch((e) => toast(e.message)));
   $("clearSelectedRuns")?.addEventListener("click", clearSelectedRuns);
-  $("refreshNativeBaseline")?.addEventListener("click", () => refreshNativeOpenVikingBaseline().catch((e) => toast(e.message)));
-  $("pinSelectedNativeBaseline")?.addEventListener("click", () => pinSelectedNativeOpenVikingBaseline().catch((e) => toast(e.message)));
-  $("autoPinNativeBaseline")?.addEventListener("click", () => autoPinNativeOpenVikingBaseline().catch((e) => toast(e.message)));
-  $("compareWithNativeBaseline")?.addEventListener("click", () => compareRunsWithNativeBaseline().catch((e) => toast(e.message)));
   $("preflightJudge")?.addEventListener("click", () => preflightJudge().catch((e) => toast(e.message)));
   $("retryMissingQa")?.addEventListener("click", () => runWithUiActionLock(
     "locomoQaLaunch",

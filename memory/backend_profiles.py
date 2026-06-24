@@ -48,7 +48,20 @@ class BackendProfile:
         workspace_path = Path(workspace).expanduser()
         account_id = _slug_account(account)
         if self.id == "echomemory":
-            return workspace_path / account_id / account_id
+            primary_candidates = [
+                workspace_path / "tenants" / account_id,
+                workspace_path / account_id / account_id,
+                workspace_path / account_id,
+            ]
+            for candidate in primary_candidates:
+                if (candidate / "memory").exists() or (candidate / "sessions").exists():
+                    return candidate
+            if (workspace_path / "memory").exists() or (workspace_path / "sessions").exists():
+                return workspace_path
+            for candidate in primary_candidates:
+                if candidate.exists():
+                    return candidate
+            return primary_candidates[0]
         return workspace_path / "viking" / account_id
 
     def session_root(self, account_root: Path) -> Path:
@@ -135,7 +148,7 @@ ECHOMEMORY_PROFILE = BackendProfile(
     id="echomemory",
     display_name="EchoMemory",
     workspace_prefix="echomem_workspace",
-    workspace_layout="workspace/<account>/<account>",
+    workspace_layout="workspace/tenants/<account> (compatible with workspace/<account>/<account>)",
     runtime_label="EchoMemory 本地 SDK",
     backend_url_label="EchoMemory SDK Root",
     tool_loop_label="Memory tool loop",
@@ -173,4 +186,3 @@ def normalize_backend_id(value: Any) -> str:
 
 def backend_profile(value: Any) -> BackendProfile:
     return BACKEND_PROFILES[normalize_backend_id(value)]
-

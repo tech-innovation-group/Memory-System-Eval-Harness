@@ -26,16 +26,24 @@ ResolveToken = Callable[[dict[str, Any], Path], str]
 def looks_like_echomem_root(path: Path) -> bool:
     return (
         ((path / "packages" / "echomem" / "src").exists() and (path / "packages" / "echofs" / "src").exists())
+        or ((path / "src" / "echomem").exists() and (path / "src" / "echo0").exists() and (path / "pyproject.toml").exists())
         or ((path / "echomem").exists() and (path / "pyproject.toml").exists())
     )
+
+
+def is_develop_echomem_root(path: Path) -> bool:
+    return (path / "src" / "echomem").exists() and (path / "src" / "echo0").exists() and (path / "pyproject.toml").exists()
 
 
 def default_echomem_root() -> Path:
     candidates = [
         os.environ.get("ECHOMEM_ROOT"),
         os.environ.get("ECHOMEMORY_ROOT"),
+        Path.home() / "Code" / "echomemory" / "EchoMem_develop",
         Path.home() / "Code" / "echomemory" / "echo_memory_v010",
         Path.home() / "Code" / "echomemory" / "echo_memory",
+        Path.cwd() / "EchoMem_develop",
+        Path.cwd().parent / "EchoMem_develop",
         Path.cwd() / "echo_memory_v010",
         Path.cwd().parent / "echo_memory_v010",
         Path.cwd() / "echo_memory",
@@ -90,6 +98,31 @@ def normalize_retrieval_mode(value: Any) -> str:
     return "search"
 
 
+STRICT_READY_DATASET_FORMATS = {"hotpotqa", "longmemeval", "evolvingevents", "proagentbench", "tau2bench"}
+DEVELOP_FULL_COMMIT_WAIT_DEFAULT = 12
+DEVELOP_FULL_FLUSH_TIMEOUT_DEFAULT = 20
+DEVELOP_FULL_FLUSH_ATTEMPTS_DEFAULT = 1
+
+
+def import_wait_defaults(
+    *,
+    skip_session_commit: bool,
+    defer_artifact_wait: bool,
+    develop_full_wait: bool,
+) -> tuple[int, int, int]:
+    if skip_session_commit:
+        return 20, 45, 1
+    if defer_artifact_wait:
+        return 8, 15, 0
+    if develop_full_wait:
+        return (
+            DEVELOP_FULL_COMMIT_WAIT_DEFAULT,
+            DEVELOP_FULL_FLUSH_TIMEOUT_DEFAULT,
+            DEVELOP_FULL_FLUSH_ATTEMPTS_DEFAULT,
+        )
+    return 300, 600, 2
+
+
 def _python_command(raw: Any) -> str | None:
     if raw in (None, ""):
         return None
@@ -110,8 +143,10 @@ def echomemory_python(payload: dict[str, Any]) -> str:
         os.environ.get("ECHOMEM_PYTHON"),
         os.environ.get("ECHOMEMORY_PYTHON"),
         root / ".venv/bin/python",
+        Path.home() / "Code" / "echomemory" / "EchoMem_develop/.venv/bin/python",
         Path.home() / "Code" / "echomemory" / "echo_memory_v010/.venv/bin/python",
         Path.home() / "Code" / "echomemory" / "echo_memory/.venv/bin/python",
+        root.parent / "EchoMem_develop/.venv/bin/python",
         root.parent / "echo_memory_v010/.venv/bin/python",
         root.parent / "echo_memory_v007_tag/.venv/bin/python",
         root.parent / "echo_memory_v007/.venv/bin/python",
@@ -174,14 +209,20 @@ def build_echomemory_import_command(
     if payload.get("max_sessions"):
         command += ["--max-sessions", str(payload["max_sessions"])]
     skip_session_commit = bool_value(payload.get("skip_session_commit"), False)
-    import_wait_mode = str(payload.get("import_wait_mode") or ("fast" if bool_value(payload.get("defer_artifact_wait"), False) else "full")).strip().lower()
+    import_wait_mode = str(payload.get("import_wait_mode") or ("fast" if bool_value(payload.get("defer_artifact_wait"), True) else "full")).strip().lower()
     defer_artifact_wait = bool_value(payload.get("defer_artifact_wait"), import_wait_mode == "fast")
-    default_commit_wait = 20 if skip_session_commit else (8 if defer_artifact_wait else 300)
-    default_flush_timeout = 45 if skip_session_commit else (15 if defer_artifact_wait else 600)
-    default_flush_attempts = 1 if skip_session_commit else (0 if defer_artifact_wait else 2)
+    develop_full_wait = is_develop_echomem_root(Path(echomem_root_value(payload)).expanduser()) and not skip_session_commit
+    if develop_full_wait:
+        import_wait_mode = "full"
+        defer_artifact_wait = False
+    default_commit_wait, default_flush_timeout, default_flush_attempts = import_wait_defaults(
+        skip_session_commit=skip_session_commit,
+        defer_artifact_wait=defer_artifact_wait,
+        develop_full_wait=develop_full_wait,
+    )
     command += [
         "--import-wait-mode",
-        "fast" if defer_artifact_wait else "full",
+        import_wait_mode,
         "--commit-wait-s",
         str(payload_value(payload, "commit_wait_s", default_commit_wait)),
         "--commit-call-timeout-s",
@@ -246,6 +287,8 @@ def build_echomemory_qa_command(
     user_budget_chars = int(payload_value(payload, "user_memory_budget_chars", VIKINGBOT_USER_MEMORY_BUDGET_CHARS))
     agent_budget_chars = int(payload_value(payload, "agent_memory_budget_chars", VIKINGBOT_AGENT_MEMORY_BUDGET_CHARS))
     memory_budget_chars = int(payload_value(payload, "memory_budget_chars", user_budget_chars + agent_budget_chars))
+    qa_parallelism = int(payload_value(payload, "qa_parallelism", 5))
+    qa_memory_injection = bool_value(payload.get("qa_memory_injection"), False)
     command = [
         "/usr/bin/env",
         echomemory_python(payload),
@@ -290,6 +333,8 @@ def build_echomemory_qa_command(
         str(payload.get("timeout_s") or 120),
         "--question-timeout-s",
         str(payload.get("question_timeout_s") or 600),
+        "--qa-parallelism",
+        str(qa_parallelism),
         "--tool-set",
         tool_set,
         "--tool-search-limit",
@@ -305,6 +350,7 @@ def build_echomemory_qa_command(
         "--max-iterations",
         str(max_iterations),
     ]
+    command.append("--qa-memory-injection" if qa_memory_injection else "--no-qa-memory-injection")
     if payload.get("echomem_config"):
         command += ["--echomem-config", str(payload["echomem_config"])]
     if payload.get("questions"):
@@ -383,6 +429,8 @@ def build_echomemory_qa_command(
             "prefetch_read_count": int(payload.get("prefetch_read_count") or 4),
             "prefetch_context_chars": int(payload.get("prefetch_context_chars") or 5000),
             "max_iterations": max_iterations,
+            "qa_parallelism": qa_parallelism,
+            "qa_memory_injection_enabled": qa_memory_injection,
             "top_k": top_k,
             "score_threshold": score_threshold,
             "memory_budget_chars": memory_budget_chars,
@@ -436,11 +484,18 @@ def build_echomemory_generic_qa_command(
     judge_model = payload.get("judge_model") or answer_model
     auto_judge = bool_value(payload.get("auto_judge"), True)
     skip_session_commit = bool_value(payload.get("skip_session_commit"), False)
-    import_wait_mode = str(payload.get("import_wait_mode") or ("fast" if bool_value(payload.get("defer_artifact_wait"), False) else "full")).strip().lower()
+    import_wait_mode = str(payload.get("import_wait_mode") or ("fast" if bool_value(payload.get("defer_artifact_wait"), True) else "full")).strip().lower()
     defer_artifact_wait = bool_value(payload.get("defer_artifact_wait"), import_wait_mode == "fast")
-    default_commit_wait = 20 if skip_session_commit else (8 if defer_artifact_wait else 300)
-    default_flush_timeout = 45 if skip_session_commit else (15 if defer_artifact_wait else 600)
-    default_flush_attempts = 1 if skip_session_commit else (0 if defer_artifact_wait else 2)
+    strict_ready_required = fmt in STRICT_READY_DATASET_FORMATS
+    develop_full_wait = is_develop_echomem_root(Path(echomem_root_value(payload)).expanduser()) and not skip_session_commit
+    if strict_ready_required or develop_full_wait:
+        import_wait_mode = "full"
+        defer_artifact_wait = False
+    default_commit_wait, default_flush_timeout, default_flush_attempts = import_wait_defaults(
+        skip_session_commit=skip_session_commit,
+        defer_artifact_wait=defer_artifact_wait,
+        develop_full_wait=develop_full_wait,
+    )
     command = [
         "/usr/bin/env",
         echomemory_python(payload),
@@ -516,7 +571,7 @@ def build_echomemory_generic_qa_command(
         "--max-iterations",
         str(max_iterations),
         "--import-wait-mode",
-        "fast" if defer_artifact_wait else "full",
+        import_wait_mode,
         "--commit-wait-s",
         str(payload_value(payload, "commit_wait_s", default_commit_wait)),
         "--commit-call-timeout-s",
@@ -635,5 +690,6 @@ def build_echomemory_generic_qa_command(
             "identity_mode": str(payload.get("identity_mode") or "isolated_sample"),
             "auto_judge": auto_judge,
             "import_only": bool_value(payload.get("import_only"), False),
+            "strict_ready_required": strict_ready_required,
         },
     )

@@ -63,6 +63,24 @@ def row_grade(row: dict[str, str]) -> str:
 def _normalize_run_status(manifest: dict[str, Any], run_dir: Path, active_run_ids: set[str] | None = None) -> tuple[str, dict[str, Any]]:
     raw_status = str(manifest.get("status") or "").strip()
     run_id = str(manifest.get("id") or run_dir.name)
+    output_file = str(manifest.get("output_file") or "").strip()
+    if raw_status == "running" and output_file.lower().endswith(".json"):
+        try:
+            summary = report_service.parse_json_run_summary(Path(output_file))
+        except Exception:
+            summary = {}
+        summary_status = str((summary or {}).get("status") or "").strip().upper()
+        if summary_status == "ECHOMEMORY_IMPORT_DONE":
+            return (
+                "succeeded",
+                {
+                    "manifest_status": raw_status,
+                    "stale_running": False,
+                    "recoverable": False,
+                    "status_reason": "summary_json_done",
+                    "summary_status": summary_status,
+                },
+            )
     if raw_status == "running" and active_run_ids is not None and run_id not in active_run_ids and str(run_dir) not in active_run_ids:
         return (
             "interrupted",
@@ -343,8 +361,19 @@ def run_record(run_dir: Path, active_run_ids: set[str] | None = None, compact: b
 
     config = manifest.get("config") if isinstance(manifest.get("config"), dict) else {}
     command = manifest.get("command") if isinstance(manifest.get("command"), list) else []
-    account = str(config.get("account") or _command_option(command, "account") or "").strip()
-    workspace = str(config.get("workspace") or config.get("openviking_workspace") or "").strip()
+    account = str(
+        config.get("account")
+        or config.get("memory_account")
+        or _command_option(command, "account")
+        or ""
+    ).strip()
+    workspace = str(
+        config.get("workspace")
+        or config.get("openviking_workspace")
+        or config.get("echomemory_workspace")
+        or _command_option(command, "workspace")
+        or ""
+    ).strip()
     dataset_path = str(
         config.get("dataset")
         or config.get("data")
@@ -614,9 +643,33 @@ def run_compare_row(run_dir: Path) -> dict[str, Any]:
         "correct": summary.get("correct") if summary.get("correct") is not None else summary_json.get("correct"),
         "wrong": summary.get("wrong") if summary.get("wrong") is not None else summary_json.get("wrong"),
         "pending": (summary.get("result_counts") or {}).get("UNSCORED"),
-        "answer_model": _first_value(config.get("answer_model"), _command_option(command, "answer-model"), config.get("model"), config.get("judge_model"), _command_option(command, "model")),
-        "judge_model": _first_value(config.get("judge_model"), _command_option(command, "judge-model"), _command_option(command, "model")),
-        "embedding_model": _first_value(config.get("embedding_model"), config.get("embed_model"), config.get("vlm_model")),
+        "answer_model": _first_value(
+            config.get("answer_model"),
+            _command_option(command, "answer-model"),
+            config.get("model"),
+            summary.get("answer_model"),
+            summary_json.get("answer_model"),
+            summary_json.get("model"),
+            config.get("judge_model"),
+            _command_option(command, "model"),
+        ),
+        "judge_model": _first_value(
+            config.get("judge_model"),
+            _command_option(command, "judge-model"),
+            summary.get("judge_model"),
+            summary_json.get("judge_model"),
+            (summary_json.get("judge") or {}).get("summary", {}).get("model") if isinstance(summary_json.get("judge"), dict) else "",
+            _command_option(command, "model"),
+        ),
+        "embedding_model": _first_value(
+            config.get("embedding_model"),
+            config.get("embed_model"),
+            config.get("vlm_model"),
+            summary.get("embedding_model"),
+            summary_json.get("embedding_model"),
+            summary_json.get("embed_model"),
+            summary_json.get("vlm_model"),
+        ),
         "top_k": effective_top_k,
         "prompt_mode": effective_prompt_mode,
         "vikingboat_alignment_profile": vikingboat_profile,

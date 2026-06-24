@@ -43,6 +43,17 @@ def _recent_log_lines(path: Path, limit_bytes: int = 256_000) -> list[str]:
     return data.decode("utf-8", errors="replace").splitlines()
 
 
+def _read_json_file(path_value: str | Path | None) -> dict[str, Any]:
+    path = Path(path_value) if path_value else None
+    if not path or not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
 def redact_manifest_payload(payload: dict[str, Any]) -> dict[str, Any]:
     redacted = dict(payload)
     for key in list(redacted):
@@ -470,6 +481,155 @@ def _locomo_session_progress_display_current(
     return min(completed, total)
 
 
+def _stabilize_session_progress(
+    task: Any,
+    *,
+    phase: str,
+    unit: str,
+    current: int,
+    total: int,
+    session_label: str,
+    current_import: dict[str, Any] | None,
+) -> tuple[int, int]:
+    """Keep visible LoCoMo session progress monotonic across tail-log windows.
+
+    `task_progress()` only inspects the tail of the log file. When the visible
+    window no longer includes earlier `[commit] ... status=completed` lines, the
+    reconstructed completed-session count can briefly fall back to zero even
+    though the import has already advanced. Cache the best known session
+    progress for the task and never let the rendered completed count move
+    backwards while the same run is active.
+    """
+    if str(unit or "") != "sessions":
+        return current, total
+
+    try:
+        meta = task.meta if isinstance(getattr(task, "meta", None), dict) else {}
+    except Exception:
+        return current, total
+    if not isinstance(meta, dict):
+        return current, total
+
+    cache = meta.get("_session_progress_cache")
+    if not isinstance(cache, dict):
+        cache = {}
+
+    phase_text = str(phase or "")
+    session_text = str(session_label or (current_import or {}).get("session") or "")
+    current_value = max(int(current or 0), 0)
+    total_value = max(int(total or 0), 0)
+
+    cached_current = max(int(cache.get("current") or 0), 0)
+    cached_total = max(int(cache.get("total") or 0), 0)
+    cached_session = str(cache.get("session_label") or "")
+
+    if total_value <= 0:
+        total_value = cached_total
+    else:
+        total_value = max(total_value, cached_total)
+
+    stable_current = current_value
+    if current_value < cached_current:
+        same_or_newer_session = not session_text or not cached_session or session_text >= cached_session
+        same_commit_phase = phase_text.startswith("commit") or str(cache.get("phase") or "").startswith("commit")
+        if same_or_newer_session and same_commit_phase:
+            stable_current = cached_current
+
+    stable_current = min(max(stable_current, 0), total_value) if total_value > 0 else max(stable_current, 0)
+
+    meta["_session_progress_cache"] = {
+        "current": stable_current,
+        "total": total_value,
+        "phase": phase_text,
+        "session_label": session_text,
+    }
+    task.meta = meta
+    return stable_current, total_value
+
+
+def _echomemory_import_summary_progress(task: Any) -> dict[str, Any]:
+    if str(getattr(task, "kind", "") or "") != "echomemory_import":
+        return {}
+    summary = _read_json_file(getattr(task, "output_file", ""))
+    status = str(summary.get("status") or "").strip()
+    records = summary.get("records")
+    if not isinstance(records, list) or not records:
+        return {}
+    record = next((item for item in records if isinstance(item, dict)), None)
+    if not isinstance(record, dict):
+        return {}
+    try:
+        done = int(record.get("progress_sessions_done") or record.get("session_count") or 0)
+    except Exception:
+        done = 0
+    try:
+        total = int(record.get("progress_sessions_total") or record.get("original_session_count") or 0)
+    except Exception:
+        total = 0
+    if total <= 0:
+        return {}
+    session_records = record.get("session_records") if isinstance(record.get("session_records"), list) else []
+    last_session = next(
+        (
+            str(item.get("session_key") or item.get("session_id") or "")
+            for item in reversed(session_records)
+            if isinstance(item, dict) and str(item.get("session_key") or item.get("session_id") or "").strip()
+        ),
+        "",
+    )
+    sample_id = str(record.get("sample_id") or summary.get("sample") or "")
+    expected_messages = int(summary.get("expected_messages") or record.get("expected_messages") or 0)
+    submitted_messages = int(summary.get("submitted_messages") or record.get("submitted_messages") or 0)
+    if status == "ECHOMEMORY_IMPORT_FINALIZING":
+        try:
+            done = int(summary.get("finalizing_sessions_done") or 0)
+        except Exception:
+            done = 0
+        try:
+            total = int(summary.get("finalizing_sessions_total") or total or 0)
+        except Exception:
+            total = total
+        current_session = str(summary.get("current_finalizing_session") or last_session or sample_id)
+        return {
+            "current": max(done, 0),
+            "total": max(total, 0),
+            "session_label": current_session,
+            "sample": sample_id,
+            "expected_messages": expected_messages,
+            "submitted_messages": submitted_messages,
+            "status": status,
+            "phase": "commit:finalizing",
+        }
+    return {
+        "current": max(done, 0),
+        "total": max(total, 0),
+        "session_label": f"{sample_id}/{last_session}" if sample_id and last_session and "/" not in last_session else (last_session or sample_id),
+        "sample": sample_id,
+        "expected_messages": expected_messages,
+        "submitted_messages": submitted_messages,
+        "status": status,
+    }
+
+
+def _compact_preview_text(value: Any, limit: int = 220) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)].rstrip() + "…"
+
+
+def _latest_csv_row(path_value: str | Path | None) -> dict[str, Any]:
+    path = Path(path_value) if path_value else None
+    if not path or not path.exists():
+        return {}
+    try:
+        with path.open(newline="", encoding="utf-8", errors="replace") as f:
+            rows = list(csv.DictReader(f))
+    except Exception:
+        return {}
+    return rows[-1] if rows else {}
+
+
 def task_progress(task: Any) -> dict[str, Any] | None:
     kind = str(getattr(task, "kind", "") or "")
     log_file = str(getattr(task, "log_file", "") or "")
@@ -509,6 +669,7 @@ def task_progress(task: Any) -> dict[str, Any] | None:
     current_flush_attempt = 0
     current_flush_total = 0
     current_import: dict[str, Any] | None = None
+    qa_preview: dict[str, Any] | None = None
     generic_item_current = 0
     generic_item_total = 0
     generic_item_stage = ""
@@ -526,6 +687,7 @@ def task_progress(task: Any) -> dict[str, Any] | None:
     }
     backend_label = "EchoMemory" if kind.startswith("echomemory") else "OpenViking"
     locomo_totals = _locomo_import_totals(task) if (is_memory_import or (is_generic_memory_qa and dataset_format == "locomo")) else {}
+    summary_progress = _echomemory_import_summary_progress(task)
     try:
         for line in _recent_log_lines(log_path):
             match = re.search(r"\[(import|qa)\]\s+(\d+)/(\d+)\s+(.*)", line)
@@ -535,6 +697,15 @@ def task_progress(task: Any) -> dict[str, Any] | None:
                 total = int(match.group(3))
                 unit = "questions" if phase == "qa" else "samples"
                 detail = match.group(4).strip()
+                if phase == "qa":
+                    question_id = match.group(4).strip().split(" ", 1)[0] if match.group(4).strip() else ""
+                    question_text = match.group(4).strip().split(" ", 1)[1] if " " in match.group(4).strip() else match.group(4).strip()
+                    qa_preview = {
+                        "question_id": question_id,
+                        "question": _compact_preview_text(question_text or detail, 220),
+                        "answer": "",
+                        "source": "log",
+                    }
                 indeterminate = False
                 if is_generic_question_benchmark:
                     generic_item_stage = phase
@@ -841,6 +1012,41 @@ def task_progress(task: Any) -> dict[str, Any] | None:
     except OSError:
         return None
 
+    if kind == "echomemory_import" and summary_progress:
+        summary_phase = str(summary_progress.get("phase") or "")
+        if summary_phase == "commit:finalizing":
+            total = int(summary_progress.get("total") or 0)
+            current = int(summary_progress.get("current") or 0)
+            phase = summary_phase
+            indeterminate = False
+        else:
+            total = max(int(total or 0), int(summary_progress.get("total") or 0))
+            current = max(int(current or 0), int(summary_progress.get("current") or 0))
+        if not current_session_label:
+            current_session_label = str(summary_progress.get("session_label") or "")
+        if not current_sample:
+            current_sample = str(summary_progress.get("sample") or current_sample or "")
+        if unit != "sessions":
+            unit = "sessions"
+        if summary_phase == "commit:finalizing":
+            detail = (
+                f"{current_session_label or current_sample or 'current sample'}: "
+                f"正在 finalizing 完整性 {current}/{total}"
+            )
+        elif not phase or phase == "import":
+            phase = "commit:indexing" if getattr(task, "status", "") == "running" else (phase or "commit")
+        submitted = int(summary_progress.get("submitted_messages") or 0)
+        expected = int(summary_progress.get("expected_messages") or 0)
+        if summary_phase == "commit:finalizing":
+            pass
+        elif submitted > 0 and expected > 0:
+            detail = (
+                f"{current_session_label or current_sample or 'current sample'}: "
+                f"已完成 {current}/{total} 个 session，累计消息 {submitted}/{expected}"
+            )
+        elif not detail:
+            detail = f"{current_session_label or current_sample or 'current sample'}: 已完成 {current}/{total} 个 session"
+
     if is_generic_question_benchmark:
         answered_rows = _csv_row_count(getattr(task, "output_file", ""))
         generic_answered_rows = answered_rows
@@ -935,6 +1141,55 @@ def task_progress(task: Any) -> dict[str, Any] | None:
             phase=phase,
         )
 
+    if is_memory_import:
+        current, total = _stabilize_session_progress(
+            task,
+            phase=phase,
+            unit=unit,
+            current=current,
+            total=total,
+            session_label=current_session_label,
+            current_import=current_import,
+        )
+
+    if kind in {
+        "openviking_qa",
+        "echomemory_qa",
+        "openviking_qa_retry_failed",
+        "openviking_qa_retry_missing",
+        "openviking_generic_qa",
+        "echomemory_generic_qa",
+        "local_agent",
+    }:
+        latest_row = _latest_csv_row(getattr(task, "output_file", ""))
+        if latest_row:
+            latest_answer = _compact_preview_text(
+                latest_row.get("response")
+                or latest_row.get("hypothesis")
+                or latest_row.get("prediction")
+                or latest_row.get("model_answer")
+                or latest_row.get("model_response")
+                or "",
+                320,
+            )
+            latest_question = _compact_preview_text(latest_row.get("question") or "", 220)
+            latest_question_id = str(latest_row.get("question_id") or latest_row.get("sample_id") or "").strip()
+            if latest_question_id or latest_question or latest_answer:
+                if not qa_preview:
+                    qa_preview = {
+                        "question_id": latest_question_id,
+                        "question": latest_question,
+                        "answer": latest_answer,
+                        "source": "csv",
+                    }
+                elif latest_question_id and latest_question_id == str(qa_preview.get("question_id") or "").strip():
+                    qa_preview = {
+                        **qa_preview,
+                        "question": str(qa_preview.get("question") or latest_question or ""),
+                        "answer": latest_answer,
+                        "source": "csv",
+                    }
+
     return {
         "current": current,
         "total": total,
@@ -949,6 +1204,7 @@ def task_progress(task: Any) -> dict[str, Any] | None:
         "sample": current_sample,
         "session_label": current_session_label,
         "current_import": current_import,
+        "qa_preview": qa_preview,
         "completed_samples": len(completed_samples),
         "total_samples": locomo_totals.get("sample_count") if locomo_totals else None,
         "total_messages": locomo_totals.get("message_count") if locomo_totals else None,

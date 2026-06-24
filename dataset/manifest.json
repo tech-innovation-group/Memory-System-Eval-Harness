@@ -51,6 +51,33 @@
       "description": "Full LongMemEval-M cleaned split for official-style 500-row scoring."
     },
     {
+      "id": "longmemeval-s-original-full",
+      "name": "LongMemEval-S Original",
+      "path": "raw/longmemeval_original/longmemeval_s.json",
+      "format": "longmemeval",
+      "samples": 500,
+      "questions": 500,
+      "description": "Deprecated original LongMemEval-S split kept for historical comparison against the cleaned release."
+    },
+    {
+      "id": "longmemeval-oracle-original-full",
+      "name": "LongMemEval Oracle Original",
+      "path": "raw/longmemeval_original/longmemeval_oracle.json",
+      "format": "longmemeval",
+      "samples": 500,
+      "questions": 500,
+      "description": "Deprecated original LongMemEval oracle split kept for historical comparison against the cleaned release."
+    },
+    {
+      "id": "longmemeval-m-original-full",
+      "name": "LongMemEval-M Original",
+      "path": "raw/longmemeval_original/longmemeval_m.json",
+      "format": "longmemeval",
+      "samples": 500,
+      "questions": 500,
+      "description": "Deprecated original LongMemEval-M split kept for historical comparison against the cleaned release."
+    },
+    {
       "id": "chenmo",
       "name": "ChenMo",
       "path": "chenmo_evaluation_scenario.md",

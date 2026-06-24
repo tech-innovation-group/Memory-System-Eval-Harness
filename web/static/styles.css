@@ -3292,6 +3292,13 @@ textarea:focus {
   background: #f5f9ff;
 }
 
+.run-card.selected {
+  border-color: #d6c8f3;
+  border-left-color: var(--accent);
+  background: #faf7ff;
+  box-shadow: inset 0 0 0 1px rgba(91, 25, 118, 0.14);
+}
+
 .run-test-summary {
   min-width: 0;
 }
@@ -17542,6 +17549,50 @@ body[data-active-view="runsView"] #locomoFlowNav {
   margin: 8px 0 4px !important;
 }
 
+#hotpotQaView > .benchmark-workbench > .panel-head,
+#hotpotQaView .benchmark-stage-panel[data-benchmark-stage="import"] .benchmark-stage-head {
+  align-items: start !important;
+}
+
+#hotpotQaView .hotpotqa-toolbar {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(84px, 84px)) !important;
+  gap: 8px !important;
+  align-items: stretch !important;
+  justify-content: end !important;
+  flex: 0 0 auto !important;
+}
+
+#hotpotQaView .hotpotqa-toolbar button {
+  width: 84px !important;
+  min-width: 84px !important;
+  max-width: 84px !important;
+  min-height: 36px !important;
+  height: 36px !important;
+  justify-content: center !important;
+  padding: 0 10px !important;
+  line-height: 1 !important;
+}
+
+#hotpotQaView #hotpotQaRunConfig,
+#hotpotQaView #hotpotQaModelReadiness {
+  min-height: 96px !important;
+}
+
+body[data-active-view="hotpotQaView"] #globalBenchmarkBanner {
+  display: none !important;
+}
+
+#hotpotQaView #hotpotQaModelReadiness[data-loading="1"] {
+  opacity: 0.94;
+}
+
+@media (max-width: 720px) {
+  #hotpotQaView .hotpotqa-toolbar {
+    grid-template-columns: repeat(2, minmax(84px, 84px)) !important;
+  }
+}
+
 #hotpotQaView .benchmark-live-embed .panel-head {
   align-items: start !important;
 }
@@ -24350,5 +24401,1386 @@ button.danger{
   #importedMemoryList .imported-memory-meta,
   #importedMemoryList .imported-memory-path code {
     font-size: 12px !important;
+  }
+}
+
+/* =====================================================================
+   LoCoMo 评测视图 · 精致卡片质感 (Refined Card Aesthetic)
+   柔和阴影 + 14px 圆角 + accent 强调 + 充足留白/层级
+   作用域: body[data-active-view="openvikingView"] #openvikingView
+   追加于文件末尾, 以源序胜出既有 !important 补丁层
+   ===================================================================== */
+
+/* 外层容器: 去除拥挤边框, 与背景留呼吸 */
+body[data-active-view="openvikingView"] #openvikingView .import-console {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 4px !important;
+  display: grid !important;
+  gap: 18px !important;
+}
+
+/* 顶部 Hero: accent 渐层强调条 */
+body[data-active-view="openvikingView"] #openvikingView .workbench-stage-hero {
+  background: linear-gradient(135deg, var(--accent-light) 0%, #ffffff 72%) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-sm) !important;
+  padding: 22px 24px !important;
+  gap: 16px !important;
+  align-items: center !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .workbench-stage-hero h2 {
+  color: var(--ink) !important;
+  font-size: 20px !important;
+  letter-spacing: -0.01em !important;
+  margin: 0 0 4px !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .workbench-stage-hero p {
+  color: var(--muted) !important;
+  font-size: 13px !important;
+  margin: 0 !important;
+}
+/* 各功能区卡片: 软阴影 + 14px 圆角 + 充足内距 */
+body[data-active-view="openvikingView"] #openvikingView .import-section {
+  background: var(--panel) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-sm) !important;
+  padding: 20px 22px !important;
+  gap: 16px !important;
+  transition: box-shadow var(--transition), border-color var(--transition) !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .import-section:hover {
+  box-shadow: var(--shadow-md) !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* 区块标题: accent 竖条 + 清晰层级 */
+body[data-active-view="openvikingView"] #openvikingView .import-section-head {
+  align-items: flex-start !important;
+  gap: 12px !important;
+  padding-bottom: 4px !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .import-section-head h3 {
+  color: var(--ink) !important;
+  font-size: 15px !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.01em !important;
+  margin: 0 0 3px !important;
+  padding-left: 11px !important;
+  position: relative !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .import-section-head h3::before {
+  content: "" !important;
+  position: absolute !important;
+  left: 0 !important;
+  top: 2px !important;
+  bottom: 2px !important;
+  width: 3px !important;
+  border-radius: 2px !important;
+  background: var(--accent) !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .import-section-head p {
+  color: var(--muted) !important;
+  font-size: 12.5px !important;
+  margin: 0 !important;
+  padding-left: 11px !important;
+}
+/* 主操作按钮: accent 实心, 圆角呼应卡片 */
+body[data-active-view="openvikingView"] #openvikingView .workbench-stage-hero button.primary,
+body[data-active-view="openvikingView"] #openvikingView .workbench-stage-hero button.primary.alt {
+  background: var(--accent) !important;
+  border: 1px solid var(--accent) !important;
+  color: #ffffff !important;
+  border-radius: var(--radius) !important;
+  box-shadow: var(--shadow-xs) !important;
+  font-weight: 600 !important;
+  padding: 9px 18px !important;
+  transition: background var(--transition), box-shadow var(--transition) !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .workbench-stage-hero button.primary:hover,
+body[data-active-view="openvikingView"] #openvikingView .workbench-stage-hero button.primary.alt:hover {
+  background: var(--accent-hover) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+/* 次级 / 危险按钮: 描边风, 圆角统一 */
+body[data-active-view="openvikingView"] #openvikingView .import-section button.secondary,
+body[data-active-view="openvikingView"] #openvikingView .workbench-stage-hero button.danger {
+  border-radius: var(--radius) !important;
+  font-weight: 550 !important;
+  padding: 8px 15px !important;
+  transition: background var(--transition), border-color var(--transition) !important;
+}
+
+/* 输入框: 圆角 + focus accent 光圈 */
+body[data-active-view="openvikingView"] #openvikingView .import-section input,
+body[data-active-view="openvikingView"] #openvikingView .import-section select {
+  border: 1px solid var(--line) !important;
+  border-radius: var(--radius) !important;
+  background: #ffffff !important;
+  padding: 9px 12px !important;
+  transition: border-color var(--transition), box-shadow var(--transition) !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .import-section input:focus,
+body[data-active-view="openvikingView"] #openvikingView .import-section select:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-light) !important;
+  outline: none !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .import-section label > span {
+  color: var(--muted) !important;
+  font-size: 12.5px !important;
+  font-weight: 550 !important;
+}
+
+/* 进度条: 圆角轨道 + accent 渐层填充 */
+body[data-active-view="openvikingView"] #openvikingView .progress-bar {
+  background: var(--bg) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 999px !important;
+  height: 9px !important;
+  overflow: hidden !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .progress-bar #importProgressBar {
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-hover) 100%) !important;
+  border-radius: 999px !important;
+}
+/* 阶段轨道: 药丸标签, accent 高亮当前/完成 */
+body[data-active-view="openvikingView"] #openvikingView .import-stage-rail {
+  gap: 8px !important;
+  flex-wrap: wrap !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .import-stage-rail span {
+  background: var(--bg) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 999px !important;
+  color: var(--muted) !important;
+  font-size: 12px !important;
+  font-weight: 550 !important;
+  padding: 5px 12px !important;
+  transition: all var(--transition) !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .import-stage-rail span[data-state="active"],
+body[data-active-view="openvikingView"] #openvikingView .import-stage-rail span.active {
+  background: var(--accent-light) !important;
+  border-color: var(--accent) !important;
+  color: var(--accent-hover) !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .import-stage-rail span[data-state="done"],
+body[data-active-view="openvikingView"] #openvikingView .import-stage-rail span.done {
+  background: #ecfdf5 !important;
+  border-color: var(--green) !important;
+  color: #047857 !important;
+}
+
+/* 准备状态网格: 卡片化每格 */
+body[data-active-view="openvikingView"] #openvikingView .import-readiness-panel > * {
+  background: var(--bg) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: var(--radius) !important;
+  padding: 12px 14px !important;
+}
+
+/* 日志框: 等宽暗底, 圆角 */
+body[data-active-view="openvikingView"] #openvikingView .log,
+body[data-active-view="openvikingView"] #openvikingView #importLogBox {
+  background: #0f172a !important;
+  color: #e2e8f0 !important;
+  border: 1px solid #1e293b !important;
+  border-radius: var(--radius) !important;
+  padding: 14px 16px !important;
+  font-size: 12.5px !important;
+  line-height: 1.6 !important;
+}
+
+/* 异常 / 完成横幅: 语义色软底 */
+body[data-active-view="openvikingView"] #openvikingView .log-diagnostic,
+body[data-active-view="openvikingView"] #openvikingView .completion-banner {
+  border-radius: var(--radius) !important;
+  padding: 12px 16px !important;
+  border: 1px solid var(--line) !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .log-diagnostic.ok {
+  background: #ecfdf5 !important;
+  border-color: #a7f3d0 !important;
+  color: #047857 !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .log-diagnostic.warn {
+  background: #fffbeb !important;
+  border-color: #fde68a !important;
+  color: #b45309 !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .log-diagnostic.bad,
+body[data-active-view="openvikingView"] #openvikingView .log-diagnostic.error {
+  background: #fef2f2 !important;
+  border-color: #fecaca !important;
+  color: #b91c1c !important;
+}
+/* 结果 KPI: 卡片化指标块 */
+body[data-active-view="openvikingView"] #openvikingView .result-kpis > * {
+  background: var(--bg) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: var(--radius) !important;
+  padding: 14px 16px !important;
+}
+
+/* 记忆预览 / 导入列表: 卡片间距 + 圆角 */
+body[data-active-view="openvikingView"] #openvikingView .memory-list {
+  gap: 10px !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .memory-list > * {
+  border-radius: var(--radius) !important;
+}
+
+/* 折叠详情: 轻量描边 */
+body[data-active-view="openvikingView"] #openvikingView .import-secondary-details {
+  border: 1px solid var(--line) !important;
+  border-radius: var(--radius) !important;
+  background: var(--bg) !important;
+  padding: 4px 14px !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .import-secondary-details summary {
+  color: var(--muted) !important;
+  font-size: 13px !important;
+  font-weight: 550 !important;
+  padding: 8px 0 !important;
+}
+
+/* 近 3 天任务: 列卡片化 */
+body[data-active-view="openvikingView"] #openvikingView .recent-locomo-runs-column {
+  background: var(--bg) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: var(--radius) !important;
+  padding: 14px 16px !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .recent-locomo-runs-head strong {
+  color: var(--ink) !important;
+  font-size: 13.5px !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .recent-locomo-runs-head span {
+  color: var(--muted) !important;
+  font-size: 12px !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .run-list > * {
+  border-radius: var(--radius) !important;
+}
+
+/* ---------------------------------------------------------------------
+   LoCoMo 评测视图 · 排版规整 (Layout Regularization)
+   单控件行不留半列空白 / input+按钮底对齐 / 统一垂直节奏 / label 收敛
+   --------------------------------------------------------------------- */
+
+/* 区块内容统一垂直节奏 */
+body[data-active-view="openvikingView"] #openvikingView .import-section {
+  row-gap: 14px !important;
+}
+
+/* 单个控件的 form-grid 不再占半列, 自然撑满 */
+body[data-active-view="openvikingView"] #openvikingView .form-grid.two,
+body[data-active-view="openvikingView"] #openvikingView .form-grid.three {
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 14px !important;
+}
+/* 记忆目录这类 "输入 + 一组按钮" 的行: 输入占主, 按钮贴右底 */
+body[data-active-view="openvikingView"] #openvikingView .form-grid.two:has(> .panel-actions) {
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: end !important;
+}
+
+/* 数据路径行: 输入 + 按钮底对齐, 间距收敛 */
+body[data-active-view="openvikingView"] #openvikingView .path-input-action {
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: end !important;
+  gap: 12px !important;
+}
+
+/* label 竖排, 文字与控件留稳定间距 */
+body[data-active-view="openvikingView"] #openvikingView .import-section label {
+  display: grid !important;
+  gap: 6px !important;
+  align-content: start !important;
+}
+/* label 标题统一: 收敛大写挤压感, 改为可读小标 */
+body[data-active-view="openvikingView"] #openvikingView .import-section label > span,
+body[data-active-view="openvikingView"] #openvikingView .path-input-action label > span {
+  color: var(--muted) !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  line-height: 1.3 !important;
+}
+
+/* 按钮组: 左对齐成排, 不再右飘 */
+body[data-active-view="openvikingView"] #openvikingView .import-section .panel-actions {
+  justify-content: flex-start !important;
+  gap: 10px !important;
+  margin: 0 !important;
+}
+/* "自动生成目录 / 打开系统配置" 这类紧贴输入的按钮组底对齐 */
+body[data-active-view="openvikingView"] #openvikingView .compact-actions {
+  align-items: end !important;
+  padding-bottom: 1px !important;
+}
+
+/* 区块头操作按钮(检查完整性/刷新列表)固定贴右, 与标题基线齐 */
+body[data-active-view="openvikingView"] #openvikingView .import-section-head {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: flex-start !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .import-section-head > button {
+  flex: 0 0 auto !important;
+  margin-top: 2px !important;
+}
+
+/* 提示文案块统一为浅底卡, 与输入区分层 */
+body[data-active-view="openvikingView"] #openvikingView .quick-test-status {
+  background: var(--bg) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: var(--radius) !important;
+  padding: 10px 14px !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .quick-test-status p {
+  color: var(--muted) !important;
+  font-size: 12.5px !important;
+  line-height: 1.5 !important;
+  margin: 0 !important;
+}
+
+/* 进度文案与进度条留出节奏 */
+body[data-active-view="openvikingView"] #openvikingView #importProgressText {
+  color: var(--muted) !important;
+  font-size: 12.5px !important;
+  display: block !important;
+  margin-top: -4px !important;
+}
+
+/* 准备状态网格: 等宽列, 间距统一 */
+body[data-active-view="openvikingView"] #openvikingView .import-readiness-panel {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)) !important;
+  gap: 10px !important;
+}
+
+/* 日志路径行收敛为浅底单行 */
+body[data-active-view="openvikingView"] #openvikingView .compact-path-list {
+  background: var(--bg) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: var(--radius) !important;
+  padding: 8px 12px !important;
+  font-size: 12.5px !important;
+}
+body[data-active-view="openvikingView"] #openvikingView .compact-path-list p {
+  margin: 0 !important;
+  color: var(--muted) !important;
+}
+
+/* ============================================================
+   流程导航 (#locomoFlowNav) 最终视觉重构
+   目标: 摆脱"太扁太丑", 做出有呼吸感、有层次的步骤卡片
+   ============================================================ */
+#locomoFlowNav{
+  display:grid !important;
+  grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+  gap:10px !important;
+  margin-bottom:16px !important;
+  padding:8px !important;
+  border:1px solid #e7e2d6 !important;
+  border-radius:16px !important;
+  background:linear-gradient(180deg,#fbf9f3 0%,#f4f1e8 100%) !important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.7), 0 1px 2px rgba(23,23,23,.04) !important;
+}
+#locomoFlowNav .flow-card{
+  position:relative !important;
+  display:grid !important;
+  grid-template-columns:32px minmax(0,1fr) !important;
+  grid-template-rows:min-content min-content !important;
+  align-content:center !important;
+  column-gap:11px !important;
+  row-gap:4px !important;
+  min-height:72px !important;
+  height:auto !important;
+  padding:13px 14px !important;
+  border:1px solid #e3ddd0 !important;
+  border-radius:13px !important;
+  background:#fffdfa !important;
+  text-align:left !important;
+  box-shadow:0 1px 2px rgba(23,23,23,.04) !important;
+  transition:border-color .18s ease, background-color .18s ease, box-shadow .18s ease, transform .18s ease !important;
+}
+#locomoFlowNav .flow-card span{
+  grid-row:1 / span 2 !important;
+  align-self:center !important;
+  display:inline-grid !important;
+  place-items:center !important;
+  width:32px !important;
+  height:32px !important;
+  border-radius:999px !important;
+  background:#eef0ec !important;
+  color:#6f746d !important;
+  font-size:14px !important;
+  font-weight:800 !important;
+  font-variant-numeric:tabular-nums !important;
+  box-shadow:inset 0 0 0 1px rgba(23,23,23,.05) !important;
+  transition:background-color .18s ease, color .18s ease, box-shadow .18s ease !important;
+}
+#locomoFlowNav .flow-card strong{
+  align-self:center !important;
+  color:#1c1c1c !important;
+  font-size:14.5px !important;
+  font-weight:700 !important;
+  letter-spacing:-.01em !important;
+  line-height:1.2 !important;
+}
+#locomoFlowNav .flow-card small{
+  align-self:center !important;
+  color:#7a7e78 !important;
+  font-size:11.5px !important;
+  line-height:1.35 !important;
+}
+#locomoFlowNav .flow-card:hover{
+  border-color:#cfd8e6 !important;
+  background:#ffffff !important;
+  box-shadow:0 4px 12px rgba(23,23,23,.07) !important;
+  transform:translateY(-1px) !important;
+}
+#locomoFlowNav .flow-card.active,
+#locomoFlowNav .flow-card.is-selected{
+  border-color:#9db8c9 !important;
+  background:linear-gradient(180deg,#ffffff 0%,#f3f8f8 100%) !important;
+  box-shadow:0 0 0 1px rgba(95,142,158,.16), 0 8px 20px rgba(95,142,158,.14) !important;
+  transform:translateY(-1px) !important;
+}
+#locomoFlowNav .flow-card.active span,
+#locomoFlowNav .flow-card.is-selected span{
+  background:#5f8e9e !important;
+  color:#ffffff !important;
+  box-shadow:0 2px 6px rgba(95,142,158,.32) !important;
+}
+#locomoFlowNav .flow-card.active strong,
+#locomoFlowNav .flow-card.is-selected strong{
+  color:#2f5763 !important;
+}
+#locomoFlowNav .flow-card.active small,
+#locomoFlowNav .flow-card.is-selected small{
+  color:#5a7884 !important;
+}
+#locomoFlowNav .flow-card.active::after,
+#locomoFlowNav .flow-card.is-selected::after{
+  content:"当前" !important;
+  position:absolute !important;
+  right:11px !important;
+  top:11px !important;
+  padding:2px 8px !important;
+  border-radius:999px !important;
+  background:#5f8e9e !important;
+  color:#ffffff !important;
+  font-size:9.5px !important;
+  font-weight:700 !important;
+  letter-spacing:.04em !important;
+  line-height:1.5 !important;
+}
+@media (max-width:760px){
+  #locomoFlowNav{grid-template-columns:repeat(2,minmax(0,1fr)) !important;}
+}
+
+#accountTaskRow,
+#globalTaskChip,
+#accountActionStatus{
+  display:none !important;
+}
+
+body[data-active-view="openvikingView"] #locomoFlowNav,
+body[data-active-view="evalView"] #locomoFlowNav,
+body[data-active-view="judgeView"] #locomoFlowNav,
+body[data-active-view="runsView"] #locomoFlowNav{
+  display:grid !important;
+  grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+  gap:10px !important;
+  margin-bottom:16px !important;
+  padding:8px !important;
+  border:1px solid #e7e2d6 !important;
+  border-radius:16px !important;
+  background:linear-gradient(180deg,#fbf9f3 0%,#f4f1e8 100%) !important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.7), 0 1px 2px rgba(23,23,23,.04) !important;
+  grid-auto-rows:auto !important;
+  min-height:0 !important;
+  height:auto !important;
+  align-items:stretch !important;
+}
+
+body[data-active-view="openvikingView"] #locomoFlowNav .flow-card,
+body[data-active-view="evalView"] #locomoFlowNav .flow-card,
+body[data-active-view="judgeView"] #locomoFlowNav .flow-card,
+body[data-active-view="runsView"] #locomoFlowNav .flow-card{
+  display:grid !important;
+  grid-template-columns:32px minmax(0,1fr) !important;
+  grid-template-rows:min-content min-content !important;
+  align-content:center !important;
+  column-gap:11px !important;
+  row-gap:4px !important;
+  min-height:72px !important;
+  height:auto !important;
+  padding:13px 14px !important;
+  border-radius:13px !important;
+}
+
+body[data-active-view="openvikingView"] #locomoFlowNav .flow-card span,
+body[data-active-view="evalView"] #locomoFlowNav .flow-card span,
+body[data-active-view="judgeView"] #locomoFlowNav .flow-card span,
+body[data-active-view="runsView"] #locomoFlowNav .flow-card span{
+  width:32px !important;
+  height:32px !important;
+  min-width:32px !important;
+  min-height:32px !important;
+  font-size:14px !important;
+}
+
+body[data-active-view="openvikingView"] #locomoFlowNav .flow-card strong,
+body[data-active-view="evalView"] #locomoFlowNav .flow-card strong,
+body[data-active-view="judgeView"] #locomoFlowNav .flow-card strong,
+body[data-active-view="runsView"] #locomoFlowNav .flow-card strong{
+  font-size:14.5px !important;
+  line-height:1.2 !important;
+  display:block !important;
+  white-space:nowrap !important;
+  overflow:hidden !important;
+  text-overflow:ellipsis !important;
+}
+
+body[data-active-view="openvikingView"] #locomoFlowNav .flow-card small,
+body[data-active-view="evalView"] #locomoFlowNav .flow-card small,
+body[data-active-view="judgeView"] #locomoFlowNav .flow-card small,
+body[data-active-view="runsView"] #locomoFlowNav .flow-card small{
+  display:block !important;
+  font-size:11.5px !important;
+  line-height:1.35 !important;
+  white-space:nowrap !important;
+  overflow:hidden !important;
+  text-overflow:ellipsis !important;
+}
+
+/* Judge view layout cleanup: strictly one-row-per-item */
+body[data-active-view="judgeView"] #judgeView .judge-workbench,
+body[data-active-view="judgeView"] #judgeView .judge-side-column,
+body[data-active-view="judgeView"] #judgeView .judge-main-column,
+body[data-active-view="judgeView"] #judgeView .judge-control-stack,
+body[data-active-view="judgeView"] #judgeView .judge-progress-stack{
+  display:grid !important;
+  grid-template-columns:minmax(0,1fr) !important;
+  gap:12px !important;
+  align-content:start !important;
+}
+
+body[data-active-view="judgeView"] #judgeView .judge-side-column{
+  position:static !important;
+}
+
+body[data-active-view="judgeView"] #judgeView .judge-panel-head{
+  align-items:start !important;
+}
+
+body[data-active-view="judgeView"] #judgeView #judgeInput{
+  min-height:38px !important;
+}
+
+body[data-active-view="judgeView"] #judgeView .judge-readiness-panel,
+body[data-active-view="judgeView"] #judgeView #evalResultKpis.result-kpis,
+body[data-active-view="judgeView"] #judgeView #resultKpis.result-kpis,
+body[data-active-view="judgeView"] #judgeSummaryCard .path-list,
+body[data-active-view="judgeView"] #judgeArtifactCard .sample-list,
+body[data-active-view="judgeView"] #judgeSamplesCard .question-detail{
+  display:grid !important;
+  grid-template-columns:minmax(0,1fr) !important;
+  gap:8px !important;
+}
+
+body[data-active-view="judgeView"] #judgePendingCard .sample-list{
+  display:grid !important;
+  grid-template-columns:minmax(0,1fr) !important;
+  gap:8px !important;
+  height:280px !important;
+  min-height:280px !important;
+  max-height:280px !important;
+  overflow:auto !important;
+  padding-right:4px !important;
+}
+
+body[data-active-view="judgeView"] #judgeView .judge-readiness-panel article,
+body[data-active-view="judgeView"] #judgeView #evalResultKpis .kpi,
+body[data-active-view="judgeView"] #judgeView #resultKpis .kpi,
+body[data-active-view="judgeView"] #judgeView .path-row,
+body[data-active-view="judgeView"] #judgeView .memory-hit,
+body[data-active-view="judgeView"] #judgeView .pending-row{
+  display:grid !important;
+  grid-template-columns:minmax(0,1fr) !important;
+  gap:4px !important;
+  align-items:start !important;
+}
+
+body[data-active-view="judgeView"] #judgeView .path-row{
+  display:grid !important;
+  grid-template-columns:minmax(76px,96px) minmax(0,1fr) auto !important;
+  gap:8px !important;
+  align-items:center !important;
+  padding:10px 12px !important;
+}
+
+body[data-active-view="judgeView"] #judgeView .path-row-actions{
+  display:flex !important;
+  flex-wrap:nowrap !important;
+  gap:6px !important;
+  align-items:center !important;
+  justify-self:end !important;
+  white-space:nowrap !important;
+}
+
+body[data-active-view="judgeView"] #judgeView .path-row code,
+body[data-active-view="judgeView"] #judgeView .memory-hit code,
+body[data-active-view="judgeView"] #judgeView .question-detail code{
+  white-space:pre-wrap !important;
+  word-break:break-all !important;
+}
+
+body[data-active-view="judgeView"] #judgeView .path-row .path-copy,
+body[data-active-view="judgeView"] #judgeView .path-row .path-open{
+  min-width:auto !important;
+  padding:0 8px !important;
+}
+
+body[data-active-view="judgeView"] #judgeView .path-row .path-copy,
+body[data-active-view="judgeView"] #judgeView .path-list .path-copy{
+  display:none !important;
+}
+
+body[data-active-view="judgeView"] #judgePendingCard .judge-history-card{
+  gap:10px !important;
+  padding:12px 13px !important;
+  border-left:3px solid #cbd5e1 !important;
+  background:linear-gradient(180deg,#fbfcff 0%,#f8fbff 100%) !important;
+}
+
+body[data-active-view="judgeView"] #judgePendingCard .judge-history-card.pending{
+  border-left-color:#cbd5e1 !important;
+}
+
+body[data-active-view="judgeView"] #judgePendingCard .judge-history-card.ok{
+  border-left-color:#16a34a !important;
+}
+
+body[data-active-view="judgeView"] #judgePendingCard .judge-history-card.selected{
+  border-color:#cfdcf6 !important;
+  border-left-color:#2563eb !important;
+  background:linear-gradient(180deg,#eef5ff 0%,#f8fbff 100%) !important;
+  box-shadow:inset 0 0 0 1px rgba(37,99,235,0.1) !important;
+}
+
+body[data-active-view="judgeView"] #judgePendingCard .judge-history-head{
+  display:flex !important;
+  align-items:flex-start !important;
+  justify-content:space-between !important;
+  gap:10px !important;
+}
+
+body[data-active-view="judgeView"] #judgePendingCard .judge-history-head strong{
+  margin:0 !important;
+  font-size:12.5px !important;
+  line-height:1.4 !important;
+}
+
+body[data-active-view="judgeView"] #judgePendingCard .judge-history-status{
+  flex:0 0 auto !important;
+  display:inline-flex !important;
+  align-items:center !important;
+  min-height:22px !important;
+  padding:0 8px !important;
+  border-radius:999px !important;
+  font-size:10.5px !important;
+  font-weight:700 !important;
+  white-space:nowrap !important;
+  color:#5f6b7a !important;
+  background:#eef2f7 !important;
+}
+
+body[data-active-view="judgeView"] #judgePendingCard .judge-history-card.ok .judge-history-status{
+  color:#166534 !important;
+  background:#eaf8ef !important;
+}
+
+body[data-active-view="judgeView"] #judgePendingCard .judge-history-card.selected .judge-history-status{
+  color:#1d4ed8 !important;
+  background:#dbeafe !important;
+}
+
+body[data-active-view="judgeView"] #judgePendingCard .judge-history-meta{
+  display:grid !important;
+  grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+  gap:8px !important;
+}
+
+body[data-active-view="judgeView"] #judgePendingCard .judge-history-meta span{
+  display:grid !important;
+  gap:2px !important;
+  min-width:0 !important;
+  padding:8px 9px !important;
+  border:1px solid #e3eaf3 !important;
+  border-radius:8px !important;
+  background:#ffffff !important;
+  color:#334155 !important;
+  font-size:11.5px !important;
+  line-height:1.35 !important;
+}
+
+body[data-active-view="judgeView"] #judgePendingCard .judge-history-meta b{
+  color:#64748b !important;
+  font-size:10px !important;
+  font-weight:700 !important;
+}
+
+body[data-active-view="judgeView"] #judgePendingCard .judge-history-time{
+  overflow:hidden !important;
+}
+
+body[data-active-view="judgeView"] #judgePendingCard .judge-history-time:not(:hover){
+  white-space:nowrap !important;
+  text-overflow:ellipsis !important;
+}
+
+body[data-active-view="judgeView"] #judgeView .judge-log-card .log{
+  min-height:140px !important;
+  max-height:220px !important;
+}
+
+@media (max-width:980px){
+  body[data-active-view="judgeView"] #judgeView .judge-workbench,
+  body[data-active-view="judgeView"] #judgeView .judge-side-column,
+  body[data-active-view="judgeView"] #judgeView .judge-main-column{
+    grid-template-columns:minmax(0,1fr) !important;
+  }
+
+  body[data-active-view="judgeView"] #judgePendingCard .sample-list{
+    height:240px !important;
+    min-height:240px !important;
+    max-height:240px !important;
+  }
+
+  body[data-active-view="judgeView"] #judgePendingCard .judge-history-meta{
+    grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+  }
+}
+
+@media (max-width:760px){
+  .app-shell{
+    grid-template-columns:minmax(0,1fr) !important;
+    grid-template-rows:auto auto !important;
+    min-height:auto !important;
+  }
+
+  .app-sidebar{
+    width:auto !important;
+    min-width:0 !important;
+    max-width:none !important;
+    height:auto !important;
+    padding:10px 12px 8px !important;
+    border-right:0 !important;
+    border-bottom:1px solid #e5e2d8 !important;
+    gap:8px !important;
+  }
+
+  .brand-block{
+    padding:0 0 8px !important;
+    border-bottom:0 !important;
+  }
+
+  .brand-block strong{
+    font-size:17px !important;
+  }
+
+  .side-nav{
+    overflow:visible !important;
+  }
+
+  .nav-group{
+    grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+    gap:8px !important;
+  }
+
+  .nav-group > span{
+    grid-column:1 / -1 !important;
+  }
+
+  .nav-item{
+    min-height:36px !important;
+    height:36px !important;
+    font-size:13px !important;
+  }
+
+  .nav-item.active::before{
+    left:8px !important;
+    top:auto !important;
+    bottom:6px !important;
+    width:22px !important;
+    height:2px !important;
+  }
+
+  .sidebar-status{
+    display:none !important;
+  }
+
+  .app-content{
+    padding:10px 12px 20px !important;
+    gap:10px !important;
+  }
+
+  .app-content > .workspace-strip{
+    padding:0 !important;
+    margin:0 !important;
+  }
+
+  .app-content > .workspace-strip .workspace-primary{
+    grid-template-columns:minmax(0,1fr) !important;
+    gap:8px !important;
+  }
+
+  .app-content > .workspace-strip .workspace-actions,
+  .app-content > .workspace-strip .workspace-actions.expanded{
+    justify-content:flex-start !important;
+  }
+
+  #locomoFlowNav,
+  body[data-active-view="openvikingView"] #locomoFlowNav,
+  body[data-active-view="evalView"] #locomoFlowNav,
+  body[data-active-view="judgeView"] #locomoFlowNav,
+  body[data-active-view="runsView"] #locomoFlowNav{
+    grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+    gap:8px !important;
+    margin-bottom:10px !important;
+    padding:6px !important;
+  }
+
+  #locomoFlowNav .flow-card,
+  body[data-active-view="openvikingView"] #locomoFlowNav .flow-card,
+  body[data-active-view="evalView"] #locomoFlowNav .flow-card,
+  body[data-active-view="judgeView"] #locomoFlowNav .flow-card,
+  body[data-active-view="runsView"] #locomoFlowNav .flow-card{
+    min-height:64px !important;
+    height:auto !important;
+    padding:10px !important;
+    grid-template-columns:28px minmax(0,1fr) !important;
+    column-gap:8px !important;
+    row-gap:2px !important;
+  }
+
+  #locomoFlowNav .flow-card span,
+  body[data-active-view="openvikingView"] #locomoFlowNav .flow-card span,
+  body[data-active-view="evalView"] #locomoFlowNav .flow-card span,
+  body[data-active-view="judgeView"] #locomoFlowNav .flow-card span,
+  body[data-active-view="runsView"] #locomoFlowNav .flow-card span{
+    width:28px !important;
+    height:28px !important;
+    min-width:28px !important;
+    min-height:28px !important;
+    font-size:12px !important;
+  }
+
+  #locomoFlowNav .flow-card strong,
+  body[data-active-view="openvikingView"] #locomoFlowNav .flow-card strong,
+  body[data-active-view="evalView"] #locomoFlowNav .flow-card strong,
+  body[data-active-view="judgeView"] #locomoFlowNav .flow-card strong,
+  body[data-active-view="runsView"] #locomoFlowNav .flow-card strong{
+    font-size:13px !important;
+    white-space:normal !important;
+  }
+
+  #locomoFlowNav .flow-card small,
+  body[data-active-view="openvikingView"] #locomoFlowNav .flow-card small,
+  body[data-active-view="evalView"] #locomoFlowNav .flow-card small,
+  body[data-active-view="judgeView"] #locomoFlowNav .flow-card small,
+  body[data-active-view="runsView"] #locomoFlowNav .flow-card small{
+    display:none !important;
+  }
+
+  #locomoFlowNav .flow-card.active::after,
+  #locomoFlowNav .flow-card.is-selected::after{
+    right:8px !important;
+    top:8px !important;
+    padding:1px 6px !important;
+    font-size:9px !important;
+  }
+
+  #evalView .qa-readiness-panel,
+  #judgeView .judge-workbench,
+  #runsView .report-workbench,
+  #openvikingView .recent-locomo-runs-grid{
+    grid-template-columns:minmax(0,1fr) !important;
+  }
+
+  #evalView .question-picker{
+    max-height:none !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeView .path-row{
+    grid-template-columns:minmax(0,1fr) !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeView .path-row-actions{
+    justify-self:start !important;
+    flex-wrap:wrap !important;
+  }
+}
+
+@media (min-width:981px){
+  body[data-active-view="evalView"] #evalView{
+    display:grid !important;
+    grid-template-columns:minmax(0,1.5fr) 360px !important;
+    grid-template-areas:
+      "hero hero"
+      "question config"
+      "question task";
+    gap:12px !important;
+    align-items:start !important;
+  }
+
+  body[data-active-view="evalView"] #evalView > .workbench-stage-hero{grid-area:hero !important;}
+  body[data-active-view="evalView"] #evalView > .eval-question-card{grid-area:question !important;}
+  body[data-active-view="evalView"] #evalView > .eval-config-card{grid-area:config !important;}
+  body[data-active-view="evalView"] #evalView > .eval-task-card{
+    grid-area:task !important;
+    align-self:start !important;
+  }
+
+  body[data-active-view="evalView"] #evalView .eval-config-card,
+  body[data-active-view="evalView"] #evalView .eval-task-card{
+    padding:12px !important;
+  }
+
+  body[data-active-view="evalView"] #evalView .eval-config-card .qa-readiness-panel{
+    grid-template-columns:minmax(0,1fr) !important;
+    gap:8px !important;
+  }
+
+  body[data-active-view="evalView"] #evalView .question-picker{
+    max-height:620px !important;
+    overflow:auto !important;
+    padding-right:4px !important;
+  }
+
+  body[data-active-view="evalView"] #evalView #recentTaskList{
+    max-height:260px !important;
+    overflow:auto !important;
+  }
+
+  body[data-active-view="evalView"] #evalView details.log-details{
+    margin-top:10px !important;
+  }
+
+  body[data-active-view="evalView"] #evalView #evalLogBox{
+    min-height:140px !important;
+    max-height:220px !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeView .judge-workbench{
+    grid-template-columns:340px minmax(0,1fr) !important;
+    gap:14px !important;
+    align-items:start !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeView .judge-side-column{
+    position:sticky !important;
+    top:12px !important;
+    align-self:start !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeView .judge-main-column{
+    display:grid !important;
+    grid-template-columns:minmax(0,0.9fr) minmax(0,1.1fr) !important;
+    gap:12px !important;
+    align-items:start !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeView .judge-side-column{
+    grid-auto-rows:min-content !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeSummaryCard .path-list{
+    grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+    align-items:start !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeSummaryCard .path-list .workbench-idle-note{
+    grid-column:1 / -1 !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeSummaryCard{grid-column:1 / -1 !important;}
+  body[data-active-view="judgeView"] #judgePendingCard{
+    grid-column:auto !important;
+    grid-row:auto !important;
+    align-self:start !important;
+  }
+  body[data-active-view="judgeView"] #judgeArtifactCard{
+    grid-column:1 / 2 !important;
+    grid-row:2 !important;
+  }
+  body[data-active-view="judgeView"] #judgeSamplesCard{
+    grid-column:2 / 3 !important;
+    grid-row:2 !important;
+  }
+
+  body[data-active-view="judgeView"] details.log-details.judge-panel-card{
+    grid-column:1 / -1 !important;
+  }
+
+  body[data-active-view="judgeView"] #judgePendingCard .sample-list{
+    min-height:260px !important;
+    height:min(44vh,420px) !important;
+    max-height:min(44vh,420px) !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeArtifactCard .sample-list{
+    min-height:140px !important;
+    overflow:auto !important;
+    padding-right:4px !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeArtifactCard .sample-list:has(.memory-hit){
+    min-height:220px !important;
+    height:min(68vh,760px) !important;
+    max-height:min(68vh,760px) !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeQuestionDetailPane{
+    min-height:220px !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeArtifactCard .sample-list:has(.memory-hit) ~ #judgeQuestionDetailPane,
+  body[data-active-view="judgeView"] #judgeSamplesCard:has(#judgeArtifactCard .sample-list .memory-hit) #judgeQuestionDetailPane{
+    min-height:min(68vh,760px) !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeSamplesCard{
+    align-self:start !important;
+    position:sticky !important;
+    top:12px !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeSamplesCard:not(:has(#judgeQuestionDetailPane .memory-hit)):not(:has(#judgeQuestionDetailPane .question-report)){
+    position:static !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeLogBox{
+    min-height:140px !important;
+    max-height:220px !important;
+  }
+}
+
+.workbench-empty-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;
+}
+
+.workbench-empty-grid article{
+  display:grid;
+  align-content:start;
+  gap:4px;
+  min-height:96px;
+  padding:10px 12px;
+  border:1px solid #e7ecf3;
+  border-radius:10px;
+  background:#ffffff;
+}
+
+.workbench-empty-grid article > span{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:max-content;
+  min-width:24px;
+  height:24px;
+  padding:0 8px;
+  border-radius:999px;
+  background:#eef4fb;
+  color:#315c88;
+  font-size:11px;
+  font-weight:700;
+  line-height:1;
+}
+
+.workbench-empty-grid article strong{
+  color:#0f172a;
+  font-size:13px;
+  line-height:1.25;
+}
+
+.workbench-empty-grid article p{
+  margin:0;
+  color:#64748b;
+  font-size:11.5px;
+  line-height:1.45;
+}
+
+.workbench-idle-note{
+  display:grid;
+  gap:6px;
+  align-content:start;
+  min-height:120px;
+  padding:12px;
+  border:1px dashed #d9e1ec;
+  border-radius:10px;
+  background:#fbfcfe;
+}
+
+.workbench-idle-note strong{
+  color:#0f172a;
+  font-size:13px;
+  line-height:1.25;
+}
+
+.workbench-idle-note p{
+  margin:0;
+  color:#64748b;
+  font-size:11.5px;
+  line-height:1.5;
+}
+
+.run-list-idle-note{
+  min-height:0;
+}
+
+@media (min-width:981px){
+  body[data-active-view="judgeView"] .judge-empty-state,
+  body[data-active-view="runsView"] .report-empty-state{
+    padding:16px !important;
+    gap:10px !important;
+    border-radius:12px !important;
+  }
+
+  body[data-active-view="judgeView"] .judge-empty-state{
+    min-height:0 !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeSummaryCard.is-idle,
+  body[data-active-view="judgeView"] #judgeArtifactCard.is-idle,
+  body[data-active-view="judgeView"] #judgeSamplesCard.is-idle{
+    min-height:0 !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeSamplesCard.is-idle #judgeQuestionDetailPane{
+    min-height:180px !important;
+  }
+
+  body[data-active-view="judgeView"] #judgePendingCard .workbench-idle-note,
+  body[data-active-view="judgeView"] #judgeArtifactCard .workbench-idle-note{
+    min-height:180px !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeSummaryCard .workbench-idle-note{
+    min-height:96px !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeSamplesCard .workbench-idle-note{
+    min-height:260px !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeSummaryCard .path-list,
+  body[data-active-view="judgeView"] #judgeArtifactCard .sample-list{
+    display:grid !important;
+    margin:0 !important;
+    padding:0 !important;
+  }
+
+  body[data-active-view="judgeView"] #judgePendingCard .sample-list{
+    display:grid !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeSummaryCard .path-list[hidden],
+  body[data-active-view="judgeView"] #judgeArtifactCard .sample-list[hidden]{
+    display:grid !important;
+  }
+
+  body[data-active-view="judgeView"] #judgeSummaryCard .path-list:has(.workbench-idle-note),
+  body[data-active-view="judgeView"] #judgePendingCard .sample-list:has(.workbench-idle-note),
+  body[data-active-view="judgeView"] #judgeArtifactCard .sample-list:has(.workbench-idle-note){
+    display:grid !important;
+  }
+
+  body[data-active-view="runsView"] .report-empty-state{
+    min-height:208px !important;
+    align-content:start !important;
+  }
+
+  body[data-active-view="runsView"] #runsList .run-list-idle-note{
+    min-height:132px !important;
+  }
+
+  body[data-active-view="runsView"] .report-analysis-stack[hidden]{
+    display:none !important;
+  }
+
+  body[data-active-view="runsView"] .report-control-panel:not([hidden]){
+    position:sticky !important;
+    top:12px !important;
+    z-index:2 !important;
+  }
+
+  body[data-active-view="runsView"] .report-control-card{
+    display:grid !important;
+    grid-template-columns:minmax(0,1fr) auto !important;
+    align-items:start !important;
+    gap:10px !important;
+    padding:10px 12px !important;
+  }
+
+  body[data-active-view="runsView"] .report-action-stack{
+    justify-content:flex-end !important;
+    align-items:center !important;
+  }
+
+  body[data-active-view="runsView"] .native-baseline-status{
+    grid-column:1 / -1 !important;
+    margin-top:2px !important;
+  }
+
+  body[data-active-view="runsView"] #runDetailPanel:not([hidden]){
+    padding-top:10px !important;
+  }
+
+  body[data-active-view="runsView"] #runQuestionList{
+    max-height:280px !important;
+  }
+
+  body[data-active-view="runsView"] #questionDetailPane{
+    min-height:280px !important;
+  }
+}
+
+@media (max-width:980px){
+  .workbench-empty-grid{
+    grid-template-columns:minmax(0,1fr);
+  }
+}
+
+@media (min-width:1180px){
+  body[data-active-view="runsView"] #runDetailPanel:not([hidden]){
+    grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+    align-items:start !important;
+  }
+
+  body[data-active-view="runsView"] #runDetailPanel:not([hidden]) > .report-section-head,
+  body[data-active-view="runsView"] #runDetailPanel:not([hidden]) > #runDetailKpis,
+  body[data-active-view="runsView"] #runDetailPanel:not([hidden]) > #runAuditPanel,
+  body[data-active-view="runsView"] #runDetailPanel:not([hidden]) > .question-detail-layout{
+    grid-column:1 / -1 !important;
+  }
+
+  body[data-active-view="runsView"] #runDetailPanel:not([hidden]) > #failureAttributionPanel,
+  body[data-active-view="runsView"] #runDetailPanel:not([hidden]) > #evidenceContractPanel,
+  body[data-active-view="runsView"] #runDetailPanel:not([hidden]) > #runArtifactList{
+    margin-top:0 !important;
+    align-self:start !important;
+  }
+
+  body[data-active-view="runsView"] #runsView #failureAttributionPanel,
+  body[data-active-view="runsView"] #runsView #evidenceContractPanel{
+    max-height:240px !important;
+  }
+
+  body[data-active-view="runsView"] #runsView #failureAttributionPanel .run-audit-head,
+  body[data-active-view="runsView"] #runsView #evidenceContractPanel .run-audit-head{
+    display:grid !important;
+    grid-template-columns:minmax(0,1fr) !important;
+    gap:6px !important;
+  }
+
+  body[data-active-view="runsView"] #runsView #failureAttributionPanel .run-audit-chips,
+  body[data-active-view="runsView"] #runsView #evidenceContractPanel .run-audit-chips{
+    justify-content:flex-start !important;
+    flex-wrap:wrap !important;
+    gap:4px !important;
+  }
+
+  body[data-active-view="runsView"] #runsView #failureAttributionPanel .run-audit-grid,
+  body[data-active-view="runsView"] #runsView #evidenceContractPanel .run-audit-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+    gap:6px !important;
+  }
+
+  body[data-active-view="runsView"] #runsView #failureAttributionPanel .run-audit-grid article,
+  body[data-active-view="runsView"] #runsView #evidenceContractPanel .run-audit-grid article{
+    min-width:0 !important;
+    padding:8px 9px !important;
+  }
+
+  body[data-active-view="runsView"] #runsView #failureAttributionPanel .run-audit-grid span,
+  body[data-active-view="runsView"] #runsView #evidenceContractPanel .run-audit-grid span{
+    font-size:10px !important;
+  }
+
+  body[data-active-view="runsView"] #runsView #failureAttributionPanel .run-audit-grid strong,
+  body[data-active-view="runsView"] #runsView #evidenceContractPanel .run-audit-grid strong{
+    font-size:12px !important;
+    line-height:1.35 !important;
+  }
+
+  body[data-active-view="runsView"] #runsView #failureAttributionPanel .run-audit-grid small,
+  body[data-active-view="runsView"] #runsView #evidenceContractPanel .run-audit-grid small{
+    font-size:10px !important;
+    line-height:1.35 !important;
+  }
+
+  body[data-active-view="runsView"] #runsView #runArtifactList{
+    max-height:240px !important;
+  }
+
+  body[data-active-view="runsView"] #runArtifactList .path-row{
+    display:block !important;
+    min-width:0 !important;
+  }
+
+  body[data-active-view="runsView"] #runArtifactList .path-row span{
+    display:block !important;
+    min-width:0 !important;
+    margin-bottom:4px !important;
+  }
+
+  body[data-active-view="runsView"] #runArtifactList .path-row code{
+    display:block !important;
+    min-width:0 !important;
+    width:100% !important;
+    margin-bottom:6px !important;
+    overflow-wrap:anywhere !important;
+    word-break:break-word !important;
+  }
+
+  body[data-active-view="runsView"] #runArtifactList .path-row .path-copy,
+  body[data-active-view="runsView"] #runArtifactList .path-row .path-open,
+  body[data-active-view="runsView"] #runArtifactList .path-row .path-link{
+    display:inline-flex !important;
+    align-items:center !important;
+    justify-content:center !important;
+    margin:0 6px 6px 0 !important;
+    min-height:24px !important;
+    white-space:nowrap !important;
+  }
+
+  body[data-active-view="runsView"] .question-detail-layout{
+    grid-template-columns:minmax(280px,320px) minmax(0,1fr) !important;
+    gap:12px !important;
+    align-items:start !important;
+  }
+
+  body[data-active-view="runsView"] #runQuestionList{
+    position:sticky !important;
+    top:12px !important;
+    align-self:start !important;
+    max-height:min(68vh,760px) !important;
+  }
+
+  body[data-active-view="runsView"] #questionDetailPane{
+    min-height:min(68vh,760px) !important;
   }
 }

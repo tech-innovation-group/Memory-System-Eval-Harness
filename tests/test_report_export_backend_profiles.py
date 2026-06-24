@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from memory import report_export
@@ -133,3 +134,51 @@ def test_report_backend_prefers_detected_backend_names() -> None:
 def test_backend_display_name_is_used_for_unknown_empty_backend() -> None:
     assert report_export.backend_display_name(None) == "未知后端"
 
+
+def test_export_run_compare_report_writes_html_for_selected_runs(tmp_path: Path, monkeypatch) -> None:
+    generated = tmp_path / "generated-reports"
+    monkeypatch.setattr(report_export, "GENERATED_REPORTS_DIR", generated)
+
+    def make_run(name: str, score: float, judge_model: str) -> Path:
+        run_dir = tmp_path / name
+        run_dir.mkdir(parents=True)
+        manifest = {
+            "id": name,
+            "name": name,
+            "kind": "echomemory_qa",
+            "status": "succeeded",
+            "created_at": "2026-06-23T22:00:00",
+            "duration_s": 120.0,
+            "summary": {
+                "rows": 81,
+                "graded": 81,
+                "accuracy": score,
+                "exact_match_reference": 0.0,
+                "official_metric": "formal_judge",
+                "result_counts": {"CORRECT": int(score * 81), "WRONG": 81 - int(score * 81)},
+            },
+            "config": {
+                "dataset_format": "locomo",
+                "answer_model": "deepseek-v4-flash",
+                "judge_model": judge_model,
+                "account": f"acct-{name}",
+                "sample": "conv-30",
+            },
+        }
+        (run_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        return run_dir
+
+    first = make_run("run-alpha", 0.75, "gpt-5.5")
+    second = make_run("run-beta", 0.5, "gpt-5.5")
+
+    result = report_export.export_run_compare_report([first, second])
+
+    report_path = Path(result["report_html_file"])
+    assert report_path.exists()
+    assert result["report_public_url"].startswith("/generated-reports/locomo_run_compare_")
+    text = report_path.read_text(encoding="utf-8")
+    assert "LoCoMo 结果对比报告" in text
+    assert "run-alpha" in text
+    assert "run-beta" in text
+    assert "75.0%" in text
+    assert "-25.0 pts" in text

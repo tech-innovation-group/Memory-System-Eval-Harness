@@ -9,22 +9,33 @@ import uuid
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 
+def detect_echomem_layout(path: Path) -> str:
+    if (path / "packages" / "echomem" / "src").exists() and (path / "packages" / "echofs" / "src").exists():
+        return "old-packages"
+    if (path / "src" / "echomem").exists() and (path / "src" / "echo0").exists() and (path / "pyproject.toml").exists():
+        return "develop-src"
+    if (path / "echomem").exists() and (path / "pyproject.toml").exists():
+        return "legacy-flat"
+    return "unknown"
+
+
 def looks_like_echomem_root(path: Path) -> bool:
-    return (
-        (path / "packages" / "echomem" / "src").exists()
-        or ((path / "echomem").exists() and (path / "pyproject.toml").exists())
-    )
+    return detect_echomem_layout(path) != "unknown"
 
 
 def default_echomem_root() -> Path:
     candidates = [
         os.environ.get("ECHOMEM_ROOT"),
         os.environ.get("ECHOMEMORY_ROOT"),
+        Path.home() / "Code" / "echomemory" / "EchoMem_develop",
         Path.home() / "Code" / "echomemory" / "echo_memory_v010",
         Path.home() / "Code" / "echomemory" / "echo_memory",
+        Path.cwd() / "EchoMem_develop",
+        Path.cwd().parent / "EchoMem_develop",
         Path.cwd() / "echo_memory_v010",
         Path.cwd().parent / "echo_memory_v010",
         Path.cwd() / "echo_memory",
@@ -86,12 +97,17 @@ def _yaml_bool(value: bool) -> str:
 
 def ensure_echomem_imports(echomem_root: str | Path = DEFAULT_ECHOMEM_ROOT) -> Path:
     root = Path(echomem_root).expanduser().resolve()
-    if (root / "packages" / "echomem" / "src").exists():
+    layout = detect_echomem_layout(root)
+    if layout == "old-packages":
         for rel in ("packages/echofs/src", "packages/echomem/src"):
             path = str(root / rel)
             if path not in sys.path:
                 sys.path.insert(0, path)
-    elif (root / "echomem").exists():
+    elif layout == "develop-src":
+        path = str(root / "src")
+        if path not in sys.path:
+            sys.path.insert(0, path)
+    elif layout == "legacy-flat":
         path = str(root)
         if path not in sys.path:
             sys.path.insert(0, path)
@@ -101,6 +117,8 @@ def ensure_echomem_imports(echomem_root: str | Path = DEFAULT_ECHOMEM_ROOT) -> P
 def echomem_account_roots(workspace: str | Path, account: str) -> list[Path]:
     workspace_path = Path(workspace).expanduser().resolve()
     candidates = [
+        workspace_path / "tenants" / account,
+        workspace_path / account / "default",
         workspace_path / account / account,
         workspace_path / account,
         workspace_path,
@@ -119,10 +137,20 @@ def echomem_account_roots(workspace: str | Path, account: str) -> list[Path]:
 
 def load_workspace_token_rows(workspace: str | Path, account: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
+    token_dirs: list[Path] = []
+    seen_dirs: set[str] = set()
     for root in echomem_account_roots(workspace, account):
-        token_dir = root / "metrics" / "llm_tokens"
-        if not token_dir.exists():
-            continue
+        candidates = [root / "metrics" / "llm_tokens"]
+        engines_root = root / "engines"
+        if engines_root.exists():
+            candidates.extend(sorted(engines_root.glob("*/metrics/llm_tokens")))
+        for token_dir in candidates:
+            key = str(token_dir)
+            if key in seen_dirs or not token_dir.exists():
+                continue
+            seen_dirs.add(key)
+            token_dirs.append(token_dir)
+    for token_dir in token_dirs:
         for path in sorted(token_dir.glob("*.jsonl")):
             try:
                 text = path.read_text(encoding="utf-8")
@@ -294,14 +322,47 @@ def workspace_token_usage_summary(
     }
 
 
-def write_echomem_config(
+def _optional_yaml_load(text: str) -> Any:
+    try:
+        import yaml
+    except Exception:
+        return None
+    try:
+        return yaml.safe_load(text)
+    except Exception:
+        return None
+
+
+def load_echomem_config_file(path: str | Path) -> dict[str, Any]:
+    config_path = Path(path).expanduser()
+    if not config_path.exists():
+        return {}
+    try:
+        text = config_path.read_text(encoding="utf-8-sig")
+    except Exception:
+        return {}
+    stripped = text.lstrip()
+    if not stripped:
+        return {}
+    loaded: Any = None
+    if config_path.suffix.lower() == ".json" or stripped[:1] in {"{", "["}:
+        try:
+            loaded = json.loads(text)
+        except Exception:
+            loaded = None
+    if loaded is None:
+        loaded = _optional_yaml_load(text)
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _write_legacy_echomem_config(
     out_dir: Path,
     account: str,
     workspace: str,
-    echomem_root: str | Path = DEFAULT_ECHOMEM_ROOT,
+    echomem_root: Path,
     fallback_to_mock: bool = False,
 ) -> Path:
-    root = Path(echomem_root).expanduser().resolve()
+    root = echomem_root
     base_path = Path(workspace).expanduser().resolve() / account
     base_path.mkdir(parents=True, exist_ok=True)
     config_path = out_dir / "echomem.runtime.yaml"
@@ -483,6 +544,218 @@ logging:
     return config_path
 
 
+def _normalize_recall_routers(value: Any, default: tuple[str, ...]) -> list[str]:
+    if value is None:
+        items = list(default)
+    elif isinstance(value, str):
+        items = [item.strip() for item in value.split(",")]
+    else:
+        items = [str(item).strip() for item in value]
+    routers: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        routers.append(item)
+    return routers or list(default)
+
+
+def _write_develop_echomem_config(
+    out_dir: Path,
+    account: str,
+    user_id: str,
+    workspace: str,
+    fallback_to_mock: bool = False,
+    recall_routers: Any = None,
+) -> Path:
+    config_path = out_dir / "echomem.config.json"
+    dashscope_base_url = (os.environ.get("DASHSCOPE_BASE_URL") or "https://dashscope.aliyuncs.com/compatible-mode/v1").strip()
+    embedding_model = (os.environ.get("ECHOMEM_EMBEDDING_MODEL") or "text-embedding-v3").strip()
+    embedding_token = str(os.environ.get("DASHSCOPE_API_KEY") or os.environ.get("ECHOMEM_API_KEY") or "").strip()
+    chat_base_url = (os.environ.get("ECHOMEM_CHAT_BASE_URL") or dashscope_base_url).strip()
+    chat_provider = str(os.environ.get("ECHOMEM_CHAT_PROVIDER") or "deepseek").strip().lower() or "deepseek"
+    if chat_provider not in {"deepseek", "dashscope", "anthropic", "kimi", "openai"}:
+        chat_provider = "deepseek"
+    chat_model = (os.environ.get("ECHOMEM_CHAT_MODEL") or "deepseek-v4-flash").strip()
+    chat_token = str(os.environ.get("ECHOMEM_CHAT_API_KEY") or embedding_token).strip()
+    llm_provider = "fake" if fallback_to_mock else "openai_compatible"
+    embedding_provider = "fake" if fallback_to_mock else "openai_compatible"
+    recall_routers = _normalize_recall_routers(
+        recall_routers if recall_routers is not None else os.environ.get("ECHOMEM_DEVELOP_RECALL_ROUTERS"),
+        default=("template-2", "llm"),
+    )
+    payload = {
+        "workspace_version": 1,
+        "runtime": {
+            "mode": "local",
+            "log_level": str(os.environ.get("ECHOMEM_RUNTIME_LOG_LEVEL") or "INFO"),
+        },
+        "storage": {"filesystem": "local"},
+        "auth": {
+            "mode": "local",
+            "default_tenant_id": account or "default",
+            "default_user_id": user_id or "default",
+        },
+        "model": {
+            "llm": {
+                "provider": llm_provider,
+                "api_base": chat_base_url if llm_provider != "fake" else "",
+                "api_key": chat_token if llm_provider != "fake" else "",
+                "model": chat_model if llm_provider != "fake" else "fake-llm",
+            },
+            "embedding": {
+                "provider": embedding_provider,
+                "api_base": dashscope_base_url if embedding_provider != "fake" else "",
+                "api_key": embedding_token if embedding_provider != "fake" else "",
+                "model": embedding_model if embedding_provider != "fake" else "fake-embedding",
+                "dimensions": int(os.environ.get("ECHOMEM_EMBEDDING_DIM") or 1024),
+            },
+            "vlm": {
+                "provider": "fake",
+                "api_base": "",
+                "api_key": "",
+                "model": "fake-vlm",
+            },
+            "max_concurrent": int(os.environ.get("ECHOMEM_MODEL_MAX_CONCURRENT") or 4),
+        },
+        "index": {
+            "text": str(os.environ.get("ECHOMEM_DEVELOP_TEXT_INDEX") or "sqlite_fts5"),
+            "vector": str(os.environ.get("ECHOMEM_DEVELOP_VECTOR_INDEX") or "sqlite_numpy"),
+        },
+        "engine": {
+            "enabled": ["echo0_plugin"],
+            "configs": {
+                "echo0_plugin": {
+                    "observability": {
+                        "token_logging": True,
+                        "token_collector": str(os.environ.get("ECHOMEM_TOKEN_COLLECTOR") or "fs"),
+                    },
+                    "enabled_memory_types": [
+                        "profile",
+                        "preferences",
+                        "entities",
+                        "events",
+                        "tools",
+                        "user_lesson",
+                        "user_insight",
+                        "user_pattern",
+                        "user_error_review",
+                        "agent_lesson",
+                        "agent_insight",
+                        "agent_pattern",
+                        "agent_error_review",
+                    ],
+                    "vector": {
+                        "enabled": True,
+                        "backend": "hnswlib",
+                        "dim": int(os.environ.get("ECHOMEM_EMBEDDING_DIM") or 1024),
+                    },
+                    "search": {
+                        "intent": {
+                            "backend": str(os.environ.get("ECHOMEM_SEARCH_INTENT_BACKEND") or "rule"),
+                            "llm_first": _env_bool("ECHOMEM_SEARCH_INTENT_LLM_FIRST", False),
+                            "llm_fallback": _env_bool("ECHOMEM_SEARCH_INTENT_LLM_FALLBACK", False),
+                            "model_alias": "chat",
+                        },
+                        "fusion": {
+                            "max_results": int(os.environ.get("ECHOMEM_DEVELOP_FUSION_MAX_RESULTS") or 12),
+                        },
+                    },
+                    "extractor": {
+                        "ingest_roles": ["user", "assistant"],
+                        "intent": {
+                            "backend": "rule",
+                            "model_alias": "intent-classifier",
+                        },
+                        "extraction": {
+                            "backend": str(os.environ.get("ECHOMEM_DEVELOP_EXTRACTION_BACKEND") or "hybrid"),
+                            "model_alias": "chat",
+                        },
+                    },
+                    "models": {
+                        "fallback_to_mock": bool(fallback_to_mock),
+                        "aliases": {
+                            "embedding": {
+                                "provider": "dashscope",
+                                "model_id": embedding_model,
+                                "temperature": 0.0,
+                                "max_tokens": 8192,
+                            },
+                            "chat": {
+                                "provider": chat_provider,
+                                "model_id": chat_model,
+                                "temperature": 0.0,
+                                "max_tokens": 8192,
+                            },
+                            "intent-classifier": {
+                                "provider": chat_provider,
+                                "model_id": chat_model,
+                                "temperature": 0.0,
+                                "max_tokens": 2048,
+                            },
+                        },
+                        "providers": {
+                            "dashscope": {
+                                "api_key": embedding_token,
+                                "base_url": dashscope_base_url,
+                                "default_timeout": 60,
+                            },
+                            chat_provider: {
+                                "api_key": chat_token,
+                                "base_url": chat_base_url,
+                                "default_timeout": 120,
+                            },
+                        },
+                    },
+                }
+            },
+        },
+        "commit_pipeline": {
+            "engine_timeout_seconds": int(os.environ.get("ECHOMEM_COMMIT_ENGINE_TIMEOUT_SECONDS") or 1800),
+        },
+        "recall": {
+            "routers": recall_routers,
+            "include_explain": False,
+        },
+        "mcp": {"enabled": False},
+        "echoagent": {"enabled": False},
+    }
+    out_dir.mkdir(parents=True, exist_ok=True)
+    tmp_path = config_path.with_name(f".{config_path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp_path.replace(config_path)
+    return config_path
+
+
+def write_echomem_config(
+    out_dir: Path,
+    account: str,
+    workspace: str,
+    echomem_root: str | Path = DEFAULT_ECHOMEM_ROOT,
+    fallback_to_mock: bool = False,
+    user_id: str = "default",
+    recall_routers: Any = None,
+) -> Path:
+    root = Path(echomem_root).expanduser().resolve()
+    if detect_echomem_layout(root) == "develop-src":
+        return _write_develop_echomem_config(
+            out_dir,
+            account,
+            user_id,
+            workspace,
+            fallback_to_mock=fallback_to_mock,
+            recall_routers=recall_routers,
+        )
+    return _write_legacy_echomem_config(
+        out_dir,
+        account,
+        workspace,
+        root,
+        fallback_to_mock=fallback_to_mock,
+    )
+
+
 def ctx(account: str, user_id: str, agent_id: str = "", session_id: str = "") -> dict[str, str]:
     return {
         "account_id": account or "default",
@@ -505,6 +778,246 @@ def sdk_ctx_kwargs(sdk: Any, account: str, user_id: str, agent_id: str = "", ses
         return data
 
 
+class EchoMemDevelopCompatSDK:
+    def __init__(
+        self,
+        client: Any,
+        *,
+        account: str,
+        user_id: str,
+        agent_id: str,
+        workspace: str | Path,
+        runtime: Any = None,
+        client_core: Any = None,
+    ) -> None:
+        self._client = client
+        self._account = account or "default"
+        self._user_id = user_id or "default"
+        self._agent_id = agent_id or "default"
+        self._workspace = Path(workspace).expanduser().resolve()
+        self._runtime = runtime
+        self._client_core = client_core
+        self._compat_layout = "develop-src"
+
+    def _ctx(self, **kwargs: Any) -> dict[str, Any]:
+        return dict(kwargs)
+
+    def _ctx_value(self, ctx: dict[str, Any] | None, key: str, default: str = "") -> str:
+        if isinstance(ctx, dict):
+            value = str(ctx.get(key) or "").strip()
+            if value:
+                return value
+        return default
+
+    async def create_session(self, title: str = "", ctx: dict[str, Any] | None = None) -> dict[str, Any]:
+        session = await self._client.open_session(
+            agent_id=self._ctx_value(ctx, "agent_id", self._agent_id),
+            session_id=self._ctx_value(ctx, "session_id", "") or None,
+            metadata={
+                "title": title,
+                "account_id": self._ctx_value(ctx, "account_id", self._account),
+                "user_id": self._ctx_value(ctx, "user_id", self._user_id),
+            },
+        )
+        return {
+            "session_id": str(getattr(session, "session_id", "") or ""),
+            "agent_id": str(getattr(session, "agent_id", "") or ""),
+            "user_id": str(getattr(session, "user_id", "") or ""),
+            "title": title,
+        }
+
+    async def add_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        *,
+        ctx: dict[str, Any] | None = None,
+        created_at: str = "",
+        role_id: str = "",
+    ) -> dict[str, Any]:
+        metadata: dict[str, Any] = {}
+        if created_at:
+            metadata["created_at"] = created_at
+        if role_id:
+            metadata["role_id"] = role_id
+        message = await self._client.add_message(
+            session_id,
+            role=role,
+            content=content,
+            name=role_id or None,
+            metadata=metadata or None,
+        )
+        return {
+            "message_id": str(getattr(message, "id", "") or ""),
+            "role": str(getattr(message, "role", "") or role),
+            "content": str(getattr(message, "content", "") or content),
+        }
+
+    async def commit_session(
+        self,
+        session_id: str,
+        *,
+        ctx: dict[str, Any] | None = None,
+        keep_recent_count: int = 0,
+    ) -> Any:
+        result = await self._client.commit(
+            session_id,
+            metadata={"keep_recent_count": int(keep_recent_count or 0)},
+        )
+        archive_id = str(getattr(result, "archive_id", "") or "")
+        status = str(getattr(result, "status", "") or "pending")
+        task_id = archive_id or f"commit-{session_id}"
+        return SimpleNamespace(task_id=task_id, archive_id=archive_id, status=status)
+
+    async def commit_status(
+        self,
+        session_id: str,
+        archive_id: str,
+        *,
+        ctx: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        try:
+            state = await self._client.commit_status(session_id, archive_id)
+        except Exception:
+            state = {}
+        if not isinstance(state, dict):
+            state = {}
+        fallback = self._commit_status_fallback(session_id, archive_id)
+        if fallback and self._prefer_commit_status_fallback(state, fallback):
+            merged = dict(state)
+            merged.update(fallback)
+            return merged
+        return state
+
+    def _commit_status_fallback(self, session_id: str, archive_id: str) -> dict[str, Any]:
+        commit_key = f"{session_id}__{archive_id}"
+        for root in echomem_account_roots(self._workspace, self._account):
+            path = root / "engines" / "echo0_plugin" / "commits" / f"{commit_key}.status.json"
+            data = load_echomem_config_file(path)
+            if not data:
+                continue
+            data.setdefault("session_id", session_id)
+            data.setdefault("archive_id", archive_id)
+            data.setdefault("commit_id", str(data.get("commit_id") or archive_id))
+            data.setdefault("accepted_at", str(data.get("updated_at") or ""))
+            data.setdefault("committed_at", str(data.get("updated_at") or ""))
+            data.setdefault("stage_detail", dict(data.get("detail") or {}))
+            return data
+        return {}
+
+    @staticmethod
+    def _prefer_commit_status_fallback(primary: dict[str, Any], fallback: dict[str, Any]) -> bool:
+        def _terminal(value: Any) -> bool:
+            return str(value or "").strip().lower() in {"completed", "failed"}
+
+        primary_status = str(primary.get("status") or "").strip().lower()
+        primary_stage = str(primary.get("stage") or "").strip().lower()
+        fallback_status = str(fallback.get("status") or "").strip().lower()
+        fallback_stage = str(fallback.get("stage") or "").strip().lower()
+        if _terminal(fallback_status) or _terminal(fallback_stage):
+            return not (_terminal(primary_status) or _terminal(primary_stage))
+        return not primary
+
+    async def get_history(self, session_id: str, ctx: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        messages = await self._client.get_history(session_id, limit=200)
+        rows: list[dict[str, Any]] = []
+        for item in messages:
+            metadata = dict(getattr(item, "metadata", {}) or {})
+            rows.append(
+                {
+                    "message_id": str(getattr(item, "id", "") or ""),
+                    "role": str(getattr(item, "role", "") or ""),
+                    "content": str(getattr(item, "content", "") or ""),
+                    "name": str(getattr(item, "name", "") or ""),
+                    "created_at": str(getattr(item, "created_at", "") or metadata.get("created_at") or ""),
+                    "role_id": str(metadata.get("role_id") or getattr(item, "name", "") or ""),
+                    "metadata": metadata,
+                }
+            )
+        return rows
+
+    async def search(self, query: str, *, ctx: dict[str, Any] | None = None, budget: dict[str, Any] | None = None) -> Any:
+        limit = 8
+        if isinstance(budget, dict):
+            try:
+                limit = max(1, int(budget.get("max_results") or limit))
+            except Exception:
+                limit = 8
+        items = await self._client.search(
+            query,
+            agent_id=self._ctx_value(ctx, "agent_id", self._agent_id),
+            session_id=self._ctx_value(ctx, "session_id", "") or None,
+            limit=limit,
+            include_explain=False,
+            include_debug=False,
+        )
+        return SimpleNamespace(items=items)
+
+    async def fs_read(self, uri: str, *, ctx: dict[str, Any] | None = None) -> dict[str, Any]:
+        raw = str(uri or "").strip()
+        if raw.startswith("/"):
+            raw = f"echo://{self._ctx_value(ctx, 'account_id', self._account)}/{raw.lstrip('/')}"
+        elif not raw.startswith("echo://"):
+            raw = f"echo://{self._ctx_value(ctx, 'account_id', self._account)}/{raw.lstrip('/')}"
+        return {"content": await self._client.fs_read(raw)}
+
+    async def close(self) -> None:
+        await self._client.close()
+
+
+async def open_echomem_sdk(
+    *,
+    echomem_root: str | Path,
+    workspace: str,
+    account: str,
+    user_id: str,
+    agent_id: str,
+    config_path: str | Path,
+) -> tuple[Any, Any | None, str]:
+    root = ensure_echomem_imports(echomem_root)
+    layout = detect_echomem_layout(root)
+    print(
+        f"[sdk-open] root={root} layout={layout} workspace={workspace} account={account} "
+        f"user_id={user_id} agent_id={agent_id} config={config_path}",
+        flush=True,
+    )
+    if layout == "develop-src":
+        from echomem.entrypoints.client.local.async_client import AsyncEchoMemLocalClient
+
+        # The develop local runtime auto-commits after a char threshold by
+        # default. For benchmark import/QA we want one explicit archive per
+        # commit so the harness can wait on the exact archive it triggered.
+        os.environ["ECHOMEM_AUTO_COMMIT_THRESHOLD"] = "0"
+        override = load_echomem_config_file(config_path)
+        print("[sdk-open] using develop AsyncEchoMemLocalClient compat path", flush=True)
+        client = AsyncEchoMemLocalClient(workspace=workspace, config=override or None)
+        client_core = getattr(client, "_core", None)
+        runtime = getattr(client_core, "_runtime", None)
+        sdk = EchoMemDevelopCompatSDK(
+            client,
+            account=account,
+            user_id=user_id,
+            agent_id=agent_id,
+            workspace=workspace,
+            runtime=runtime,
+            client_core=client_core,
+        )
+        print("[sdk-open] develop compat sdk ready", flush=True)
+        return sdk, None, layout
+    try:
+        from echomem.protocol.local_sdk.sdk import EchoMemSDK
+        from echomem.runtime.runtime import open_runtime
+    except ModuleNotFoundError:
+        from echomem.entrypoints.plugins.echoagent.sdk import EchoMemSDK
+        from echomem.runtime.bootstrap import open_runtime
+    print("[sdk-open] using local sdk/runtime path", flush=True)
+    runtime = await open_runtime(str(config_path))
+    sdk = EchoMemSDK(runtime)
+    print("[sdk-open] local sdk/runtime ready", flush=True)
+    return sdk, runtime, layout
+
+
 def context_item_to_dict(item: Any) -> dict[str, Any]:
     if is_dataclass(item):
         data = asdict(item)
@@ -521,10 +1034,10 @@ def context_item_to_dict(item: Any) -> dict[str, Any]:
             "trace": getattr(item, "trace", {}),
         }
     return {
-        "uri": data.get("source_uri") or data.get("uri") or data.get("path") or "",
+        "uri": data.get("source_uri") or data.get("source") or data.get("uri") or data.get("path") or "",
         "score": data.get("confidence") or data.get("score") or 0.0,
-        "content": data.get("content") or "",
-        "memory_type": data.get("memory_type") or "",
+        "content": data.get("content") or data.get("text") or "",
+        "memory_type": data.get("memory_type") or data.get("kind") or "",
         "evidence_uri": data.get("evidence_uri") or "",
         "path": data.get("path") or "",
         "trace": data.get("trace") or {},

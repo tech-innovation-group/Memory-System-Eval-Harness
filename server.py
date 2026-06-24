@@ -400,6 +400,19 @@ def task_log_diagnostics(task: "Task") -> dict[str, Any]:
     return tasking_service.task_log_diagnostics(task)
 
 
+def _completed_import_summary(output_file: str) -> dict[str, Any]:
+    path_text = str(output_file or "").strip()
+    if not path_text.lower().endswith(".json"):
+        return {}
+    try:
+        summary = report_service.parse_json_run_summary(Path(path_text))
+    except Exception:
+        return {}
+    if str(summary.get("status") or "").strip().upper() != "ECHOMEMORY_IMPORT_DONE":
+        return {}
+    return summary
+
+
 @dataclass
 class Task:
     id: str
@@ -426,17 +439,30 @@ class Task:
 
     def public(self) -> dict[str, Any]:
         log_diagnostics = task_log_diagnostics(self)
+        status = self.status
+        ended_at = self.ended_at
+        summary = self.summary
+        if self.kind == "echomemory_import":
+            completed_summary = _completed_import_summary(self.output_file)
+            if completed_summary:
+                status = "succeeded"
+                summary = {**completed_summary}
+                if ended_at is None:
+                    try:
+                        ended_at = Path(self.output_file).stat().st_mtime
+                    except OSError:
+                        ended_at = time.time()
         config = self.meta.get("config") if isinstance(self.meta, dict) and isinstance(self.meta.get("config"), dict) else {}
-        summary_json = self.summary.get("summary_json") if isinstance(self.summary.get("summary_json"), dict) else {}
+        summary_json = summary.get("summary_json") if isinstance(summary.get("summary_json"), dict) else {}
         data = {
             "id": self.id,
             "kind": self.kind,
             "name": self.name,
-            "dataset_format": config.get("dataset_format") or self.summary.get("dataset_format") or (summary_json or {}).get("dataset_format") or "",
-            "status": self.status,
+            "dataset_format": config.get("dataset_format") or summary.get("dataset_format") or (summary_json or {}).get("dataset_format") or "",
+            "status": status,
             "created_at": self.created_at,
             "started_at": self.started_at,
-            "ended_at": self.ended_at,
+            "ended_at": ended_at,
             "command": self.display_command or self.command,
             "cwd": self.cwd,
             "output_file": self.output_file,
@@ -444,13 +470,13 @@ class Task:
             "run_dir": self.run_dir,
             "manifest_file": self.manifest_file,
             "returncode": self.returncode,
-            "summary": self.summary,
+            "summary": summary,
             "error": self.error,
             "pid": self.pid,
             "meta": self.meta,
             "log_diagnostics": log_diagnostics,
         }
-        data["duration"] = round((self.ended_at or time.time()) - (self.started_at or self.created_at), 1)
+        data["duration"] = round((ended_at or time.time()) - (self.started_at or self.created_at), 1)
         data["progress"] = task_progress(self)
         return data
 
@@ -920,6 +946,12 @@ def active_public_tasks() -> list[dict[str, Any]]:
         return [task.public() for task in TASKS.values() if task.status in ACTIVE_TASK_STATUSES]
 
 
+def register_task(task: Task) -> Task:
+    with TASK_LOCK:
+        TASKS[task.id] = task
+    return task
+
+
 def _task_from_manifest(run_dir: Path, manifest: dict[str, Any]) -> Task | None:
     task_id = str(manifest.get("id") or run_dir.name).strip()
     if not task_id:
@@ -1333,8 +1365,10 @@ def system_preflight(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     config = {**base_config, **incoming_config}
     backend = normalize_memory_backend(config.get("memoryBackend") or defaults.get("memory_backend") or "openviking")
     workspace_text = str(config.get("ovWorkspace") or config.get("memoryWorkspace") or defaults.get("openviking_workspace") or defaults.get("workspace") or "").strip()
-    workspace = safe_path(workspace_text) if workspace_text else Path("")
-    storage_root = account_service.storage_root(workspace, account, backend) if workspace_text else Path("")
+    resolved_workspace_text = account_service.resolve_workspace_root(workspace_text, account, backend) if workspace_text else ""
+    workspace = safe_path(resolved_workspace_text) if resolved_workspace_text else Path("")
+    raw_workspace = safe_path(workspace_text) if workspace_text else Path("")
+    storage_root = account_service.storage_root(workspace, account, backend) if resolved_workspace_text else Path("")
     adapter_descriptors = {str(item.get("id") or ""): item for item in available_adapters()}
     adapter_ok = backend in adapter_descriptors
     adapter = get_adapter(backend) if adapter_ok else None
@@ -1353,11 +1387,13 @@ def system_preflight(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     else:
         adapter_status_level = "ok"
     workspace_status = {
-        "status": status_level(bool(workspace_text and Path(workspace).exists() and storage_root.exists()), warn=bool(workspace_text and not storage_root.exists())),
-        "workspace": str(workspace) if workspace_text else "",
+        "status": status_level(bool(resolved_workspace_text and Path(workspace).exists() and storage_root.exists()), warn=bool(resolved_workspace_text and not storage_root.exists())),
+        "workspace": str(workspace) if resolved_workspace_text else "",
+        "input_workspace": str(raw_workspace) if workspace_text else "",
         "storage_root": str(storage_root) if workspace_text else "",
-        "workspace_exists": bool(workspace_text and Path(workspace).exists()),
-        "storage_root_exists": bool(workspace_text and storage_root.exists()),
+        "workspace_exists": bool(resolved_workspace_text and Path(workspace).exists()),
+        "storage_root_exists": bool(resolved_workspace_text and storage_root.exists()),
+        "workspace_was_normalized": bool(workspace_text and resolved_workspace_text and str(raw_workspace) != str(workspace)),
         "layout": "workspace/<account>/<account>" if backend == "echomemory" else "workspace/viking/<account>",
     }
     dataset_status = locomo_dataset_status(str(payload.get("dataset") or config.get("data") or defaults.get("data") or ""))
@@ -3485,6 +3521,25 @@ def latest_locomo_report(
     return {}
 
 
+def latest_backend_locomo_import(
+    runs: list[dict[str, Any]],
+    backend: str,
+    account: str = "",
+    workspace: str = "",
+    strict_scope: bool = False,
+) -> dict[str, Any]:
+    backend = normalize_memory_backend(backend)
+    for record in runs:
+        if not current_scope_run(record, backend):
+            continue
+        if strict_scope and not run_matches_account_workspace(record, account, workspace, strict=True):
+            continue
+        if str(record.get("kind") or "") != f"{backend}_import":
+            continue
+        return record
+    return {}
+
+
 def alignment_bool_on(value: Any) -> bool:
     text = str(value if value is not None else "").strip().lower()
     return value is True or text in {"native", "native_vikingbot_cli", "true", "1", "yes", "on", "enabled"}
@@ -4099,6 +4154,7 @@ def locomo_flow_status(payload: dict[str, Any] | None = None, readiness: dict[st
     running_judge = next((item for item in running_tasks if str(item.get("kind") or "") == "judge"), {})
     runs = list_runs(DEFAULT_OUTPUT_DIR, 60, compact=True)
     workspace_text = str(workspace.get("workspace") or "")
+    latest_import_run = latest_backend_locomo_import(runs, backend, account=account, workspace=workspace_text, strict_scope=True)
     latest_qa = latest_backend_locomo_qa(runs, backend, account=account, workspace=workspace_text, strict_scope=True)
     latest_report = latest_locomo_report(runs, backend, account=account, workspace=workspace_text, strict_scope=True)
 
@@ -4133,11 +4189,13 @@ def locomo_flow_status(payload: dict[str, Any] | None = None, readiness: dict[st
             imported["error"] = str(exc)
 
     dataset_ok = dataset.get("status") == "ok"
-    import_running = bool(running_import)
+    import_manifest_running = str(latest_import_run.get("manifest_status") or "").lower() == "running"
+    import_stale_running = bool(latest_import_run.get("stale_running"))
+    import_running = bool(running_import) or import_manifest_running
     qa_running = bool(running_qa)
     judge_running = bool(running_judge)
     import_complete = int(imported.get("complete_count") or 0) > 0
-    import_seen = import_complete or int(imported.get("summary_count") or 0) > 0 or int(imported.get("session_count") or 0) > 0
+    import_seen = import_complete or int(imported.get("summary_count") or 0) > 0
     latest_summary = latest_qa.get("summary") if isinstance(latest_qa.get("summary"), dict) else {}
     rows = int(latest_summary.get("rows") or 0)
     graded = int(latest_summary.get("graded") or 0)
@@ -4168,12 +4226,23 @@ def locomo_flow_status(payload: dict[str, Any] | None = None, readiness: dict[st
             "记忆导入",
             "running" if import_running else ("ok" if import_seen else ("todo" if dataset_ok else "fail")),
             "openvikingView",
-            f"运行中：{running_import.get('id')}" if import_running else (f"{imported.get('session_count', 0)} sessions / {imported.get('summary_count', 0)} summaries" if import_seen else "还没有发现当前账户的导入记录"),
+            (
+                f"运行中：{running_import.get('id')}"
+                if running_import
+                else (
+                    f"后台处理中：{latest_import_run.get('id')}"
+                    if import_manifest_running
+                    else (f"{imported.get('session_count', 0)} sessions / {imported.get('summary_count', 0)} summaries" if import_seen else "还没有发现当前账户的导入记录")
+                )
+            ),
             "选择 conv 后导入并等待 commit_session 完成。" if not import_seen else "导入后继续做完整性检查。",
             {
                 "workspace": workspace_text,
                 "storage_root": workspace.get("storage_root"),
                 "running_task": running_import.get("id"),
+                "latest_run": latest_import_run.get("id"),
+                "manifest_status": latest_import_run.get("manifest_status"),
+                "stale_running": import_stale_running,
                 "account_path": imported.get("account_path"),
                 "error": imported.get("error"),
             },
@@ -4184,9 +4253,27 @@ def locomo_flow_status(payload: dict[str, Any] | None = None, readiness: dict[st
             "完整性",
             "running" if import_running else ("ok" if import_complete else ("warn" if import_seen else ("todo" if dataset_ok else "fail"))),
             "openvikingView",
-            "commit_session 仍在执行" if import_running else (f"complete summaries {imported.get('complete_count', 0)} / {imported.get('summary_count', 0)}" if import_seen else "等待导入 summary 和 memory 文件"),
+            (
+                "commit_session 仍在执行"
+                if running_import
+                else (
+                    "任务注册已丢失，但后台仍在生成记忆"
+                    if import_manifest_running and import_stale_running
+                    else (
+                        "后台仍在生成记忆"
+                        if import_manifest_running
+                        else (f"complete summaries {imported.get('complete_count', 0)} / {imported.get('summary_count', 0)}" if import_seen else "等待导入 summary 和 memory 文件")
+                    )
+                )
+            ),
             "点击“检查完整性”，确认消息数、session、memory files 和证据 probe。",
-            {"summaries": imported.get("summaries"), "memory_root": imported.get("memory_root")},
+            {
+                "summaries": imported.get("summaries"),
+                "memory_root": imported.get("memory_root"),
+                "latest_run": latest_import_run.get("id"),
+                "manifest_status": latest_import_run.get("manifest_status"),
+                "stale_running": import_stale_running,
+            },
             {"complete": imported.get("complete_count"), "total": imported.get("summary_count")},
         ),
         locomo_flow_stage(
@@ -4800,20 +4887,26 @@ def echomem_contract(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     old_sdk = root / "packages" / "echomem" / "src" / "echomem" / "protocol" / "local_sdk" / "sdk.py"
     new_runtime = root / "echomem" / "runtime" / "bootstrap.py"
     new_sdk = root / "echomem" / "entrypoints" / "plugins" / "echoagent" / "sdk.py"
+    develop_runtime = root / "src" / "echomem" / "entrypoints" / "cli_commands" / "_config.py"
+    develop_sdk = root / "src" / "echomem" / "entrypoints" / "client" / "local" / "async_client.py"
     sdk_files = {
         "old_echomem_src": root / "packages" / "echomem" / "src",
         "old_echofs_src": root / "packages" / "echofs" / "src",
         "new_echomem_pkg": root / "echomem",
-        "runtime": old_runtime if old_runtime.exists() else new_runtime,
-        "sdk": old_sdk if old_sdk.exists() else new_sdk,
+        "develop_src": root / "src" / "echomem",
+        "runtime": old_runtime if old_runtime.exists() else (new_runtime if new_runtime.exists() else develop_runtime),
+        "sdk": old_sdk if old_sdk.exists() else (new_sdk if new_sdk.exists() else develop_sdk),
         "old_runtime": old_runtime,
         "old_sdk": old_sdk,
         "new_runtime": new_runtime,
         "new_sdk": new_sdk,
+        "develop_runtime": develop_runtime,
+        "develop_sdk": develop_sdk,
         "schemas": root / "configs" / "schemas",
     }
     old_layout = sdk_files["old_echomem_src"].exists() and sdk_files["old_echofs_src"].exists()
     new_layout = sdk_files["new_echomem_pkg"].exists() and (root / "pyproject.toml").exists()
+    develop_layout = sdk_files["develop_src"].exists() and (root / "src" / "echo0").exists() and (root / "pyproject.toml").exists()
     add_contract_check(
         checks,
         "sdk_root",
@@ -4827,10 +4920,17 @@ def echomem_contract(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         checks,
         "sdk_layout",
         "SDK 源码布局",
-        bool(root_text and (old_layout or new_layout)),
-        "需要旧版 packages/echomem/src + packages/echofs/src，或 v0.0.5 顶层 echomem/ 包。",
+        bool(root_text and (old_layout or new_layout or develop_layout)),
+        "需要旧版 packages/echomem/src + packages/echofs/src，v0.0.5 顶层 echomem/ 包，或 develop 分支 src/echomem + src/echo0 布局。",
         "required",
-        {**{name: str(path) for name, path in sdk_files.items()}, "layout": "old-packages" if old_layout else ("v0.0.5-flat" if new_layout else "unknown")},
+        {
+            **{name: str(path) for name, path in sdk_files.items()},
+            "layout": (
+                "old-packages"
+                if old_layout
+                else ("v0.0.5-flat" if new_layout else ("develop-src" if develop_layout else "unknown"))
+            ),
+        },
     )
     runtime_text = text_contains(sdk_files["runtime"], [r"def\s+open_runtime|async\s+def\s+open_runtime"])
     sdk_text = text_contains(
@@ -4844,12 +4944,24 @@ def echomem_contract(payload: dict[str, Any] | None = None) -> dict[str, Any]:
             r"def\s+search|async\s+def\s+search",
         ],
     )
+    develop_sdk_text = text_contains(
+        sdk_files["develop_sdk"],
+        [
+            r"class\s+AsyncEchoMemLocalClient",
+            r"def\s+open_session|async\s+def\s+open_session",
+            r"def\s+add_message|async\s+def\s+add_message",
+            r"def\s+commit|async\s+def\s+commit",
+            r"def\s+get_history|async\s+def\s+get_history",
+            r"def\s+search|async\s+def\s+search",
+            r"def\s+fs_read|async\s+def\s+fs_read",
+        ],
+    )
     add_contract_check(
         checks,
         "runtime_api",
         "runtime API",
         bool(runtime_text.get(r"def\s+open_runtime|async\s+def\s+open_runtime")),
-        "需要 open_runtime(config_path) 加载 runtime。",
+        "需要能从配置打开本地 runtime；legacy 走 open_runtime(config_path)，develop 走本地 client/runtime 配置入口。",
         "required",
         {"file": str(sdk_files["runtime"]), "matches": runtime_text},
     )
@@ -4865,10 +4977,27 @@ def echomem_contract(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         checks,
         "local_sdk_api",
         "Local SDK API",
-        all(sdk_text.get(pattern) for pattern in required_sdk_matches),
-        "需要 EchoMemSDK.create_session/add_message/commit_session/find/search。",
+        all(sdk_text.get(pattern) for pattern in required_sdk_matches)
+        or all(
+            develop_sdk_text.get(pattern)
+            for pattern in [
+                r"class\s+AsyncEchoMemLocalClient",
+                r"def\s+open_session|async\s+def\s+open_session",
+                r"def\s+add_message|async\s+def\s+add_message",
+                r"def\s+commit|async\s+def\s+commit",
+                r"def\s+get_history|async\s+def\s+get_history",
+                r"def\s+search|async\s+def\s+search",
+                r"def\s+fs_read|async\s+def\s+fs_read",
+            ]
+        ),
+        "需要 legacy EchoMemSDK.create_session/add_message/commit_session/find/search，或 develop AsyncEchoMemLocalClient.open_session/add_message/commit/get_history/search/fs_read。",
         "required",
-        {"file": str(sdk_files["sdk"]), "matches": sdk_text},
+        {
+            "file": str(sdk_files["sdk"]),
+            "matches": sdk_text,
+            "develop_file": str(sdk_files["develop_sdk"]),
+            "develop_matches": develop_sdk_text,
+        },
     )
 
     import_script = ROOT / "scripts" / "echomemory_locomo_import.py"
@@ -4936,8 +5065,15 @@ def echomem_contract(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         checks,
         "account_isolation",
         "账户隔离路径",
-        bool(workspace_path and storage_root and f"/{account}/{account}" in storage_root.replace("\\", "/")),
-        "EchoMemory 存储应按 workspace/<account>/<account> 隔离。",
+        bool(
+            workspace_path
+            and storage_root
+            and (
+                f"/{account}/{account}" in storage_root.replace("\\", "/")
+                or f"/tenants/{account}" in storage_root.replace("\\", "/")
+            )
+        ),
+        "EchoMemory 存储应按 legacy workspace/<account>/<account> 或 develop workspace/tenants/<account> 隔离。",
         "required",
         {"workspace": workspace_path, "account": account, "storage_root": storage_root, "layout": workspace.get("layout")},
     )
@@ -4976,7 +5112,7 @@ def echomem_contract(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         f"- Workspace: {workspace_path or '-'}",
         f"- Required failures: {len(required_failures)}",
         f"- Warnings: {len(warnings)}",
-        "- Required SDK APIs: open_runtime, EchoMemSDK.create_session/add_message/commit_session/find/search",
+        "- Required SDK APIs: legacy open_runtime + EchoMemSDK.create_session/add_message/commit_session/find/search, or develop AsyncEchoMemLocalClient.open_session/add_message/commit/get_history/search/fs_read",
         "- Required outputs: import summary, QA CSV, relevant_memory, token usage, evidence trace",
         "",
         "Safe to share: local machine paths are redacted and API key values are never included.",
@@ -5001,7 +5137,10 @@ def validate_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def safe_path(path_text: str) -> Path:
-    return Path(path_text).expanduser().resolve()
+    candidate = Path(path_text).expanduser()
+    if candidate.is_absolute():
+        return candidate.resolve()
+    return (ROOT / candidate).resolve()
 
 
 def redacted_command(command: list[str]) -> list[str]:
@@ -5364,6 +5503,29 @@ def parse_json_run_summary(path: Path) -> dict[str, Any]:
     return report_service.parse_json_run_summary(path)
 
 
+def merge_judge_summary(summary: dict[str, Any], csv_path: Path) -> dict[str, Any]:
+    merged = dict(summary or {})
+    judge_path = csv_path.parent / "judge_summary.json"
+    if not judge_path.exists():
+        return merged
+    judge = read_json(judge_path)
+    if not isinstance(judge, dict):
+        return merged
+    for key in ("graded", "correct", "wrong", "accuracy", "simple_graded", "simple_correct", "simple_wrong", "simple_accuracy", "result_counts"):
+        if judge.get(key) is not None:
+            merged[key] = judge.get(key)
+    rows = merged.get("rows")
+    graded = merged.get("graded")
+    if isinstance(rows, (int, float)) and graded is not None:
+        counts = dict(merged.get("result_counts") or {})
+        pending = max(0, int(rows) - int(graded))
+        if pending or "UNSCORED" not in counts:
+            counts["UNSCORED"] = pending
+        merged["result_counts"] = counts
+    merged["judge_summary_path"] = str(judge_path)
+    return merged
+
+
 def compare_runs(records: list[dict[str, Any]]) -> dict[str, Any]:
     return report_service.compare_runs(records)
 
@@ -5661,22 +5823,25 @@ def resolve_echomemory_runtime_env(payload: dict[str, Any], config: Path, judge_
     vlm_config = resolve_vlm_config(payload, config)
     embedding_config = resolve_openviking_embedding_config()
     openviking_vlm = resolve_openviking_vlm_config()
-    dashscope_base = str(
-        payload.get("dashscope_base_url")
+    memory_base = str(
+        payload.get("memory_base_url")
         or payload.get("embedding_base_url")
-        or payload.get("memory_base_url")
-        or payload.get("vlm_base_url")
+        or payload.get("dashscope_base_url")
         or os.environ.get("DASHSCOPE_BASE_URL")
         or embedding_config.get("api_base")
-        or openviking_vlm.get("api_base")
         or "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    ).strip()
+    dashscope_base = str(
+        memory_base
     ).strip()
     explicit_chat_base = (
         payload.get("echomem_chat_base_url")
-        or payload.get("vlm_base_url")
-        or payload.get("memory_base_url")
+        or payload.get("chat_base_url")
+        or payload.get("answer_base_url")
+        or payload.get("judge_base_url")
         or os.environ.get("ECHOMEM_CHAT_BASE_URL")
         or os.environ.get("DASHSCOPE_BASE_URL")
+        or vlm_config.get("api_base")
         or openviking_vlm.get("api_base")
     )
     chat_base = str(explicit_chat_base or dashscope_base).strip()
@@ -5713,9 +5878,9 @@ def resolve_echomemory_runtime_env(payload: dict[str, Any], config: Path, judge_
         chat_token = token
     chat_model = str(
         payload.get("echomem_chat_model")
+        or payload.get("chat_model")
+        or payload.get("answer_model")
         or payload.get("memory_inject_model")
-        or payload.get("vlm_model")
-        or payload.get("memory_model")
         or os.environ.get("ECHOMEM_CHAT_MODEL")
         or openviking_vlm.get("model")
         or "deepseek-v4-flash"
@@ -5754,6 +5919,63 @@ def sanitize_model_error(text: Any) -> str:
     value = re.sub(r"sk-[A-Za-z0-9_-]{8,}", "sk-***", value)
     value = re.sub(r"Bearer\s+[A-Za-z0-9._-]{8,}", "Bearer ***", value, flags=re.I)
     return value[:1200]
+
+
+def is_transient_model_preflight_status(status: Any, error: Any = "") -> bool:
+    normalized = str(status or "").strip().lower()
+    if normalized in {
+        "timeout",
+        "timeouterror",
+        "urlerror",
+        "remotedisconnected",
+        "connectionreseterror",
+        "connectionabortederror",
+        "connectionrefusederror",
+    }:
+        return True
+    if normalized.isdigit():
+        code = int(normalized)
+        if code in {408, 409, 425, 429, 500, 502, 503, 504}:
+            return True
+    message = str(error or "").strip().lower()
+    return any(
+        marker in message
+        for marker in (
+            "timed out",
+            "temporary failure",
+            "temporarily unavailable",
+            "connection reset",
+            "connection aborted",
+            "connection refused",
+            "remote end closed connection",
+            "remote disconnected",
+            "read operation timed out",
+        )
+    )
+
+
+def is_fatal_model_preflight_result(result: dict[str, Any]) -> bool:
+    if not isinstance(result, dict) or result.get("ok"):
+        return False
+    status = str(result.get("status") or "").strip().lower()
+    error = str(result.get("error") or "")
+    if status in {"missing_base_url", "missing_model", "missing_api_key"}:
+        return True
+    lowered = error.lower()
+    if any(
+        marker in lowered
+        for marker in (
+            "model_not_found",
+            "does not exist or you do not have access",
+            "invalid_request_error",
+            "authentication failed",
+            "autherror",
+            "invalid api key",
+            "incorrect api key",
+        )
+    ):
+        return True
+    return not is_transient_model_preflight_status(status, error)
 
 
 def openai_compatible_chat_preflight(base_url: str, model: str, token: str, timeout_s: float = 45) -> dict[str, Any]:
@@ -5882,6 +6104,16 @@ def ensure_task_model_preflight(
         return
     result = model_preflight_from_payload(preflight_payload, config)
     if result.get("ok"):
+        return
+    if not is_fatal_model_preflight_result(result):
+        print(
+            "[warning] task_model_preflight transient_failure "
+            f"role={result.get('role') or 'agent'} "
+            f"model={result.get('model') or ''} "
+            f"status={result.get('status') or ''} "
+            f"error={sanitize_model_error(result.get('error') or '')}",
+            flush=True,
+        )
         return
     role = str(result.get("role") or "agent").lower()
     role_label = "判分模型" if role == "judge" else "答案模型"
@@ -6165,6 +6397,12 @@ class Handler(BaseHTTPRequestHandler):
             ".csv": "text/csv; charset=utf-8",
             ".json": "application/json; charset=utf-8",
             ".txt": "text/plain; charset=utf-8",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".gif": "image/gif",
+            ".webp": "image/webp",
+            ".svg": "image/svg+xml",
         }
         if (
             not str(target).startswith(str(runs_root))
@@ -6199,6 +6437,12 @@ class Handler(BaseHTTPRequestHandler):
             ".csv": "text/csv; charset=utf-8",
             ".json": "application/json; charset=utf-8",
             ".txt": "text/plain; charset=utf-8",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".gif": "image/gif",
+            ".webp": "image/webp",
+            ".svg": "image/svg+xml",
         }
         if (
             not str(target).startswith(str(reports_root))
@@ -6762,6 +7006,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": "file not found"}, 404)
                 return
             summary = parse_json_run_summary(path) if path.suffix.lower() == ".json" else parse_csv_summary(path)
+            if path.suffix.lower() == ".csv":
+                summary = merge_judge_summary(summary, path)
             analysis_path = path.with_suffix(".wrong_analysis.json")
             analysis = None
             if analysis_path.exists():
@@ -6910,15 +7156,21 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(raw_dirs, list):
                     raise ValueError("run_dirs must be a list")
                 run_dirs = [safe_path(str(item or "")) for item in raw_dirs if str(item or "").strip()]
-                if payload.get("include_native_openviking_baseline"):
-                    baseline = native_openviking_baseline().get("baseline") or {}
-                    baseline_dir = str(baseline.get("run_dir") or "").strip()
-                    if baseline_dir:
-                        baseline_path = safe_path(baseline_dir)
-                        run_dirs = [baseline_path] + [path for path in run_dirs if path != baseline_path]
-                if len(run_dirs) < 2:
-                    raise ValueError("at least two run_dirs are required")
-                self.send_json(compare_run_dirs(run_dirs))
+                run_dirs = list(dict.fromkeys(run_dirs))
+                if len(run_dirs) != 2:
+                    raise ValueError("exactly two run_dirs are required")
+                compare_rows = [run_service.run_compare_row(path) for path in run_dirs]
+                invalid = [
+                    row.get("id") or str(path)
+                    for path, row in zip(run_dirs, compare_rows)
+                    if str(row.get("dataset_format") or "").strip().lower() not in {"", "locomo"}
+                ]
+                if invalid:
+                    raise ValueError(f"only locomo runs are allowed: {', '.join(map(str, invalid))}")
+                response = compare_run_dirs(run_dirs)
+                if payload.get("export_html"):
+                    response.update(report_export_service.export_run_compare_report(run_dirs))
+                self.send_json(response)
             except Exception as exc:
                 self.send_json({"error": str(exc)}, status=400)
             return
