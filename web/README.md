@@ -1,7 +1,8 @@
 # Web Package
 
 This package is the home for the frontend application. The live UI is served
-from `web/static/index.html`, `web/static/app.js`, and `web/static/styles.css`.
+from `web/static/index.html`, `web/static/app-state.js`, `web/static/app-core.js`,
+`web/static/app-format.js`, `web/static/app.js`, and `web/static/styles.css`.
 The top-level `static/` directory is kept as a legacy backup during migration.
 
 ## User-Facing Sections

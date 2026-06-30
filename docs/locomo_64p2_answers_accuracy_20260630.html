@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LoCoMo 64.20% 回答对照</title>
+  <style>
+    :root {
+      --bg: #f7f5f0;
+      --surface: #ffffff;
+      --border: #e5ded2;
+      --text: #111827;
+      --muted: #6b7280;
+      --blue: #2563eb;
+      --blue-soft: #eff6ff;
+      --green: #16a34a;
+      --green-soft: #ecfdf5;
+      --red: #dc2626;
+      --red-soft: #fef2f2;
+      --radius: 8px;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); }
+    .page { max-width: 1600px; margin: 0 auto; padding: 24px; }
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+    .hero { padding: 24px; margin-bottom: 16px; }
+    h1,h2,p { margin: 0; }
+    h1 { font-size: 24px; margin-bottom: 8px; }
+    .sub { color: var(--muted); font-size: 14px; margin-bottom: 16px; }
+    .stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+    .stat { border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; background: #fcfbf8; }
+    .label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .value { font-size: 20px; font-weight: 700; }
+    .path { margin-top: 14px; font-size: 12px; color: #374151; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+    .table-wrap { overflow: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: top; text-align: left; }
+    th { position: sticky; top: 0; background: #faf9f7; z-index: 1; font-size: 12px; color: var(--muted); }
+    td:nth-child(3), td:nth-child(4), td:nth-child(5) { min-width: 280px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: nowrap; }
+    .pill { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid transparent; }
+    .pill.ok { color: var(--green); background: var(--green-soft); border-color: #bbf7d0; }
+    .pill.bad { color: var(--red); background: var(--red-soft); border-color: #fecaca; }
+    @media (max-width: 1200px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="panel hero">
+      <h1>LoCoMo 64.20% 回答对照</h1>
+      <p class="sub">这一页整理了 2026-06-29 最新一轮已判分 LoCoMo 全量 81 题的准确率，以及每题的正确答案和模型回答。</p>
+      <div class="stats">
+        <div class="stat"><div class="label">准确率</div><div class="value">64.20%</div></div>
+        <div class="stat"><div class="label">正确</div><div class="value">52</div></div>
+        <div class="stat"><div class="label">错误</div><div class="value">29</div></div>
+        <div class="stat"><div class="label">总题数</div><div class="value">81</div></div>
+        <div class="stat"><div class="label">Judge Model</div><div class="value" style="font-size:16px;">deepseek-v4-flash</div></div>
+      </div>
+      <div class="path">QA 结果目录：/Users/chx/locomo-eval-web/runs/echomemory_qa_20260629_220223_default-20260629-214003_9fc2ac/echomemory_qa</div>
+      <div class="path">判分摘要：/Users/chx/locomo-eval-web/runs/echomemory_qa_20260629_220223_default-20260629-214003_9fc2ac/echomemory_qa/judge_summary.json</div>
+    </section>
+
+    <section class="panel table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>question_id</th>
+            <th>题目</th>
+            <th>正确答案</th>
+            <th>模型回答</th>
+            <th>结果</th>
+            <th>分类</th>
+            <th>召回数</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+      <tr>
+        <td class="mono">1</td>
+        <td class="mono">conv-30_qa0</td>
+        <td>When Jon has lost his job as a banker?</td>
+        <td>19 January, 2023</td>
+        <td>从检索到的记忆中，Jon **在 2023 年 1 月 19 日**失去了银行家的工作。
+
+具体依据：
+- 在 2023 年 1 月 20 日的对话中，Jon 提到他 **昨天**（即 1 月 19 日）失去了银行的工作，并计划开办自己的舞蹈工作室。</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">2</td>
+        <td class="mono">24</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">2</td>
+        <td class="mono">conv-30_qa1</td>
+        <td>When Gina has lost her job at Door Dash?</td>
+        <td>January, 2023</td>
+        <td>Gina mentioned that she lost her job at Door Dash on **March 16, 2023**.</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">2</td>
+        <td class="mono">19</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">3</td>
+        <td class="mono">conv-30_qa2</td>
+        <td>How do Jon and Gina both like to destress?</td>
+        <td>by dancing</td>
+        <td>Based on the memories I&#x27;ve found, here&#x27;s how they both like to destress:
+
+**Gina** uses **dance** as her stress relief. She&#x27;s mentioned combining her love of dance and fashion, and specifically stated she uses dance as a way to unwind. (Source: atom://atom-6373fd150a7c4d57; session overview s8)
+
+**Jon** – from what&#x27;s available in memory, there isn&#x27;t a specific statement labeling his &quot;stress relief&quot; method the way there is for Gina. However, I can see that:
+- He took a **short trip to Rome** around June 2023 to **clear his mind** (source: atom://atom-4c3385d4c69f4955), which suggests traveling helps him decompress.
+- He&#x27;s deeply passionate about **dance** – he owns and runs a dance studio, follows his passion for dance, and finds motivation from seeing his students succeed. While his dance studio is his business/career, his connection to dance is clearly a driving passion.
+
+So in short:
+- **Gina** destresses through **dance**.
+- **Jon** seems to use **travel** (e.g., his Rome trip to clear his mind) and is also deeply engaged with **dance** as his core passion.</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">4</td>
+        <td class="mono">25</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">4</td>
+        <td class="mono">conv-30_qa3</td>
+        <td>What do Jon and Gina both have in common?</td>
+        <td>They lost their jobs and decided to start their own businesses.</td>
+        <td>Based on the memories, **Jon and Gina both lost their jobs and started their own businesses** around January 2023. 
+
+- Jon started a **dance studio**, offering classes, workshops, and one-on-one mentoring for young dancers.
+- Gina started an **online clothing store** in the fashion space.
+
+They share a journey of entrepreneurship after job loss, and they regularly support and encourage each other in pursuing their respective business dreams.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">1</td>
+        <td class="mono">20</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">5</td>
+        <td class="mono">conv-30_qa4</td>
+        <td>Why did Jon decide to start his dance studio?</td>
+        <td>He lost his job and decided to start his own business to share his passion.</td>
+        <td>Based on the memories, Jon decided to start his dance studio primarily because **he lost his job**, which motivated him to turn his lifelong passion for dance into his own business. Dance has been his **stress-buster since childhood**, so opening the studio became a way to pursue his dream and channel that passion professionally.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">19</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">6</td>
+        <td class="mono">conv-30_qa5</td>
+        <td>What Jon thinks the ideal dance studio should look like?</td>
+        <td>By the water, with natural light and Marley flooring</td>
+        <td>Based on the memories I have, Jon hasn&#x27;t explicitly described the **physical appearance** (like the decor, layout, or specific visual look) of his ideal dance studio. However, from his conversations, I can piece together what Jon thinks the ideal dance studio should **feel like and be about**:
+
+**The ideal dance studio, in Jon&#x27;s mind, is:**
+
+1. **A place to teach, guide, and mentor** – He&#x27;s excited about guiding and mentoring aspiring dancers, especially young dancers. He offers classes, workshops, and one-on-one mentoring. The studio is about helping others grow and succeed in dance.
+
+2. **A passion-driven space** – Dance has been Jon&#x27;s passion and stress-buster since childhood. His studio is his dream business, born from losing his job but following what he truly loves.
+
+3. **A community hub** – He envisions the studio reaching beyond its walls: offering workshops to local schools and community centers, hosting dance competitions to showcase local talent, and building an online platform to promote it.
+
+4. **A place where students succeed** – He finds his biggest motivation from seeing his students succeed. The studio&#x27;s purpose is to create those success moments.
+
+5. **Professionally run but heartfelt** – He takes the business side seriously too — reading &quot;The Lean Startup,&quot; using a whiteboard to track milestones, writing a business plan, and seeking investors. But he also reminds himself to &quot;focus on success and remember why he started.&quot;
+
+So in short — Jon&#x27;s ideal dance studio is less about a specific &quot;look&quot; (like fancy mirrors, colored walls, or a particular layout) and more about being a **welcoming, mentorship-driven space** where he can share his passion for dance, help young dancers develop, connect with the local community, and build something meaningful that keeps him true to his roots.</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">1</td>
+        <td class="mono">27</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">7</td>
+        <td class="mono">conv-30_qa6</td>
+        <td>When is Jon&#x27;s group performing at a festival?</td>
+        <td>February, 2023</td>
+        <td>根據我的記憶，關於 Jon 的舞團在音樂節表演的資訊如下：
+
+在 **2023 年 1 月 20 日**的交談中，Jon 分享了一張他的舞團照片，他們正在為 **下個月（即 2023 年 2 月）** 在附近一個音樂節的表演做最後的編舞排練。
+
+所以確切來說，他的舞團是預定在 **2023 年 2 月（February 2023）** 於那場音樂節演出。由於目前的日期是 2023 年 7 月 23 日，這場表演早已結束。
+
+我沒有在更近期的對話中找到關於其他音樂節表演的資訊。</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">2</td>
+        <td class="mono">22</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">8</td>
+        <td class="mono">conv-30_qa7</td>
+        <td>When did Gina launch an ad campaign for her store?</td>
+        <td>29 January, 2023</td>
+        <td>Based on the memory records, **Gina launched an ad campaign for her clothing store on January 29, 2023**. She shared this news with Jon during their conversation that day.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">2</td>
+        <td class="mono">25</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">9</td>
+        <td class="mono">conv-30_qa8</td>
+        <td>When was Jon in Paris?</td>
+        <td>28 January 2023</td>
+        <td>Based on all the memories I have access to, there is **no information about Jon ever being in Paris**.
+
+The only trip mentioned in Jon&#x27;s memory is a **short trip to Rome around 2023-06-12** to clear his mind. There are no records, mentions, or references to Paris anywhere in his memories.</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">2</td>
+        <td class="mono">30</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">10</td>
+        <td class="mono">conv-30_qa9</td>
+        <td>Which city have both Jean and John visited?</td>
+        <td>Rome</td>
+        <td>Based on all the memory data I have access to, I couldn&#x27;t find any information about people named **&quot;Jean&quot;** or **&quot;John&quot;** in my stored memories.
+
+The closest matches I have are:
+- **&quot;Jon&quot;** (a dance studio owner) — he took a short trip to **Rome** around mid-June 2023.
+- **&quot;Gina&quot;** (an online clothing store owner) — she is Jon&#x27;s friend and conversation partner.
+
+But there are **no records** of anyone named &quot;Jean&quot; or &quot;John&quot; in the EchoMemory database. Could you clarify:
+
+1. Did you mean **Jon** (not John)?
+2. Did you mean **Gina** (not Jean)?
+3. Or are these different people from outside the current memory scope?
+
+If you&#x27;re asking about **Jon** and **Gina**, I don&#x27;t have information about a city they both visited — only that Jon visited **Rome**.</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">1</td>
+        <td class="mono">18</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">11</td>
+        <td class="mono">conv-30_qa10</td>
+        <td>When did Gina team up with a local artist for some cool designs?</td>
+        <td>February, 2023</td>
+        <td>Gina teamed up with a local artist to create unique clothing designs for her online store on **February 8, 2023**.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">2</td>
+        <td class="mono">28</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">12</td>
+        <td class="mono">conv-30_qa11</td>
+        <td>When did Gina get her tattoo?</td>
+        <td>A few years ago</td>
+        <td>根据记忆中记录的信息：
+
+在 **2023年2月8日** 的对话中，Gina 提到她的纹身（象征自由和舞动，不在意他人眼光），并表示她是在 **几年前** 获得的。因此没有具体的精确日期，但可以确定她是在 **2020年至2021年左右**（即 2023年2月往前推几年）纹的这个纹身。</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">2</td>
+        <td class="mono">29</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">13</td>
+        <td class="mono">conv-30_qa12</td>
+        <td>When did Jon start to go to the gym?</td>
+        <td>March, 2023</td>
+        <td>根據 EchoMemory 中的記憶資料，Jon 是在 **2023年3月9日（2023-03-09）左右**開始去健身房的。
+
+詳細資訊來自對話記錄（session: echomem-locomo-conv-30-s6），其中明確記錄了：
+- **[2023-03-09] Jon started going to the gym**
+- **[HIGH] Jon started going to the gym around the week of 2023-03-09**
+
+所以答案是：**Jon 在 2023年3月9日那一週開始去健身房。**</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">2</td>
+        <td class="mono">18</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">14</td>
+        <td class="mono">conv-30_qa13</td>
+        <td>When did Gina open her online clothing store?</td>
+        <td>16 March, 2023</td>
+        <td>Gina opened her online clothes store on **March 16, 2023**.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">2</td>
+        <td class="mono">14</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">15</td>
+        <td class="mono">conv-30_qa14</td>
+        <td>When did Jon start expanding his studio&#x27;s social media presence?</td>
+        <td>April, 2023</td>
+        <td>Based on my memories, Jon started expanding his dance studio&#x27;s social media presence in **April 2023**. Specifically, on **April 3, 2023**, he shared plans to expand the studio&#x27;s social media presence, offer workshops to local schools and centers, and host a dance competition.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">2</td>
+        <td class="mono">21</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">16</td>
+        <td class="mono">conv-30_qa15</td>
+        <td>When did Jon host a dance competition?</td>
+        <td>May, 2023</td>
+        <td>Based on the memory records:
+
+- On **2023-04-03**, Jon invited Gina to a dance competition he was hosting **next month**.
+- The plan was to host the competition **around May 2023** to showcase local talent.
+
+So Jon hosted (or planned to host) the dance competition **around May 2023**.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">2</td>
+        <td class="mono">30</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">17</td>
+        <td class="mono">conv-30_qa16</td>
+        <td>When did Jon go to a fair to get more exposure for his dance studio?</td>
+        <td>24 April, 2023</td>
+        <td>Based on the retrieved memories, Jon attended a fair to promote his dance studio on **April 24, 2023**. He obtained potential leads from that event.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">2</td>
+        <td class="mono">24</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">18</td>
+        <td class="mono">conv-30_qa17</td>
+        <td>Why did Gina decide to start her own clothing store?</td>
+        <td>She always loved fashion trends and finding unique pieces and she lost her job so decided it was time to start her own business.</td>
+        <td>Based on the memories, here&#x27;s why Gina decided to start her own clothing store:
+
+1. **She lost her job at Door Dash** — Around early 2023, Gina lost her job, which became the catalyst for her to pivot and pursue her own business instead of finding another job.
+
+2. **Her passion for fashion** — Gina is deeply passionate about fashion trends and unique pieces. She has a strong sense of style and wanted to channel that into something of her own.
+
+3. **Blending her love for fashion and dance** — Gina wanted her store to be a reflection of both passions, creating a space that combined her love for fashion with her love for dance.
+
+4. **Embracing risk as the only way to grow** — As she put it to Jon, starting her own business was scary, but she believed taking risks was the only way to grow. She has a tattoo symbolizing freedom and dancing without worrying about what others think — a philosophy she carried into entrepreneurship.
+
+In short: losing her job pushed her to take a leap, and her existing passion for fashion and dance gave her the direction — turning what could have been a setback into an opportunity to build something meaningful. She officially opened her online clothes store on **March 16, 2023**.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">1</td>
+        <td class="mono">14</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">19</td>
+        <td class="mono">conv-30_qa18</td>
+        <td>Do Jon and Gina start businesses out of what they love?</td>
+        <td>Yes</td>
+        <td>根据检索到的记忆，是的，**Jon 和 Gina 都基于自己热爱的事物开始了自己的事业。**
+
+- **Jon** 热爱舞蹈，他追求自己的梦想，开办了一间舞蹈工作室（dance studio），并辅导舞者。记忆中提到 &quot;Jon is following his passion for dance&quot; 以及他 pursuing his dream of running a dance studio and mentoring dancers。
+
+- **Gina** 热爱时尚（fashion）和舞蹈，她开了一家线上服装店（online clothes store），将她对时尚和舞蹈的热爱融合在一起（&quot;blending her love for fashion and dance&quot;）。
+
+两人都是在失去工作后，选择追随自己的热爱，分别投身于舞蹈和时尚领域创业。</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">1</td>
+        <td class="mono">25</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">20</td>
+        <td class="mono">conv-30_qa19</td>
+        <td>When did Gina interview for a design internship?</td>
+        <td>10 May, 2023</td>
+        <td>Gina interviewed for a design internship on **2023-05-10**. She shared the news the following day (2023-05-11), saying the interview went great.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">2</td>
+        <td class="mono">18</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">21</td>
+        <td class="mono">conv-30_qa20</td>
+        <td>When did Gina get accepted for the design internship?</td>
+        <td>27 May, 2023</td>
+        <td>Based on the retrieved memories, Gina was accepted for a part-time **fashion internship** at an international company, and she announced this on **May 27, 2023** (2023-05-27).</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">2</td>
+        <td class="mono">26</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">22</td>
+        <td class="mono">conv-30_qa21</td>
+        <td>When did Jon start reading &quot;The Lean Startup&quot;?</td>
+        <td>May, 2023</td>
+        <td>Based on the retrieved memories, **Jon started reading &quot;The Lean Startup&quot; around 2023-05-27**.
+
+On that date, Jon shared with Gina that he was reading the book to get business tips for his dance studio.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">2</td>
+        <td class="mono">24</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">23</td>
+        <td class="mono">conv-30_qa22</td>
+        <td>When did Gina develop a video presentation to teach how to style her fashion pieces? </td>
+        <td>June, 2023</td>
+        <td></td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">2</td>
+        <td class="mono">0</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">24</td>
+        <td class="mono">conv-30_qa23</td>
+        <td>How did Gina promote her clothes store?</td>
+        <td>worked with an artist to make unique fashion pieces, made limited-edition sweatshirts, got some new offers and promotions for online store, developed a video presentation showing how to style her pieces</td>
+        <td>Based on the memories I&#x27;ve retrieved, here&#x27;s what I know about how Gina promoted her clothes store:
+
+1. **Collaborated with a local artist** (Feb 8, 2023) — She teamed up with a local artist to create unique clothing designs exclusively for her store, giving her a distinctive product offering.
+
+2. **Secured a wholesaler relationship** (Feb 1, 2023) — She received a positive reply from a wholesaler, which allowed her to expand her inventory and product range.
+
+3. **Built a website** (July 2023) — She built a dedicated website for her clothing store to have an online presence and reach customers.
+
+4. **Curated a cozy, inviting store design** — She designed her store space with cozy furniture, comfortable decor, and a glamorous chandelier to create an oasis-like shopping experience that makes customers want to return.
+
+5. **Researched and networked to source trendy pieces** — She overcame challenges sourcing trendy pieces through research and networking, ensuring her inventory stays appealing.
+
+6. **Knowledge of social media and influencer marketing** — On July 21, 2023, she suggested using **Instagram, TikTok, and local influencer collaborations** as marketing strategies (to Jon for his dance studio), indicating she applies or is familiar with these promotion channels. She also offered to help create content and manage social media accounts.
+
+7. **Blended fashion with her dance passion** — Her store concept blends her love for fashion and dance, which serves as a unique branding angle.
+
+Beyond these details, the available memories don&#x27;t contain more specific promotion activities (e.g., running sales, ads, events, or email campaigns). Would you like me to search for more?</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">1</td>
+        <td class="mono">24</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">25</td>
+        <td class="mono">conv-30_qa24</td>
+        <td>Which events has Jon participated in to promote his business venture?</td>
+        <td>fair, networking events, dance competition</td>
+        <td>Based on the retrieved memories, here are the events and activities Jon has participated in to promote his business venture (his dance studio):
+
+1. **Hosting a dance competition** — In April 2023, Jon invited Gina to a dance competition he is hosting (scheduled for the following month, around May 2023). This served as a promotional event for his studio.
+
+2. **Expanding social media presence** — In April 2023, Jon planned and began expanding his dance studio&#x27;s social media presence to reach a wider audience.
+
+3. **Offering workshops/classes to local schools and centers** — Also in April 2023, Jon planned to offer workshops and classes to local schools and community centers as a promotional outreach strategy.
+
+4. **Posting dance videos on social media** — As of June 2023, Jon was actively posting dance videos on social media to promote his business.
+
+5. **Receiving business mentorship** — On June 15, 2023, Jon was mentored by a business mentor to help grow his studio.
+
+6. **Dance studio official opening** — His dance studio officially opened on June 20, 2023, which itself was a promotional milestone.
+
+7. **Successful event night** — On July 21, 2023, Jon had a successful night with his dance studio, likely a class or event that boosted his business.
+
+8. **Expressing intent to guide/mentor aspiring dancers** — On July 9, 2023, Jon expressed excitement about guiding and mentoring aspiring dancers, which serves as a form of community engagement and promotion.
+
+In summary, Jon&#x27;s promotional activities have included: **hosting a dance competition**, **posting dance videos on social media**, **expanding his studio&#x27;s social media presence**, **offering workshops to local schools/centers**, **receiving business mentorship**, **officially launching his studio**, **running successful class events**, and **engaging with aspiring dancers**.</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">1</td>
+        <td class="mono">19</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">26</td>
+        <td class="mono">conv-30_qa25</td>
+        <td>What does Jon&#x27;s dance studio offer?</td>
+        <td>one-on-one metoring and training to dancers,  workshops and classes to local schools and centers</td>
+        <td>Based on the retrieved memories, here&#x27;s what Jon&#x27;s dance studio offers as of July 2023:
+
+**Jon&#x27;s dance studio offers:**
+
+1. **Dance classes** – General dance instruction for students.
+2. **Workshops** – Offered to local schools and community centers to reach aspiring dancers.
+3. **One-on-one mentoring and training** – Personalized coaching for young dancers, as Jon mentioned on June 13, 2023.
+4. **Dance competitions** – Jon planned and hosted a dance competition event (mentioned as early as April 2023).
+5. **Social media expansion &amp; promotion** – Jon was actively expanding the studio&#x27;s social media presence to attract more students.
+
+In summary, Jon&#x27;s dance studio is a full-service dance education business providing classes, workshops, private mentoring, and competitive dance events, with a focus on teaching and mentoring aspiring dancers.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">1</td>
+        <td class="mono">20</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">27</td>
+        <td class="mono">conv-30_qa26</td>
+        <td>When did Jon receive mentorship to promote his venture?</td>
+        <td>15 June, 2023</td>
+        <td>Jon received mentorship from a business person to promote his venture on **15 June 2023**.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">2</td>
+        <td class="mono">25</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">28</td>
+        <td class="mono">conv-30_qa27</td>
+        <td>Did Jon and Gina both participate in dance competitions?</td>
+        <td>Yes</td>
+        <td>Based on the retrieved memories:
+
+- **Gina** **did** participate in a dance competition — she shared a photo of her trophy from a dance contest on April 9, 2023.
+- **Jon**, however, has no memory of participating in any dance competition. His dance activities revolve around **owning and running a dance studio**, teaching classes, mentoring aspiring dancers, and expanding his studio&#x27;s social media presence.
+
+**Answer: No, only Gina participated in a dance competition.** There is no evidence that Jon competed in any dance contest.</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">1</td>
+        <td class="mono">26</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">29</td>
+        <td class="mono">conv-30_qa28</td>
+        <td>When was Jon in Rome?</td>
+        <td>June 2023</td>
+        <td>Based on the retrieved memories, Jon was in Rome **around 2023-06-12** (approximately June 12, 2023). 
+
+He took a short trip to Rome to clear his mind during the week before his dance studio&#x27;s grand opening, which was on **June 20, 2023**. The trip is also referenced in a conversation between Jon and Gina on June 19, 2023, where they discuss his recent trip to Rome.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">2</td>
+        <td class="mono">25</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">30</td>
+        <td class="mono">conv-30_qa29</td>
+        <td>Which cities has Jon visited?</td>
+        <td>Paris, Rome</td>
+        <td>Based on the available memory records, **Jon has visited one city: Rome**.
+
+In mid-June 2023 (around June 12, the week before his dance studio&#x27;s grand opening on June 20), Jon took a short trip to **Rome** to clear his mind. This trip was mentioned during his conversation with Gina on June 19, 2023, just ahead of the studio&#x27;s grand opening.
+
+There are no records of Jon visiting any other cities in the retrieved memories. His focus has been primarily on opening and running his dance studio.</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">1</td>
+        <td class="mono">28</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">31</td>
+        <td class="mono">conv-30_qa30</td>
+        <td>When Jon is planning to open his dance studio?</td>
+        <td>20 June, 2023</td>
+        <td>基于检索到的记忆信息，Jon 的舞蹈工作室**正式开幕/开业之夜定于 2023 年 6 月 20 日**。
+
+不过需要注意的是，在更早的记录中（截至 2023 年 5 月 11 日），Jon 已经开设了自己的舞蹈工作室并开始教学。因此：
+
+- **正式开业/开幕夜：2023 年 6 月 20 日**
+- 在此之前（早在 5 月 11 日左右）他已经开始运营和教学了。
+
+所以，如果问的是他**计划**的开业时间，那就是 **2023 年 6 月 20 日**（现已过去，截至当前日期 2023 年 7 月 23 日，工作室已成功运营）。</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">2</td>
+        <td class="mono">26</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">32</td>
+        <td class="mono">conv-30_qa31</td>
+        <td>How long did it take for Jon to open his studio?</td>
+        <td>six months</td>
+        <td>Based on the memories, here&#x27;s the timeline:
+
+1. **Jon lost his job as a banker** — **January 19, 2023** (from the Jan 20 session: he announced losing his job &quot;yesterday&quot;)
+2. **He announced plans to start a dance studio** — **January 20, 2023**
+3. **By April 2023** — Jon already **owned a dance studio and was teaching students** (session s9, April 2023)
+4. **By May 11, 2023** — He was actively discussing his studio progress and teaching (session s11)
+5. **June 20, 2023** — There&#x27;s a record of an **official grand opening**
+
+So it took Jon approximately **2.5 to 3 months** from losing his job (Jan 19) to getting his dance studio up and running (by April 2023), with an official grand opening about **5 months** later (June 20, 2023).</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">1</td>
+        <td class="mono">30</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">33</td>
+        <td class="mono">conv-30_qa32</td>
+        <td>When did Gina design a limited collection of hoodies?</td>
+        <td>June 2023</td>
+        <td>Based on the memories retrieved, Gina designed a limited edition hoodie around **June 14, 2023**.
+
+In a conversation on June 21, 2023, Gina showed Jon a limited edition hoodie she had made, mentioning she had created that limited edition line &quot;last week&quot; (i.e., around June 14) to showcase her personal style. The hoodie design symbolized grit and standing out against challenges.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">2</td>
+        <td class="mono">27</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">34</td>
+        <td class="mono">conv-30_qa33</td>
+        <td>When did Jon visit networking events for his store?</td>
+        <td>20 June, 2023</td>
+        <td>Based on the memories, Jon attended a networking event **around July 21, 2023** (he shared about it on that date). At the event, he met investors and received business advice.
+
+Note: There is no separate record of Jon visiting a &quot;store&quot; — the networking event was related to his **dance studio** business, not a physical retail store.</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">2</td>
+        <td class="mono">28</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">35</td>
+        <td class="mono">conv-30_qa34</td>
+        <td>When did Gina start being recognized by fashion editors?</td>
+        <td>July 2023</td>
+        <td>Based on the memory records, Gina started being recognized by fashion editors in **early July 2023**. Specifically, in a conversation on July 9, 2023, Gina mentioned that she had been noticed by fashion editors **&quot;last week&quot;** — which places this recognition around the **first week of July 2023**. She described feeling both scared and excited about the attention.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">2</td>
+        <td class="mono">25</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">36</td>
+        <td class="mono">conv-30_qa35</td>
+        <td>When did Jon start learning marketing and analytics tools?</td>
+        <td>July, 2023</td>
+        <td>Based on the retrieved memories, Jon started learning marketing and analytics tools on **2023-07-09**.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">2</td>
+        <td class="mono">26</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">37</td>
+        <td class="mono">conv-30_qa36</td>
+        <td>When did Jon and Gina decide to collaborate to create dance content?</td>
+        <td>21 July 2023</td>
+        <td>Jon and Gina decided to collaborate on creating dance content on **July 21, 2023**. On that day, Gina offered to help create content and manage Jon&#x27;s social media, and they agreed to work together on promoting the dance studio.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">2</td>
+        <td class="mono">21</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">38</td>
+        <td class="mono">conv-30_qa37</td>
+        <td>When did Gina mention Shia Labeouf?</td>
+        <td> 23 July, 2023</td>
+        <td>Gina mentioned Shia LaBeouf on **July 23, 2023**, when she motivated Jon with Shia LaBeouf&#x27;s famous &quot;Just do it!&quot; quote during their conversation about rehearsals, stress, and dance studio plans.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">2</td>
+        <td class="mono">21</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">39</td>
+        <td class="mono">conv-30_qa38</td>
+        <td>When did Gina go to a dance class with a group of friends?</td>
+        <td>21 July 2023</td>
+        <td>Based on the available memories, I don&#x27;t have a specific record of **Gina** going to a dance class **with a group of friends**. Here&#x27;s what the memory shows:
+
+- **Gina used to take dance classes** and has fond memories of them (from a conversation in April 2023, session s9), but **no specific date or mention of going with a group of friends** is recorded.
+- The &quot;dance class with a group of friends&quot; detail is actually associated with **Jon** — the memory states: *&quot;Jon took dance lessons with friends when he was younger.&quot;*
+- The closest event involving Gina attending a dance class is: **Jon and Gina planned to attend a dance class together on Friday, 27 January 2023**, but that was just the two of them, not a group of friends.
+
+So to answer your question directly: **There is no recorded information about when Gina went to a dance class with a group of friends.** The available memories mention she used to take dance classes (past, unspecified time, with fond memories), but the &quot;with a group of friends&quot; detail is about Jon&#x27;s past, not Gina&#x27;s.</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">2</td>
+        <td class="mono">28</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">40</td>
+        <td class="mono">conv-30_qa39</td>
+        <td>What is Gina&#x27;s favorite style of dance?</td>
+        <td>Contemporary</td>
+        <td>Based on all the memories I&#x27;ve searched, here&#x27;s what I know about Gina and dance:
+
+- **Gina loves dance** — she uses it as stress relief, has fond memories of taking dance classes, has won trophies from dance contests, and even adds dance-inspired items to her online clothing store.
+- Jon invited her to a dance competition he was hosting.
+
+However, **Gina&#x27;s favorite style of dance is not explicitly mentioned** in any of the available memories. We know she dances and competes, but the specific genre (hip hop, ballet, contemporary, salsa, ballroom, etc.) she prefers hasn&#x27;t been recorded in EchoMemory.</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">4</td>
+        <td class="mono">22</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">41</td>
+        <td class="mono">conv-30_qa40</td>
+        <td>What is Jon&#x27;s favorite style of dance?</td>
+        <td>Contemporary</td>
+        <td>Based on all the memories I&#x27;ve searched through, I can find **no information about Jon&#x27;s favorite style of dance**.
+
+Here&#x27;s what I know about Jon and dance:
+- He owns and runs a dance studio
+- He teaches dance classes and offers one-on-one mentoring
+- Dance has been his stress-buster since childhood
+- He hosts dance competitions
+- He practices and performs dance routines
+- He shared a photo of a group of women performing a dance routine from his class
+
+However, none of the conversations or memories explicitly mention a specific dance style that Jon prefers or considers his favorite (no mention of hip hop, salsa, ballroom, contemporary, jazz, breakdancing, etc.). The memory data simply refers to &quot;dance,&quot; &quot;dance routines,&quot; and &quot;dance studio&quot; in general terms.
+
+Could you perhaps ask Jon directly about his favorite style? Or if there&#x27;s another source of information I should look into?</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">4</td>
+        <td class="mono">23</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">42</td>
+        <td class="mono">conv-30_qa41</td>
+        <td>What was Gina&#x27;s favorite dancing memory?</td>
+        <td>Winning first place at a regionals dance competition</td>
+        <td>根据检索到的记忆，Gina最喜欢的舞蹈记忆是：**15岁时在地区赛（regionals）中以当代舞作品《Finding Freedom》获得第一名**。</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">18</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">43</td>
+        <td class="mono">conv-30_qa42</td>
+        <td>What kind of dance piece did Gina&#x27;s team perform to win first place?</td>
+        <td>&quot;Finding Freedom&quot;</td>
+        <td>Based on the retrieved memories, Gina&#x27;s team won first place at a regional dance competition when she was 15 by performing a **contemporary** dance piece called **&quot;Finding Freedom.&quot;**</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">27</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">44</td>
+        <td class="mono">conv-30_qa43</td>
+        <td>What do the dancers in the photo represent?</td>
+        <td>They are performing at the festival</td>
+        <td>Based on the memories I&#x27;ve retrieved, the dancers in the photo **represent Jon&#x27;s motivation and inspiration**.
+
+Specifically, from the conversation in March 2023, Jon shared a photo of a group of women/a dance class, and he said he **finds motivation from seeing his students succeed**. Additionally, from June 2023, Jon works with young dancers and **finds it inspiring**.
+
+So the dancers symbolize the reason why Jon is pursuing his dream of running a dance studio — seeing his students&#x27; passion, growth, and success drives him to keep going and reminds him why he started in the first place.</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">4</td>
+        <td class="mono">20</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">45</td>
+        <td class="mono">conv-30_qa44</td>
+        <td>What does Gina say about the dancers in the photo?</td>
+        <td>They look graceful</td>
+        <td>根据我的记忆搜索，虽然没有找到Gina对照片中舞者的逐字原话，但我找到了相关背景信息：
+
+在 **2023年3月** 的一次对话中（Session s7），Jon向他舞蹈班的一组女性表演舞蹈动作的照片。会议总结表明 **Gina 提供了鼓励和支持**，两人就自己的事业交换了鼓励和建议。
+
+此外，早在 **2023年2月4日**（Session s4），Jon分享了一位穿着灰色连衣裙表演舞蹈动作的女舞者的照片，并提到他正在为下个月的舞蹈比赛进行排练。**Gina提供了鼓励和支持**。
+
+在这些对话中，Gina始终扮演着支持性的角色——鼓励Jon追求他的舞蹈梦想。然而，我所拥有的总结性记忆（概览文件）并没有捕捉到Gina在看到这些舞者照片时的回应原文。如需获取她说的确切内容，我们需要访问原始的对话记录（消息级别数据），而这些记录在当前缓存的EchoMemory摘要中并未保留。</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">4</td>
+        <td class="mono">24</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">46</td>
+        <td class="mono">conv-30_qa45</td>
+        <td>What is Jon&#x27;s attitude towards being part of the dance festival?</td>
+        <td>Glad</td>
+        <td>Based on all the memory data I can access, I could not find any specific mention of a **dance festival** in the available memories. Here&#x27;s what I do know about Jon&#x27;s involvement in dance events:
+
+- In **April 2023** (session s8), Jon planned to **host a dance competition** at his studio and invited Gina to it. He expressed enthusiasm about hosting the event.
+- On **July 21, 2023** (just two days ago from the current date), Jon had a **successful night** with his dance studio, but was also struggling — his studio is on **tenuous grounds** and he&#x27;s working a temp job while seeking investors.
+- On **July 9, 2023**, Jon expressed **excitement to guide and mentor aspiring dancers**.
+
+However, there is **no record** of a &quot;dance festival&quot; being mentioned in any conversation or memory. If you can provide more context — like who mentioned it or when — I can search more specifically. Otherwise, it&#x27;s possible this information hasn&#x27;t been committed to memory yet.</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">4</td>
+        <td class="mono">26</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">47</td>
+        <td class="mono">conv-30_qa46</td>
+        <td>What kind of flooring is Jon looking for in his dance studio?</td>
+        <td>Marley flooring</td>
+        <td>Based on an exhaustive search of all available memory — including session overviews, atom memories, and keyword searches for &quot;floor,&quot; &quot;flooring,&quot; &quot;renovation,&quot; and &quot;equipment&quot; — I could not find any information about Jon looking for a specific type of flooring for his dance studio.
+
+The memories about Jon&#x27;s dance studio cover topics like:
+- Opening and running the studio
+- Teaching classes and mentoring
+- Expanding social media presence
+- Hosting a dance competition
+- Seeking investors and updating his business plan
+- Working with young dancers
+- His passion for dance
+
+However, flooring materials or studio setup/renovation details are **not mentioned** in any of the available memory records. I&#x27;m sorry, but I cannot answer this question based on the information I have access to.</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">4</td>
+        <td class="mono">24</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">48</td>
+        <td class="mono">conv-30_qa47</td>
+        <td>What did Gina find for her clothing store on 1 February, 2023?</td>
+        <td>The perfect spot for her store</td>
+        <td>Based on my search of all available memories, there is **no record** of anything happening with Gina&#x27;s clothing store on **1 February 2023**.
+
+The closest related events in the memories are:
+
+- **2023-01**: Gina lost her job and started her own business.
+- **2023-02-08**: Gina mentioned **finding a new fashion piece** for her store, and also announced she had **teamed up with a local artist** to create unique clothing designs.
+- **2023-03-16**: Gina opened her online clothes store.
+
+Unfortunately, there is no specific memory about what she found on February 1. The earliest February data I have is from February 8, 2023.</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">4</td>
+        <td class="mono">22</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">49</td>
+        <td class="mono">conv-30_qa48</td>
+        <td>What did Gina design for her store?</td>
+        <td>the space, furniture, and decor</td>
+        <td>Gina designed the **furniture and decor** of her store, creating a cozy and inviting interior.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">15</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">50</td>
+        <td class="mono">conv-30_qa49</td>
+        <td>What did Gina want her customers to feel in her store?</td>
+        <td>cozy and comfortable</td>
+        <td>Based on my memory, **Gina wanted her customers to feel comfortable, cozy, and as if they were in an oasis** — creating a relaxing, inviting shopping experience that would make customers want to return.
+
+She designed her store&#x27;s furniture and decor with cozy, comfy elements (including a glamorous chandelier) specifically to create this warm, welcoming atmosphere rather than a typical retail environment.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">21</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">51</td>
+        <td class="mono">conv-30_qa50</td>
+        <td>What did Jon say about Gina&#x27;s progress with her store?</td>
+        <td>hard work&#x27;s paying off</td>
+        <td>Based on the memory records, here&#x27;s what Jon said about Gina&#x27;s progress with her store:
+
+1. **February 1, 2023** — When Gina shared her store design (cozy, comfy interior with a glamorous chandelier), **Jon admired her store design** and asked about her furniture and decor choices, showing genuine interest in her store&#x27;s aesthetic.
+
+2. **February 1, 2023** — Jon expressed confidence that **both of them will achieve their dreams through hard work**, cheering her on as she expanded her clothing store.
+
+3. **March 16, 2023** — When Gina announced that her online clothes store was officially open and shared a screenshot of the website, **Jon exchanged encouragement with her**, celebrating mutual support and chasing their dreams together.
+
+4. **April 25, 2023** — Jon and Gina exchanged encouragement and business advice; Gina shared her story of starting an online clothing store after losing her job, and Jon responded supportively.
+
+5. **June 21, 2023** — When Gina showed off new unique pieces and a limited edition hoodie she designed (symbolizing grit and standing out against challenges), Jon was encouraging — the conversation was described as both of them **encouraging each other to persevere**.
+
+6. **July 9, 2023** — When Gina shared that she had been noticed by fashion editors, **Jon was fully supportive**, and the conversation was filled with mutual encouragement.
+
+**In essence:** Jon has consistently been Gina&#x27;s biggest cheerleader for her store — from admiring the initial design and layout, celebrating her launch, supporting her through new product lines, to celebrating her recognition by fashion editors. He often framed their success as a shared journey, expressing confidence that they&#x27;d both make it.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">26</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">52</td>
+        <td class="mono">conv-30_qa51</td>
+        <td>What made Gina choose the furniture and decor for her store?</td>
+        <td>personal style and customer comfort</td>
+        <td>Based on the memories, Gina chose the furniture and decor for her store to make it **cozy, comfy, and inviting**, including a glamorous chandelier. She designed everything herself with the intent of creating a warm and welcoming atmosphere for her customers.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">23</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">53</td>
+        <td class="mono">conv-30_qa52</td>
+        <td>What did Jon say about creating a special experience for customers?</td>
+        <td>It&#x27;s the key to making them feel welcome and coming back</td>
+        <td>Based on my extensive search through all available memory data, I couldn&#x27;t find a specific mention of Jon saying anything about &quot;creating a special experience for customers&quot; at his dance studio.
+
+Here&#x27;s what I do know from the memories about Jon&#x27;s approach to his dance studio and customers/students:
+
+- **Jon finds motivation from seeing his students succeed** and shared a photo of a group of women performing a dance routine from his class (March 2023)
+- **Jon offers dance classes, workshops, one-on-one mentoring, and training** at his studio (June 2023)
+- **Jon expressed excitement to guide and mentor aspiring dancers** (July 9, 2023)
+- **Jon plans to host a dance competition** to showcase local talent (around May 2023)
+- **Jon offers workshops/classes to local schools and centers** (April 2023)
+
+However, I don&#x27;t see any direct memory of Jon saying something specifically about &quot;creating a special experience&quot; or a &quot;special experience for customers.&quot; That specific phrasing does not appear in the available memory records. If you recall which conversation this came from, I can do a more targeted search.</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">4</td>
+        <td class="mono">27</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">54</td>
+        <td class="mono">conv-30_qa53</td>
+        <td>What did Gina say about creating an experience for her customers?</td>
+        <td>making them want to come back</td>
+        <td>Based on the memories, here&#x27;s what Gina said about creating an experience for her customers:
+
+On **February 1, 2023**, Gina explained that she designed her store to be **cozy, comfortable, and inviting** — with furniture and decor choices like a **glamorous chandelier** to create a warm atmosphere. Her goal was to craft a **&quot;comfortable, oasis-like shopping experience&quot;** so that customers would feel so at ease they&#x27;d **want to return**.
+
+In other words, she wanted her store to feel like a welcoming escape — not just a place to buy clothes, but a space where customers could relax and enjoy the experience, building loyalty through comfort and ambiance rather than just the products.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">26</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">55</td>
+        <td class="mono">conv-30_qa54</td>
+        <td>How is Gina&#x27;s store doing?</td>
+        <td>The store is doing great.</td>
+        <td>Based on the memories, here&#x27;s how Gina&#x27;s store is doing as of **July 23, 2023**:
+
+**Overall, it&#x27;s doing well and gaining momentum!** Here&#x27;s the timeline of progress:
+
+1. **Opened** her online clothes store on **March 16, 2023**, after losing her job at DoorDash.
+2. **February 2023** — She teamed up with a local artist to create unique clothing designs, and the store features cozy, inviting decor (including a chandelier!).
+3. **Early July 2023** — Gina **got noticed by fashion editors**! She was excited but also a bit scared about the attention — a big milestone for her store.
+4. **Week of July 14-21, 2023** — She **built a website** for her clothing store so customers can place orders directly.
+
+So in the past few weeks alone, she went from being noticed by fashion editors to launching her own order website. She&#x27;s also been sharing marketing advice with Jon (suggesting Instagram, TikTok, and influencer collaborations), which shows she&#x27;s becoming more confident in her business acumen. Seems like her store is on an upward trajectory! 🚀</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">24</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">56</td>
+        <td class="mono">conv-30_qa55</td>
+        <td>What does Gina&#x27;s tattoo symbolize?</td>
+        <td>Freedom and expressing herself through dance</td>
+        <td>Based on the memory records, **Gina&#x27;s tattoo symbolizes freedom** — specifically, it represents **freedom and dancing without worrying about what others think**. She got it a few years ago.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">22</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">57</td>
+        <td class="mono">conv-30_qa56</td>
+        <td>What did Jon and Gina compare their entrepreneurial journeys to?</td>
+        <td>dancing together and supporting each other</td>
+        <td></td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">4</td>
+        <td class="mono">0</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">58</td>
+        <td class="mono">conv-30_qa57</td>
+        <td>What advice does Gina give to Jon about running a successful business?</td>
+        <td>build relationships with customers, create a strong brand image, stay positive</td>
+        <td>Based on my memory search, here is the advice Gina has given Jon about running a successful business:
+
+### 1. Stay Passionate, Focused, and Resilient (June 2023)
+Gina advised Jon to **stay passionate, focused, resilient, believe in himself, and remain open to learning**. She also encouraged him **not to quit**, telling him that failures bring you closer to success.
+
+### 2. Focus on Successes &amp; Your &quot;Why&quot; (April 2023)
+When Jon expressed low confidence, Gina advised him to **focus on his successes**, remember **why he started** the dance studio in the first place, and **rely on a support system** to maintain confidence.
+
+### 3. Brand Identity &amp; Customer Relationships (March 2023)
+In their earlier conversations, Gina emphasized the importance of **brand identity**, **customer relationships**, and **staying positive** — practical business fundamentals she&#x27;s learned from running her own online clothing store.
+
+### 4. Stay Open to New Ideas (May 2023)
+When Jon mentioned reading *&quot;The Lean Startup&quot;*, Gina engaged with him about it, asking if the book could **spark new ideas for his dance studio** — showing her encouragement for continuous learning and applying business knowledge.
+
+Overall, Gina&#x27;s advice blends emotional encouragement (believe in yourself, don&#x27;t quit, lean on your support system) with practical business wisdom (know your brand, focus on customers, learn continuously, remember your purpose).</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">22</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">59</td>
+        <td class="mono">conv-30_qa58</td>
+        <td>Why did Jon shut down his bank account?</td>
+        <td>for his business</td>
+        <td>Based on the memories, Jon shut down his bank account **to help his business grow**. Specifically, he was working on expanding his dance studio—growing its social media presence, offering workshops to local schools and centers, and planning to host a dance competition. Closing the bank account was a step he took as part of his efforts to invest in and grow his business.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">21</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">60</td>
+        <td class="mono">conv-30_qa59</td>
+        <td>Why did Gina combine her clothing business with dance?</td>
+        <td>she is passionate about dance and fashion</td>
+        <td>Based on the memory records, Gina combined her clothing business with dance because **dance is her passion and serves as a form of stress relief**, while **fashion fuels her creativity**. By adding dance-inspired items to her online fashion store, she was able to merge these two passions together — combining her clothing business with the thing she loves (dance) and uses to unwind.
+
+As described in the records:
+- **Gina runs an online fashion store** and is starting a business
+- **She uses dance as stress relief** and fashion fuels her creativity
+- She combined them by **adding dance-inspired items to her store**
+
+So essentially, it was a natural fusion of her dual passions — fashion (her business) and dance (her creative outlet and stress reliever).</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">21</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">61</td>
+        <td class="mono">conv-30_qa60</td>
+        <td>What does Jon&#x27;s dance make him?</td>
+        <td>happy</td>
+        <td>Based on the memories, **dance has been Jon&#x27;s stress-buster since childhood**. Dancing helps him relieve stress and stay grounded.</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">4</td>
+        <td class="mono">25</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">62</td>
+        <td class="mono">conv-30_qa61</td>
+        <td>What did Gina receive from a dance contest?</td>
+        <td>a trophy</td>
+        <td>Gina won a **trophy** from a dance contest (she shared a photo of it on April 9, 2023). 🏆</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">22</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">63</td>
+        <td class="mono">conv-30_qa62</td>
+        <td>How does Gina stay confident in her business?</td>
+        <td>By reminding herself of her successes and progress, having a support system, and focusing on why she started</td>
+        <td>Based on the memories, here&#x27;s how Gina stays confident in her business:
+
+1. **Focusing on her successes** – She tracks what&#x27;s working. When her new offers and promotions increased sales, she used that momentum to build confidence.
+
+2. **Remembering her &quot;why&quot;** – After losing her job, she turned that setback into motivation to start her online clothing store. She keeps her founding reasons top of mind.
+
+3. **Leaning on her support system** – She and Jon regularly encourage each other through their respective business journeys, exchanging advice and motivation.
+
+4. **Combining her passion with business** – She adds dance-inspired items to her store, blending her love for dance with her clothing business, which keeps her work personally meaningful.
+
+5. **Using dance as stress relief** – She actively uses dance to decompress, which helps her stay balanced and clear-headed amid business challenges.
+
+6. **Taking creative ownership** – She personally designed the furniture and decor of her store, giving her a sense of pride and personal investment.
+
+7. **Being proactive with growth** – She works with fashion bloggers and influencers, runs promotions, and actively seeks out new fashion pieces — staying confident through action rather than waiting for things to happen.
+
+In short: **Gina&#x27;s confidence comes from celebrating small wins, staying connected to her purpose, blending her passion into her work, and taking consistent action — all while maintaining a strong support system.**</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">19</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">64</td>
+        <td class="mono">conv-30_qa63</td>
+        <td>What kind of professional experience did Gina get accepted for on May 23, 2023?</td>
+        <td>fashion internship</td>
+        <td>Based on the memory records, on **May 27, 2023** (not May 23), Gina announced she was accepted for a **part-time fashion internship at an international company**. She expressed feeling both excited and nervous about this new opportunity.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">23</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">65</td>
+        <td class="mono">conv-30_qa64</td>
+        <td>Where is Gina&#x27;s fashion internship?</td>
+        <td>fashion department of an international company</td>
+        <td>Based on my search of all available memories, here&#x27;s what I know about Gina&#x27;s fashion internship:
+
+- **On May 27, 2023**, Gina announced she was accepted for a **part-time fashion internship at an international company**.
+- Earlier (May 10, 2023), she had a **design internship interview** that went great.
+- She felt **excited and nervous** about it.
+
+However, the **specific location** (city or country) of the internship was **not recorded** in any of the memories available to me. The memories only mention it&#x27;s at an &quot;international company&quot; without specifying where it&#x27;s physically located. It&#x27;s possible the information was shared but not captured in the summary, or that the internship location was never explicitly discussed.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">16</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">66</td>
+        <td class="mono">conv-30_qa65</td>
+        <td>What book is Jon currently reading?</td>
+        <td>The Lean Startup</td>
+        <td>Based on all the available memories I&#x27;ve searched, there is **no information** about Jon currently reading a book. 
+
+The memories about Jon primarily cover:
+- His passion for dance and owning a dance studio
+- His successful night at the studio on July 21, 2023
+- His excitement to mentor aspiring dancers
+- His trip to Rome and interactions with Gina
+- His career journey and business activities
+
+None of the stored memories or conversation sessions mention any book that Jon is reading. I&#x27;m unable to answer this question from what&#x27;s available in memory.</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">4</td>
+        <td class="mono">27</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">67</td>
+        <td class="mono">conv-30_qa66</td>
+        <td>What is Jon offering to the dancers at his dance studio?</td>
+        <td>One-on-one mentoring and training</td>
+        <td>Based on the memories, Jon is offering the following to dancers at his dance studio:
+
+1. **Dance classes**
+2. **Workshops**
+3. **One-on-one mentoring**
+4. **Training**
+
+He works with young dancers and finds it inspiring, and he has also expressed excitement about guiding and mentoring aspiring dancers.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">27</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">68</td>
+        <td class="mono">conv-30_qa67</td>
+        <td>How does Jon use the clipboard with a notepad attached to it?</td>
+        <td>To set goals, track achievements, and find areas for improvement</td>
+        <td>Based on all the memories I have access to about Jon, there is **no information** about him using a clipboard with a notepad attached to it. 
+
+The memories I have about Jon cover:
+- His passion for dance and owning a dance studio
+- Opening his studio on June 20, 2023
+- Attending fairs and networking events to promote his business
+- Posting dance videos on social media
+- Learning marketing and analytics tools
+- Building an online platform for the studio
+- Taking a trip to Rome
+- Receiving business mentorship
+- Losing his job prior to starting his business
+- Hosting a dance competition
+
+But there is no mention of a clipboard, a notepad (attached or otherwise), or any similar physical office tool. If you have more context about what you&#x27;re referring to, I&#x27;d be happy to help further!</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">4</td>
+        <td class="mono">30</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">69</td>
+        <td class="mono">conv-30_qa68</td>
+        <td>What does Jon tell Gina he won&#x27;t do?</td>
+        <td>quit</td>
+        <td></td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">4</td>
+        <td class="mono">0</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">70</td>
+        <td class="mono">conv-30_qa69</td>
+        <td>What did Jon take a trip to Rome for?</td>
+        <td>To clear his mind</td>
+        <td>Based on the retrieved memories, Jon took a short trip to **Rome** around mid-June 2023 (the week prior to June 19) **to clear his mind**. He mentioned this to Gina while discussing the upcoming grand opening of his dance studio, which was scheduled for June 20, 2023.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">28</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">71</td>
+        <td class="mono">conv-30_qa70</td>
+        <td>What is Jon working on opening?</td>
+        <td>a dance studio</td>
+        <td>Based on the memory records, **Jon is working on opening his own dance studio**.
+
+Key details:
+- He lost his job and decided to pursue his passion by opening a dance studio as his dream business.
+- The grand opening of his dance studio took place on **June 20, 2023**.
+- He&#x27;s now teaching dance and expressed excitement about guiding and mentoring aspiring dancers.
+- Gina has been encouraging him throughout this journey.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">28</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">72</td>
+        <td class="mono">conv-30_qa71</td>
+        <td>How does Gina describe the studio that Jon has opened?</td>
+        <td>amazing</td>
+        <td>Based on the retrieved memories, here&#x27;s how Gina describes Jon&#x27;s dance studio:
+
+**Gina believes Jon will &quot;make his dance studio a hit.&quot;** 
+
+In their conversation on July 9, 2023 (session 17), Gina expressed strong confidence in Jon, calling his studio a future success—a &quot;hit.&quot; This is consistent with her overall supportive and encouraging tone throughout their conversations, where she consistently cheers him on as he pursues his dream of running a dance studio and mentoring aspiring dancers.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">24</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">73</td>
+        <td class="mono">conv-30_qa72</td>
+        <td>How does Jon feel about the opening night of his dance studio?</td>
+        <td>excited</td>
+        <td>Based on the retrieved memories, here&#x27;s what I can tell you about Jon&#x27;s feelings regarding the opening night of his dance studio:
+
+**Jon was excited and positive about the opening night.** The session overview from mid-June 2023 notes that &quot;Jon shares his excitement about the grand opening of his dance studio on 20 June 2023&quot; and that he and Gina both &quot;look forward to making memories at the opening.&quot;
+
+Additionally, looking at what happened after the opening:
+- On **July 9, 2023**, Jon expressed **excitement to guide and mentor aspiring dancers** — showing his enthusiasm for the studio&#x27;s mission.
+- On **July 21, 2023**, he had a **successful night** at his dance studio, indicating that things went well and he felt good about it.
+
+Overall, Jon&#x27;s feelings about the opening night and the early days of his dance studio are characterized by **excitement, gratitude, and a sense of success** — he was pursuing his passion, had received support from Gina and a business mentor, and was clearly enjoying the journey of building his dream business.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">26</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">74</td>
+        <td class="mono">conv-30_qa73</td>
+        <td>How does Gina describe the feeling that dance brings?</td>
+        <td>magical</td>
+        <td>Based on the memory records, Gina describes dance as **stress relief**. She uses dance as a way to relieve stress, and she also combines her love of dance with her passion for fashion. Additionally, the memories note that while dance provides stress relief, fashion fuels her creativity — the two complement each other for her.</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">4</td>
+        <td class="mono">22</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">75</td>
+        <td class="mono">conv-30_qa74</td>
+        <td>What does Jon plan to do at the grand opening of his dance studio?</td>
+        <td>savor all the good vibes</td>
+        <td>Based on the information stored in memory, here&#x27;s what I found about Jon&#x27;s plans for the grand opening of his dance studio:
+
+**Jon&#x27;s dance studio grand opening was scheduled for June 20, 2023** (the official opening night). 
+
+From the conversation on June 19, 2023, Jon discussed the upcoming grand opening with Gina after returning from a short trip to Rome. Key details from the memories:
+
+- **The grand opening involved young dancers**: Jon shared a photo of **young dancers rehearsing in the studio**, indicating they were preparing to perform at the opening event.
+- Jon expressed excitement about the opening and both he and Gina looked forward to &quot;making memories&quot; at the event.
+- The opening was part of Jon&#x27;s broader plan for the studio, which was to **offer classes, workshops, and one-on-one mentoring for young dancers** — so the grand opening likely showcased these offerings.
+
+In summary, Jon planned to **host the grand opening as a showcase event featuring young dancers performing**, celebrating the launch of his dance studio that would provide classes, workshops, and training for aspiring dancers.</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">4</td>
+        <td class="mono">19</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">76</td>
+        <td class="mono">conv-30_qa75</td>
+        <td>What does Gina say to Jon about the grand opening?</td>
+        <td>Let&#x27;s live it up and make some great memories</td>
+        <td>Based on the memory records, here&#x27;s what Gina said to Jon about the grand opening of his dance studio:
+
+On **June 19, 2023** (the day before the official grand opening on June 20), after Jon shared his excitement about the upcoming grand opening and his recent trip to Rome, Gina:
+
+1. **Congratulated him** on the grand opening
+2. **Expressed her support** for him
+3. **Said she would attend** the grand opening
+4. They both **looked forward to making memories together** at the event
+
+In short, Gina was fully supportive — she congratulated Jon, expressed her excitement, and confirmed she would be there to celebrate with him.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">26</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">77</td>
+        <td class="mono">conv-30_qa76</td>
+        <td>What is the general sentiment about the upcoming grand opening?</td>
+        <td>excitement</td>
+        <td>Based on the retrieved memories, the general sentiment about the **upcoming grand opening** was overwhelmingly **positive, excited, and supportive**.
+
+Key evidence:
+
+- **Jon** was highly excited — he expressed joy about the studio&#x27;s opening, talked about following his passion for dance, and looked forward to mentoring aspiring dancers. He also took a short trip to Rome the week before (around June 12) to clear his mind, showing he was mentally preparing for the big day with positivity and focus.
+
+- **Gina** was very supportive — she encouraged Jon to keep working on his studio, congratulated him, and planned to attend the grand opening. The session overview notes that *&quot;both look forward to making memories at the opening.&quot;*
+
+- The overall tone from both sides was one of **optimism, mutual encouragement, and eager anticipation** for the June 20, 2023 grand opening. No negative or anxious sentiments were recorded in the memories regarding this event.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">21</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">78</td>
+        <td class="mono">conv-30_qa77</td>
+        <td>What did Gina make a limited edition line of?</td>
+        <td>Hoodies</td>
+        <td>Based on the memories, Gina made a **limited edition line of clothing** for her online store. Specifically, she created a **limited edition hoodie** (around 2023-06-14) to showcase her personal style. The hoodie design symbolized grit and standing out against challenges, and it was from her own personal collection (not for sale).</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">20</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">79</td>
+        <td class="mono">conv-30_qa78</td>
+        <td>According to Gina, what makes Jon a perfect mentor and guide?</td>
+        <td>His positivity and determination</td>
+        <td></td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">4</td>
+        <td class="mono">0</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">80</td>
+        <td class="mono">conv-30_qa80</td>
+        <td>What plans does Jon have after receiving advice at the networking event?</td>
+        <td>Sprucing up his business plan, tweaking his pitch to investors, and working on an online platform.</td>
+        <td>Based on the memory records, after attending the networking event and receiving advice from investors, Jon has **two key plans**:
+
+1. **Updating his business plan** – incorporating the advice and insights he gained from the investors he met at the event.
+2. **Building an online platform for his dance studio** – creating a digital presence to help promote and grow his business.
+
+Additionally, around the same time (July 21, 2023), Jon also agreed to **collaborate with Gina on social media promotion** (Instagram, TikTok, and local influencer collaborations) as part of his marketing strategy for the dance studio.</td>
+        <td><span class="pill bad">WRONG</span></td>
+        <td class="mono">4</td>
+        <td class="mono">25</td>
+      </tr>
+    
+      <tr>
+        <td class="mono">81</td>
+        <td class="mono">conv-30_qa81</td>
+        <td>What offer does Gina make to Jon regarding social media?</td>
+        <td>Helping with making content and managing his social media accounts.</td>
+        <td>Based on the conversation from July 21, 2023, **Gina offered to help Jon create content and manage his social media accounts** for his dance studio. This was part of their agreement to collaborate on promoting the studio.</td>
+        <td><span class="pill ok">CORRECT</span></td>
+        <td class="mono">4</td>
+        <td class="mono">23</td>
+      </tr>
+    
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

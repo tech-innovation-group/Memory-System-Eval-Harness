@@ -32,6 +32,114 @@ def load_csv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(f))
 
 
+def sanitize_prediction_text(text: Any) -> str:
+    value = str(text or "").strip()
+    if not value:
+        return ""
+    value = value.replace("\r", "\n")
+    for pattern in (
+        r"<\|?DSML\|?[\s\S]*$",
+        r"<｜DSML｜[\s\S]*$",
+        r"<memory_search[\s\S]*$",
+        r"<functioncall[\s\S]*$",
+        r"<function[\s\S]*$",
+        r"<invoke[\s\S]*$",
+        r"<execute[\s\S]*$",
+    ):
+        value = re.sub(pattern, "", value, flags=re.I)
+    value = re.sub(r"`{3}[\s\S]*?`{3}", "", value)
+    value = re.sub(r"`[^`]*`", "", value)
+    value = re.sub(r"\*\*(.*?)\*\*", r"\1", value)
+    value = re.sub(r"\s+", " ", value).strip()
+    lead_patterns = (
+        r"^(based on (?:the )?(?:available|retrieved) memor(?:y|ies)[^.!?]*[.!?]\s*)",
+        r"^(based on my (?:knowledge|memory)[^.!?]*[.!?]\s*)",
+        r"^(i(?:'| a)?ll check memory[^.!?]*[.!?]\s*)",
+        r"^(i(?:'| a)?ll check [^.!?]*[.!?]\s*)",
+        r"^(i will check [^.!?]*[.!?]\s*)",
+        r"^(i(?:'| a)?ll search[^.!?]*[.!?]\s*)",
+        r"^(i will search[^.!?]*[.!?]\s*)",
+        r"^(let me check[^.!?]*[.!?]\s*)",
+        r"^(let me search[^.!?]*[.!?]\s*)",
+        r"^(let me retrieve[^.!?]*[.!?]\s*)",
+        r"^(let me look[^.!?]*[.!?]\s*)",
+        r"^(searching for[^.!?]*[.!?]\s*)",
+    )
+    changed = True
+    while changed and value:
+        changed = False
+        for pattern in lead_patterns:
+            updated = re.sub(pattern, "", value, flags=re.I).strip()
+            if updated != value:
+                value = updated
+                changed = True
+    for phrase in (
+        "让我搜索一下。",
+        "让我搜索一下",
+        "我来搜索一下。",
+        "我来搜索一下",
+        "让我查一下。",
+        "让我查一下",
+        "根据记忆中的信息，",
+        "基于记忆中的信息，",
+    ):
+        value = value.replace(phrase, "").strip()
+    value = re.sub(
+        r"\bto (?:find|answer|confirm|check|verify)[^.!?]*(?:let me|i(?:'| a)?ll|i will)\s+(?:search|retrieve|look up|check)[^.!?]*[.!?]?",
+        "",
+        value,
+        flags=re.I,
+    ).strip()
+    value = re.sub(
+        r"\bi (?:know|found) from the retrieved memories that\s+",
+        "",
+        value,
+        flags=re.I,
+    ).strip()
+    filtered_sentences = []
+    for sentence in re.split(r"(?<=[.!?。！？])\s+", value):
+        piece = sentence.strip()
+        if not piece:
+            continue
+        lowered = piece.lower()
+        if (
+            re.search(r"\b(let me|i(?:'| a)?ll|i will)\s+(?:search|retrieve|look up|check)\b", lowered)
+            or "search my memory" in lowered
+            or "check memory" in lowered
+            or "retrieved memories" in lowered
+            or re.search(r"(让我|我来|我会).*(搜索|查询|检索|查一下)", piece)
+            or re.search(r"(需要|还需|仍需).*(查询|搜索|检索|确认)", piece)
+        ):
+            continue
+        filtered_sentences.append(piece)
+    value = " ".join(filtered_sentences).strip()
+    tail_patterns = (
+        r"(?:however, )?(?:the )?retrieved memor(?:y|ies) do(?:es)? not [^.!?]*[.!?]?$",
+        r"(?:therefore, )?i cannot confirm[^.!?]*[.!?]?$",
+        r"(?:to be thorough, )?let me verify[^.!?]*[.!?]?$",
+        r"(?:i )?need to (?:search|retrieve|look up|check)[^.!?]*[.!?]?$",
+        r"(?:it )?requires? (?:search|retrieval|looking up)[^.!?]*[.!?]?$",
+        r"(?:about|for) [^.!?]* need(?:s)? further (?:search|lookup|retrieval)[^.!?]*[.!?]?$",
+        r"(?:关于|对于)[^。！？]*?(?:需要|还需|仍需)(?:进一步)?(?:查询|搜索|检索|确认)[^。！？]*[。！？]?$",
+        r"(?:让我|我来)(?:继续)?(?:搜索|查询|检索|查一下)[^。！？]*[。！？]?$",
+        r"(?:还需要|仍需要)(?:进一步)?(?:查询|搜索|检索|确认)[^。！？]*[。！？]?$",
+    )
+    changed = True
+    while changed and value:
+        changed = False
+        for pattern in tail_patterns:
+            updated = re.sub(pattern, "", value, flags=re.I).strip()
+            if updated != value:
+                value = updated
+                changed = True
+    value = re.sub(r"\b(?:need(?:s)?|requires?) to (?:search|retrieve|look up)[^.!?]*[.!?]?$", "", value, flags=re.I).strip()
+    value = re.sub(r"\b(?:let me|i(?:'| a)?ll|i will) (?:search|retrieve|look up|check)[^.!?]*$", "", value, flags=re.I).strip()
+    value = re.sub(r"(?:to find [^.!?]*, )?let me search[^.!?]*[.!?]?$", "", value, flags=re.I).strip()
+    value = re.sub(r"(?:to answer [^.!?]*, )?i(?:'| a)?ll check memory[^.!?]*[.!?]?$", "", value, flags=re.I).strip()
+    value = re.sub(r"\s+", " ", value).strip(" -:\n\t")
+    return value
+
+
 def normalize_answer(text: Any) -> str:
     value = str(text or "").lower()
     value = "".join(ch for ch in value if ch not in set(string.punctuation))
@@ -80,7 +188,8 @@ def main() -> None:
         qid = str(row.get("question_id") or row.get("sample_id") or row.get("native_question_id") or "")
         if not qid or qid not in refs:
             continue
-        prediction = str(row.get(args.prediction_field) or row.get("answer") or "")
+        raw_prediction = str(row.get(args.prediction_field) or row.get("answer") or "")
+        prediction = sanitize_prediction_text(raw_prediction) or raw_prediction
         ref = refs[qid]
         gold = str(ref.get("answer") or "")
         rows.append(

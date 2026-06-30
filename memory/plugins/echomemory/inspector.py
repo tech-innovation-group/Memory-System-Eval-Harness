@@ -610,11 +610,42 @@ def session_ids_for_records(records: list[dict[str, Any]]) -> set[str]:
     return ids
 
 
+def workspace_has_import_artifacts(workspace: Path, account: str) -> bool:
+    account_root = first_existing_root(workspace, account)
+    if not account_root.exists():
+        return False
+    for root in session_dir_candidates(workspace, account):
+        if not root.exists():
+            continue
+        try:
+            next(root.iterdir())
+            return True
+        except StopIteration:
+            continue
+        except Exception:
+            continue
+    for candidate in (
+        preferred_memory_root(account_root),
+        account_root / "engines" / "echo0_plugin" / "commits",
+    ):
+        if not candidate.exists():
+            continue
+        try:
+            next(candidate.rglob("*"))
+            return True
+        except StopIteration:
+            continue
+        except Exception:
+            continue
+    return False
+
+
 def list_imported_memories(workspace: Path, account: str, output_dir: Path, limit: int = 80, sample: str = "") -> dict[str, Any]:
     account = account or "default"
     sample = normalize_sample_filter(sample)
     account_root = first_existing_root(workspace, account)
     matching_session_ids: set[str] = set()
+    workspace_has_artifacts = workspace_has_import_artifacts(workspace, account)
 
     summaries: list[dict[str, Any]] = []
     seen_summary_keys: set[str] = set()
@@ -659,55 +690,49 @@ def list_imported_memories(workspace: Path, account: str, output_dir: Path, limi
         if len(summaries) >= limit:
             break
 
+    if not workspace_has_artifacts and not summaries:
+        return {
+            "backend": "echomemory",
+            "workspace": str(workspace),
+            "account": account,
+            "sample": sample,
+            "account_path": str(account_root),
+            "memory_root": str(preferred_memory_root(account_root)),
+            "sessions": [],
+            "summaries": [],
+        }
+
+    snapshot_rows, _snapshot_totals = current_session_snapshot(workspace, account, sample)
     sessions: list[dict[str, Any]] = []
-    seen_session_keys: set[str] = set()
-    for root in session_dir_candidates(workspace, account):
-        if not root.exists():
+    for row in snapshot_rows:
+        session_id = str(row.get("session_id") or "")
+        if matching_session_ids and session_id not in matching_session_ids:
             continue
-        for session_dir in sorted(root.glob("*"), key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True):
-            if not session_dir.is_dir():
-                continue
-            meta = read_session_metadata(session_dir)
-            title = session_title_from_meta(meta, session_dir.name)
-            session_key = title or session_dir.name
-            if session_key in seen_session_keys:
-                continue
-            matches_sample = session_id_matches_sample(session_dir.name, sample) or session_title_matches_sample(title, sample)
-            if matching_session_ids:
-                matches_sample = session_dir.name in matching_session_ids
-            if not matches_sample:
-                continue
-            seen_session_keys.add(session_key)
-            archived_message_files = session_archive_message_paths(session_dir)
-            has_committed_archive = bool(archived_message_files)
-            if not has_committed_archive and session_dir.name not in matching_session_ids:
-                # EchoMem_develop writes current/session.json and current/messages.jsonl
-                # before commit. Only committed archive files count as imported memory.
-                continue
-            files = [p for p in session_dir.rglob("*") if p.is_file()]
-            message_files = archived_message_files or session_message_paths(session_dir)
-            message_file = message_files[0] if message_files else session_primary_messages_path(session_dir)
-            meta_file = session_metadata_path(session_dir)
-            stored_messages = count_jsonl_rows(message_file)
-            sessions.append(
-                {
-                    "session_id": session_dir.name,
-                    "session_key": session_key,
-                    "path": str(session_dir),
-                    "history_path": str(message_file) if message_file.exists() else "",
-                    "history_files": len(archived_message_files) if archived_message_files else len(message_files),
-                    "files": len(files),
-                    "stored_messages": stored_messages,
-                    "meta_path": str(meta_file) if meta_file.exists() else "",
-                    "has_archive": has_committed_archive,
-                    "updated_at": datetime.fromtimestamp(session_dir.stat().st_mtime).isoformat(timespec="seconds"),
-                }
-            )
-            if len(sessions) >= limit:
-                break
+        session_path = Path(str(row.get("session_path") or ""))
+        files = [p for p in session_path.rglob("*") if session_path.exists() for p in session_path.rglob("*") if p.is_file()]
+        sessions.append(
+            {
+                "session_id": session_id,
+                "session_key": row.get("session_key") or session_id,
+                "path": str(session_path),
+                "history_path": str(row.get("history_path") or ""),
+                "history_files": int(row.get("history_files") or 0),
+                "files": len(files),
+                "stored_messages": int(row.get("submitted_messages") or 0),
+                "meta_path": str(row.get("meta_path") or ""),
+                "has_archive": bool(row.get("commit_complete")),
+                "updated_at": datetime.fromtimestamp(session_path.stat().st_mtime).isoformat(timespec="seconds") if session_path.exists() else "",
+                "commit_complete": bool(row.get("commit_complete")),
+                "atom_flush_complete": bool(row.get("atom_flush_complete")),
+                "session_complete": bool(row.get("session_complete") or (row.get("commit_complete") and row.get("atom_flush_complete"))),
+                "integrity": row.get("integrity") or "",
+            }
+        )
         if len(sessions) >= limit:
             break
 
+    session_complete_count = sum(1 for item in sessions if item.get("session_complete"))
+    conv_complete = bool(sessions) and session_complete_count == len(sessions)
     return {
         "backend": "echomemory",
         "workspace": str(workspace),
@@ -715,6 +740,9 @@ def list_imported_memories(workspace: Path, account: str, output_dir: Path, limi
         "sample": sample,
         "account_path": str(account_root),
         "memory_root": str(preferred_memory_root(account_root)),
+        "session_complete_count": session_complete_count,
+        "session_total_count": len(sessions),
+        "conv_complete": conv_complete,
         "sessions": sessions,
         "summaries": summaries,
     }
@@ -892,6 +920,7 @@ def current_session_snapshot(workspace: Path, account: str, sample: str = "") ->
                 "history_files": 1 if (archive_messages.exists() or messages_path.exists()) else 0,
                 "commit_complete": commit_ok,
                 "atom_flush_complete": atom_ok,
+                "session_complete": bool(commit_ok and atom_ok),
                 "commit_state_known": commit_state_known or archive_ok or engine_completed,
                 "atom_state_known": atom_state_known or engine_completed,
                 "ok": ok,
@@ -1025,6 +1054,23 @@ def import_integrity(
             "warn" if gap_count else "ok",
         )
 
+    session_complete_count = sum(1 for item in sessions if item.get("session_complete") or (item.get("commit_complete") and item.get("atom_flush_complete")))
+    session_total_count = len(sessions)
+    conv_complete = bool(session_total_count) and session_complete_count == session_total_count
+    add_check(
+        checks,
+        "Session 完成标志",
+        conv_complete,
+        f"session_complete={session_complete_count} / {session_total_count}",
+        "ok" if conv_complete else "warn",
+    )
+    add_check(
+        checks,
+        "Conv 完成标志",
+        conv_complete,
+        f"conv_complete={str(conv_complete).lower()}",
+        "ok" if conv_complete else "warn",
+    )
     failed = [item for item in checks if item["level"] == "fail" or (item["ok"] is False and item["level"] != "warn")]
     warnings = [item for item in checks if item["level"] == "warn" and not item["ok"]]
     current_complete = bool(sessions) and totals["incomplete_commits"] == 0 and totals["incomplete_atom_flush"] == 0 and totals["expected"] == totals["submitted"] and retrieval_layers_ready
@@ -1046,6 +1092,9 @@ def import_integrity(
         "expected_messages": expected,
         "submitted_messages": submitted,
         "session_count": len(sessions),
+        "session_complete_count": session_complete_count,
+        "session_total_count": session_total_count,
+        "conv_complete": conv_complete,
         "memory_files": artifact_files,
         "abstract_files": abstract_count,
         "overview_files": overview_count,

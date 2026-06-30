@@ -73,7 +73,13 @@ check "python3 available" command -v python3
 check "start.sh syntax" bash -n "$ROOT/start.sh"
 check "preflight.sh syntax" bash -n "$ROOT/preflight.sh"
 if command -v node >/dev/null 2>&1; then
+  check "web/static/app-state.js syntax" node --check "$ROOT/web/static/app-state.js"
+  check "web/static/app-core.js syntax" node --check "$ROOT/web/static/app-core.js"
+  check "web/static/app-format.js syntax" node --check "$ROOT/web/static/app-format.js"
   check "web/static/app.js syntax" node --check "$ROOT/web/static/app.js"
+  check "static/app-state.js syntax" node --check "$ROOT/static/app-state.js"
+  check "static/app-core.js syntax" node --check "$ROOT/static/app-core.js"
+  check "static/app-format.js syntax" node --check "$ROOT/static/app-format.js"
   check "static/app.js syntax" node --check "$ROOT/static/app.js"
   check "frontend MemoryBench agent alignment gate" node "$ROOT/scripts/check_frontend_alignment.js"
 else
@@ -127,12 +133,15 @@ delivery = contract.get("delivery_boundary") or {}
 public_static = sorted(str(item) for item in delivery.get("public_static_files", []) if str(item).strip())
 expected_public_static = sorted([
     "web/static/index.html",
+    "web/static/app-state.js",
+    "web/static/app-core.js",
+    "web/static/app-format.js",
     "web/static/app.js",
     "web/static/styles.css",
     "web/static/product-roadmap.html",
 ])
 if public_static != expected_public_static:
-    raise SystemExit(f"public static contract must contain only the four public UI files, got {public_static}")
+    raise SystemExit(f"public static contract must contain the split public UI assets, got {public_static}")
 if "experiment history" not in str(delivery.get("historical_static_policy") or ""):
     raise SystemExit("historical static policy must state that extra web/static HTML files are experiment history")
 problems = {}
@@ -193,7 +202,7 @@ PY
 if [ $? -eq 0 ]; then
   pass "web/static mirror matches contract public files"
 else
-  fail_msg "web/static mirror drift" "$(cat "$TMP_DIR/static_assets.err")" "Run: cp web/static/index.html static/index.html && cp web/static/app.js static/app.js && cp web/static/styles.css static/styles.css && cp web/static/product-roadmap.html static/product-roadmap.html"
+  fail_msg "web/static mirror drift" "$(cat "$TMP_DIR/static_assets.err")" "Run: cp web/static/index.html static/index.html && cp web/static/app-state.js static/app-state.js && cp web/static/app-core.js static/app-core.js && cp web/static/app-format.js static/app-format.js && cp web/static/app.js static/app.js && cp web/static/styles.css static/styles.css && cp web/static/product-roadmap.html static/product-roadmap.html"
 fi
 
 print_header "Publish Ignore Rules"

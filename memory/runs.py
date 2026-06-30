@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,21 @@ from . import reports as report_service
 
 RUN_LIST_CSV_SUMMARY_MAX_BYTES = 5 * 1024 * 1024
 NATIVE_OPENVIKING_BASELINE_FILE = "native_openviking_baseline.json"
+ACTIVE_MANIFEST_STATUSES = {"queued", "running", "stopping"}
+
+
+def _pid_is_alive(pid: Any) -> bool:
+    try:
+        pid_value = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid_value <= 0:
+        return False
+    try:
+        os.kill(pid_value, 0)
+    except OSError:
+        return False
+    return True
 
 
 def read_json(path: Path) -> Any:
@@ -64,6 +80,8 @@ def _normalize_run_status(manifest: dict[str, Any], run_dir: Path, active_run_id
     raw_status = str(manifest.get("status") or "").strip()
     run_id = str(manifest.get("id") or run_dir.name)
     output_file = str(manifest.get("output_file") or "").strip()
+    manifest_pid = manifest.get("pid")
+    pid_alive = _pid_is_alive(manifest_pid)
     if raw_status == "running" and output_file.lower().endswith(".json"):
         try:
             summary = report_service.parse_json_run_summary(Path(output_file))
@@ -81,18 +99,32 @@ def _normalize_run_status(manifest: dict[str, Any], run_dir: Path, active_run_id
                     "summary_status": summary_status,
                 },
             )
-    if raw_status == "running" and active_run_ids is not None and run_id not in active_run_ids and str(run_dir) not in active_run_ids:
+    if raw_status in ACTIVE_MANIFEST_STATUSES and pid_alive:
         return (
-            "interrupted",
+            raw_status,
             {
                 "manifest_status": raw_status,
-                "stale_running": True,
-                "recoverable": True,
-                "status_reason": "manifest_running_without_active_task",
-                "recovery_hint": "任务已不在当前服务活动列表中；可查看日志后补跑缺失题或重跑失败题。",
+                "stale_running": False,
+                "recoverable": False,
+                "status_reason": "manifest_pid_alive",
+                "pid_alive": True,
             },
         )
-    return raw_status, {"manifest_status": raw_status, "stale_running": False, "recoverable": False}
+    if raw_status in ACTIVE_MANIFEST_STATUSES and active_run_ids is not None and run_id not in active_run_ids and str(run_dir) not in active_run_ids:
+        terminal_status = "canceled" if raw_status == "queued" else "interrupted"
+        return (
+            terminal_status,
+            {
+                "manifest_status": raw_status,
+                "stale_running": raw_status == "running",
+                "stale_active": True,
+                "recoverable": True,
+                "status_reason": f"manifest_{raw_status}_without_active_task",
+                "recovery_hint": "任务已不在当前服务活动列表中；可查看日志后补跑缺失题或重跑失败题。",
+                "pid_alive": False,
+            },
+        )
+    return raw_status, {"manifest_status": raw_status, "stale_running": False, "recoverable": False, "pid_alive": pid_alive}
 
 
 def _external_status_from_formal_benchmark(run_dir: Path) -> tuple[str, dict[str, Any]]:
@@ -265,6 +297,43 @@ def _compact_summary_for_list(summary: dict[str, Any]) -> dict[str, Any]:
     return compact
 
 
+def _merge_judge_summary(summary: dict[str, Any], output_path: Path | None) -> dict[str, Any]:
+    if not isinstance(summary, dict) or not output_path or output_path.suffix.lower() != ".csv":
+        return summary
+    judge_path = output_path.parent / "judge_summary.json"
+    if not judge_path.exists():
+        return summary
+    try:
+        judge = read_json(judge_path)
+    except Exception:
+        return summary
+    if not isinstance(judge, dict):
+        return summary
+    merged = dict(summary)
+    for key in (
+        "graded",
+        "correct",
+        "wrong",
+        "accuracy",
+        "simple_graded",
+        "simple_correct",
+        "simple_wrong",
+        "simple_accuracy",
+        "result_counts",
+    ):
+        if judge.get(key) is not None:
+            merged[key] = judge.get(key)
+    rows = merged.get("rows")
+    graded = merged.get("graded")
+    if isinstance(rows, (int, float)) and isinstance(graded, (int, float)):
+        counts = dict(merged.get("result_counts") or {})
+        counts["UNSCORED"] = max(0, int(rows) - int(graded))
+        merged["result_counts"] = counts
+    merged["judge_summary_path"] = str(judge_path)
+    merged["judge_model"] = judge.get("judge_model") or merged.get("judge_model")
+    return merged
+
+
 def run_record(run_dir: Path, active_run_ids: set[str] | None = None, compact: bool = False) -> dict[str, Any] | None:
     manifest_path = run_dir / "manifest.json"
     if manifest_path.exists():
@@ -310,6 +379,8 @@ def run_record(run_dir: Path, active_run_ids: set[str] | None = None, compact: b
                 "summary_skipped": True,
                 "summary_skip_reason": f"CSV is {round(csv_size / 1024 / 1024, 1)} MB; open run detail/report for full metrics.",
             }
+    if output_path and output_path.exists():
+        summary = _merge_judge_summary(summary, output_path)
 
     try:
         stat = run_dir.stat()
@@ -905,6 +976,7 @@ def qa_diagnostics(path: Path, dataset_path: Path | None = None, sample: str = "
         raise FileNotFoundError(str(path))
     rows = list(csv.DictReader(path.open(newline="", encoding="utf-8", errors="replace")))
     summary = report_service.parse_csv_summary(path)
+    diagnosis = report_service.diagnosis_summary(rows)
     question_rows: dict[str, list[dict[str, str]]] = {}
     retryable_rows: list[dict[str, str]] = []
     for row in rows:
@@ -992,10 +1064,71 @@ def qa_diagnostics(path: Path, dataset_path: Path | None = None, sample: str = "
         "qa_retryable_failed_questions": int(summary.get("retryable_failed_questions") or 0),
     }
 
+    trace_rows = []
+    for row in rows[:24]:
+        evidence = report_service._json_items(row.get("relevant_memory"))
+        normalized_top_k = []
+        for idx, item in enumerate(evidence[:8]):
+            if isinstance(item, dict):
+                normalized_top_k.append(
+                    {
+                        "rank": idx + 1,
+                        "memory_id": str(item.get("memory_id") or item.get("id") or item.get("uri") or item.get("path") or f"memory-{idx + 1}"),
+                        "score": item.get("score") if item.get("score") not in (None, "") else item.get("confidence"),
+                        "conversation_id": str(item.get("conversation_id") or item.get("sample_id") or item.get("session_id") or ""),
+                        "segment_id": str(item.get("segment_id") or item.get("segment") or item.get("context_type") or ""),
+                        "time": str(item.get("time") or item.get("created_at") or item.get("updated_at") or ""),
+                        "snippet": report_service.compact_text(item.get("content") or item.get("abstract") or item.get("text") or item.get("overview") or "", 320),
+                        "hit": "hit" if item.get("hit") is True else ("miss" if item.get("hit") is False else "partial"),
+                        "raw": item,
+                    }
+                )
+            else:
+                normalized_top_k.append(
+                    {
+                        "rank": idx + 1,
+                        "memory_id": f"memory-{idx + 1}",
+                        "score": "",
+                        "conversation_id": "",
+                        "segment_id": "",
+                        "time": "",
+                        "snippet": report_service.compact_text(item, 320),
+                        "hit": "partial",
+                        "raw": item,
+                    }
+                )
+        failure = report_service.failure_attribution(row)
+        trace_rows.append(
+            {
+                "question_id": str(row.get("question_id") or ""),
+                "sample_id": str(row.get("sample_id") or row.get("conversation_id") or ""),
+                "category": str(row.get("category") or ""),
+                "question": str(row.get("question") or ""),
+                "gold_answer": str(row.get("answer") or ""),
+                "prediction": str(row.get("response") or row.get("prediction") or ""),
+                "retrieval_query": str(row.get("retrieval_query_plan") or row.get("native_prompt") or row.get("question") or ""),
+                "top_k": normalized_top_k,
+                "evidence_hit": f"{len([item for item in normalized_top_k if item.get('hit') == 'hit'])}/{len(normalized_top_k)}" if normalized_top_k else "0/0",
+                "diagnosis": [str(failure.get("label") or "")],
+                "diagnosis_mode": str(failure.get("mode") or ""),
+                "diagnosis_reason": str(failure.get("reason") or ""),
+            }
+        )
+
+    artifacts = {
+        "qa_results_csv": str(path),
+        "judge_results_json": str(path.parent / "judge_summary.json"),
+        "failure_diagnosis_json": str(path.with_suffix(".wrong_analysis.json")),
+        "diagnosis_summary_json": str(path.with_suffix(".diagnosis_summary.json")),
+        "retrieval_traces_jsonl": str(path.with_suffix(".retrieval_traces.jsonl")),
+    }
+
     diagnostics: dict[str, Any] = {
         "input": str(path),
         "rows": len(rows),
         "summary": summary,
+        "diagnosis_summary": diagnosis,
+        "retrieval_trace_preview": trace_rows,
         "summary_json": summary_json,
         "unique_question_ids": len(question_rows),
         "duplicate_question_ids_count": len(duplicate_question_ids),
@@ -1034,6 +1167,7 @@ def qa_diagnostics(path: Path, dataset_path: Path | None = None, sample: str = "
         "automatic_retry": automatic_retry,
         "retry_history": retry_history,
         "retry_history_latest": retry_latest if isinstance(retry_latest, dict) else {},
+        "artifacts": artifacts,
     }
 
     if dataset_path and dataset_path.exists():
@@ -1067,6 +1201,21 @@ def qa_diagnostics(path: Path, dataset_path: Path | None = None, sample: str = "
                 "unexpected_question_ids": sorted(actual_set - expected_set)[:50],
             }
         )
+    try:
+        Path(artifacts["diagnosis_summary_json"]).write_text(
+            json.dumps(diagnosis, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+    try:
+        trace_path = Path(artifacts["retrieval_traces_jsonl"])
+        trace_path.write_text(
+            "\n".join(json.dumps(item, ensure_ascii=False) for item in trace_rows),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
     return diagnostics
 
 
@@ -1436,6 +1585,9 @@ def run_detail(run_dir: Path, active_run_ids: set[str] | None = None) -> dict[st
             "graph_report_html": artifact_info(run_dir / "graph_report.html"),
             "summary": artifact_info(output_dir / "summary.json"),
             "judge_summary": artifact_info(output_dir / "judge_summary.json"),
+            "failure_diagnosis": artifact_info(output.with_suffix(".wrong_analysis.json") if output else ""),
+            "diagnosis_summary": artifact_info(output.with_suffix(".diagnosis_summary.json") if output else ""),
+            "retrieval_traces": artifact_info(output.with_suffix(".retrieval_traces.jsonl") if output else ""),
             "judge_snapshot_index": artifact_info(output_dir / "judge_snapshot_index.json"),
             "judge_snapshot_latest_csv": artifact_info(output_dir / "judge_snapshot_latest.csv"),
             "judge_snapshot_latest_summary": artifact_info(output_dir / "judge_snapshot_latest_summary.json"),

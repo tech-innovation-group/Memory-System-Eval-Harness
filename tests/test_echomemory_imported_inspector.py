@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from memory.plugins.echomemory import inspector
 from memory.plugins.echomemory.inspector import list_imported_memories
 
 
@@ -120,3 +121,15 @@ def test_list_imported_memories_ignores_current_only_sessions_without_archive(tm
     imported = list_imported_memories(workspace, account, tmp_path / "runs", sample="conv-30")
 
     assert imported["sessions"] == []
+
+
+def test_list_imported_memories_returns_empty_for_fresh_workspace(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    account = "acct"
+    account_root = workspace / "tenants" / account
+    account_root.mkdir(parents=True)
+
+    imported = list_imported_memories(workspace, account, tmp_path / "runs", sample="conv-30")
+
+    assert imported["sessions"] == []
+    assert imported["summaries"] == []

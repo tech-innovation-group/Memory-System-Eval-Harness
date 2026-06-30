@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EchoMemory 修复方案（精简版）</title>
+  <style>
+    :root {
+      --bg: #f7f5f0;
+      --surface: #ffffff;
+      --border: #e5ded2;
+      --text: #111827;
+      --muted: #6b7280;
+      --blue: #2563eb;
+      --green: #16a34a;
+      --radius: 8px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .page {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 28px 20px 48px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 22px;
+      margin-bottom: 14px;
+    }
+    h1, h2 { margin: 0 0 10px; }
+    h1 { font-size: 24px; }
+    h2 { font-size: 18px; }
+    p { margin: 0; color: var(--muted); }
+    ul, ol { margin: 10px 0 0 18px; padding: 0; }
+    li + li { margin-top: 6px; }
+    code {
+      font-family: var(--mono);
+      background: #f3f4f6;
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    .path {
+      font-family: var(--mono);
+      color: #1f2937;
+      word-break: break-all;
+    }
+    .ok { color: var(--green); font-weight: 600; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 10px 12px;
+      border-top: 1px solid var(--border);
+    }
+    th { color: var(--muted); font-weight: 600; }
+    pre {
+      margin: 10px 0 0;
+      padding: 12px 14px;
+      border-radius: var(--radius);
+      background: #0f172a;
+      color: #e5e7eb;
+      overflow: auto;
+      font: 12.5px/1.55 var(--mono);
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="card">
+      <h1>EchoMemory 检索记忆修复方案</h1>
+      <p>面向 <code>Memory-System-Eval-Harness</code> 的精简版修改清单。</p>
+    </section>
+
+    <section class="card">
+      <h2>1. 目标</h2>
+      <ul>
+        <li>正式 QA 默认使用 <code>vikingboat_lite</code></li>
+        <li>正式 QA 默认开启 <code>qa_memory_injection</code></li>
+        <li>避免生成 <code>selected=[]</code> 的空 recall 文件</li>
+        <li>导入不完整时禁止启动正式 QA</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>2. 必改文件</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>文件</th>
+            <th>修改点</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="path">memory/services/task_orchestrator.py</td>
+            <td>
+              <ul>
+                <li><code>echomemory_qa + locomo</code> 时，空值或 <code>one_shot</code> 强制归一到 <code>vikingboat_lite</code></li>
+                <li><code>qa_memory_injection</code> 默认强制为 <code>true</code></li>
+                <li><code>vikingboat_tool_loop</code> 默认开启</li>
+              </ul>
+            </td>
+          </tr>
+          <tr>
+            <td class="path">memory/plugins/echomemory/tasks.py</td>
+            <td>
+              <ul>
+                <li>QA 命令构造默认 <code>prompt_mode</code> 从 <code>one_shot</code> 改成 <code>vikingboat_lite</code></li>
+                <li>非法值 fallback 不要回落到 <code>one_shot</code></li>
+                <li><code>qa_memory_injection</code> 默认保持 <code>true</code></li>
+              </ul>
+            </td>
+          </tr>
+          <tr>
+            <td class="path">memory/task_specs.py</td>
+            <td>
+              <ul>
+                <li>Retry failed QA 默认 <code>prompt_mode</code> 不再使用 <code>one_shot</code></li>
+                <li><code>--qa-memory-injection</code> 默认开启</li>
+              </ul>
+            </td>
+          </tr>
+          <tr>
+            <td class="path">scripts/retry_failed_echomemory_qa.py</td>
+            <td>
+              <ul>
+                <li>CLI 默认 <code>--prompt-mode</code> 改成 <code>vikingboat_lite</code></li>
+                <li>如果收到 <code>one_shot</code>，构造命令时归一到 <code>vikingboat_lite</code></li>
+              </ul>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>3. 结合当前代码的修改点</h2>
+      <h3>3.1 task_orchestrator 入口归一化</h3>
+      <div class="path">/Users/chx/locomo-eval-web/memory/services/task_orchestrator.py</div>
+      <pre>if kind == "echomemory_qa" and (dataset_format in {"", "locomo"}):
+    prompt_mode = str(normalized.get("prompt_mode") or "").strip().lower()
+    if prompt_mode in {"", "vikingboat_lite", "vikingboat_compat"}:
+        normalized["vikingboat_tool_loop"] = True
+    if str(normalized.get("qa_memory_injection") or "").strip().lower() in {"", "0", "false", "no", "off"}:
+        normalized["qa_memory_injection"] = True
+    if prompt_mode in {"", "one_shot"}:
+        normalized["prompt_mode"] = "vikingboat_lite"</pre>
+      <ul>
+        <li>这段逻辑应该保留，作为所有 EchoMemory LoCoMo QA 的统一入口默认值。</li>
+        <li>目的：不让空 payload 或旧配置把任务带回 <code>one_shot + no injection</code>。</li>
+      </ul>
+
+      <h3>3.2 QA 命令构造默认值</h3>
+      <div class="path">/Users/chx/locomo-eval-web/memory/plugins/echomemory/tasks.py</div>
+      <pre>当前：
+prompt_mode = str(payload.get("prompt_mode") or payload.get("qa_prompt_mode") or "one_shot").strip() or "one_shot"
+if prompt_mode not in {"one_shot", "vikingboat_lite", "vikingboat_compat"}:
+    prompt_mode = "one_shot"
+vikingboat_tool_loop = bool_value(payload.get("vikingboat_tool_loop"), False)
+
+建议改成：
+prompt_mode = str(payload.get("prompt_mode") or payload.get("qa_prompt_mode") or "vikingboat_lite").strip() or "vikingboat_lite"
+if prompt_mode not in {"one_shot", "vikingboat_lite", "vikingboat_compat"}:
+    prompt_mode = "vikingboat_lite"
+vikingboat_tool_loop = bool_value(payload.get("vikingboat_tool_loop"), prompt_mode in {"vikingboat_lite", "vikingboat_compat"})</pre>
+      <ul>
+        <li>这里是最终下发脚本命令的地方，必须和 orchestrator 保持一致。</li>
+        <li>同样的修改也建议同步到 <code>build_echomemory_generic_qa_command()</code>。</li>
+      </ul>
+
+      <h3>3.3 Retry failed QA 命令默认值</h3>
+      <div class="path">/Users/chx/locomo-eval-web/memory/task_specs.py</div>
+      <pre>当前：
+"--prompt-mode",
+str(payload.get("prompt_mode") or "one_shot"),
+
+建议改成：
+"--prompt-mode",
+str(payload.get("prompt_mode") or "vikingboat_lite"),</pre>
+      <ul>
+        <li>避免 retry 路径重新生成空 recall 结果。</li>
+        <li><code>--qa-memory-injection</code> 默认开启的逻辑保持不变。</li>
+      </ul>
+
+      <h3>3.4 Retry 脚本 CLI 默认值</h3>
+      <div class="path">/Users/chx/locomo-eval-web/scripts/retry_failed_echomemory_qa.py</div>
+      <pre>保留这两处：
+args.prompt_mode if args.prompt_mode != "one_shot" else "vikingboat_lite"
+
+parser.add_argument("--prompt-mode", ..., default="vikingboat_lite")</pre>
+      <ul>
+        <li>如果别人仓库里还是 <code>default="one_shot"</code>，改成 <code>vikingboat_lite</code>。</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>4. 建议补充</h2>
+      <ul>
+        <li><span class="path">memory/services/task_orchestrator.py</span> 增加 QA 前 gate：
+          <code>status == complete</code>、
+          <code>session_complete_count == session_total_count</code>、
+          <code>conv_complete == true</code>
+        </li>
+        <li><span class="path">memory/plugins/echomemory/inspector.py</span> 输出：
+          <code>session_complete</code>、
+          <code>session_complete_count</code>、
+          <code>session_total_count</code>、
+          <code>conv_complete</code>
+        </li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>5. 结合当前代码的 gate 逻辑</h2>
+      <div class="path">/Users/chx/locomo-eval-web/memory/services/task_orchestrator.py</div>
+      <pre>if status != "complete" or not conv_complete or (session_total_count &gt; 0 and session_complete_count != session_total_count):
+    raise ValueError(
+        "EchoMemory LoCoMo QA 启动前检查失败：当前 workspace 对该 sample 的导入还不完整。"
+    )</pre>
+      <div class="path">/Users/chx/locomo-eval-web/memory/plugins/echomemory/inspector.py</div>
+      <pre>session_complete_count = sum(1 for item in sessions if item.get("session_complete"))
+conv_complete = bool(sessions) and session_complete_count == len(sessions)</pre>
+      <ul>
+        <li>如果别人仓库里没有这套检查，建议一起补上。</li>
+        <li>目的：导入不完整时不允许跑正式 QA。</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>6. 可选项</h2>
+      <ul>
+        <li><span class="path">scripts/echomemory_memory_qa.py</span> 增加实时日志打印检索命中</li>
+        <li>这是调试增强，不是根修复</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>7. 验收标准</h2>
+      <pre>summary.json:
+qa_memory_injection_enabled = true
+prompt_mode = vikingboat_lite
+retrieval_ok_count > 0
+
+qNNN.recall.json:
+selected_count > 0
+selected[*].uri / score / memory_type / preview 存在
+
+judge_summary.json:
+uses_retrieved_memory = true</pre>
+      <p class="ok">这三项满足，就说明不是“空 recall 结果”。</p>
+    </section>
+
+    <section class="card">
+      <h2>8. 文件路径</h2>
+      <div class="path">/Users/chx/locomo-eval-web/docs/echomemory_retrieved_memory_fix_plan_brief_20260629.html</div>
+    </section>
+  </main>
+</body>
+</html>

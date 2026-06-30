@@ -286,8 +286,8 @@ def default_account_config(defaults: dict[str, Any], account: str = DEFAULT_ACCO
         "ovPort": port,
         "ovWorkspace": workspace,
         "memoryWorkspace": workspace,
-        "judgeBaseUrl": str(defaults.get("judge_base_url") or ""),
-        "judgeModel": str(defaults.get("judge_model") or "gpt-5.5"),
+        "judgeBaseUrl": str(defaults.get("judge_base_url") or "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+        "judgeModel": str(defaults.get("judge_model") or "deepseek-v4-flash"),
         "chatTopK": "",
     }
 

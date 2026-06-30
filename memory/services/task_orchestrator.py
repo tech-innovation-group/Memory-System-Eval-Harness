@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .. import accounts as account_service
+from ..plugins.service import plugin_service
 
 
 ECHOMEMORY_TASK_KINDS = {
@@ -97,6 +98,14 @@ def normalize_task_payload(kind: str, payload: dict[str, Any]) -> dict[str, Any]
                 normalized["echomemory_workspace"] = resolved
             else:
                 normalized["openviking_workspace"] = resolved
+    if kind == "echomemory_qa" and (dataset_format in {"", "locomo"}):
+        prompt_mode = str(normalized.get("prompt_mode") or "").strip().lower()
+        if prompt_mode in {"", "vikingboat_lite", "vikingboat_compat"}:
+            normalized["vikingboat_tool_loop"] = True
+        if str(normalized.get("qa_memory_injection") or "").strip().lower() in {"", "0", "false", "no", "off"}:
+            normalized["qa_memory_injection"] = True
+        if prompt_mode in {"", "one_shot"}:
+            normalized["prompt_mode"] = "vikingboat_lite"
     return normalized
 
 
@@ -123,7 +132,7 @@ def _workspace_run_fragment(kind: str, payload: dict[str, Any]) -> str:
     name = Path(workspace).expanduser().name.strip()
     if not name:
         return ""
-    for prefix in ("echomem_workspace_", "openviking_workspace_"):
+    for prefix in ("echomem_workspace_", "echomem_", "openviking_workspace_"):
         if name.startswith(prefix):
             name = name[len(prefix):]
             break
@@ -187,6 +196,53 @@ def _is_fatal_model_preflight_result(result: dict[str, Any]) -> bool:
     return not _is_transient_model_preflight_status(status, error)
 
 
+def _enforce_echomemory_locomo_readiness(
+    kind: str,
+    payload: dict[str, Any],
+    *,
+    output_dir: Path,
+    data_path: Path,
+) -> None:
+    if kind != "echomemory_qa":
+        return
+    dataset_format = str(payload.get("dataset_format") or "").strip().lower()
+    if dataset_format not in {"", "locomo"}:
+        return
+    workspace = str(payload.get("workspace") or payload.get("echomemory_workspace") or "").strip()
+    if not workspace:
+        return
+    account = str(payload.get("account") or "default").strip() or "default"
+    sample = str(payload.get("sample") or "all").strip() or "all"
+    integrity = plugin_service.import_integrity(
+        "echomemory",
+        Path(workspace),
+        account,
+        output_dir,
+        data_path,
+        sample,
+        None,
+        str(payload.get("user_id") or payload.get("em_user_id") or "default"),
+    )
+    status = str(integrity.get("status") or "").strip().lower()
+    sessions = integrity.get("sessions") if isinstance(integrity.get("sessions"), list) else []
+    session_complete_count = int(integrity.get("session_complete_count") or 0)
+    session_total_count = int(integrity.get("session_total_count") or len(sessions) or 0)
+    conv_complete = bool(integrity.get("conv_complete"))
+    if status != "complete" or not conv_complete or (session_total_count > 0 and session_complete_count != session_total_count):
+        raise ValueError(
+            "EchoMemory LoCoMo QA 启动前检查失败：当前 workspace 对该 sample 的导入还不完整。"
+            f" status={status or '-'} sample={sample} session_count={len(sessions)}"
+            f" session_complete={session_complete_count} session_total={session_total_count} conv_complete={conv_complete}。"
+            " 请先完成完整记忆导入，再进行正式 QA。"
+        )
+    sample_lower = sample.lower()
+    if sample_lower not in {"", "all", "0"} and len(sessions) <= 1:
+        raise ValueError(
+            "EchoMemory LoCoMo QA 启动前检查失败：当前 sample 只导入了单个 session，"
+            "不满足正式评测要求。请先完成该 conversation 的完整导入。"
+        )
+
+
 def create_task(
     kind: str,
     payload: dict[str, Any],
@@ -198,6 +254,13 @@ def create_task(
     conflict_error_cls: type[Exception],
 ) -> Any:
     payload = normalize_task_payload(kind, payload)
+    data_path = context.safe_path(str(payload.get("data") or context.default_repo / "dataset" / "locomo10.json"))
+    _enforce_echomemory_locomo_readiness(
+        kind,
+        payload,
+        output_dir=context.default_output_dir,
+        data_path=data_path,
+    )
     duplicate_task = find_duplicate_active_task(kind, payload)
     if duplicate_task:
         raise duplicate_error_cls(duplicate_task)

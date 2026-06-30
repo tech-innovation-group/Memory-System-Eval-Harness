@@ -1,0 +1,15 @@
+[Unit]
+Description=LoCoMo Eval Harness
+After=network.target
+
+[Service]
+Type=simple
+User=__SERVICE_USER__
+WorkingDirectory=__APP_DIR__
+EnvironmentFile=__ENV_FILE__
+ExecStart=/bin/bash -lc 'set -a && source __ENV_FILE__ && set +a && __APP_DIR__/start.sh'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

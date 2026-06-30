@@ -220,17 +220,20 @@ def build_echomemory_import_command(
         defer_artifact_wait=defer_artifact_wait,
         develop_full_wait=develop_full_wait,
     )
+    commit_wait_s = default_commit_wait if develop_full_wait else payload_value(payload, "commit_wait_s", default_commit_wait)
+    flush_call_timeout_s = default_flush_timeout if develop_full_wait else payload_value(payload, "flush_call_timeout_s", default_flush_timeout)
+    flush_attempts = default_flush_attempts if develop_full_wait else payload_value(payload, "flush_attempts", default_flush_attempts)
     command += [
         "--import-wait-mode",
         import_wait_mode,
         "--commit-wait-s",
-        str(payload_value(payload, "commit_wait_s", default_commit_wait)),
+        str(commit_wait_s),
         "--commit-call-timeout-s",
         str(payload_value(payload, "commit_call_timeout_s", 300)),
         "--flush-call-timeout-s",
-        str(payload_value(payload, "flush_call_timeout_s", default_flush_timeout)),
+        str(flush_call_timeout_s),
         "--flush-attempts",
-        str(payload_value(payload, "flush_attempts", default_flush_attempts)),
+        str(flush_attempts),
     ]
     if defer_artifact_wait:
         command.append("--defer-artifact-wait")
@@ -288,7 +291,7 @@ def build_echomemory_qa_command(
     agent_budget_chars = int(payload_value(payload, "agent_memory_budget_chars", VIKINGBOT_AGENT_MEMORY_BUDGET_CHARS))
     memory_budget_chars = int(payload_value(payload, "memory_budget_chars", user_budget_chars + agent_budget_chars))
     qa_parallelism = int(payload_value(payload, "qa_parallelism", 5))
-    qa_memory_injection = bool_value(payload.get("qa_memory_injection"), False)
+    qa_memory_injection = bool_value(payload.get("qa_memory_injection"), True)
     command = [
         "/usr/bin/env",
         echomemory_python(payload),
@@ -326,7 +329,7 @@ def build_echomemory_qa_command(
         "--answer-base-url",
         payload.get("answer_base_url") or payload.get("judge_base_url") or defaults.get("judge_base_url") or "",
         "--answer-model",
-        payload.get("answer_model") or payload.get("judge_model") or defaults.get("answer_model") or defaults.get("judge_model") or "gpt-5.5",
+        payload.get("answer_model") or payload.get("judge_model") or defaults.get("answer_model") or defaults.get("judge_model") or "deepseek-v4-flash",
         "--model-retries",
         str(payload.get("model_retries") or 5),
         "--timeout-s",
@@ -466,6 +469,9 @@ def build_echomemory_generic_qa_command(
     vikingboat_compat = bool_value(payload.get("vikingboat_compat"), prompt_mode == "vikingboat_compat")
     vikingboat_tool_loop = bool_value(payload.get("vikingboat_tool_loop"), False)
     initial_tool_prefetch = bool_value(payload.get("initial_tool_prefetch"), False)
+    if fmt == "hotpotqa":
+        vikingboat_tool_loop = False
+        initial_tool_prefetch = False
     max_iterations = int(payload_value(payload, "max_iterations", VIKINGBOT_MAX_ITERATIONS if vikingboat_compat else 8))
     score_threshold = float(payload_value(payload, "score_threshold", VIKINGBOT_INITIAL_MIN_SCORE))
     tool_search_limit = int(payload_value(payload, "tool_search_limit", VIKINGBOT_TOOL_SEARCH_LIMIT))
@@ -478,11 +484,11 @@ def build_echomemory_generic_qa_command(
     user_budget_chars = int(payload_value(payload, "user_memory_budget_chars", VIKINGBOT_USER_MEMORY_BUDGET_CHARS))
     agent_budget_chars = int(payload_value(payload, "agent_memory_budget_chars", VIKINGBOT_AGENT_MEMORY_BUDGET_CHARS))
     memory_budget_chars = int(payload_value(payload, "memory_budget_chars", user_budget_chars + agent_budget_chars))
-    answer_base_url = payload.get("answer_base_url") or payload.get("judge_base_url") or defaults.get("judge_base_url") or ""
-    answer_model = payload.get("answer_model") or payload.get("judge_model") or defaults.get("answer_model") or defaults.get("judge_model") or "gpt-5.5"
+    answer_base_url = payload.get("answer_base_url") or payload.get("judge_base_url") or defaults.get("judge_base_url") or "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    answer_model = payload.get("answer_model") or payload.get("judge_model") or defaults.get("answer_model") or defaults.get("judge_model") or "deepseek-v4-flash"
     judge_base_url = payload.get("judge_base_url") or answer_base_url
     judge_model = payload.get("judge_model") or answer_model
-    auto_judge = bool_value(payload.get("auto_judge"), True)
+    auto_judge = bool_value(payload.get("auto_judge"), fmt != "hotpotqa")
     skip_session_commit = bool_value(payload.get("skip_session_commit"), False)
     import_wait_mode = str(payload.get("import_wait_mode") or ("fast" if bool_value(payload.get("defer_artifact_wait"), True) else "full")).strip().lower()
     defer_artifact_wait = bool_value(payload.get("defer_artifact_wait"), import_wait_mode == "fast")
@@ -623,6 +629,12 @@ def build_echomemory_generic_qa_command(
         command.append("--fallback-to-one-shot")
     else:
         command.append("--no-fallback-to-one-shot")
+    if bool_value(payload.get("toolloop_rescue_on_toollike_answer"), False):
+        command.append("--toolloop-rescue-on-toollike-answer")
+    else:
+        command.append("--no-toolloop-rescue-on-toollike-answer")
+    if bool_value(payload.get("answer_refinement"), False):
+        command.append("--answer-refinement")
     if auto_judge:
         command.append("--judge-after")
     if bool_value(payload.get("official_eval_after"), fmt in {"longmemeval", "hotpotqa"}):

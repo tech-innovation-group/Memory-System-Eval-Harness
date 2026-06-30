@@ -1,5 +1,5 @@
 {
-  "version": "20260611readme-sidebar1",
+  "version": "20260628hotpotfix23",
   "product": {
     "name": "Memory Evaluation Workbench",
     "positioning": "Custom memory-agent benchmark workbench for LoCoMo-first evaluation.",
@@ -48,48 +48,38 @@
     },
     {
       "view": "openvikingView",
-      "label": "locomo评测",
+      "label": "LoCoMo",
       "purpose": "Primary LoCoMo entry: open memory import first, then continue to QA, judging, report export, history, and diff."
     },
     {
       "view": "longMemEvalView",
-      "label": "longmemeval评测",
+      "label": "LongMemEval",
       "purpose": "Long-context memory benchmark entry; MemoryBench memory-QA and official-style adapters must be clearly separated."
     },
     {
       "view": "evolvingEventsView",
-      "label": "evolvingevents评测",
+      "label": "EvolvingEvents",
       "purpose": "Event-evolution memory benchmark entry."
     },
     {
       "view": "hotpotQaView",
-      "label": "hotpotqa评测",
+      "label": "HotpotQA",
       "purpose": "Multi-hop QA benchmark entry with answer metrics and future supporting-fact metrics."
     },
     {
       "view": "proAgentBenchView",
-      "label": "proagentbench评测",
+      "label": "ProAgentBench",
       "purpose": "Agent task benchmark entry; official runner work remains separate from LoCoMo scoring."
     },
     {
       "view": "tauBenchView",
-      "label": "Tau2-bench评测",
+      "label": "Tau2-bench",
       "purpose": "Tool-task benchmark entry; official tool environment work remains separate from LoCoMo scoring."
-    },
-    {
-      "view": "chenmoView",
-      "label": "chenmo评测",
-      "purpose": "ChenMo long-memory reasoning benchmark entry; current EchoMemory results must be rerun with version_0.0.6."
     },
     {
       "view": "systemConfigView",
       "label": "系统配置",
       "purpose": "Per-account backend selection, workspace, model configuration, readiness, and handoff gates."
-    },
-    {
-      "view": "readmeView",
-      "label": "README",
-      "purpose": "External handoff, EchoMemory onboarding, text guide, and safe sharing boundary."
     }
   ],
   "formal_benchmark_priority": [
@@ -98,8 +88,7 @@
     "evolvingevents",
     "hotpotqa",
     "proagentbench",
-    "tau2bench",
-    "chenmo"
+    "tau2bench"
   ],
   "delivery_boundary": {
     "public_html": [
@@ -108,6 +97,9 @@
     ],
     "public_static_files": [
       "web/static/index.html",
+      "web/static/app-state.js",
+      "web/static/app-core.js",
+      "web/static/app-format.js",
       "web/static/app.js",
       "web/static/styles.css",
       "web/static/product-roadmap.html"

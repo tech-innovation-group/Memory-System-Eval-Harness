@@ -1,392 +1,392 @@
-const $ = (id) => document.getElementById(id);
-
-const state = {
-  config: {},
-  dataset: null,
-  locomoDataset: null,
-  locomoDatasetLoading: false,
-  longMemDataset: null,
-  longMemQuestions: [],
-  selectedLongMemQuestions: new Set(),
-  taskId: "",
-  taskKind: "",
-  logOffsets: {},
-  logTimers: {},
-  liveTaskTimer: null,
-  taskRefreshTimer: null,
-  taskDatasetFormats: {},
-  outputFile: "",
-  outputDatasetFormat: "",
-  selectedRunDir: "",
-  selectedRunDatasetFormat: "",
-  selectedRunRecord: null,
-  chatMessages: [],
-  questions: [],
-  selectedQuestions: new Set(),
-  benchmarkQuestions: {},
-  selectedBenchmarkQuestions: {},
-  filteredQuestions: [],
-  datasetRegistry: [],
-  lastValidation: null,
-  lastReportFile: "",
-  lastCompareReportFile: "",
-  nativeOpenVikingBaseline: null,
-  includeNativeOpenVikingBaseline: true,
-  lastChatContextData: null,
-  chatContextPreviewKey: "",
-  chatContextPreviewLoading: false,
-  selectedRunSummary: null,
-  selectedRunDetailLoading: false,
-  selectedRunDetailPromise: null,
-  selectedRunReportLoading: false,
-  runCompareLoading: false,
-  lastJudgeSummary: null,
-  lastQaDiagnostics: null,
-  lastQaDiagnosticsInput: "",
-  lastJudgeValidation: null,
-  importedMemoryStatus: null,
-  currentImportTask: null,
-  judgeConfirmInput: "",
-  lastArchivedMessageCount: 0,
-  lastArchiveRecord: null,
-  accounts: [],
-  accountRecords: [],
-  accountConfigCache: {},
-  accountBackendReady: false,
-  accountStateFile: "",
-  currentAccount: "default",
-  systemPreflight: null,
-  systemPreflightLoading: false,
-  echomemorySourceStatus: null,
-  chatSendInFlight: false,
-  chatArchiveInFlight: false,
-  runsLoadedAt: 0,
-  recentRuns: [],
-  runsLoading: false,
-  selectedRunCompareIds: new Set(),
-  activeWorkflowKey: "import",
-  activeDatasetFormat: "",
-  activeDatasetPath: "",
-  activeBenchmarkView: "",
-  activeBenchmarkFlowStage: "import",
-  currentLocomoTask: null,
-  locomoQuestionsLoading: false,
-  locomoQuestionLoadSeq: 0,
-  locomoQaLaunchPending: false,
-  locomoQaSubmitInFlight: false,
-  locomoQaSubmitPhase: "",
-  locomoQaLaunchSource: "",
-  currentRunningTask: null,
-  taskExecutionProgress: {},
-  taskExecutionProgressFetchedAt: {},
-  taskExecutionProgressLoading: {},
-  taskExecutionProgressOffsets: {},
-  taskExecutionStatusFetchedAt: {},
-  activeTaskQaPreview: {},
-  activeTaskQaPreviewFetchedAt: {},
-  activeTaskQaPreviewLoading: {},
-  taskStopOverrides: {},
-  taskProgressSnapshots: {},
-  runningBenchmarkSummaries: {},
-  runningBenchmarkSummariesFetchedAt: {},
-  runningBenchmarkSummariesLoading: {},
-  genericBenchmarkLaunchErrors: {},
-  hotpotQaModelReadiness: null,
-  hotpotQaModelReadinessLoading: false,
-  hotpotQaModelReadinessFetchedAt: 0,
-  activeEvidenceScope: null,
-  evidenceScopesByOutput: {},
-  locomoFlowStatus: null,
-  locomoFlowLoading: false,
-  uiContract: null,
-  importPreviewDatasets: {},
-  importPreviewDatasetLoading: {},
-  importPreviewDatasetErrors: {},
-  bootRequestedView: "",
-  bootHydrating: false,
-  userNavigatedDuringBoot: false,
-  tasksHydrating: false,
-};
-
-const DEFAULT_USER_ID = "default";
-const DEFAULT_AGENT_ID = "default";
-const ARCHIVE_MESSAGE_THRESHOLD = 12;
-const ARCHIVE_TOKEN_THRESHOLD = 3000;
-const LAST_IMPORT_KEY = "locomoEval.lastOpenVikingImport";
-const LAST_DATASET_KEY = "locomoEval.lastDataset";
-const LAST_LOCOMO_DATASET_KEY = "locomoEval.lastLocomoDataset";
-const LAST_BENCHMARK_DATASET_KEY = "locomoEval.lastBenchmarkDataset";
-const CONTEXT_PANEL_KEY = "locomoEval.contextPanelCollapsed";
-const ACCOUNT_LIST_KEY = "locomoEval.accountList";
-const ACTIVE_ACCOUNT_KEY = "locomoEval.activeAccount";
-const ACCOUNT_CONFIG_PREFIX = "locomoEval.accountConfig.";
-const CHAT_DRAFT_PREFIX = "locomoEval.chatDraft.";
-const UI_REFRESH_VERSION = "20260624disableprefetch01";
-const RUN_COMPARE_BASELINE_KEY = "locomoEval.runCompareIncludeNativeBaseline";
-const TASK_PROGRESS_TOTAL_HINT_PREFIX = "locomoEval.taskProgressTotal.";
-const TASK_STOP_OVERRIDE_TTL_MS = 30 * 1000;
-const ACTIVE_TASK_STATUSES = new Set(["queued", "running", "stopping"]);
-const TERMINAL_TASK_STATUSES = new Set(["succeeded", "failed", "done", "interrupted", "cancelled", "canceled"]);
-const VIKINGBOAT_LITE_TOP_K = 30;
-const VIKINGBOAT_LITE_TOOL_SEARCH_LIMIT = 20;
-const VIKINGBOAT_LITE_MAX_ITERATIONS = 50;
-const RETRIEVAL_COUNT_LABEL = "召回条数";
-const TOOL_SEARCH_LABEL = "工具检索";
-const MAX_ITERATION_LABEL = "最大迭代";
-const UI_ACTION_LOCKS = new Set();
-
-function isTaskRunningStatus(task = {}) {
-  const status = String(task?.status || "").toLowerCase();
-  return status === "queued" || status === "running";
+if (!window.MemoryBenchAppState || !window.MemoryBenchConfig || !window.MemoryBenchCore || !window.MemoryBenchFormat) {
+  throw new Error("MemoryBench app-state.js, app-core.js and app-format.js must load before app.js");
 }
 
-function taskManifestStatus(task = {}) {
-  return String(task?.manifest_status || task?.manifestStatus || "").toLowerCase();
-}
-
-function isManifestRunningTask(task = {}) {
-  return taskManifestStatus(task) === "running";
-}
-
-function isImportTaskInBackground(task = {}) {
-  return isMemoryImportKind(task?.kind || "") && (isTaskActive(task) || isManifestRunningTask(task));
-}
-
-function normalizeSlashes(value = "") {
-  return String(value || "").replace(/\\/g, "/");
-}
-
-function relativeDatasetPath(path = "") {
-  const text = String(path || "").trim();
-  if (!text) return "";
-  const normalized = normalizeSlashes(text);
-  if (normalized === "dataset/locomo10.json") return "./dataset/locomo10.json";
-  if (normalized === "dataset/locomo.json") return "./dataset/locomo.json";
-  if (normalized === "dataset/full/locomo.json") return "./dataset/full/locomo.json";
-  if (normalized === "locomo10.json") return "./dataset/locomo10.json";
-  if (normalized === "locomo.json") return "./dataset/locomo.json";
-  if (normalized === "full/locomo.json") return "./dataset/full/locomo.json";
-  const root = normalizeSlashes(state.config?.repo || state.config?.root || "");
-  const datasetRoot = root ? `${root}/dataset/` : "";
-  if (datasetRoot && normalized.startsWith(datasetRoot)) {
-    return `./dataset/${normalized.slice(datasetRoot.length)}`;
-  }
-  if (/\/dataset\//.test(normalized)) {
-    return `./dataset/${normalized.split("/dataset/").pop()}`;
-  }
-  return text;
-}
-
-function datasetPathVariants(path = "") {
-  const text = String(path || "").trim();
-  if (!text) return [];
-  const normalized = normalizeSlashes(text);
-  const relative = normalizeSlashes(relativeDatasetPath(text));
-  const variants = new Set([normalized]);
-  if (relative) variants.add(relative);
-  if (normalized.startsWith("./")) variants.add(normalized.slice(2));
-  if (relative.startsWith("./")) variants.add(relative.slice(2));
-  return [...variants].filter(Boolean);
-}
-
-function datasetPathMatches(left = "", right = "") {
-  const leftVariants = datasetPathVariants(left);
-  const rightVariants = datasetPathVariants(right);
-  if (!leftVariants.length || !rightVariants.length) return false;
-  return leftVariants.some((value) => rightVariants.includes(value));
-}
-
-function readStoredBool(key, fallback = false) {
-  try {
-    const value = window.localStorage.getItem(key);
-    if (value === "true") return true;
-    if (value === "false") return false;
-  } catch {}
-  return fallback;
-}
-
-function preferredLocomoDatasetPath() {
-  const rows = Array.isArray(state.datasetRegistry) ? state.datasetRegistry.filter((item) => normalizeDatasetFormat(item.format) === "locomo") : [];
-  const full = rows.find((item) => item.exists && /(^|\/)full\/locomo\.json$/i.test(normalizeSlashes(item.path || item.resolved_path || "")));
-  const bundled = rows.find((item) => item.exists && /(^|\/)locomo10\.json$/i.test(normalizeSlashes(item.path || item.resolved_path || "")));
-  const fallback = rows.find((item) => item.exists) || rows[0] || null;
-  return relativeDatasetPath(full?.path || full?.resolved_path || bundled?.path || bundled?.resolved_path || fallback?.path || fallback?.resolved_path || state.config?.data || "");
-}
+const $ = window.MemoryBenchBootstrap?.$ || ((id) => document.getElementById(id));
+const state = window.MemoryBenchAppState;
+const {
+  DEFAULT_USER_ID,
+  DEFAULT_AGENT_ID,
+  ARCHIVE_MESSAGE_THRESHOLD,
+  ARCHIVE_TOKEN_THRESHOLD,
+  LAST_IMPORT_KEY,
+  LAST_DATASET_KEY,
+  LAST_LOCOMO_DATASET_KEY,
+  LAST_BENCHMARK_DATASET_KEY,
+  CONTEXT_PANEL_KEY,
+  ACCOUNT_LIST_KEY,
+  ACTIVE_ACCOUNT_KEY,
+  ACCOUNT_CONFIG_PREFIX,
+  CHAT_DRAFT_PREFIX,
+  UI_REFRESH_VERSION,
+  RUN_COMPARE_BASELINE_KEY,
+  TASK_PROGRESS_TOTAL_HINT_PREFIX,
+  TASK_STOP_OVERRIDE_TTL_MS,
+  ACTIVE_TASK_STATUSES,
+  TERMINAL_TASK_STATUSES,
+  VIKINGBOAT_LITE_TOP_K,
+  VIKINGBOAT_LITE_TOOL_SEARCH_LIMIT,
+  VIKINGBOAT_LITE_MAX_ITERATIONS,
+  RETRIEVAL_COUNT_LABEL,
+  TOOL_SEARCH_LABEL,
+  MAX_ITERATION_LABEL,
+  UI_ACTION_LOCKS,
+} = window.MemoryBenchConfig;
+const {
+  isTaskRunningStatus,
+  taskManifestStatus,
+  isManifestRunningTask,
+  isImportTaskInBackground,
+  activeLocomoQaTask,
+  normalizeSlashes,
+  relativeDatasetPath,
+  datasetPathVariants,
+  datasetPathMatches,
+  readStoredBool,
+  preferredLocomoDatasetPath,
+  uiActionLocked,
+  runWithUiActionLock,
+  LOCOMO_ALL_SESSIONS_LABEL,
+  currentLocomoSampleScope,
+  locomoSampleScopeFromTask,
+  currentImportSampleScope,
+  IMPORT_SINGLE_SESSION_SUFFIX,
+  parseImportSampleSelection,
+  locomoQaSampleOptionLabel,
+  locomoImportSampleOptionLabel,
+  refreshImportActionLabels,
+  projectPath,
+  runPath,
+  artifactHref,
+  readLastImport,
+  readScopedLastImport,
+  normalizeMemoryBackend,
+  memoryBackendLabel,
+  memoryBackendShortLabel,
+  importTaskKindForBackend,
+  importScriptForBackend,
+  genericQaTaskKindForBackend,
+  importWriteSurfaceForBackend,
+  workspaceBackendNameHint,
+  compactPath,
+  displayPath,
+  shellQuote,
+  currentMemoryBackend,
+  normalizeWorkspacePath,
+  importRecordBackend,
+  importRecordWorkspace,
+  currentWorkspaceScopedLastImport,
+  importRecordMatchesCurrentWorkspace,
+  clearImportedMemoryStatusForWorkspace,
+  currentImportedMemoryStatus,
+  locomoImportDisplayState,
+  locomoImportCompleteState,
+  setImportedMemoryRunningStatus,
+  chatDraftKey,
+  loadChatDraft,
+  saveChatDraft,
+  clearChatDraft,
+} = window.MemoryBenchCore;
+const {
+  escapeHtml,
+  percent,
+  formatInt,
+  formatDateTimeLocal,
+  formatDateTime,
+  compactTimestamp,
+  compactText,
+  formatDuration,
+  formatSecondsMetric,
+  normalizeDisplayDate,
+  normalizeVisibleMemoryBackendName,
+  runCompareKey,
+} = window.MemoryBenchFormat;
 
 state.includeNativeOpenVikingBaseline = readStoredBool(RUN_COMPARE_BASELINE_KEY, true);
 
-function uiActionLocked(key) {
-  return UI_ACTION_LOCKS.has(String(key || ""));
+function setInnerHtmlIfChanged(target, html) {
+  if (!target) return false;
+  if (target.innerHTML === html) return false;
+  target.innerHTML = html;
+  return true;
 }
 
-async function runWithUiActionLock(key, buttonIds, work, busyMessage = "操作正在处理中，请稍候") {
-  const lockKey = String(key || "");
-  if (!lockKey) return await work();
-  if (uiActionLocked(lockKey)) {
-    toast(busyMessage);
-    return null;
-  }
-  UI_ACTION_LOCKS.add(lockKey);
-  const buttons = (buttonIds || []).map((id) => $(id)).filter(Boolean);
-  for (const button of buttons) {
-    button.disabled = true;
-    button.dataset.actionLocked = lockKey;
-    button.setAttribute("aria-disabled", "true");
-  }
-  try {
-    return await work();
-  } finally {
-    UI_ACTION_LOCKS.delete(lockKey);
-    for (const button of buttons) {
-      if (button.dataset.actionLocked === lockKey) delete button.dataset.actionLocked;
-      button.removeAttribute("aria-disabled");
-    }
-  }
+function setImportPanelHtmlIfChanged(key, target, html, afterRender = null) {
+  if (!target) return false;
+  const next = String(html ?? "");
+  const cache = state.importRenderCache || (state.importRenderCache = {});
+  if (cache[key] === next && target.innerHTML === next) return false;
+  cache[key] = next;
+  target.innerHTML = next;
+  if (typeof afterRender === "function") afterRender(target);
+  return true;
 }
 
-const LOCOMO_ALL_SESSIONS_LABEL = "全部对话";
+function markLogBoxEmptyState(box) {
+  if (!box) return;
+  const text = String(box.textContent || "").trim();
+  const empty = !text || /日志会显示在这里|这个任务还没有写出日志|这个日志文件还没有内容|暂无运行中的导入任务/.test(text);
+  box.classList.toggle("is-empty", empty);
+}
 
-function currentLocomoSampleScope() {
-  const select = $("sample");
-  const value = select?.value || "all";
-  const optionText = select?.selectedOptions?.[0]?.textContent?.trim() || LOCOMO_ALL_SESSIONS_LABEL;
-  if (value === "all") {
-    const dataset = currentLocomoDataset();
-    return {
-      value,
-      isAll: true,
-      label: LOCOMO_ALL_SESSIONS_LABEL,
-      optionText,
-      questionCount: Number(dataset?.questions || 0),
+function currentQaToolCallingEnabled(format = "") {
+  const normalized = normalizeDatasetFormat(format || "");
+  if (normalized === "hotpotqa") {
+    if ($("hotpotQaUseTools")) return $("hotpotQaUseTools").checked;
+    const cfg = {
+      ...accountConfigDefaults(),
+      ...readAccountConfig(currentAccount()),
+      ...currentAccountConfigPatch(),
     };
+    return cfg.hotpotQaUseTools !== false;
   }
-  const parts = optionText.split("·").map((part) => part.trim()).filter(Boolean);
-  const sampleId = parts.find((part) => /^conv-\d+$/i.test(part))
-    || state.questions.find((q) => String(q.sample_index) === String(value) || q.sample_id === value)?.sample_id
-    || optionText;
-  const optionCountMatch = optionText.match(/·\s*(\d+)\s*题/);
-  const optionCount = optionCountMatch ? Number(optionCountMatch[1]) : 0;
-  const loadedCount = state.questions.filter((q) => String(q.sample_index) === String(value) || q.sample_id === sampleId || q.sample_id === value).length;
-  return {
-    value,
-    isAll: false,
-    label: sampleId,
-    optionText,
-    questionCount: loadedCount || optionCount || state.questions.length || 0,
+  if ($("locomoQaUseTools")) return $("locomoQaUseTools").checked;
+  const cfg = {
+    ...accountConfigDefaults(),
+    ...readAccountConfig(currentAccount()),
+    ...currentAccountConfigPatch(),
   };
+  return cfg.locomoQaUseTools !== false;
 }
 
-function currentImportSampleScope() {
-  const select = $("importSample");
-  const optionText = select?.selectedOptions?.[0]?.textContent?.trim() || LOCOMO_ALL_SESSIONS_LABEL;
-  const selected = parseImportSampleSelection(select?.value || "all", optionText);
-  const dataset = currentLocomoDataset();
-  if (selected.isAll) {
-    return {
-      value: selected.rawValue,
-      baseValue: selected.baseValue,
-      smoke: false,
-      isAll: true,
-      label: LOCOMO_ALL_SESSIONS_LABEL,
-      optionText,
-      questionCount: Number(dataset?.questions || 0),
-    };
-  }
-  const optionCountMatch = optionText.match(/·\s*(\d+)\s*题/);
-  const optionCount = optionCountMatch ? Number(optionCountMatch[1]) : 0;
-  return {
-    value: selected.rawValue,
-    baseValue: selected.baseValue,
-    smoke: selected.smoke,
-    isAll: false,
-    label: selected.smoke ? `${selected.sampleId || optionText} · 单 session 测试` : (selected.sampleId || optionText),
-    optionText,
-    questionCount: optionCount,
-  };
-}
-
-const IMPORT_SINGLE_SESSION_SUFFIX = "__single_session_test";
-
-function parseImportSampleSelection(rawValue = $("importSample")?.value || "all", optionText = $("importSample")?.selectedOptions?.[0]?.textContent?.trim() || "") {
-  const value = String(rawValue || "all");
-  const smoke = value.endsWith(IMPORT_SINGLE_SESSION_SUFFIX);
-  const baseValue = smoke ? value.slice(0, -IMPORT_SINGLE_SESSION_SUFFIX.length) : value;
-  const parts = String(optionText || "").split("·").map((part) => part.trim()).filter(Boolean);
-  const sampleId = baseValue === "all"
-    ? ""
-    : (
-      parts.find((part) => /^conv-\d+$/i.test(part))
-      || state.questions.find((q) => String(q.sample_index) === String(baseValue) || q.sample_id === baseValue)?.sample_id
-      || ""
-    );
-  return {
-    rawValue: value,
-    baseValue: baseValue || "all",
-    smoke,
-    isAll: baseValue === "all",
-    optionText: optionText || "",
-    sampleId,
-  };
-}
-
-function locomoQaSampleOptionLabel(row = {}) {
-  const questions = formatInt(row.questions || 0);
-  const sessions = Number(row.sessions || 0);
-  const sessionText = sessions > 0 ? ` · ${formatInt(sessions)} 段 session` : "";
-  return `${row.index} · ${row.sample_id} · ${questions} 题${sessionText}`;
-}
-
-function locomoImportSampleOptionLabel(row = {}) {
-  const questions = formatInt(row.questions || 0);
-  const sessions = Number(row.sessions || 0);
-  const events = Number(row.events || 0);
-  const scopeText = sessions > 0 ? `${formatInt(sessions)} 段 session` : `${formatInt(events)} 条事件`;
-  return `${row.index} · ${row.sample_id} · ${scopeText} · ${questions} 题`;
-}
-
-function refreshImportActionLabels() {
+function activeEvalTaskSummary(task = activeLocomoQaTask()) {
+  const scope = locomoSampleScopeFromTask(task);
   const backend = currentMemoryBackend();
   const backendLabel = memoryBackendLabel(backend);
-  const datasetFormat = normalizeDatasetFormat(currentLocomoDataset()?.format || "");
-  const locomoReady = datasetFormat === "locomo";
-  const selection = parseImportSampleSelection();
-  const importBusy = isImportTaskInBackground(state.currentImportTask || {});
-  const imported = currentImportedMemoryStatus();
-  const existingImportInWorkspace = !importBusy && Number(imported.summary_count || 0) > 0;
-  const sampleName = selection.sampleId || selection.baseValue || "当前 conv";
-  const commitButton = $("commitImport");
-  if (commitButton) {
-    commitButton.disabled = !locomoReady || importBusy || existingImportInWorkspace;
-    commitButton.textContent = selection.smoke ? "运行单 session 测试" : "导入所选对话";
-    commitButton.title = existingImportInWorkspace
-      ? "当前目录已经有历史导入结果。请先点“自动生成目录”，或手动切换到新的记忆目录。"
-      : importBusy
-      ? "导入任务运行中，请稍候"
-      : (
-        selection.smoke
-          ? `只向 ${backendLabel} 写入 ${sampleName} 的 1 段 session，用于快速验证注入链路`
-          : `把“导入对话”选择的范围写入 ${backendLabel}`
-      );
+  const useTools = currentQaToolCallingEnabled();
+  const dataset = currentLocomoDataset();
+  if (!task) {
+    return {
+      scopeLabel: scope.isAll ? `${scope.label} (${dataset?.samples ?? 0} sessions)` : scope.label,
+      toolLabel: useTools ? "已开启" : "已关闭",
+      progressLabel: "待运行",
+      progressDetail: dataset?.questions ? `0 / ${dataset.questions}` : "-",
+      statusLabel: "未启动",
+      startLabel: "-",
+      etaLabel: "-",
+      backendLabel,
+      progressPct: 0,
+    };
   }
+  const liveTask = taskWithLiveProgress(task);
+  const format = enrichTaskDatasetFormat(liveTask, state.taskDatasetFormats[liveTask.id] || "");
+  const execution = taskExecutionProgress(liveTask, format);
+  const progress = liveTask.progress || {};
+  const total = Number(execution?.total_questions || progress.total || 0);
+  const answered = Number(execution?.answered_questions || progress.current || 0);
+  const pct = total > 0 ? Math.max(0, Math.min(100, (answered / total) * 100)) : Number(progress.pct || 0);
+  return {
+    scopeLabel: scope.isAll ? `${scope.label} (${dataset?.samples ?? 0} sessions)` : scope.label,
+    toolLabel: useTools ? "已开启" : "已关闭",
+    progressLabel: total > 0 ? `${pct.toFixed(0)}%` : taskStatusLabel(liveTask),
+    progressDetail: total > 0 ? `${answered} / ${total}` : "-",
+    statusLabel: taskStatusLabel(liveTask),
+    startLabel: formatDateTime(liveTask.started_at || liveTask.created_at || ""),
+    etaLabel: progress.eta_seconds != null ? formatDuration(progress.eta_seconds) : "-",
+    backendLabel,
+    progressPct: pct,
+  };
 }
 
-function activeLocomoQaTask() {
-  const task = state.currentLocomoTask;
-  if (!task?.id) return null;
-  if (isTaskTerminal(task)) return null;
-  const format = enrichTaskDatasetFormat(task, state.taskDatasetFormats[task.id] || task.dataset_format || "");
-  if (!isEvalQaTask(task, format)) return null;
-  if (locomoQaTaskAppearsComplete(task, format)) return null;
-  return task;
+function renderEvalHeaderSummary(task = activeLocomoQaTask()) {
+  const target = $("evalHeaderSummary");
+  if (!target) return;
+  const summary = activeEvalTaskSummary(task);
+  const scope = currentLocomoSampleScope();
+  const running = /运行|进行|启动/.test(summary.statusLabel || "");
+  const statusTone = running ? "running" : ((summary.statusLabel || "").includes("完成") ? "done" : "idle");
+  const items = [
+    `
+      <article class="locomo-meta-item locomo-meta-item-scope">
+        <span class="locomo-meta-icon ui-icon" data-ui-icon="target" data-ui-icon-size="16" aria-hidden="true"></span>
+        <div class="locomo-meta-copy">
+          <strong class="locomo-meta-text">${escapeHtml(summary.scopeLabel || scope.label || "-")}</strong>
+        </div>
+      </article>
+    `,
+    `
+      <article class="locomo-meta-item locomo-meta-item-progress">
+        <span class="locomo-meta-icon ui-icon" data-ui-icon="gauge" data-ui-icon-size="16" aria-hidden="true"></span>
+        <div class="locomo-meta-copy">
+          <strong class="locomo-meta-text">${escapeHtml(`${summary.progressLabel || "-"}${summary.progressDetail ? ` · ${summary.progressDetail}` : ""}`)}</strong>
+        </div>
+      </article>
+    `,
+    `
+      <article class="locomo-meta-item locomo-meta-item-tools">
+        <span class="locomo-meta-icon ui-icon" data-ui-icon="wrench" data-ui-icon-size="16" aria-hidden="true"></span>
+        <div class="locomo-meta-copy">
+          <strong class="locomo-meta-text">Tool Calling · ${escapeHtml(summary.toolLabel || "-")}</strong>
+        </div>
+      </article>
+    `,
+    `
+      <article class="locomo-meta-item locomo-meta-item-recent">
+        <span class="locomo-meta-icon ui-icon" data-ui-icon="activity" data-ui-icon-size="16" aria-hidden="true"></span>
+        <div class="locomo-meta-copy locomo-meta-copy-recent">
+          <div class="locomo-meta-status-row">
+            <span class="locomo-status-pill ${escapeHtml(statusTone)}">${escapeHtml(summary.statusLabel || "-")}</span>
+            ${summary.backendLabel ? `<span class="locomo-meta-subtle">${escapeHtml(summary.backendLabel)}</span>` : ""}
+          </div>
+        </div>
+      </article>
+    `,
+  ];
+  target.innerHTML = items.join('<span class="locomo-meta-separator" aria-hidden="true"></span>');
+  hydrateUiIcons(target);
 }
 
-function locomoQaTaskConfig(task = {}) {
-  return task?.meta?.config || task?.config || {};
+function renderEvalProgressSummary(task = activeLocomoQaTask()) {
+  const target = $("evalProgressSummary");
+  if (!target) return;
+  const dataset = currentLocomoDataset();
+  const liveTask = task ? taskWithLiveProgress(task) : null;
+  const format = liveTask ? enrichTaskDatasetFormat(liveTask, state.taskDatasetFormats[liveTask.id] || "") : "";
+  const execution = liveTask ? taskExecutionProgress(liveTask, format) : null;
+  const progress = liveTask?.progress || {};
+  const total = Number(execution?.total_questions || progress.total || dataset?.questions || 0);
+  const answered = Number(execution?.answered_questions || progress.current || 0);
+  const pct = total > 0 ? Math.max(0, Math.min(100, (answered / total) * 100)) : 0;
+  const summary = liveTask?.summary || {};
+  const failed = summary.failed_rows ?? summary.error_rows ?? 0;
+  const items = [
+    ["当前进度", `${answered || 0} / ${total || 0}`, `${pct.toFixed(0)}%`],
+    ["已完成", String(summary.rows ?? summary.answered_rows ?? answered ?? 0), ""],
+    ["失败", String(failed), ""],
+  ];
+  target.innerHTML = items.map(([label, value, detail]) => `
+    <article>
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      ${detail ? `<small>${escapeHtml(detail)}</small>` : ""}
+    </article>
+  `).join("");
 }
 
-function locomoQaTaskLaunchMode(task = {}) {
-  const config = locomoQaTaskConfig(task);
-  return String(config.questions || "").trim() ? "selected" : "full";
+function renderEvalConsoleContext(task = activeLocomoQaTask()) {
+  const target = $("evalConsoleContext");
+  if (!target) return;
+  const scope = currentLocomoSampleScope();
+  const useTools = currentQaToolCallingEnabled();
+  const selectedCount = currentScopeSelectedQuestionIds().length;
+  const runningTask = task || activeLocomoQaTask();
+  const runningFormat = runningTask
+    ? enrichTaskDatasetFormat(runningTask, state.taskDatasetFormats[runningTask.id] || "")
+    : "";
+  const chips = [
+    `范围 ${scope.label || LOCOMO_ALL_SESSIONS_LABEL}`,
+    `进度 ${selectedCount ? `${selectedCount} selected` : `${state.filteredQuestions?.length || state.questions.length || 0} visible`}`,
+    `Tool ${useTools ? "On" : "Off"}`,
+    `状态 ${runningTask ? taskDisplayStatusLabel(runningTask, runningFormat) : "待运行"}`,
+    `开始 ${runningTask?.started_at ? formatDateTimeLocal(runningTask.started_at) : "-"}`,
+    `ETA ${runningTask?.progress?.eta_seconds != null ? formatDuration(runningTask.progress.eta_seconds) : "-"}`,
+  ];
+  target.innerHTML = chips.map((text) => `<span class="chip">${escapeHtml(text)}</span>`).join("");
+}
+
+function resultMetricCell(label = "", value = "", detail = "", options = {}) {
+  const valueClass = options.valueClass ? ` ${options.valueClass}` : "";
+  return `
+    <article class="result-metric">
+      <span>${escapeHtml(label)}</span>
+      <strong class="${escapeHtml(`result-metric-value${valueClass}`)}">${value}</strong>
+      ${detail ? `<small>${escapeHtml(detail)}</small>` : ""}
+    </article>
+  `;
+}
+
+function resultArtifactRow(label = "", value = "", options = {}) {
+  const path = String(value || "").trim();
+  if (!path) return "";
+  const openLabel = options.openLabel || "打开";
+  const copyLabel = options.copyLabel || "复制";
+  return `
+    <article class="result-artifact-row">
+      <div class="result-artifact-type">${escapeHtml(label || "产物")}</div>
+      <div class="result-path" title="${escapeHtml(path)}"><code>${escapeHtml(compactPath(displayPath(path), 30, 24))}</code></div>
+      <div class="result-artifact-actions">
+        <button class="secondary compact-button path-open icon-button" type="button" data-path="${escapeHtml(path)}">${escapeHtml(openLabel)}</button>
+        <button class="secondary compact-button path-copy icon-button" type="button" data-copy="${escapeHtml(path)}">${escapeHtml(copyLabel)}</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderEvalRecentResultPanel() {
+  const panel = $("evalRecentResultPanel");
+  if (!panel) return;
+  const currentTask = activeLocomoQaTask();
+  const currentOutput = currentLocomoResultCsv();
+  const recentRun = latestLocomoQaRun(state.recentRuns || []);
+  const record = (currentTask?.output_file ? currentTask : null)
+    || (currentOutput ? ((state.recentRuns || []).find((run) => String(run.output_file || "").trim() === currentOutput) || null) : null)
+    || state.selectedRunRecord
+    || recentRun
+    || null;
+  const headerActions = $("evalRecentResultActions");
+  if (!record) {
+    if (!state.runsLoading && !(state.recentRuns || []).length) {
+      ensureRecentRunsLoaded(true).then(() => renderEvalRecentResultPanel()).catch(() => {});
+    }
+    if (headerActions) headerActions.innerHTML = "";
+    panel.innerHTML = `
+      <article class="workbench-idle-note result-panel">
+        <strong>还没有问答结果</strong>
+        <p>启动 QA 或刷新结果后，这里显示结果文件、状态摘要和后续入口。</p>
+      </article>
+    `;
+    return;
+  }
+  const input = record.output_file || currentOutput || "";
+  const runDir = record.run_dir || dirname(input);
+  const summary = record.summary || state.lastJudgeSummary || state.selectedRunSummary || {};
+  const rows = Number(summary.rows ?? summary.summary_json?.count ?? 0);
+  const graded = Number(summary.graded ?? summary.summary_json?.graded ?? 0);
+  const pending = rows ? Number(summary.result_counts?.UNSCORED ?? Math.max(0, rows - graded)) : 0;
+  const failed = Number(summary.failed_rows ?? summary.error_rows ?? 0);
+  const accuracy = hasJudgeScore(summary) ? percent(summary.accuracy) : "待判分";
+  const statusLabel = record.status ? taskDisplayStatusLabel(record, enrichTaskDatasetFormat(record, state.taskDatasetFormats[record.id] || record.dataset_format || "")) : (hasJudgeScore(summary) ? "已判分" : "已产出结果");
+  const updatedAt = summary.updated_at || summary.summary_json?.updated_at || record.updated_at || record.ended_at || record.created_at || "";
+  const startedAt = record.started_at || record.created_at || "";
+  const statusClass = escapeHtml(String(record.status || "").toLowerCase() || (isTaskActive(record) ? "running" : "succeeded"));
+  panel.innerHTML = `
+    <article class="eval-result-summary-card result-panel${isTaskActive(record) ? " running" : ""}">
+      <div class="result-summary-grid">
+        ${resultMetricCell("状态", `<span class="status-pill ${statusClass}">${escapeHtml(statusLabel)}</span>`, "", {valueClass: "result-metric-pill"})}
+        ${resultMetricCell("准确率", escapeHtml(accuracy))}
+        ${resultMetricCell("结果行", escapeHtml(rows ? formatInt(rows) : "-"))}
+        ${resultMetricCell("失败", escapeHtml(rows ? formatInt(failed) : "0"))}
+        ${resultMetricCell("开始时间", escapeHtml(startedAt ? formatDateTime(startedAt) : "-"))}
+        ${resultMetricCell("最近更新", escapeHtml(updatedAt ? formatDateTime(updatedAt) : "-"))}
+      </div>
+      <div class="result-artifact-list">
+        ${resultArtifactRow("结果文件", input, {openLabel: "打开", copyLabel: "复制"})}
+        ${resultArtifactRow("结果目录", runDir, {openLabel: "打开目录", copyLabel: "复制"})}
+      </div>
+      <div class="result-info-row">
+        <span class="ui-icon" data-ui-icon="info" data-ui-icon-size="14" aria-hidden="true"></span>
+        <span>${escapeHtml(
+          isTaskActive(record)
+            ? "任务仍在运行，结果文件会持续写入。"
+            : (pending > 0 ? `还有 ${pending} 行待判分，可以直接进入 Judge。` : "结果文件已就绪，可以进入 Judge 或查看报告。")
+        )}</span>
+      </div>
+    </article>
+  `;
+  if (headerActions) {
+    headerActions.innerHTML = `
+      ${input ? `<button class="primary path-open" type="button" data-path="${escapeHtml(input)}">打开结果</button>` : ""}
+      <button class="secondary" type="button" data-view-jump="judgeView">去 judge</button>
+      <button class="secondary" type="button" data-view-jump="runsView">查看报告</button>
+    `;
+    bindOpenButtons("#evalRecentResultActions");
+    headerActions.querySelectorAll("[data-view-jump]").forEach((button) => {
+      button.addEventListener("click", () => handleContextualViewJump(button, {preserveScroll: true}));
+    });
+  }
+  bindOpenButtons("#evalRecentResultPanel");
+  bindCopyButtons("#evalRecentResultPanel");
+  hydrateUiIcons(panel);
 }
 
 function locomoQaTaskAppearsComplete(task = {}, format = "") {
@@ -405,7 +405,7 @@ function locomoQaTaskAppearsComplete(task = {}, format = "") {
   return false;
 }
 
-function taskDisplayStatusLabel(task = {}, format = "") {
+function locomoTaskDisplayStatusLabel(task = {}, format = "") {
   const resolvedFormat = enrichTaskDatasetFormat(task, format || state.taskDatasetFormats[task?.id || ""] || task?.dataset_format || "");
   if (locomoQaTaskAppearsComplete(task, resolvedFormat)) {
     return task?.summary?.accuracy != null ? "已完成" : "等待判分";
@@ -639,21 +639,19 @@ function locomoQuestionsMatchScope(scope = currentLocomoSampleScope()) {
 }
 
 function locomoQuestionSelectionKpis(rows = filteredQuestions()) {
-  const dataset = currentLocomoDataset();
-  const scope = currentLocomoSampleScope();
-  const datasetTotal = Number(dataset?.questions || state.questions.length || 0);
-  const scopeTotal = scope.isAll
-    ? (datasetTotal || state.questions.length || rows.length)
-    : Number(scope.questionCount || state.questions.length || rows.length);
-  const selected = state.selectedQuestions.size;
+  const activeTask = activeLocomoQaTask();
+  const liveTask = activeTask ? taskWithLiveProgress(activeTask) : null;
+  const format = liveTask ? enrichTaskDatasetFormat(liveTask, state.taskDatasetFormats[liveTask.id] || "") : "";
+  const execution = liveTask ? taskExecutionProgress(liveTask, format) : null;
+  const summary = liveTask?.summary || {};
   const selectedInScope = rows.filter((q) => state.selectedQuestions.has(q.question_id)).length;
-  const rangeValue = scope.isAll
-    ? `${rows.length}/${scopeTotal}`
-    : `${rows.length}/${scopeTotal} · ${scope.label}${datasetTotal > scopeTotal ? ` / 总${datasetTotal}` : ""}`;
+  const completed = Number(execution?.answered_questions || liveTask?.progress?.current || summary.completed_rows || 0);
+  const failed = Number(summary.failed_rows ?? summary.error_rows ?? 0);
   return [
-    ["题目范围", rangeValue],
-    ["已选", `${selectedInScope}/${rows.length}`],
-    ["运行模式", selected ? "按选择题目" : "当前范围全量"],
+    ["全部", formatInt(rows.length)],
+    ["已选", formatInt(selectedInScope)],
+    ["已完成", formatInt(completed)],
+    ["失败", formatInt(failed)],
   ];
 }
 
@@ -696,10 +694,33 @@ const VIEW_NAV_PARENT = {
   memoryView: "openvikingView",
   runsView: "openvikingView",
 };
+const TOPBAR_VIEW_META = {
+  openvikingView: {label: "LoCoMo", subtitle: "记忆管理", icon: "database"},
+  datasetView: {label: "LoCoMo", subtitle: "数据准备", icon: "database"},
+  evalView: {label: "LoCoMo", subtitle: "问答测试", icon: "database"},
+  judgeView: {label: "LoCoMo", subtitle: "结果判分", icon: "database"},
+  runsView: {label: "结果中心", subtitle: "报告与对比", icon: "file-bar-chart-2"},
+  longMemEvalView: {label: "LongMemEval", subtitle: "长记忆问答", icon: "book-open"},
+  evolvingEventsView: {label: "EvolvingEvents", subtitle: "事件推理", icon: "calendar-clock"},
+  hotpotQaView: {label: "HotpotQA", subtitle: "多跳文档问答", icon: "brain"},
+  proAgentBenchView: {label: "ProAgentBench", subtitle: "Agent 任务评测", icon: "bot"},
+  tauBenchView: {label: "Tau2-bench", subtitle: "工具任务评测", icon: "boxes"},
+  systemConfigView: {label: "系统配置", subtitle: "服务与模型", icon: "settings"},
+  chatView: {label: "工作台", subtitle: "对话与调试", icon: "message-circle"},
+};
 const RETIRED_VIEW_FALLBACKS = {
-  chenmoView: "openvikingView",
   readmeView: "systemConfigView",
 };
+
+const REMOVED_VIEW_TOASTS = {};
+
+function retiredViewFallback(viewId = "") {
+  return RETIRED_VIEW_FALLBACKS[String(viewId || "").trim()] || "";
+}
+
+function removedViewToast(viewId = "") {
+  return REMOVED_VIEW_TOASTS[String(viewId || "").trim()] || "";
+}
 const BenchmarkRegistry = (() => {
   const DATASET_FORMATS = {
     locomo: {
@@ -708,13 +729,7 @@ const BenchmarkRegistry = (() => {
       standalone: false,
       aliases: [],
     },
-    chenmo: {
-      label: "ChenMo",
-      view: "chenmoView",
-      standalone: false,
-      aliases: [],
-    },
-    longmemeval: {
+  longmemeval: {
       label: "LongMemEval",
       view: "longMemEvalView",
       standalone: true,
@@ -936,112 +951,112 @@ function inferDatasetFormatFromText(...values) {
   return "";
 }
 
-function projectPath(...parts) {
-  const root = String(state.config?.root || "").replace(/\/+$/, "");
-  return root ? [root, ...parts].join("/") : parts.join("/");
-}
-
-function runPath(...parts) {
-  const outputDir = String(state.config?.output_dir || "").replace(/\/+$/, "");
-  return outputDir ? [outputDir, ...parts].join("/") : projectPath("runs", ...parts);
-}
-
-function artifactHref(path) {
-  const value = String(path || "");
-  const root = String(state.config?.root || "").replace(/\/+$/, "");
-  const runsDir = String(state.config?.runs_dir || state.config?.output_dir || "").replace(/\/+$/, "");
-  const generatedReportsDir = root ? `${root}/generated-reports` : "";
-  const candidates = [
-    runsDir,
-    root ? `${root}/runs` : "",
-  ].filter(Boolean);
-  for (const base of candidates) {
-    if (value === base) return "/runs/";
-    if (value.startsWith(`${base}/`)) {
-      return `/runs/${value.slice(base.length + 1).split("/").map(encodeURIComponent).join("/")}`;
-    }
-  }
-  const marker = "/runs/";
-  const index = value.indexOf(marker);
-  if (index >= 0) return `/runs/${value.slice(index + marker.length).split("/").map(encodeURIComponent).join("/")}`;
-  if (generatedReportsDir) {
-    if (value === generatedReportsDir) return "/generated-reports/";
-    if (value.startsWith(`${generatedReportsDir}/`)) {
-      return `/generated-reports/${value.slice(generatedReportsDir.length + 1).split("/").map(encodeURIComponent).join("/")}`;
-    }
-  }
-  const reportsMarker = "/generated-reports/";
-  const reportsIndex = value.indexOf(reportsMarker);
-  if (reportsIndex >= 0) return `/generated-reports/${value.slice(reportsIndex + reportsMarker.length).split("/").map(encodeURIComponent).join("/")}`;
-  return "";
-}
-
-function readLastImport() {
-  return readScopedLastImport(currentAccount());
-}
-
-function readScopedLastImport(account = currentAccount()) {
-  const normalizedAccount = safeAccountSlug(account);
-  try {
-    const scopedKey = `${LAST_IMPORT_KEY}.${normalizedAccount}`;
-    const scoped = JSON.parse(localStorage.getItem(scopedKey) || "{}");
-    if (scoped && Object.keys(scoped).length) return scoped;
-    if (normalizedAccount === "default") return JSON.parse(localStorage.getItem(LAST_IMPORT_KEY) || "{}");
-    return {};
-  } catch {
-    return {};
-  }
+function isLiveImportTask(task = {}) {
+  return Boolean(
+    task?.id
+    && isLocomoImportTask(task, state.taskDatasetFormats[task.id] || task.dataset_format || "")
+    && isTaskActive(task)
+    && !String(task?.status_reason || "").includes("manifest_")
+  );
 }
 
 function latestMemoryImportTask(tasks = [], options = {}) {
   const preferredKind = locomoImportTaskKind();
   const backend = normalizeMemoryBackend(options.backend || currentMemoryBackend());
   const workspaceScoped = options.workspaceScoped !== false;
+  const normalizedTasks = Array.isArray(tasks) ? tasks.filter(Boolean) : [];
   const scoped = currentAccountOnlyEnabled("taskCurrentAccountOnly")
-    ? tasks.filter(matchesCurrentAccount)
-    : tasks;
+    ? normalizedTasks.filter(matchesCurrentAccount)
+    : normalizedTasks;
   if (options.strictAccount && currentAccountOnlyEnabled("taskCurrentAccountOnly") && !scoped.length) return null;
-  const pool = scoped.length ? scoped : tasks;
-  const fallbackPool = options.strictAccount ? pool : tasks;
+  const pool = scoped.length ? scoped : normalizedTasks;
+  const sameBackendPool = pool.filter((task) => isLocomoImportTask(task) && importRecordBackend(task, backend) === backend);
+  const fallbackPool = options.strictAccount
+    ? sameBackendPool
+    : normalizedTasks.filter((task) => isLocomoImportTask(task) && importRecordBackend(task, backend) === backend);
   const hasWorkspaceScope = workspaceScoped && Boolean(normalizeWorkspacePath(currentConfiguredWorkspace(backend)));
-  const scopedPool = hasWorkspaceScope ? pool.filter((task) => importRecordMatchesCurrentWorkspace(task, backend)) : pool;
+  const scopedPool = hasWorkspaceScope ? sameBackendPool.filter((task) => importRecordMatchesCurrentWorkspace(task, backend)) : sameBackendPool;
   const scopedFallbackPool = hasWorkspaceScope ? fallbackPool.filter((task) => importRecordMatchesCurrentWorkspace(task, backend)) : fallbackPool;
-  return scopedPool.find((task) => task.kind === preferredKind && isImportTaskInBackground(task))
-    || scopedPool.find((task) => isMemoryImportKind(task.kind) && isImportTaskInBackground(task))
-    || scopedPool.find((task) => task.kind === preferredKind && isTaskActive(task))
-    || scopedPool.find((task) => isMemoryImportKind(task.kind) && isTaskActive(task))
-    || scopedPool.find((task) => task.kind === preferredKind && task.status === "succeeded")
-    || scopedPool.find((task) => isMemoryImportKind(task.kind) && task.status === "succeeded")
-    || scopedPool.find((task) => task.kind === preferredKind)
-    || scopedPool.find((task) => isMemoryImportKind(task.kind))
-    || scopedFallbackPool.find((task) => isMemoryImportKind(task.kind))
+  return scopedPool.find((task) => task?.kind === preferredKind && isLiveImportTask(task))
+    || scopedPool.find((task) => isLiveImportTask(task))
+    || scopedPool.find((task) => task?.kind === preferredKind && isLocomoImportTask(task) && isTaskActive(task))
+    || scopedPool.find((task) => isLocomoImportTask(task) && isTaskActive(task))
+    || scopedPool.find((task) => task?.kind === preferredKind && isLocomoImportTask(task) && task.status === "succeeded")
+    || scopedPool.find((task) => isLocomoImportTask(task) && task.status === "succeeded")
+    || scopedPool.find((task) => task?.kind === preferredKind && isLocomoImportTask(task))
+    || scopedPool.find((task) => isLocomoImportTask(task))
+    || scopedFallbackPool.find((task) => isLocomoImportTask(task))
     || null;
 }
 
 function latestAnyMemoryImportTask(tasks = [], options = {}) {
   const backend = normalizeMemoryBackend(options.backend || currentMemoryBackend());
+  const normalizedTasks = Array.isArray(tasks) ? tasks.filter(Boolean) : [];
+  const sameBackendPool = normalizedTasks.filter((task) => isLocomoImportTask(task) && importRecordBackend(task, backend) === backend);
   const hasWorkspaceScope = options.workspaceScoped !== false && Boolean(normalizeWorkspacePath(currentConfiguredWorkspace(backend)));
-  const pool = hasWorkspaceScope ? tasks.filter((task) => importRecordMatchesCurrentWorkspace(task, backend)) : tasks;
-  return pool.find((task) => isMemoryImportKind(task.kind) && isImportTaskInBackground(task))
-    || pool.find((task) => isMemoryImportKind(task.kind) && isTaskActive(task))
-    || pool.find((task) => isMemoryImportKind(task.kind) && task.status === "succeeded")
-    || pool.find((task) => isMemoryImportKind(task.kind))
+  const pool = hasWorkspaceScope ? sameBackendPool.filter((task) => importRecordMatchesCurrentWorkspace(task, backend)) : sameBackendPool;
+  return pool.find((task) => isLiveImportTask(task))
+    || pool.find((task) => isLocomoImportTask(task) && isTaskActive(task))
+    || pool.find((task) => isLocomoImportTask(task) && task.status === "succeeded")
+    || pool.find((task) => isLocomoImportTask(task))
     || null;
+}
+
+function latestRunningMemoryImportTask(tasks = [], options = {}) {
+  const normalizedTasks = Array.isArray(tasks) ? tasks.filter(Boolean) : [];
+  const scoped = currentAccountOnlyEnabled("taskCurrentAccountOnly")
+    ? normalizedTasks.filter(matchesCurrentAccount)
+    : normalizedTasks;
+  const pool = scoped.length ? scoped : normalizedTasks;
+  const backend = normalizeMemoryBackend(options.backend || "");
+  const filtered = backend
+    ? pool.filter((task) => isLocomoImportTask(task) && importRecordBackend(task, backend) === backend)
+    : pool.filter((task) => isLocomoImportTask(task));
+  return filtered.find((task) => isImportTaskInBackground(task))
+    || filtered.find((task) => isTaskActive(task))
+    || null;
+}
+
+function trackedMemoryImportTask(options = {}) {
+  const backend = normalizeMemoryBackend(options.backend || currentMemoryBackend());
+  const allowTerminal = options.allowTerminal === true;
+  const allowCrossBackend = options.allowCrossBackend === true;
+  const candidates = [state.currentImportTask, state.currentRunningTask, state.currentLocomoTask]
+    .filter((task) => task?.id && isLocomoImportTask(task))
+    .filter((task, index, list) => list.findIndex((item) => item.id === task.id) === index);
+  return candidates.find((task) => {
+    const taskBackend = importRecordBackend(task, backend);
+    if (!allowCrossBackend && taskBackend !== backend) return false;
+    if (!allowCrossBackend && !importRecordMatchesCurrentWorkspace(task, backend)) return false;
+    return allowTerminal ? true : isLiveImportTask(task);
+  }) || null;
+}
+
+function syncImportBackendUi(task = null) {
+  if (!task || activeViewId() !== "openvikingView") return;
+  const backend = importRecordBackend(task, currentMemoryBackend());
+  if (backend !== currentMemoryBackend()) return;
+  const select = $("memoryBackendSelect");
+  if (!select || normalizeMemoryBackend(select.value || "") === backend) return;
+  select.value = backend;
+  updateBackendUi();
 }
 
 function latestMemoryImportRun(runs = [], options = {}) {
   const preferredKind = locomoImportTaskKind();
   const backend = normalizeMemoryBackend(options.backend || currentMemoryBackend());
+  const normalizedRuns = Array.isArray(runs) ? runs.filter(Boolean) : [];
   const scoped = currentAccountOnlyEnabled("runsCurrentAccountOnly")
-    ? runs.filter(matchesCurrentAccount)
-    : runs;
-  const pool = scoped.length ? scoped : runs;
+    ? normalizedRuns.filter(matchesCurrentAccount)
+    : normalizedRuns;
+  const pool = scoped.length ? scoped : normalizedRuns;
   const hasWorkspaceScope = options.workspaceScoped !== false && Boolean(normalizeWorkspacePath(currentConfiguredWorkspace(backend)));
-  const scopedPool = hasWorkspaceScope ? pool.filter((run) => importRecordMatchesCurrentWorkspace(run, backend)) : pool;
-  return scopedPool.find((run) => run.kind === preferredKind && isImportTaskInBackground(run))
-    || scopedPool.find((run) => isMemoryImportKind(run.kind || "") && isImportTaskInBackground(run))
-    || scopedPool.find((run) => run.kind === preferredKind)
-    || scopedPool.find((run) => isMemoryImportKind(run.kind || ""))
+  const sameBackendPool = pool.filter((run) => isRenderableLocomoImportRun(run) && importRecordBackend(run, backend) === backend);
+  const scopedPool = hasWorkspaceScope ? sameBackendPool.filter((run) => importRecordMatchesCurrentWorkspace(run, backend)) : sameBackendPool;
+  return scopedPool.find((run) => run?.kind === preferredKind && isImportTaskInBackground(run))
+    || scopedPool.find((run) => isImportTaskInBackground(run))
+    || scopedPool.find((run) => run?.kind === preferredKind)
+    || scopedPool[0]
     || null;
 }
 
@@ -1051,6 +1066,7 @@ async function latestMemoryImportRecord() {
   if (!runsFresh) {
     const data = await api("/api/runs?include_history=1&limit=80");
     runs = (data.runs || [])
+      .filter((run) => normalizeDatasetFormat(benchmarkFormatFromRecord(run)) !== "chenmo")
       .filter((run) => !currentAccountOnlyEnabled("runsCurrentAccountOnly") || matchesCurrentAccount(run))
       .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
     state.recentRuns = runs;
@@ -1072,25 +1088,62 @@ function isRecentWithinDays(run = {}, days = 3) {
 }
 
 function isRecentWithinHours(run = {}, hours = 24) {
+  run = run || {};
   const createdMs = runCreatedAtMs(run);
   if (!Number.isFinite(createdMs)) return false;
   return createdMs >= (Date.now() - hours * 60 * 60 * 1000);
 }
 
 function isRecentLocomoQaRun(run = {}) {
+  run = run || {};
   const kind = String(run.kind || "").trim();
   const format = normalizeDatasetFormat(benchmarkFormatFromRecord(run));
   return (kind === "openviking_qa" || kind === "echomemory_qa")
-    && (!format || format === "locomo");
+    && format === "locomo";
+}
+
+function isRecentLocomoImportRun(run = {}) {
+  run = run || {};
+  const kind = String(run.kind || "").trim();
+  if (!isMemoryImportKind(kind)) return false;
+  const format = normalizeDatasetFormat(benchmarkFormatFromRecord(run));
+  if (format) return format === "locomo";
+  return false;
+}
+
+function hasUsableImportArtifacts(run = {}) {
+  const outputFile = String(run.output_file || "").trim();
+  const manifestFile = String(run.manifest_file || "").trim();
+  const logFile = String(run.log_file || "").trim();
+  const runDir = String(run.run_dir || "").trim();
+  if (outputFile || manifestFile) return true;
+  return Boolean(logFile && runDir);
+}
+
+function isRenderableLocomoImportRun(run = {}) {
+  return isRecentLocomoImportRun(run) && hasUsableImportArtifacts(run);
+}
+
+function isLocomoImportTask(task = {}, fallbackFormat = "") {
+  const kind = String(task?.kind || "").trim();
+  if (!isMemoryImportKind(kind)) return false;
+  const format = normalizeDatasetFormat(taskDatasetFormat(task, fallbackFormat));
+  if (format) return format === "locomo";
+  return false;
 }
 
 function isQaRunWithOutputFile(run = {}) {
-  const kind = String(run.kind || "").trim();
+  run = run || {};
+  const kind = String(run.kind || "").trim().toLowerCase();
+  const agentType = String(run.agent_type || "").trim().toLowerCase();
   const hasOutputFile = Boolean(String(run.output_file || "").trim());
   if (!hasOutputFile) return false;
   const format = normalizeDatasetFormat(benchmarkFormatFromRecord(run));
-  return (kind === "openviking_qa" || kind === "echomemory_qa")
-    && (!format || format === "locomo");
+  if (format !== "locomo") return false;
+  if (kind === "judge" || kind === "stats" || kind === "adapter" || isMemoryImportKind(kind)) return false;
+  return ["openviking_qa", "echomemory_qa", "openviking", "echomemory", "conv30"].includes(kind)
+    || ["native_vikingbot_cli", "echomemory_memory_qa", "openviking_memory_qa"].includes(agentType)
+    || isLocomoTaskOutput(kind, run, format);
 }
 
 function recentLocomoRunSort(a = {}, b = {}) {
@@ -1103,7 +1156,7 @@ async function ensureRecentRunsLoaded(force = false) {
   if (runsFresh) return runs;
   const data = await api("/api/runs?include_history=1&limit=80");
   runs = (data.runs || [])
-    .filter((run) => !currentAccountOnlyEnabled("runsCurrentAccountOnly") || matchesCurrentAccount(run))
+    .filter((run) => normalizeDatasetFormat(benchmarkFormatFromRecord(run)) !== "chenmo")
     .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
   state.recentRuns = runs;
   state.runsLoadedAt = Date.now();
@@ -1119,7 +1172,7 @@ function recentLocomoRunEmptyText(type = "import") {
 function bindRecentLocomoRunCards(importRuns = [], qaRuns = []) {
   const importMap = new Map(importRuns.map((run) => [runCompareKey(run), run]));
   const qaMap = new Map(qaRuns.map((run) => [runCompareKey(run), run]));
-  document.querySelectorAll("#recentImportRunsList .run-card").forEach((card) => {
+  document.querySelectorAll("#recentImportRunsList [data-run-key]").forEach((card) => {
     card.addEventListener("click", async () => {
       const run = importMap.get(card.dataset.runKey || "");
       if (!run) return;
@@ -1150,14 +1203,14 @@ async function renderRecentLocomoRuns(options = {}) {
   const qaCount = $("recentQaRunsCount");
   if (!importList) return;
   if (options.loading) {
-    importList.innerHTML = `<p class="muted-list-note">正在读取近 3 天导入任务...</p>`;
+    importList.innerHTML = locomoEmptyNoteHtml("正在读取历史任务", "正在读取近 3 天导入任务...", "", {density: "compact"});
     if (qaList) qaList.innerHTML = `<p class="muted-list-note">正在读取近 3 天 QA 任务...</p>`;
   }
   try {
     const runs = await ensureRecentRunsLoaded(Boolean(options.force));
     const recentRuns = runs.filter((run) => isRecentWithinDays(run, 3));
     const importRuns = recentRuns
-      .filter((run) => isMemoryImportKind(run.kind || ""))
+      .filter((run) => isRenderableLocomoImportRun(run))
       .sort(recentLocomoRunSort);
     const qaRuns = recentRuns
       .filter((run) => isRecentLocomoQaRun(run))
@@ -1165,19 +1218,75 @@ async function renderRecentLocomoRuns(options = {}) {
     if (importCount) importCount.textContent = `${importRuns.length} 条`;
     if (qaCount) qaCount.textContent = `${qaRuns.length} 条`;
     importList.innerHTML = importRuns.length
-      ? importRuns.map(renderRunCard).join("")
-      : `<p class="muted-list-note">${recentLocomoRunEmptyText("import")}</p>`;
+      ? renderImportRunTable(importRuns)
+      : locomoEmptyNoteHtml("暂无导入任务", recentLocomoRunEmptyText("import"), "", {density: "compact"});
     if (qaList) {
       qaList.innerHTML = qaRuns.length
         ? qaRuns.map(renderRunCard).join("")
         : `<p class="muted-list-note">${recentLocomoRunEmptyText("qa")}</p>`;
     }
+    hydrateUiIcons(importList);
     bindRecentLocomoRunCards(importRuns, qaRuns);
   } catch (error) {
     const message = error?.message || String(error || "读取失败");
-    importList.innerHTML = `<p class="muted-list-note bad-text">读取失败：${escapeHtml(message)}</p>`;
+    importList.innerHTML = locomoInlineMessageHtml("读取失败", message, "bad");
     if (qaList) qaList.innerHTML = `<p class="muted-list-note bad-text">读取失败：${escapeHtml(message)}</p>`;
   }
+}
+
+function renderImportRunTable(runs = []) {
+  return `
+    <table class="locomo-task-table">
+      <thead>
+        <tr>
+          <th>时间</th>
+          <th>数据集</th>
+          <th>会话</th>
+          <th>题目数</th>
+          <th>消息数</th>
+          <th>后端</th>
+          <th>状态</th>
+          <th>耗时</th>
+          <th>路径</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${runs.map(renderImportRunTableRow).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderImportRunTableRow(run = {}) {
+  const meta = runDatasetMeta(run);
+  const summary = run.summary || {};
+  const summaryJson = summary.summary_json || {};
+  const progress = run.progress || {};
+  const sessionText = meta.sample || inferSampleFromRun(run) || (summary.samples != null ? `${summary.samples}` : "-");
+  const questionCount = meta.rows ?? summary.rows ?? summary.questions ?? "-";
+  const messageCount = summary.submitted_messages ?? progress.submitted_messages ?? summaryJson.submitted_messages ?? "-";
+  const backendLabel = memoryBackendLabel(taskMemoryBackend(run) || currentMemoryBackend());
+  const status = taskStatusLabel(run);
+  const duration = run.duration_s == null ? "-" : formatDuration(run.duration_s);
+  const fullPath = run.output_file || run.run_dir || "";
+  const pathDisplay = compactPath(displayPath(fullPath), 18, 16);
+  const statusTone = String(status || "").includes("完成") ? "ok" : (String(status || "").includes("失败") ? "bad" : "warn");
+  const statusIcon = statusTone === "ok" ? "circle-check-big" : (statusTone === "bad" ? "circle-x" : "clock-3");
+  return `
+    <tr class="locomo-task-row" data-run-key="${escapeHtml(runCompareKey(run))}" data-run-dir="${escapeHtml(run.run_dir || "")}" data-output-file="${escapeHtml(run.output_file || "")}" data-dataset-format="${escapeHtml(benchmarkFormatFromRecord(run))}">
+      <td class="locomo-table-cell">${escapeHtml(formatDateTime(run.created_at || run.updated_at || run.ended_at || ""))}</td>
+      <td class="locomo-table-cell" title="${escapeHtml(meta.datasetName)}">${escapeHtml(meta.datasetName || "-")}</td>
+      <td class="locomo-table-cell" title="${escapeHtml(sessionText)}">${escapeHtml(sessionText)}</td>
+      <td class="locomo-table-cell">${escapeHtml(String(questionCount))}</td>
+      <td class="locomo-table-cell">${escapeHtml(String(messageCount))}</td>
+      <td class="locomo-table-cell">${escapeHtml(backendLabel)}</td>
+      <td class="locomo-table-cell"><span class="locomo-status-pill ${escapeHtml(statusTone)}"><span class="ui-icon" data-ui-icon="${escapeHtml(statusIcon)}"></span><span>${escapeHtml(status)}</span></span></td>
+      <td class="locomo-table-cell">${escapeHtml(duration)}</td>
+      <td class="locomo-table-cell locomo-table-cell-path"><code class="locomo-path" title="${escapeHtml(fullPath)}">${escapeHtml(pathDisplay || "-")}</code></td>
+      <td class="locomo-table-cell"><button class="locomo-button locomo-button-secondary" type="button"><span class="ui-icon" data-ui-icon="inspect"></span><span>查看</span></button></td>
+    </tr>
+  `;
 }
 
 async function loadRecentEvalQaRunsForTaskPanel() {
@@ -1188,6 +1297,152 @@ async function loadRecentEvalQaRunsForTaskPanel() {
     .filter((run) => isRecentWithinDays(run, 3))
     .filter((run) => isRecentLocomoQaRun(run))
     .sort(recentLocomoRunSort);
+}
+
+async function loadRecentHotpotQaRunsForTaskPanel() {
+  const data = await api("/api/runs?include_history=1&limit=80");
+  const runs = Array.isArray(data.runs) ? data.runs : [];
+  const filtered = runs
+    .filter((run) => matchesCurrentAccount(run))
+    .filter((run) => isRecentWithinDays(run, 3))
+    .filter((run) => normalizeDatasetFormat(benchmarkFormatFromRecord(run)) === "hotpotqa");
+  const enriched = await Promise.all(filtered.map(async (run) => {
+    const artifactStatus = await loadBenchmarkArtifactStatus(run).catch(() => ({}));
+    const artifactSummary = await loadFinalBenchmarkArtifactSummary(run, "hotpotqa").catch(() => null);
+    return {
+      ...run,
+      summary: {
+        ...(run.summary || {}),
+        ...(artifactSummary || {}),
+        _artifact_status: artifactStatus,
+      },
+    };
+  }));
+  return enriched.sort(hotpotQaRunSort);
+}
+
+function hotpotQaRunScore(run = {}) {
+  const summary = run.summary || {};
+  const summaryJson = summary.summary_json || {};
+  const artifactStatus = summary._artifact_status || {};
+  const snapshot = hotpotQaCompletionSnapshot(run, summary, artifactStatus);
+  const rows = Number(summary.rows ?? summaryJson.rows ?? summaryJson.count ?? 0);
+  let score = 0;
+  score += Math.min(rows, 10000) * 1000;
+  if (snapshot.answerReady) score += 500;
+  if (snapshot.complete) score += 150;
+  if (snapshot.officialFailed) score -= 300;
+  if (snapshot.complete) score += 50;
+  return score;
+}
+
+function hotpotQaRunSort(a = {}, b = {}) {
+  const scoreDiff = hotpotQaRunScore(b) - hotpotQaRunScore(a);
+  if (scoreDiff) return scoreDiff;
+  return recentLocomoRunSort(a, b);
+}
+
+async function loadRecentBenchmarkRunsForTaskPanel(format = "") {
+  const normalized = normalizeDatasetFormat(format);
+  if (!normalized || normalized === "locomo") return [];
+  if (normalized === "hotpotqa") return loadRecentHotpotQaRunsForTaskPanel();
+  const data = await api("/api/runs?include_history=1&limit=80");
+  const runs = Array.isArray(data.runs) ? data.runs : [];
+  return runs
+    .filter((run) => matchesCurrentAccount(run))
+    .filter((run) => isRecentWithinDays(run, 3))
+    .filter((run) => normalizeDatasetFormat(benchmarkFormatFromRecord(run)) === normalized)
+    .sort(recentLocomoRunSort);
+}
+
+async function loadRunningBenchmarkRunFallback(format = "") {
+  const normalized = normalizeDatasetFormat(format);
+  if (!normalized || normalized === "locomo") return null;
+  const data = await api("/api/runs?include_history=1&limit=80");
+  const runs = Array.isArray(data.runs) ? data.runs : [];
+  return runs
+    .filter((run) => matchesCurrentAccount(run))
+    .filter((run) => normalizeDatasetFormat(benchmarkFormatFromRecord(run)) === normalized)
+    .find((run) => String(run.status || "").toLowerCase() === "running")
+    || null;
+}
+
+function benchmarkSummaryScoreText(summary = {}, format = "") {
+  const normalized = normalizeDatasetFormat(format);
+  const summaryJson = summary.summary_json || {};
+  if (normalized === "hotpotqa") {
+    const answerEm = summary.official_answer_em ?? summaryJson.official_answer_em ?? summary.answer_em ?? summaryJson.answer_em;
+    const answerF1 = summary.official_answer_f1 ?? summaryJson.official_answer_f1 ?? summary.answer_f1 ?? summaryJson.answer_f1;
+    if (answerEm != null || answerF1 != null) {
+      return `EM/F1 ${answerEm == null ? "-" : percent(answerEm)} / ${answerF1 == null ? "-" : percent(answerF1)}`;
+    }
+    return "";
+  }
+  if (normalized === "longmemeval") {
+    const overallAccuracy = summary.overall_accuracy ?? summaryJson.overall_accuracy ?? summary.official_score ?? summaryJson.official_score ?? summary.accuracy ?? summaryJson.accuracy;
+    return overallAccuracy == null ? "" : `Acc ${percent(overallAccuracy)}`;
+  }
+  const accuracy = summary.accuracy ?? summaryJson.accuracy;
+  return accuracy == null ? "" : `Acc ${percent(accuracy)}`;
+}
+
+function renderBenchmarkRecentTaskCard(task = {}, format = "", options = {}) {
+  const resolvedFormat = enrichTaskDatasetFormat(task, format || state.taskDatasetFormats[task.id] || task.dataset_format || "");
+  const summary = options.summary || task.summary || {};
+  const artifactStatus = options.artifactStatus || summary._artifact_status || {};
+  const execution = taskExecutionProgress(task, resolvedFormat);
+  const account = recordAccount(task) || "default";
+  const datasetLabel = options.datasetLabel || datasetTypeLabel(resolvedFormat) || options.fallbackLabel || "任务";
+  const displayTitle = options.displayTitle || taskDisplayTitle(task, resolvedFormat) || task.name || task.id || datasetLabel;
+  const liveTask = taskWithLiveProgress(task);
+  const progress = liveTask.progress || {};
+  const rows = execution?.total_questions
+    ? `${execution.current_question || execution.answered_questions || 0}/${execution.total_questions} · 已答 ${execution.answered_questions || 0}`
+    : isTaskActive(task) && progress.current != null
+    ? `≈${progress.current}`
+    : (summary.rows ?? summary.summary_json?.rows ?? "-");
+  const rawQaPct = Number(execution?.total_questions || 0) > 0
+    ? Math.max(0, Math.min(100, (Number(execution.answered_questions || 0) / Number(execution.total_questions || 1)) * 100))
+    : Number(progress?.pct || 0);
+  const completedByArtifacts = taskHasTerminalArtifacts(task, resolvedFormat, artifactStatus);
+  const failed = ["failed", "interrupted", "cancelled", "canceled"].includes(String(task.status || "").trim().toLowerCase());
+  const hotpotSnapshot = resolvedFormat === "hotpotqa"
+    ? hotpotQaCompletionSnapshot(task, summary, artifactStatus)
+    : null;
+  const qaPct = hotpotSnapshot?.answerReady && !isTaskActive(task)
+    ? 100
+    : rawQaPct;
+  const statusLabel = hotpotSnapshot?.statusLabel || taskDisplayStatusLabel(task, resolvedFormat, artifactStatus);
+  const statusTone = hotpotSnapshot?.statusTone === "success"
+    ? "success"
+    : hotpotSnapshot?.statusTone === "error"
+    ? "error"
+    : hotpotSnapshot?.statusTone === "running"
+    ? "running"
+    : hotpotSnapshot?.statusTone === "warn"
+    ? "warn"
+    : completedByArtifacts
+    ? "success"
+    : failed
+    ? "error"
+    : isTaskActive(task)
+    ? "running"
+    : "warn";
+  const taskClass = isTaskRunningStatus(task) && !completedByArtifacts ? "task compact-task running-task" : "task compact-task";
+  const outputLabel = compactPath(displayPath(task.output_file || task.run_dir || ""), 16, 14);
+  const scoreText = benchmarkSummaryScoreText(summary, resolvedFormat);
+  const detailText = hotpotSnapshot?.detailText || "";
+  return `
+    <article class="${taskClass} task-card benchmark-task-card task-table-row" data-task-id="${escapeHtml(task.id || "")}" data-output-file="${escapeHtml(task.output_file || "")}" data-dataset-format="${escapeHtml(resolvedFormat)}">
+      <div class="task-cell task-cell-main"><strong>${escapeHtml(displayTitle)}</strong></div>
+      <div class="task-cell">${escapeHtml(datasetLabel)}</div>
+      <div class="task-cell">${escapeHtml(String(rows))}</div>
+      <div class="task-cell"><span class="status-pill ${escapeHtml(statusTone)}">${escapeHtml(statusLabel)}</span></div>
+      <div class="task-cell task-cell-updated">${escapeHtml(task.updated_at ? formatDateTime(task.updated_at) : (task.ended_at ? formatDateTime(task.ended_at) : "-"))}</div>
+      <div class="task-cell task-cell-action"><button class="secondary compact-button icon-button path-open" type="button" data-path="${escapeHtml(task.output_file || task.run_dir || "")}">打开</button></div>
+      <div class="task-row-detail"><span>${escapeHtml(account)} · ${escapeHtml(scoreText || detailText || outputLabel)}</span></div>
+    </article>
+  `;
 }
 
 function renderEvalQaRunFallbackCard(run = {}) {
@@ -1207,15 +1462,61 @@ function renderEvalQaRunFallbackCard(run = {}) {
     ? "等待判分"
     : taskStatusLabel(run);
   const durationText = run.duration_s == null ? "" : ` · 用时 ${formatDuration(run.duration_s)}`;
+  const pathLabel = compactPath(displayPath(run.output_file || run.run_dir || ""), 16, 14);
   return `
-    <article class="task compact-task" data-run-key="${escapeHtml(runCompareKey(run))}" data-output-file="${escapeHtml(run.output_file || "")}" data-dataset-format="${escapeHtml(format)}">
-      <div>
-        <strong>${escapeHtml(displayTitle)}</strong>
-        <small>QA · ${escapeHtml(statusLabel)} · ${escapeHtml(account)} · ${escapeHtml(displayDatasetFormatForTask(run, format))} · rows ${escapeHtml(rows)} · ${escapeHtml(acc)}${escapeHtml(durationText)}</small>
-      </div>
-      <code>${escapeHtml(run.output_file || run.run_dir || "")}</code>
+    <article class="task compact-task task-card task-table-row" data-run-key="${escapeHtml(runCompareKey(run))}" data-output-file="${escapeHtml(run.output_file || "")}" data-dataset-format="${escapeHtml(format)}">
+      <div class="task-cell task-cell-main"><strong>${escapeHtml(displayTitle)}</strong></div>
+      <div class="task-cell">QA</div>
+      <div class="task-cell">${escapeHtml(String(rows))}</div>
+      <div class="task-cell"><span class="status-pill warn">${escapeHtml(statusLabel)}</span></div>
+      <div class="task-cell task-cell-updated">${escapeHtml(run.updated_at ? formatDateTime(run.updated_at) : (run.ended_at ? formatDateTime(run.ended_at) : "-"))}</div>
+      <div class="task-cell task-cell-action"><button class="secondary compact-button icon-button path-open" type="button" data-path="${escapeHtml(run.output_file || run.run_dir || "")}">打开</button></div>
+      <div class="task-row-detail"><span>${escapeHtml(`${account} · ${displayDatasetFormatForTask(run, format)} · ${acc}${durationText}`)}</span><code title="${escapeHtml(run.output_file || run.run_dir || "")}">${escapeHtml(pathLabel)}</code></div>
     </article>
   `;
+}
+
+function renderBenchmarkRunFallbackCard(run = {}, format = "", label = "") {
+  const summary = run.summary || {};
+  const normalized = normalizeDatasetFormat(format || benchmarkFormatFromRecord(run)) || "hotpotqa";
+  const account = recordAccount(run) || "default";
+  const datasetLabel = label || datasetTypeLabel(normalized) || "任务";
+  const displayTitle = runDisplayTitle(run) || run.name || run.id || datasetLabel;
+  const hotpotSnapshot = normalized === "hotpotqa"
+    ? hotpotQaCompletionSnapshot(run, summary, summary._artifact_status || {})
+    : null;
+  const acc = benchmarkSummaryScoreText(summary, normalized) || (summary.accuracy == null ? "待判分" : percent(summary.accuracy));
+  const rows = runDatasetMeta(run).rows ?? summary.rows ?? "-";
+  const statusLabel = hotpotSnapshot?.statusLabel || (String(run.status || "").toLowerCase() === "succeeded" && summary.accuracy == null
+    ? "等待判分"
+    : taskStatusLabel(run));
+  const durationText = run.duration_s == null ? "" : ` · 用时 ${formatDuration(run.duration_s)}`;
+  const pathLabel = compactPath(displayPath(run.output_file || run.run_dir || ""), 16, 14);
+  const detailText = hotpotSnapshot?.detailText || "";
+  return `
+    <article class="task compact-task task-card benchmark-task-card task-table-row" data-run-key="${escapeHtml(runCompareKey(run))}" data-output-file="${escapeHtml(run.output_file || "")}" data-dataset-format="${escapeHtml(normalized)}">
+      <div class="task-cell task-cell-main"><strong>${escapeHtml(displayTitle)}</strong></div>
+      <div class="task-cell">${escapeHtml(datasetLabel)}</div>
+      <div class="task-cell">${escapeHtml(String(rows))}</div>
+      <div class="task-cell"><span class="status-pill warn">${escapeHtml(statusLabel)}</span></div>
+      <div class="task-cell task-cell-updated">${escapeHtml(run.updated_at ? formatDateTime(run.updated_at) : (run.ended_at ? formatDateTime(run.ended_at) : "-"))}</div>
+      <div class="task-cell task-cell-action"><button class="secondary compact-button icon-button path-open" type="button" data-path="${escapeHtml(run.output_file || run.run_dir || "")}">打开</button></div>
+      <div class="task-row-detail"><span>${escapeHtml(`${account} · ${acc}${durationText}`)}</span>${detailText ? `<small>${escapeHtml(detailText)}</small>` : ""}<code title="${escapeHtml(run.output_file || run.run_dir || "")}">${escapeHtml(pathLabel)}</code></div>
+    </article>
+  `;
+}
+
+function renderEvalTaskEmptyState(message = "", detail = "") {
+  return `
+    <article class="workbench-idle-note run-list-idle-note task-empty-state">
+      <strong>${escapeHtml(message || "当前空间暂无最近任务")}</strong>
+      <p>${escapeHtml(detail || "先运行问答测试，或者取消“只看当前空间”后再刷新。")}</p>
+    </article>
+  `;
+}
+
+function renderHotpotQaRunFallbackCard(run = {}) {
+  return renderBenchmarkRunFallbackCard(run, "hotpotqa", "HotpotQA");
 }
 
 function saveLastImport(patch = {}) {
@@ -1231,232 +1532,399 @@ function readCurrentAccountLastImport() {
   return readScopedLastImport(currentAccount());
 }
 
-function normalizeWorkspacePath(value = "") {
-  return String(value || "").trim().replace(/\/+$/, "");
-}
-
-function importRecordBackend(record = {}, fallback = currentMemoryBackend()) {
-  const explicit = normalizeMemoryBackend(
-    record?.meta?.config?.backend
-    || record?.config?.backend
-    || record?.backend
-    || ""
-  );
-  if (explicit) return explicit;
-  return String(record?.kind || "").startsWith("echomemory_") ? "echomemory" : normalizeMemoryBackend(fallback);
-}
-
-function importRecordWorkspace(record = {}) {
-  return String(
-    record?.meta?.config?.workspace
-    || record?.config?.workspace
-    || record?.workspace
-    || ""
-  ).trim();
-}
-
-function currentWorkspaceScopedLastImport(backend = currentMemoryBackend()) {
-  const lastImport = readCurrentAccountLastImport();
-  const expectedBackend = normalizeMemoryBackend(backend);
-  const currentWorkspace = normalizeWorkspacePath(currentConfiguredWorkspace(expectedBackend));
-  const lastBackend = normalizeMemoryBackend(lastImport.backend || expectedBackend);
-  const lastWorkspace = normalizeWorkspacePath(lastImport.workspace || "");
-  if (lastBackend !== expectedBackend) return {};
-  if (currentWorkspace && lastWorkspace && currentWorkspace !== lastWorkspace) return {};
-  return lastImport;
-}
-
-function importRecordMatchesCurrentWorkspace(record = {}, backend = currentMemoryBackend()) {
-  const expectedBackend = normalizeMemoryBackend(backend);
-  if (importRecordBackend(record, expectedBackend) !== expectedBackend) return false;
-  const currentWorkspace = normalizeWorkspacePath(currentConfiguredWorkspace(expectedBackend));
-  if (!currentWorkspace) return true;
-  const recordWorkspace = normalizeWorkspacePath(importRecordWorkspace(record));
-  return !recordWorkspace || recordWorkspace === currentWorkspace;
-}
-
-function clearImportedMemoryStatusForWorkspace(workspace = "", account = currentAccount()) {
-  state.importedMemoryStatus = {
-    workspace,
-    account: safeAccountSlug(account || currentAccount()),
-    sample_id: currentImportNamespace().sampleId || "",
-    session_count: 0,
-    summary_count: 0,
-    complete_count: 0,
-    latest_summary_path: "",
-    latest_integrity: "",
-  };
-}
-
-function currentImportedMemoryStatus() {
-  const imported = state.importedMemoryStatus || {};
-  const current = safeAccountSlug(currentAccount());
-  const importedAccount = safeAccountSlug(imported.account || "");
-  if (importedAccount && importedAccount !== current) return {};
-  const currentWorkspace = normalizeWorkspacePath(currentConfiguredWorkspace(currentMemoryBackend()));
-  const importedWorkspace = normalizeWorkspacePath(imported.workspace || "");
-  if (currentWorkspace && importedWorkspace && importedWorkspace !== currentWorkspace) return {};
-  return imported;
-}
-
-function locomoImportDisplayState(lastImport = currentWorkspaceScopedLastImport(), imported = currentImportedMemoryStatus()) {
-  const importedComplete = Number(imported.complete_count || 0) > 0;
-  const summaryCount = Number(imported.summary_count || 0);
-  const integrity = String(lastImport.integrity || "").toLowerCase();
-  const sameWorkspace = !imported.workspace || !lastImport.workspace || String(imported.workspace) === String(lastImport.workspace);
-  const latestSummaryPath = String(imported.latest_summary_path || "").trim();
-  const currentSummaryPath = String(lastImport.output_file || "").trim();
-  const running = isImportTaskInBackground(state.currentImportTask || {});
-  const summaryMatched = Boolean(currentSummaryPath && latestSummaryPath && latestSummaryPath === currentSummaryPath);
-  const currentRunComplete = !running && (
-    (summaryMatched && importedComplete)
-    || (sameWorkspace && integrity === "complete" && (!latestSummaryPath || !currentSummaryPath || summaryMatched))
-  );
-  const historicalComplete = !currentRunComplete && importedComplete;
-  const historicalSeen = !currentRunComplete && summaryCount > 0;
-  return {
-    currentRunComplete,
-    historicalComplete,
-    historicalSeen,
-    importedComplete,
-    summaryCount,
-    sameWorkspace,
-    latestSummaryPath,
-    currentSummaryPath,
-  };
-}
-
-function locomoImportCompleteState(lastImport = currentWorkspaceScopedLastImport(), imported = currentImportedMemoryStatus()) {
-  return locomoImportDisplayState(lastImport, imported).currentRunComplete;
-}
-
-function setImportedMemoryRunningStatus({workspace = "", account = "", sampleId = ""} = {}) {
-  state.importedMemoryStatus = {
-    workspace,
-    account: safeAccountSlug(account || currentAccount()),
-    sample_id: sampleId || currentImportNamespace().sampleId || "",
-    session_count: 0,
-    summary_count: 0,
-    complete_count: 0,
-    latest_summary_path: "",
-    latest_integrity: "",
-  };
-}
-
-function chatDraftKey(account = currentAccount()) {
-  return `${CHAT_DRAFT_PREFIX}${safeAccountSlug(account)}`;
-}
-
-function loadChatDraft(account = currentAccount()) {
-  try {
-    const raw = localStorage.getItem(chatDraftKey(account));
-    const data = raw ? JSON.parse(raw) : [];
-    return Array.isArray(data) ? data : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveChatDraft(account = currentAccount(), messages = state.chatMessages) {
-  try {
-    localStorage.setItem(chatDraftKey(account), JSON.stringify(messages || []));
-  } catch {}
-}
-
-function clearChatDraft(account = currentAccount()) {
-  try {
-    localStorage.removeItem(chatDraftKey(account));
-  } catch {}
-}
-
-function normalizeMemoryBackend(value) {
-  const backend = String(value || "").trim().toLowerCase();
-  return backend === "echomemory" || backend === "echomem" ? "echomemory" : "openviking";
-}
-
-function memoryBackendLabel(value) {
-  const backend = normalizeMemoryBackend(value);
-  if (backend === "echomemory") return "EchoMemory";
-  return "OpenViking";
-}
-
-function memoryBackendShortLabel(value) {
-  const backend = normalizeMemoryBackend(value);
-  return backend === "echomemory" ? "EM" : "OV";
-}
-
-function importTaskKindForBackend(backend = currentMemoryBackend()) {
-  return normalizeMemoryBackend(backend) === "echomemory" ? "echomemory_import" : "openviking_import";
-}
-
-function importScriptForBackend(backend = currentMemoryBackend()) {
-  return normalizeMemoryBackend(backend) === "echomemory"
-    ? "scripts/echomemory_locomo_import.py"
-    : "scripts/openviking_locomo_import.py";
-}
-
-function genericQaTaskKindForBackend(backend = currentMemoryBackend()) {
-  return normalizeMemoryBackend(backend) === "echomemory"
-    ? "echomemory_generic_qa"
-    : "openviking_generic_qa";
-}
-
-function importWriteSurfaceForBackend(backend = currentMemoryBackend()) {
-  return normalizeMemoryBackend(backend) === "echomemory"
-    ? "写入 EchoMemory 长期记忆"
-    : "写入 OpenViking 长期记忆";
-}
-
-function workspaceBackendNameHint(workspace = "") {
-  const name = String(workspace || "").split("/").pop() || "";
-  if (/^echomem_workspace_/i.test(name)) return "echomemory";
-  if (/^openviking_workspace_/i.test(name)) return "openviking";
-  return "";
-}
-
-function compactPath(value = "", head = 34, tail = 34) {
-  const text = String(value || "").trim();
-  if (!text) return "-";
-  if (text.length <= head + tail + 3) return text;
-  return `${text.slice(0, head)}...${text.slice(-tail)}`;
-}
-
-function displayPath(value = "") {
-  const text = String(value || "").trim();
-  if (!text) return "";
-  const normalized = normalizeSlashes(text);
-  const repoRoot = normalizeSlashes(state.config?.repo || state.config?.root || "");
-  const runsDir = normalizeSlashes(state.config?.runs_dir || state.config?.output_dir || "");
-  const homeDir = normalizeSlashes(state.config?.home || "");
-  if (repoRoot && normalized === repoRoot) return ".";
-  if (repoRoot && normalized.startsWith(`${repoRoot}/`)) return `./${normalized.slice(repoRoot.length + 1)}`;
-  if (runsDir && normalized === runsDir) return "./runs";
-  if (runsDir && normalized.startsWith(`${runsDir}/`)) return `./runs/${normalized.slice(runsDir.length + 1)}`;
-  if (homeDir && normalized.startsWith(`${homeDir}/`)) return `./${normalized.slice(homeDir.length + 1)}`;
-  if (normalized.startsWith("/Users/chx/")) return `./${normalized.slice("/Users/chx/".length)}`;
-  return text;
-}
-
-function shellQuote(value = "") {
-  const text = String(value || "");
-  return `'${text.replace(/'/g, "'\"'\"'")}'`;
-}
-
-function currentMemoryBackend() {
-  return normalizeMemoryBackend($("memoryBackendSelect")?.value || readAccountConfig(currentAccount()).memoryBackend || "openviking");
+function recentImportWorkspaceShouldWin(lastImport = {}, workspace = "", backend = "") {
+  if (!workspace) return false;
+  if (String(lastImport.workspace || "").trim() === workspace) return false;
+  const normalizedBackend = normalizeMemoryBackend(backend);
+  const importBackend = normalizeMemoryBackend(lastImport.backend || normalizedBackend);
+  if (normalizedBackend && importBackend && normalizedBackend !== importBackend) return false;
+  return Boolean(workspace);
 }
 
 function renderGlobalBackendBadge() {
   const badge = $("globalBackendBadge");
-  const label = $("globalBackendLabel");
-  if (!badge || !label) return;
+  if (!badge) return;
   const backend = currentMemoryBackend();
   const backendLabel = memoryBackendLabel(backend);
-  label.textContent = backendLabel;
+  const backendHint = backendSupportsAgentWorkbench(backend) ? "正常" : "待接入";
+  badge.innerHTML = `
+    <span class="workspace-card-icon ui-icon" data-ui-icon="server" data-ui-icon-size="16" aria-hidden="true"></span>
+    <div class="workspace-card-copy">
+      <span class="workspace-card-label">后端服务</span>
+      <strong id="globalBackendLabel">${escapeHtml(backendLabel)}</strong>
+    </div>
+    <span class="workspace-card-note" id="globalBackendHint">${escapeHtml(backendHint)}</span>
+  `;
   badge.classList.toggle("echomemory", backend === "echomemory");
   badge.classList.toggle("openviking", backend === "openviking");
   badge.title = `当前记忆后端：${backendLabel}；点击到系统配置切换`;
   badge.setAttribute("aria-label", `当前记忆后端：${backendLabel}，点击到系统配置切换`);
+  renderWorkspaceStatusStrip();
+  renderImportSidebarPanels();
+  syncHotpotQaHeaderMeta();
+  syncGenericWorkbenchHeaderMeta("proagentbench");
+  syncGenericWorkbenchHeaderMeta("tau2bench");
+}
+
+function syncHotpotQaHeaderMeta() {
+  const panel = $("hotpotQaView");
+  if (!panel) return;
+  const accountProxy = $("hotpotQaAccountProxy");
+  const accountLabelEl = $("hotpotQaHeaderAccount");
+  const sourceAccountSelect = $("accountSelect");
+  const backendEl = $("hotpotQaHeaderBackend");
+  const backendHintEl = $("hotpotQaHeaderBackendHint");
+  const modelEl = $("hotpotQaHeaderModel");
+  const modelHintEl = $("hotpotQaHeaderModelHint");
+  const backend = currentMemoryBackend();
+  const backendLabel = memoryBackendLabel(backend);
+  const backendHint = backendSupportsAgentWorkbench(backend) ? "正常" : "待接入";
+  const modelInfo = currentConfiguredModelInfo(currentAccount());
+  if (accountProxy && sourceAccountSelect) {
+    accountProxy.innerHTML = sourceAccountSelect.innerHTML;
+    accountProxy.value = sourceAccountSelect.value || currentAccount();
+  }
+  if (accountLabelEl) accountLabelEl.textContent = currentAccount();
+  if (backendEl) backendEl.textContent = backendLabel || "-";
+  if (backendHintEl) backendHintEl.textContent = backendHint || "-";
+  if (modelEl) modelEl.textContent = modelInfo.model || "-";
+  if (modelHintEl) modelHintEl.textContent = modelInfo.baseUrl ? compactText(modelInfo.baseUrl, 36) : "当前 QA 模型";
+  sanitizeHotpotQaHeaderActions(panel);
+}
+
+function sanitizeHotpotQaHeaderActions(panel = $("hotpotQaView")) {
+  const root = panel || $("hotpotQaView");
+  root?.querySelectorAll?.(".hqa-page-actions, .hqa-stage-actions").forEach((node) => node.remove());
+  const header = root?.querySelector?.(".hqa-page-header");
+  if (!header) return;
+  const heading = header.querySelector(".hqa-page-heading");
+  Array.from(header.children || []).forEach((node) => {
+    if (node === heading) return;
+    node.remove();
+  });
+  if (!heading) return;
+  Array.from(heading.children || []).forEach((node) => {
+    if (node.classList?.contains("hqa-page-title")) return;
+    node.remove();
+  });
+  heading.querySelectorAll(
+    "button, .button-link, .hqa-page-actions, .hqa-stage-actions, .generic-run-adapter, .generic-validate, [data-view-jump='runsView']"
+  ).forEach((node) => node.remove());
+}
+
+function syncGenericWorkbenchHeaderMeta(key) {
+  const config = benchmarkConfig(key);
+  if (!config) return;
+  const suffix = key === "proagentbench" ? "proAgentBench" : key === "tau2bench" ? "tauBench" : "";
+  if (!suffix) return;
+  const accountEl = $(`${suffix}HeaderAccount`);
+  const backendEl = $(`${suffix}HeaderBackend`);
+  const backendStateEl = $(`${suffix}HeaderBackendState`);
+  const modelEl = $(`${suffix}HeaderModel`);
+  const statusBackendEl = $(`${suffix}StatusBackend`);
+  const statusBackendNoteEl = $(`${suffix}StatusBackendNote`);
+  const backend = currentMemoryBackend();
+  const backendLabel = memoryBackendLabel(backend);
+  const backendState = backendSupportsAgentWorkbench(backend) ? "正常" : "待接入";
+  const modelInfo = currentConfiguredModelInfo(currentAccount());
+  if (accountEl) accountEl.textContent = currentAccount();
+  if (backendEl) backendEl.textContent = backendLabel || "-";
+  if (backendStateEl) backendStateEl.textContent = backendState;
+  if (modelEl) {
+    modelEl.textContent = modelInfo.model || "未配置";
+    modelEl.title = modelInfo.baseUrl ? `${modelInfo.model || "未配置"} · ${modelInfo.baseUrl}` : (modelInfo.model || "未配置");
+  }
+  if (statusBackendEl) statusBackendEl.textContent = backendLabel || "-";
+  if (statusBackendNoteEl) statusBackendNoteEl.textContent = backendState === "正常" ? "当前后端" : backendState;
+}
+
+function locomoWorkspaceShellTask() {
+  const isLocomoShellTask = (task) => {
+    if (!task || !(task.id || task.output_file || task.kind)) return false;
+    const format = enrichTaskDatasetFormat(task, state.taskDatasetFormats[task.id] || task.dataset_format || "");
+    if (isMemoryImportKind(task.kind || "")) return normalizeDatasetFormat(format) === "locomo";
+    return isLocomoTaskOutput(task.kind || "", task, format);
+  };
+  const candidates = [state.currentImportTask, state.currentLocomoTask, state.currentRunningTask]
+    .filter((task) => isLocomoShellTask(task));
+  return candidates.find((task) => isTaskActive(task)) || null;
+}
+
+function renderWorkspaceStatusStrip() {
+  const target = $("workspaceStatusStrip");
+  if (!target) return;
+  const dataset = currentLocomoDataset();
+  const task = locomoWorkspaceShellTask();
+  const lastImport = currentWorkspaceScopedLastImport();
+  const imported = currentImportedMemoryStatus();
+  const importDisplay = locomoImportDisplayState(lastImport, imported);
+  let taskTitle = dataset ? "等待导入" : "等待数据集";
+  let taskNote = dataset ? "数据已就绪，可开始导入" : "先读取 LoCoMo JSON";
+  let progressLabel = dataset ? "未开始" : "未就绪";
+  let progressPct = 0;
+  if (task) {
+    const format = enrichTaskDatasetFormat(task, state.taskDatasetFormats[task.id] || "");
+    const execution = taskExecutionProgress(task, format);
+    taskTitle = taskDisplayTitle(task, format) || taskStageLabel(task.kind || "", task) || "运行任务";
+    taskNote = taskStatusLabel(task) || "运行中";
+    if (execution?.total_questions) {
+      progressPct = Math.max(0, Math.min(100, (Number(execution.answered_questions || 0) / Math.max(1, Number(execution.total_questions || 1))) * 100));
+      progressLabel = `已答 ${execution.answered_questions || 0}/${execution.total_questions}`;
+    } else if (task.progress?.total) {
+      progressPct = Number(task.progress.pct ?? ((Number(task.progress.current || 0) / Math.max(1, Number(task.progress.total || 1))) * 100));
+      progressLabel = taskProgressLabel(task) || taskStatusLabel(task) || "运行中";
+    } else if (task.progress?.pct != null) {
+      progressPct = Number(task.progress.pct || 0);
+      progressLabel = taskProgressLabel(task) || taskStatusLabel(task) || "运行中";
+    } else {
+      progressPct = isTaskActive(task) ? 18 : 100;
+      progressLabel = taskStatusLabel(task) || "运行中";
+    }
+  } else if (currentLocomoResultCsv()) {
+    taskTitle = "问答结果已生成";
+    taskNote = "可继续判分或生成报告";
+    progressPct = 100;
+    progressLabel = "结果已生成";
+  } else if (importDisplay.currentRunComplete) {
+    taskTitle = "最近导入可用";
+    taskNote = "最近一次导入已完成，可进入问答测试";
+  } else if (importDisplay.historicalSeen) {
+    taskTitle = "导入结果可用";
+    taskNote = "当前目录已有可用结果，可进入问答测试，或先切换到新目录再重新导入";
+  }
+  const clampedPct = Math.max(0, Math.min(100, Number(progressPct || 0)));
+  const updatedRaw = task?.updated_at
+    || task?.ended_at
+    || task?.created_at
+    || lastImport.updated_at
+    || lastImport.ended_at
+    || lastImport.created_at
+    || new Date().toISOString();
+  const datasetLabel = dataset?.name || "LoCoMo";
+  const datasetNote = dataset
+    ? `${formatInt(dataset.samples || 0)} 个 session · ${formatInt(dataset.questions || 0)} 题`
+    : "等待读取 LoCoMo JSON";
+  target.innerHTML = `
+    <article class="workspace-status-card status-item">
+      <span class="workspace-status-label status-item-label">当前任务</span>
+      <strong>${escapeHtml(taskTitle)}</strong>
+      <small>${escapeHtml(taskNote)}</small>
+    </article>
+    <article class="workspace-status-card status-item">
+      <span class="workspace-status-label status-item-label">数据集</span>
+      <strong>${escapeHtml(datasetLabel)}</strong>
+      <small>${escapeHtml(datasetNote)}</small>
+    </article>
+    <article class="workspace-status-card workspace-status-progress status-item">
+      <div class="workspace-status-progress-head">
+        <span class="workspace-status-label status-item-label">当前进度</span>
+        <strong>${escapeHtml(`${Math.round(clampedPct)}%`)}</strong>
+      </div>
+      <div class="workspace-status-meter"><i style="width:${clampedPct}%"></i></div>
+      <small>${escapeHtml(progressLabel)}</small>
+    </article>
+    <article class="workspace-status-card status-item">
+      <span class="workspace-status-label status-item-label">最近更新时间</span>
+      <strong>${escapeHtml(formatDateTime(updatedRaw))}</strong>
+      <small>${escapeHtml(`${currentAccount()} · ${memoryBackendLabel(currentMemoryBackend())}`)}</small>
+    </article>
+  `;
+}
+
+/* =========================
+   LoCoMo import view helpers
+   Keep import-page rendering and panel refresh logic grouped here so
+   future memory-import changes stay localized.
+   ========================= */
+
+function renderImportSidebarPanels() {
+  const summaryTarget = $("importSummaryStrip");
+  if (!summaryTarget) return;
+  const dataset = currentLocomoDataset();
+  const backend = currentMemoryBackend();
+  const account = currentAccount();
+  const scope = currentImportSampleScope();
+  const workspace = activeImportWorkspaceForBackend(backend) || currentConfiguredWorkspace(backend) || $("ovWorkspace")?.value.trim() || "";
+  const lastImport = currentWorkspaceScopedLastImport(backend);
+  const importDisplay = locomoImportDisplayState(lastImport, currentImportedMemoryStatus());
+  const task = state.currentImportTask || {};
+  const running = Boolean(task.id && isImportTaskInBackground(task));
+  const statusLabel = running
+    ? "进行中"
+    : (importDisplay.currentRunComplete ? "已完成" : (lastImport.output_file ? "待检查" : "未开始"));
+  const statusTone = running
+    ? "running"
+    : (importDisplay.currentRunComplete ? "success" : (lastImport.output_file ? "warn" : "idle"));
+  const workspaceLabel = workspace ? displayPath(workspace) : "自动生成";
+  const updatedRaw = task.updated_at || task.ended_at || task.created_at || lastImport.updated_at || lastImport.ended_at || lastImport.created_at || "";
+  const updatedLabel = updatedRaw ? formatDateTime(updatedRaw) : "暂无记录";
+  const scopeDetail = scope.isAll ? "全部对话" : (scope.label || "当前 session");
+  const html = `
+    <article class="locomo-context-item">
+      <span class="locomo-context-icon ui-icon" data-ui-icon="database" data-ui-icon-size="16" aria-hidden="true"></span>
+      <div class="locomo-context-copy">
+        <strong class="locomo-context-value">${escapeHtml(dataset
+          ? `${dataset.name || "LoCoMo"} · ${formatInt(dataset.samples || 0)} sessions · ${formatInt(dataset.questions || 0)} questions`
+          : "LoCoMo")}</strong>
+      </div>
+    </article>
+    <span class="locomo-context-divider" aria-hidden="true"></span>
+    <article class="locomo-context-item">
+      <span class="locomo-context-icon ui-icon" data-ui-icon="target" data-ui-icon-size="16" aria-hidden="true"></span>
+      <div class="locomo-context-copy">
+        <strong class="locomo-context-value">${escapeHtml(scope.isAll
+          ? `${scopeDetail} · 全量导入`
+          : `${scopeDetail} · 当前 ${formatInt(scope.questionCount || 0)} 题`)}</strong>
+      </div>
+    </article>
+    <span class="locomo-context-divider" aria-hidden="true"></span>
+    <article class="locomo-context-item locomo-context-item-workspace">
+      <span class="locomo-context-icon ui-icon" data-ui-icon="folder" data-ui-icon-size="16" aria-hidden="true"></span>
+      <div class="locomo-context-copy">
+        <strong class="locomo-context-value locomo-context-path" title="${escapeHtml(workspace || "-")}">${escapeHtml(workspaceLabel)}</strong>
+        <span class="locomo-context-subtle">${escapeHtml(memoryBackendLabel(backend))}</span>
+      </div>
+    </article>
+    <span class="locomo-context-divider" aria-hidden="true"></span>
+    <article class="locomo-context-item">
+      <span class="locomo-context-icon ui-icon" data-ui-icon="clock-3" data-ui-icon-size="16" aria-hidden="true"></span>
+      <div class="locomo-context-copy locomo-context-copy-status">
+        <div class="locomo-context-status-row">
+          <span class="locomo-status-pill ${escapeHtml(statusTone)}">${escapeHtml(statusLabel)}</span>
+          <span class="locomo-context-subtle">${escapeHtml(updatedLabel)}</span>
+        </div>
+      </div>
+    </article>
+  `;
+  setImportPanelHtmlIfChanged("summaryStrip", summaryTarget, html, hydrateUiIcons);
+}
+
+function renderImportProgressStats(task = null) {
+  const target = $("importProgressStats");
+  if (!target) return;
+  const titleEl = $("importProgressSideTitle");
+  const dataset = currentLocomoDataset();
+  const imported = currentImportedMemoryStatus();
+  const liveTask = task ? taskWithLiveProgress(task) : null;
+  const progress = liveTask?.progress || task?.progress || {};
+  const liveImport = progress.current_import || {};
+  const summary = task?.summary || {};
+  const records = Array.isArray(summary.records) ? summary.records : [];
+  const importRunning = isImportTaskInBackground(liveTask || task || {});
+  const importPhase = String(progress.phase || "");
+  const importFinalizing = importRunning && importPhase.startsWith("commit");
+  const effectiveImportRecord = task && isLocomoImportTask(task)
+    ? {
+        ...currentWorkspaceScopedLastImport(importRecordBackend(task, currentMemoryBackend())),
+        workspace: importRecordWorkspace(task) || currentWorkspaceScopedLastImport(importRecordBackend(task, currentMemoryBackend())).workspace || "",
+        account: recordAccount(task) || currentWorkspaceScopedLastImport(importRecordBackend(task, currentMemoryBackend())).account || currentAccount(),
+        backend: importRecordBackend(task, currentMemoryBackend()),
+        output_file: task.output_file || currentWorkspaceScopedLastImport(importRecordBackend(task, currentMemoryBackend())).output_file || "",
+        log_file: task.log_file || runLogPathFromRecord(task) || currentWorkspaceScopedLastImport(importRecordBackend(task, currentMemoryBackend())).log_file || "",
+        integrity: String(summary.status || "").trim() ? "" : currentWorkspaceScopedLastImport(importRecordBackend(task, currentMemoryBackend())).integrity || "",
+      }
+    : currentWorkspaceScopedLastImport();
+  const importDisplay = locomoImportDisplayState(effectiveImportRecord, imported);
+  const scope = currentImportSampleScope();
+  const scopeQuestions = Number(scope.questionCount || 0);
+  const datasetQuestions = Number(dataset?.questions || 0);
+  const targetQuestions = scope.isAll ? datasetQuestions : (scopeQuestions || datasetQuestions);
+  const taskTerminal = isTaskTerminal(liveTask || task || {});
+  const submittedMessages = Number(
+    (taskTerminal ? (summary.submitted_messages ?? records.reduce((acc, item) => acc + Number(item.submitted_messages || 0), 0)) : undefined)
+    ?? progress.submitted_messages
+    ?? liveImport.message_index
+    ?? liveImport.message_total
+    ?? summary.submitted_messages
+    ?? 0
+  );
+  const expectedMessages = Number(
+    (taskTerminal ? (summary.expected_messages ?? records.reduce((acc, item) => acc + Number(item.expected_messages || 0), 0)) : undefined)
+    ?? progress.expected_messages
+    ?? liveImport.message_total
+    ?? summary.expected_messages
+    ?? 0
+  );
+  const totalSessions = Number(
+    (taskTerminal ? (summary.samples ?? records.length) : undefined)
+    || progress.total_samples
+    || progress.total
+    || imported.session_count
+    || (scope.isAll ? dataset?.samples : scope.sessions)
+    || 0
+  );
+  const completedSessions = Number(
+    (taskTerminal ? (summary.samples ?? records.length) : undefined)
+    || progress.completed_samples
+    || progress.completed_sessions
+    || progress.current
+    || imported.complete_count
+    || 0
+  );
+  const submittedSessions = Number(
+    progress.submitted_sessions
+    ?? (importRunning && submittedMessages > 0 ? 1 : 0)
+  );
+  const displayedSessions = importFinalizing
+    ? Math.max(completedSessions, submittedSessions)
+    : completedSessions;
+  const sessionLabel = importFinalizing ? "已提交" : "已导入";
+  const messageLabel = importRunning ? "已写入" : "已导入";
+  const integrityValue = importRunning
+    ? "进行中"
+    : importDisplay.currentRunComplete
+    ? "校验成功"
+    : (String(effectiveImportRecord.integrity || "").trim() || (Number(imported.complete_count || 0) > 0 ? "已有记录" : "等待检查"));
+  const integrityNote = importRunning
+    ? "归档与完整性检查中"
+    : importDisplay.currentRunComplete
+    ? "完整导入"
+    : (Number(imported.summary_count || 0) > 0 ? "可继续检查" : "尚未完成");
+  const completionRate = targetQuestions > 0
+    ? Math.max(0, Math.min(100, Math.round((Math.max(0, Number(imported.summary_count || 0)) / targetQuestions) * 100)))
+    : 0;
+  const currentSessionName = shortSessionLabel(progress.session_label || liveImport.session || liveImport.session_id || "");
+  const sideTitle = currentSessionName
+    ? `当前会话进度（${currentSessionName}）`
+    : (scope.isAll ? "当前会话进度" : "当前会话进度");
+  if (titleEl) titleEl.textContent = sideTitle;
+  const progressPct = targetQuestions > 0
+    ? Math.max(0, Math.min(100, Math.round((Math.max(0, Number(imported.summary_count || 0)) / Math.max(targetQuestions, 1)) * 100)))
+    : 0;
+  const html = `
+    <div class="locomo-progress-track" aria-hidden="true"><span style="width:${escapeHtml(`${progressPct}%`)}"></span></div>
+    <article class="locomo-kv-row">
+      <span class="locomo-kv-label">会话数</span>
+      <strong class="locomo-kv-value">${escapeHtml(`${formatInt(Math.max(0, displayedSessions || 0))} / ${formatInt(Math.max(displayedSessions || 0, totalSessions || 0))}`)}</strong>
+    </article>
+    <article class="locomo-kv-row">
+      <span class="locomo-kv-label">消息数</span>
+      <strong class="locomo-kv-value">${escapeHtml(`${formatInt(Math.max(0, submittedMessages || 0))} / ${formatInt(Math.max(submittedMessages || 0, expectedMessages || 0))}`)}</strong>
+    </article>
+    <article class="locomo-kv-row">
+      <span class="locomo-kv-label">题目数</span>
+      <strong class="locomo-kv-value">${escapeHtml(`${formatInt(Math.max(0, Number(imported.summary_count || 0)))} / ${formatInt(targetQuestions || 0)}`)}</strong>
+    </article>
+    <article class="locomo-kv-row">
+      <span class="locomo-kv-label">完成度</span>
+      <strong class="locomo-kv-value">${escapeHtml(`${completionRate}%`)}</strong>
+    </article>
+    <article class="locomo-kv-row">
+      <span class="locomo-kv-label">状态</span>
+      <strong class="locomo-kv-value">${escapeHtml(importRunning ? "进行中" : (integrityValue || integrityNote))}</strong>
+    </article>
+  `;
+  setImportPanelHtmlIfChanged("progressStats", target, html);
+}
+
+function refreshImportSummaryAndProgress(task = state.currentImportTask || null) {
+  renderImportSidebarPanels();
+  renderImportProgressStats(task);
+}
+
+function refreshImportPathsAndDiagnostics(task = state.currentImportTask || null) {
+  renderImportPaths(task);
+  renderImportDiagnostics(task);
 }
 
 function backendSupportsAgentWorkbench(backend = currentMemoryBackend()) {
@@ -1481,6 +1949,19 @@ function locomoQaTaskKind() {
   const backend = currentMemoryBackend();
   if (backend === "echomemory") return "echomemory_qa";
   return "openviking_qa";
+}
+
+function locomoQaTaskLaunchMode(task = {}) {
+  const config = task?.meta?.config || {};
+  const questions = String(
+    config.questions
+      || task.questions
+      || task.summary?.questions
+      || ""
+  ).trim();
+  if (questions) return "selected";
+  if (config.require_selected_questions) return "selected";
+  return "full";
 }
 
 function isMemoryImportKind(kind) {
@@ -1517,7 +1998,8 @@ function taskVisibleInActiveTaskStrip(task = {}, format = "", viewId = activeVie
 function taskVisibleInCurrentTaskPanel(task = {}, format = "", viewId = activeViewId()) {
   const kind = task.kind || "";
   if (viewId === "evalView") return isEvalQaTask(task, format);
-  if (viewId === "openvikingView") return isMemoryImportKind(kind);
+  if (viewId === "hotpotQaView") return normalizeDatasetFormat(format || task.dataset_format || "") === "hotpotqa";
+  if (viewId === "openvikingView") return isLocomoImportTask(task, format || task.dataset_format || "");
   if (viewId === "judgeView") return kind === "judge";
   return true;
 }
@@ -1561,6 +2043,11 @@ function updateStopActionButtons(tasks = []) {
     evalButton.disabled = !hasEval;
     evalButton.title = hasEval ? "停止当前问答相关任务" : "当前没有运行中的问答任务";
   }
+  const hotpotButton = $("hotpotQaStopRun");
+  if (hotpotButton) {
+    hotpotButton.disabled = !hasEval;
+    hotpotButton.title = hasEval ? "停止当前 HotpotQA 问答任务" : "当前没有运行中的 HotpotQA 问答任务";
+  }
   const judgeButton = $("stopAllTasksJudge");
   if (judgeButton) {
     judgeButton.hidden = !hasJudge;
@@ -1570,8 +2057,6 @@ function updateStopActionButtons(tasks = []) {
 }
 
 function clearEvalTaskContainers() {
-  const list = $("recentTaskList");
-  if (list) list.innerHTML = "";
   renderActiveTaskStrip(null);
 }
 
@@ -1622,11 +2107,11 @@ function effectiveOpenVikingWorkspace(kind, extra = {}) {
   return inputWorkspace || importWorkspace || "";
 }
 
-function vikingbotAlignedQaPayload() {
+function vikingbotAlignedQaPayload(useTools = true) {
   return {
     prompt_mode: "vikingbot_aligned",
     top_k: VIKINGBOAT_LITE_TOP_K,
-    openviking_tool_loop: true,
+    openviking_tool_loop: Boolean(useTools),
     openviking_tool_set: "vikingbot_native_safe",
     tool_search_limit: VIKINGBOAT_LITE_TOOL_SEARCH_LIMIT,
     tool_min_score: 0.35,
@@ -1806,6 +2291,12 @@ function restoreBenchmarkDatasetForView(viewId = "") {
   const path = savedPath || existingPath;
   if (path) setBenchmarkDatasetInput(normalized, path);
   rememberActiveDatasetView(viewId, normalized, path);
+  if (normalized === "longmemeval") {
+    syncLongMemDatasetState(path, {
+      skipRemember: true,
+      skipMode: !path,
+    });
+  }
   return path;
 }
 
@@ -1821,6 +2312,7 @@ function nonLocomoTaskFallbackView(fallback = "runsView") {
 }
 
 function benchmarkFormatFromRecord(record = {}, fallback = "") {
+  record = record || {};
   const haystack = [
     record.dataset_format,
     record.format,
@@ -1845,6 +2337,7 @@ function benchmarkFormatFromRecord(record = {}, fallback = "") {
 }
 
 function fallbackDatasetFormatForRecord(record = {}, fallback = "") {
+  record = record || {};
   const haystack = [
     record.output_file,
     record.run_dir,
@@ -1865,14 +2358,20 @@ function fallbackDatasetFormatForRecord(record = {}, fallback = "") {
 }
 
 function taskView(task = {}, fallback = "runsView") {
+  task = task || {};
   const format = benchmarkFormatFromRecord(task, task?.id ? state.taskDatasetFormats[task.id] : "");
-  if (isMemoryImportKind(task.kind || "")) return "openvikingView";
+  if (isMemoryImportKind(task.kind || "")) {
+    const normalized = normalizeDatasetFormat(format);
+    if (normalized === "locomo") return "openvikingView";
+    return viewForDatasetFormat(normalized, fallback) || fallback;
+  }
   if (task.kind === "judge") return "judgeView";
   if ((task.kind === "openviking_generic_qa" || task.kind === "echomemory_generic_qa") && (!format || format === "generic")) return nonLocomoTaskFallbackView(fallback);
   return viewForDatasetFormat(format, fallback);
 }
 
 function benchmarkViewForTask(task = {}, fallback = "runsView") {
+  task = task || {};
   const format = benchmarkFormatFromRecord(task, task?.id ? state.taskDatasetFormats[task.id] : "");
   const view = viewForDatasetFormat(format, "");
   if (view) return view;
@@ -1925,7 +2424,7 @@ function summaryDatasetFormat(summary = {}) {
 }
 
 function taskDatasetFormat(task = {}, fallback = "") {
-  const summary = task.summary || {};
+  const summary = task?.summary || {};
   const summaryJson = summary.summary_json || {};
   const explicit = normalizeDatasetFormat(
     task.dataset_format
@@ -1946,6 +2445,7 @@ function taskDatasetFormat(task = {}, fallback = "") {
 }
 
 function runDatasetFormat(run = {}) {
+  run = run || {};
   const summary = run.summary || {};
   const summaryJson = summary.summary_json || {};
   const explicit = normalizeDatasetFormat(
@@ -1964,6 +2464,7 @@ function runDatasetFormat(run = {}) {
 }
 
 function displayDatasetFormatForTask(task = {}, format = "") {
+  task = task || {};
   const normalized = normalizeDatasetFormat(format);
   if (normalized) return normalized;
   if (task.kind === "openviking_generic_qa" || task.kind === "echomemory_generic_qa") return "generic";
@@ -1997,6 +2498,154 @@ function taskStatusLabel(task = {}) {
   if (status === "failed") return "失败";
   if (status === "interrupted") return "已中断";
   return task.status || "-";
+}
+
+function taskHasTerminalArtifacts(task = {}, format = "", artifactStatus = null) {
+  const normalized = normalizeDatasetFormat(format || task.dataset_format || "");
+  const statusHints = artifactStatus && typeof artifactStatus === "object"
+    ? artifactStatus
+    : {};
+  const runDir = String(task.run_dir || dirname(task.output_file || "") || "").trim();
+  const outFile = String(task.output_file || "").trim();
+  if (!runDir && !outFile) return false;
+  const summaryExists = Boolean(statusHints.summary?.exists);
+  const judgeExists = Boolean(statusHints.judge_summary?.exists);
+  const hotpotExists = Boolean(statusHints.hotpotqa_answer_summary?.exists);
+  const longmemExists = Boolean(statusHints.longmemeval_official_summary?.exists);
+  if (normalized === "hotpotqa") {
+    return summaryExists && hotpotExists;
+  }
+  if (normalized === "longmemeval") {
+    return summaryExists && (judgeExists || longmemExists);
+  }
+  return summaryExists && judgeExists;
+}
+
+function hotpotQaCompletionSnapshot(task = {}, summary = null, artifactStatus = null) {
+  const payload = summary && typeof summary === "object"
+    ? summary
+    : (task?.summary && typeof task.summary === "object" ? task.summary : {});
+  const summaryJson = payload.summary_json || {};
+  const statusHints = artifactStatus && typeof artifactStatus === "object"
+    ? artifactStatus
+    : (payload._artifact_status || {});
+  const status = String(task?.status || payload.status || "").trim().toLowerCase();
+  const answerEm = payload.official_answer_em ?? summaryJson.official_answer_em ?? payload.answer_em ?? summaryJson.answer_em;
+  const answerF1 = payload.official_answer_f1 ?? summaryJson.official_answer_f1 ?? payload.answer_f1 ?? summaryJson.answer_f1;
+  const answerReady = Boolean(
+    statusHints.hotpotqa_answer_summary?.exists
+    || payload?.official_eval?.summary?.status === "HOTPOTQA_ANSWER_EVAL_DONE"
+    || payload?.official_metric_scope === "answer_only"
+    || answerEm != null
+    || answerF1 != null
+  );
+  const summaryExists = Boolean(statusHints.summary?.exists || Object.keys(summaryJson).length || Object.keys(payload).length);
+  const judgeExists = Boolean(statusHints.judge_summary?.exists);
+  const judgeEnabled = payload?.judge?.enabled === true || payload?.judge_after === true;
+  const judgeReturncode = Number(payload?.judge?.returncode);
+  const officialEvalEnabled = payload?.official_eval?.enabled === true || payload?.official_eval_after === true;
+  const officialReturncode = Number(payload?.official_eval?.returncode);
+  const officialFailed = officialEvalEnabled && Number.isFinite(officialReturncode) && officialReturncode !== 0;
+  const judgeApplicable = false;
+  const judgeMissing = judgeApplicable && answerReady && !judgeExists && (
+    judgeEnabled
+    || Number.isFinite(judgeReturncode)
+    || ["failed", "succeeded", "done", "interrupted", "cancelled", "canceled"].includes(status)
+  );
+  const importSummary = payload.import_summary || {};
+  const pendingAsyncSamples = Number(importSummary.pending_async_samples ?? payload.pending_async_samples ?? 0);
+  const partialSamples = Number(importSummary.partial_samples ?? 0);
+  const failedSamples = Number(importSummary.failed_samples ?? 0);
+  const importWarningCount = pendingAsyncSamples + partialSamples + failedSamples;
+  const complete = summaryExists && answerReady && !officialFailed;
+  const failed = ["failed", "interrupted", "cancelled", "canceled"].includes(status);
+  const label = complete
+    ? "已完成"
+    : officialFailed
+    ? "答案评测失败"
+    : judgeMissing
+    ? "答案已完成 / Judge 缺失"
+    : (answerReady && failed ? "答案已完成 / 任务异常" : (answerReady ? "答案已完成" : ""));
+  const detailParts = [];
+  if (answerReady && (answerEm != null || answerF1 != null)) {
+    detailParts.push(`answer-only EM/F1 ${answerEm == null ? "-" : percent(answerEm)} / ${answerF1 == null ? "-" : percent(answerF1)}`);
+  }
+  if (officialFailed) {
+    detailParts.push("官方 answer eval 未通过");
+  }
+  if (judgeMissing) {
+    detailParts.push(Number(payload?.judge?.returncode) === 1 ? "Judge 摘要缺失，当前多半是 judge token 未配置" : "Judge 摘要缺失");
+  }
+  if (importWarningCount > 0) {
+    detailParts.push(`${formatInt(importWarningCount)} 个样本导入待修复`);
+  }
+  const tone = complete
+    ? "success"
+    : isTaskActive(task)
+    ? "running"
+    : (judgeMissing || importWarningCount > 0 || answerReady)
+    ? "warn"
+    : (failed ? "error" : "");
+  return {
+    answerReady,
+    answerEm,
+    answerF1,
+    complete,
+    detailText: detailParts.join(" · "),
+    failed,
+    importWarningCount,
+    officialFailed,
+    judgeMissing,
+    pendingAsyncSamples,
+    statusLabel: label,
+    statusTone: tone,
+  };
+}
+
+function taskDisplayStatusLabel(task = {}, format = "", artifactStatus = null) {
+  const resolvedFormat = enrichTaskDatasetFormat(task, format || state.taskDatasetFormats[task?.id || ""] || task?.dataset_format || "");
+  if (resolvedFormat === "locomo") return locomoTaskDisplayStatusLabel(task, resolvedFormat);
+  if (resolvedFormat === "hotpotqa") {
+    const snapshot = hotpotQaCompletionSnapshot(task, task.summary || null, artifactStatus);
+    if (snapshot.statusLabel) return snapshot.statusLabel;
+  }
+  if (taskHasTerminalArtifacts(task, resolvedFormat, artifactStatus)) return "已完成";
+  return taskStatusLabel(task);
+}
+
+function shouldTreatBenchmarkTaskAsBlocking(task = {}, format = "") {
+  const normalized = normalizeDatasetFormat(format || task.dataset_format || "");
+  if (!normalized || normalized === "locomo") return false;
+  if (!isTaskActive(task)) return false;
+  const summary = state.runningBenchmarkSummaries[task.id] || task.summary || {};
+  const artifactStatus = summary?._artifact_status || {};
+  if (taskHasTerminalArtifacts(task, normalized, artifactStatus)) return false;
+  const freshness = benchmarkRunningSummaryFreshness(task, summary);
+  if (freshness.isStale || freshness.hasWorkerFailure) return false;
+  if (taskSnapshotAgeSeconds(task) > 1800) return false;
+  return true;
+}
+
+async function warmBenchmarkLatestResultPanels() {
+  const activeView = activeViewId();
+  if (!isStandaloneBenchmarkView(activeView)) return;
+  const format = datasetFormatForView(activeView);
+  if (!format || format === "locomo") return;
+  if (normalizeDatasetFormat(format) === "hotpotqa") {
+    const liveTask = resolveHotpotQaLiveTask();
+    if (liveTask && isTaskActive(liveTask)) return;
+  }
+  const key = genericBenchmarkKeyForFormat(format);
+  const config = key ? benchmarkConfig(key) : null;
+  const resultTarget = config?.result ? $(config.result) : null;
+  const taskListTarget = format === "longmemeval" ? $("longMemRecentTaskList") : null;
+  const resultText = String(resultTarget?.innerText || "").trim();
+  const taskListText = String(taskListTarget?.innerText || "").trim();
+  const resultLooksEmpty = !resultText
+    || /尚无结果|点击\"开始测试\"后显示结果文件|任务完成后，这里会显示结果摘要/.test(resultText);
+  const taskListLooksStuck = !taskListText || /正在恢复 .*任务列表/.test(taskListText);
+  if (!resultLooksEmpty && !taskListLooksStuck) return;
+  await restoreLatestBenchmarkRunForView(activeView, []).catch(() => null);
 }
 
 function taskMemoryBackend(task = {}) {
@@ -2204,19 +2853,46 @@ function normalizeActiveTaskQaPreviewRow(row = {}, outputFile = "") {
   const question = String(row.question || "").trim();
   const questionId = String(row.question_id || row.sample_id || "").trim();
   const resultPath = String(outputFile || row.output_file || "").trim();
-  if (!question && !answer && !questionId && !resultPath) return null;
-  return {questionId, question, answer, resultPath};
+  const sampleId = String(row.sample_id || "").trim();
+  const category = String(row.category || "").trim();
+  const goldAnswer = String(row.answer || row.gold_answer || row.reference_answer || "").trim();
+  const latencySeconds = row.end_to_end_time_s ?? row.qa_time_s ?? row.time_cost ?? null;
+  const retrievedMemory = Array.isArray(row.retrieved_memory) ? row.retrieved_memory : [];
+  if (!question && !answer && !questionId && !resultPath && !sampleId && !category && !goldAnswer && !retrievedMemory.length) return null;
+  return {questionId, question, answer, resultPath, sampleId, category, goldAnswer, latencySeconds, retrieved_memory: retrievedMemory, row};
 }
 
 function normalizeActiveTaskProgressQaPreview(progress = {}, task = {}) {
-  const preview = progress?.qa_preview;
+  const format = taskDatasetFormat(task || {}, task?.id ? (state.taskDatasetFormats[task.id] || "") : "");
+  const execution = taskExecutionProgress(task, format);
+  const preview = execution?.qa_preview || progress?.qa_preview;
   if (!preview || typeof preview !== "object") return null;
   const questionId = String(preview.question_id || "").trim();
   const question = String(preview.question || "").trim();
   const answer = String(preview.answer || "").trim();
   const resultPath = String(task.output_file || "").trim();
-  if (!questionId && !question && !answer) return null;
-  return {questionId, question, answer, resultPath};
+  const sampleId = String(preview.sample_id || progress.sample || taskSampleFilter(task) || "").trim();
+  const category = String(preview.category || "").trim();
+  if (!questionId && !question && !answer && !sampleId && !category) return null;
+  return {questionId, question, answer, resultPath, sampleId, category};
+}
+
+function activeTaskQaMeta(task = {}, questionMeta = {}, preview = null) {
+  const liveTask = taskWithLiveProgress(task);
+  const progress = liveTask.progress || {};
+  const datasetRows = Array.isArray(state.questions) ? state.questions : [];
+  const previewQuestionId = String(preview?.questionId || questionMeta.questionId || "").trim();
+  const matchedRow = previewQuestionId
+    ? datasetRows.find((row) => String(row.question_id || "").trim() === previewQuestionId)
+    : null;
+  const sampleId = String(preview?.sampleId || matchedRow?.sample_id || progress.sample || taskSampleFilter(task) || "").trim() || "-";
+  const category = String(preview?.category || matchedRow?.category || "").trim();
+  return {
+    sampleId,
+    category,
+    categoryLabel: category ? locomoCategoryLabel(category) : "-",
+    categoryBadge: category ? locomoCategoryBadge(category) : `<span class="category-badge category-unknown">-</span>`,
+  };
 }
 
 async function ensureActiveTaskQaPreview(task = {}, questionId = "") {
@@ -2230,7 +2906,13 @@ async function ensureActiveTaskQaPreview(task = {}, questionId = "") {
   try {
     const data = await api(`/api/question-detail?path=${encodeURIComponent(task.output_file)}&question_id=${encodeURIComponent(questionId)}`);
     const preview = normalizeActiveTaskQaPreviewRow(data?.row || {}, task.output_file);
-    if (preview) state.activeTaskQaPreview[cacheKey] = preview;
+    if (preview) {
+      state.activeTaskQaPreview[cacheKey] = {
+        ...preview,
+        relevant_memory: Array.isArray(data?.relevant_memory) ? data.relevant_memory : [],
+        diagnostics: data?.diagnostics || null,
+      };
+    }
     state.activeTaskQaPreviewFetchedAt[cacheKey] = Date.now();
     return state.activeTaskQaPreview[cacheKey] || preview || null;
   } catch {
@@ -2239,6 +2921,402 @@ async function ensureActiveTaskQaPreview(task = {}, questionId = "") {
   } finally {
     delete state.activeTaskQaPreviewLoading[cacheKey];
   }
+}
+
+async function loadActiveTaskAnsweredRows(task = {}, limit = 160) {
+  const outputPath = String(task?.output_file || "").trim();
+  if (!outputPath) return [];
+  const cacheKey = `${String(task.id || outputPath).trim()}::${outputPath}`;
+  state.activeTaskAnsweredRows ||= {};
+  state.activeTaskAnsweredRowsLoading ||= {};
+  state.activeTaskAnsweredRowsFetchedAt ||= {};
+  const fetchedAt = Number(state.activeTaskAnsweredRowsFetchedAt[cacheKey] || 0);
+  const now = Date.now();
+  if (state.activeTaskAnsweredRowsLoading[cacheKey]) return state.activeTaskAnsweredRows[cacheKey] || [];
+  if (fetchedAt && now - fetchedAt < 2500) return state.activeTaskAnsweredRows[cacheKey] || [];
+  state.activeTaskAnsweredRowsLoading[cacheKey] = true;
+  try {
+    const data = await api(`/api/csv-preview?path=${encodeURIComponent(outputPath)}&limit=${Number(limit) || 160}`);
+    const rows = Array.isArray(data?.rows)
+      ? data.rows.map((row) => normalizeActiveTaskQaPreviewRow(row, outputPath)).filter(Boolean)
+      : [];
+    state.activeTaskAnsweredRows[cacheKey] = rows;
+    state.activeTaskAnsweredRowsFetchedAt[cacheKey] = Date.now();
+    return rows;
+  } catch {
+    state.activeTaskAnsweredRowsFetchedAt[cacheKey] = Date.now();
+    return state.activeTaskAnsweredRows[cacheKey] || [];
+  } finally {
+    delete state.activeTaskAnsweredRowsLoading[cacheKey];
+  }
+}
+
+function activeTaskAnsweredRows(task = {}) {
+  const outputPath = String(task?.output_file || "").trim();
+  if (!outputPath) return [];
+  const cacheKey = `${String(task.id || outputPath).trim()}::${outputPath}`;
+  return Array.isArray(state.activeTaskAnsweredRows?.[cacheKey]) ? state.activeTaskAnsweredRows[cacheKey] : [];
+}
+
+function activeTaskPreviewSelectionQuestionId(task = {}, fallbackQuestionId = "") {
+  const outputPath = String(task?.output_file || "").trim();
+  const cacheKey = outputPath ? `${String(task.id || outputPath).trim()}::${outputPath}` : "";
+  const selected = cacheKey ? String(state.activeTaskPreviewSelection?.[cacheKey] || "").trim() : "";
+  return selected || String(fallbackQuestionId || "").trim();
+}
+
+function setActiveTaskPreviewSelection(task = {}, questionId = "") {
+  const outputPath = String(task?.output_file || "").trim();
+  if (!outputPath) return;
+  const cacheKey = `${String(task.id || outputPath).trim()}::${outputPath}`;
+  state.activeTaskPreviewSelection ||= {};
+  if (questionId) state.activeTaskPreviewSelection[cacheKey] = String(questionId).trim();
+  else delete state.activeTaskPreviewSelection[cacheKey];
+}
+
+function locomoQaEvidenceItems(preview = null) {
+  const rawItems = Array.isArray(preview?.relevant_memory) && preview.relevant_memory.length
+    ? preview.relevant_memory
+    : (Array.isArray(preview?.retrieved_memory) ? preview.retrieved_memory : []);
+  return rawItems.slice(0, 12).map((item, index) => {
+    if (typeof item === "string") {
+      return {
+        title: `Memory ${index + 1}`,
+        meta: "",
+        body: compactText(item, 280),
+      };
+    }
+    const score = item?.score == null || item?.score === "" ? "" : Number(item.score).toFixed(3);
+    const type = String(item?.memory_type || item?.type || item?.source || "").trim();
+    const uri = String(item?.uri || item?.evidence_uri || "").trim();
+    return {
+      title: String(item?.title || item?.name || uri || `Memory ${index + 1}`).trim(),
+      meta: [type, score ? `score ${score}` : "", uri].filter(Boolean).join(" · "),
+      body: compactText(String(item?.content || item?.abstract || item?.text || item?.snippet || item?.preview || "").trim(), 280),
+    };
+  }).filter((item) => item.title || item.body || item.meta);
+}
+
+function longMemStatusPillTone(status = "") {
+  const value = String(status || "").trim().toLowerCase();
+  if (!value || value === "-" || value === "idle" || value === "waiting") return "";
+  if (/(完成|success|succeeded|done|passed|ready|可用|正常)/i.test(value)) return "ok";
+  if (/(失败|error|failed|interrupted|cancelled|canceled|缺失)/i.test(value)) return "bad";
+  if (/(运行|running|queued|stopping|pending|loading|processing)/i.test(value)) return "warn";
+  return "";
+}
+
+function longMemLogAutoScrollEnabled() {
+  return $("longMemLogAutoScroll")?.checked !== false;
+}
+
+function renderLongMemLogPath(path = "") {
+  const target = $("longMemLogPathRow");
+  if (!target) return;
+  const logPath = String(path || "").trim();
+  if (!logPath) {
+    setInnerHtmlIfChanged(target, "<p>日志路径会显示在这里。</p>");
+    return;
+  }
+  const html = longMemPathRowHtml("日志文件", logPath);
+  const changed = setInnerHtmlIfChanged(target, html);
+  if (!changed) return;
+  bindCopyButtons("#longMemLogPathRow");
+  bindOpenButtons("#longMemLogPathRow");
+}
+
+function longMemPathRowHtml(label, path, options = {}) {
+  return reportPathRow(label, path, {
+    href: false,
+    ...options,
+  });
+}
+
+function longMemNoteBlockHtml(lines = [], options = {}) {
+  const className = String(options.className || "benchmark-workbench-evidence lme-reference-notes").trim();
+  const items = (Array.isArray(lines) ? lines : [])
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  if (!items.length) {
+    return `<div class="${escapeHtml(className)}"><p>暂无补充说明。</p></div>`;
+  }
+  return `
+    <div class="${escapeHtml(className)}">
+      ${items.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}
+    </div>
+  `;
+}
+
+function longMemSharedResultSummaryOptions(shellClass = "") {
+  return {
+    rootClass: "benchmark-result-summary benchmark-workbench-result-summary",
+    emptyClass: "empty-state benchmark-workbench-empty-state result-summary-empty",
+    pathListClass: "artifact-list result-summary-paths benchmark-workbench-artifact-rows",
+    shellClass,
+  };
+}
+
+function renderLongMemReadinessList(items = []) {
+  const target = $("longMemReadiness");
+  if (!target) return;
+  const rows = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (!rows.length) {
+    target.innerHTML = `
+      <article class="lme-readiness-item benchmark-workbench-preview-card is-pending">
+        <span class="lme-readiness-dot" aria-hidden="true"></span>
+        <strong>Readiness Check</strong>
+        <small>等待校验数据</small>
+      </article>
+    `;
+    return;
+  }
+  target.innerHTML = rows.map((item) => {
+    const tone = ["ok", "warn", "bad"].includes(item.tone) ? item.tone : "";
+    return `
+      <article class="lme-readiness-item benchmark-workbench-preview-card ${tone ? `is-${escapeHtml(tone)}` : "is-pending"}">
+        <span class="lme-readiness-dot ${escapeHtml(tone)}" aria-hidden="true"></span>
+        <strong>${escapeHtml(item.label || "-")}</strong>
+        <small>${escapeHtml(item.status || "待确认")}</small>
+      </article>
+    `;
+  }).join("");
+}
+
+function longMemQaEvidenceItems(detail = null, row = null) {
+  const detailEvidence = Array.isArray(detail?.relevant_memory) ? detail.relevant_memory : [];
+  const rowEvidence = Array.isArray(row?.retrieved_memory) ? row.retrieved_memory : [];
+  const rawItems = detailEvidence.length ? detailEvidence : rowEvidence;
+  return rawItems.slice(0, 4).map((item, index) => {
+    if (typeof item === "string") {
+      return {title: `Memory ${index + 1}`, body: compactText(item, 180)};
+    }
+    return {
+      title: String(item?.title || item?.name || item?.uri || item?.evidence_uri || `Memory ${index + 1}`).trim(),
+      body: compactText(String(item?.content || item?.abstract || item?.text || item?.snippet || item?.uri || "").trim(), 180),
+    };
+  }).filter((item) => item.title || item.body);
+}
+
+function renderLongMemQaPreview(task = null) {
+  const target = $("longMemCurrentTask");
+  if (!target) return;
+  const liveTask = task ? taskWithLiveProgress(task) : (state.currentRunningTask ? taskWithLiveProgress(state.currentRunningTask) : null);
+  const activeRecord = state.selectedRunRecord || liveTask || null;
+  const progress = liveTask?.progress || {};
+  const execution = taskExecutionProgress(liveTask || {}, "longmemeval");
+  const detailText = benchmarkProgressDetail(liveTask || {}, "longmemeval") || "";
+  const questionMeta = parseActiveTaskQuestionDetail(detailText);
+  const progressPreview = normalizeActiveTaskProgressQaPreview(progress, liveTask || {}) || null;
+  const questionId = String(progressPreview?.questionId || execution?.qa_preview?.question_id || questionMeta.questionId || "").trim();
+  const previewKey = activeTaskQaPreviewCacheKey(liveTask || activeRecord || {}, questionId);
+  const cachedPreview = previewKey ? state.activeTaskQaPreview[previewKey] || null : null;
+  const previewRows = Array.isArray(state.longMemQuestions) ? state.longMemQuestions : [];
+  const previewRow = questionId
+    ? previewRows.find((item) => String(item.question_id || "").trim() === questionId)
+    : null;
+  const effectivePreview = cachedPreview || progressPreview || null;
+  const qaMeta = activeTaskQaMeta(liveTask || {}, questionMeta, effectivePreview);
+  const questionText = [
+    cachedPreview?.question,
+    progressPreview?.question,
+    previewRow?.question,
+    questionMeta.question,
+  ].map((value) => String(value || "").trim()).find(Boolean) || "";
+  const predictedAnswer = [
+    cachedPreview?.answer,
+    progressPreview?.answer,
+    previewRow?.response,
+    previewRow?.prediction,
+    previewRow?.model_answer,
+  ].map((value) => String(value || "").trim()).find(Boolean) || "";
+  const goldAnswer = [
+    previewRow?.answer,
+    previewRow?.gold_answer,
+    previewRow?.reference_answer,
+  ].map((value) => String(value || "").trim()).find(Boolean) || "";
+  const latencySeconds = [
+    previewRow?.end_to_end_time_s,
+    previewRow?.qa_time_s,
+    progress?.latency_s,
+    progress?.elapsed_seconds,
+  ].find((value) => value != null && value !== "");
+  const latencyLabel = formatSecondsMetric(latencySeconds);
+  const statusLabel = liveTask
+    ? taskDisplayStatusLabel(liveTask, "longmemeval", state.runningBenchmarkSummaries[liveTask.id]?._artifact_status || null)
+    : (activeRecord?.status ? taskStatusLabel(activeRecord) : "Idle");
+  const statusTone = longMemStatusPillTone(statusLabel);
+  const progressLabel = execution?.total_questions
+    ? `${execution.current_question || execution.answered_questions || 0}/${execution.total_questions}`
+    : (progress?.total ? `${progress.current || 0}/${progress.total}` : "-");
+  const evidenceItems = longMemQaEvidenceItems(cachedPreview, previewRow);
+  const resultPath = String(
+    cachedPreview?.resultPath
+    || effectivePreview?.resultPath
+    || activeRecord?.output_file
+    || liveTask?.output_file
+    || ""
+  ).trim();
+  if (!liveTask && !activeRecord?.output_file && !questionText && !predictedAnswer && !goldAnswer) {
+    target.innerHTML = `
+      <div class="empty-state benchmark-workbench-empty-state lme-empty-state lme-qa-empty-state">
+        <span class="ui-icon" data-ui-icon="activity" data-ui-icon-size="18" aria-hidden="true"></span>
+        <strong>等待开始 QA</strong>
+        <p>开始评测后将显示当前问题、模型回答、标准答案和检索记忆。</p>
+      </div>
+    `;
+    hydrateUiIcons(target);
+    return;
+  }
+  target.innerHTML = `
+    <div class="benchmark-workbench-preview-shell lme-qa-shell">
+      <div class="benchmark-workbench-preview-head lme-qa-head">
+        <div class="benchmark-workbench-preview-copy lme-qa-copy">
+          <small>Live QA Preview</small>
+          <strong>${escapeHtml(qaMeta.sampleId || "-")} · ${escapeHtml(questionId || "-")}</strong>
+          <p>${escapeHtml(progressLabel)} · ${escapeHtml(qaMeta.categoryLabel || "LongMemEval")} · ${escapeHtml(resultPath ? "结果文件已连接" : "等待结果文件")}</p>
+        </div>
+        <div class="benchmark-workbench-preview-meta lme-qa-side-meta">
+          <span class="status-pill ${escapeHtml(statusTone)}">${escapeHtml(statusLabel || "Idle")}</span>
+          <div class="benchmark-workbench-inline-metrics lme-qa-inline-meta">
+            <article><span>Latency</span><strong>${escapeHtml(latencyLabel || "-")}</strong></article>
+            <article><span>Progress</span><strong>${escapeHtml(progressLabel)}</strong></article>
+          </div>
+        </div>
+      </div>
+      <article class="benchmark-workbench-preview-card lme-qa-question-block">
+        <span>Current Question</span>
+        <p>${escapeHtml(questionText || "等待当前题写出...")}</p>
+      </article>
+      <div class="benchmark-workbench-compare-grid lme-answer-compare">
+        <article class="benchmark-workbench-preview-card">
+          <span>Predicted Answer</span>
+          <p>${escapeHtml(predictedAnswer || (liveTask ? "等待模型回答..." : "-"))}</p>
+        </article>
+        <article class="benchmark-workbench-preview-card">
+          <span>Gold Answer</span>
+          <p>${escapeHtml(goldAnswer || "等待结果落盘后对照")}</p>
+        </article>
+      </div>
+      <div class="benchmark-workbench-evidence lme-qa-evidence">
+        <div class="benchmark-workbench-evidence-head lme-qa-evidence-head">
+          <span>Evidence / Retrieved Memory</span>
+          ${resultPath ? `<div class="path-row-actions"><button class="path-copy" type="button" data-copy="${escapeHtml(resultPath)}">复制结果路径</button></div>` : ""}
+        </div>
+        ${evidenceItems.length ? evidenceItems.map((item) => `
+          <article class="benchmark-workbench-evidence-row lme-evidence-row">
+            <strong>${escapeHtml(item.title || "-")}</strong>
+            <p>${escapeHtml(item.body || "-")}</p>
+          </article>
+        `).join("") : `<p class="lme-evidence-empty">开始运行后，这里会显示当前题检索到的记忆片段。</p>`}
+      </div>
+    </div>
+  `;
+  bindCopyButtons("#longMemCurrentTask");
+  if (liveTask?.output_file && questionId && !cachedPreview && !state.activeTaskQaPreviewLoading[previewKey]) {
+    ensureActiveTaskQaPreview(liveTask, questionId).then((preview) => {
+      if (!preview) return;
+      if ((taskWithLiveProgress(state.currentRunningTask || {}).id || "") !== (liveTask.id || "")) return;
+      renderLongMemQaPreview(liveTask);
+    }).catch(() => {});
+  }
+}
+
+function renderLongMemTaskTable(rows = [], options = {}) {
+  if (!rows.length) {
+    const emptyTitle = String(options.emptyTitle || "暂无任务").trim() || "暂无任务";
+    const emptyText = String(options.emptyText || "启动记忆注入或 QA 之后，这里会显示最近任务。").trim()
+      || "启动记忆注入或 QA 之后，这里会显示最近任务。";
+    return `
+      <div class="empty-state benchmark-workbench-empty-state lme-empty-state lme-task-empty">
+        <strong>${escapeHtml(emptyTitle)}</strong>
+        <p>${escapeHtml(emptyText)}</p>
+      </div>
+    `;
+  }
+  return `
+    <div class="benchmark-workbench-task-table-shell lme-task-table-shell">
+      <div class="benchmark-workbench-task-table-head lme-task-table-head">
+        <span>Task</span>
+        <span>Stage</span>
+        <span>Dataset</span>
+        <span>Progress</span>
+        <span>Status</span>
+        <span>Started</span>
+        <span>Duration</span>
+        <span>Action</span>
+      </div>
+      <div class="benchmark-workbench-task-table-body lme-task-table-body">
+        ${rows.join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderLongMemCompactMetrics(summary = {}) {
+  const totalQuestions = summary.rows ?? summary.graded ?? ((summary.correct != null && summary.wrong != null) ? Number(summary.correct) + Number(summary.wrong) : null);
+  const completed = summary.graded ?? summary.rows ?? null;
+  const accuracy = summary.overall_accuracy ?? summary.official_score ?? summary.accuracy ?? null;
+  const f1 = summary.f1 ?? summary.average_f1 ?? null;
+  const avgLatency = summary.avg_end_to_end_time_s ?? summary.avg_qa_time_s ?? summary.avg_time ?? null;
+  const failed = summary.wrong ?? summary.failed ?? null;
+  const rows = [
+    ["Total Questions", totalQuestions != null ? formatInt(totalQuestions) : "Waiting"],
+    ["Completed", completed != null ? formatInt(completed) : "Idle"],
+    ["Accuracy / EM", accuracy != null ? percent(accuracy) : "Waiting"],
+    ["F1", f1 != null ? percent(f1) : "Waiting"],
+    ["Avg Latency", avgLatency != null ? formatSecondsMetric(avgLatency) : "Waiting"],
+    ["Failed", failed != null ? formatInt(failed) : "0"],
+  ];
+  return `
+    <div class="benchmark-workbench-metrics lme-result-metrics">
+      ${rows.map(([label, value]) => `
+        <article>
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(value)}</strong>
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderLongMemTaskRow(record = {}, options = {}) {
+  const format = normalizeDatasetFormat(options.format || benchmarkFormatFromRecord(record, "longmemeval") || "longmemeval");
+  const isRun = Boolean(options.isRun);
+  const taskId = String(record.id || record.task_id || "-").trim();
+  const stage = taskStageLabel(record.kind || "", record);
+  const datasetLabel = options.datasetLabel || "LongMemEval";
+  const artifactStatus = options.artifactStatus || {};
+  const statusLabel = isRun
+    ? taskStatusLabel(record)
+    : taskDisplayStatusLabel(record, format, artifactStatus);
+  const statusTone = longMemStatusPillTone(statusLabel);
+  const execution = isRun ? null : taskExecutionProgress(record, format);
+  const progress = isRun ? null : (taskWithLiveProgress(record).progress || {});
+  const progressLabel = execution?.total_questions
+    ? `${execution.answered_questions || 0}/${execution.total_questions}`
+    : progress?.total
+    ? `${progress.current || 0}/${progress.total}`
+    : (record.summary?.rows != null ? `${formatInt(record.summary.rows)} rows` : "-");
+  const started = formatDateTime(record.created_at || record.started_at || record.updated_at || "");
+  const duration = isRun
+    ? formatDuration(record.duration_s ?? record.duration ?? 0)
+    : formatDuration(record.duration ?? progress?.elapsed_seconds ?? record.duration_s ?? 0);
+  const actionLabel = isRun ? "查看结果" : "查看任务";
+  const dataAttrs = isRun
+    ? `data-run-key="${escapeHtml(runCompareKey(record))}" data-dataset-format="${escapeHtml(format)}"`
+    : `data-task-id="${escapeHtml(taskId)}" data-dataset-format="${escapeHtml(format)}"`;
+  return `
+    <button class="task benchmark-workbench-task-row lme-task-row" type="button" ${dataAttrs}>
+      <span class="benchmark-workbench-task-cell lme-task-cell lme-task-id" title="${escapeHtml(taskId)}">${escapeHtml(taskId)}</span>
+      <span class="benchmark-workbench-task-cell lme-task-cell">${escapeHtml(stage)}</span>
+      <span class="benchmark-workbench-task-cell lme-task-cell">${escapeHtml(datasetLabel)}</span>
+      <span class="benchmark-workbench-task-cell lme-task-cell">${escapeHtml(progressLabel)}</span>
+      <span class="benchmark-workbench-task-cell lme-task-cell"><span class="status-pill ${escapeHtml(statusTone)}">${escapeHtml(statusLabel || "-")}</span></span>
+      <span class="benchmark-workbench-task-cell lme-task-cell">${escapeHtml(started || "-")}</span>
+      <span class="benchmark-workbench-task-cell lme-task-cell">${escapeHtml(duration || "-")}</span>
+      <span class="benchmark-workbench-task-cell benchmark-workbench-task-action lme-task-cell lme-task-action">${escapeHtml(actionLabel)}</span>
+    </button>
+  `;
 }
 
 function parseTaskTimestamp(value) {
@@ -2252,10 +3330,197 @@ function parseTaskTimestamp(value) {
   return Number.isFinite(parsed) ? parsed / 1000 : 0;
 }
 
+function mergeRunningTaskProgress(previous = {}, incoming = {}) {
+  const merged = {
+    ...(previous && typeof previous === "object" ? previous : {}),
+    ...(incoming && typeof incoming === "object" ? incoming : {}),
+  };
+  const numericMaxKeys = [
+    "current",
+    "total",
+    "pct",
+    "elapsed_seconds",
+    "submitted_sessions",
+    "completed_sessions",
+    "finalizing_sessions_done",
+    "finalizing_sessions_total",
+    "completed_samples",
+    "total_samples",
+    "total_messages",
+  ];
+  for (const key of numericMaxKeys) {
+    const prevValue = Number(previous?.[key]);
+    const nextValue = Number(incoming?.[key]);
+    if (Number.isFinite(prevValue) || Number.isFinite(nextValue)) {
+      merged[key] = Math.max(Number.isFinite(prevValue) ? prevValue : 0, Number.isFinite(nextValue) ? nextValue : 0);
+    }
+  }
+  const prevPhase = String(previous?.phase || "").trim();
+  const nextPhase = String(incoming?.phase || "").trim();
+  if (prevPhase && (!nextPhase || (prevPhase.includes(":") && !nextPhase.includes(":")))) {
+    merged.phase = prevPhase;
+  }
+  const prevDetail = String(previous?.detail || "").trim();
+  const nextDetail = String(incoming?.detail || "").trim();
+  if (prevDetail && (!nextDetail || prevDetail.length > nextDetail.length)) {
+    merged.detail = prevDetail;
+  }
+  const prevImport = previous?.current_import && typeof previous.current_import === "object" ? previous.current_import : {};
+  const nextImport = incoming?.current_import && typeof incoming.current_import === "object" ? incoming.current_import : {};
+  if (Object.keys(prevImport).length || Object.keys(nextImport).length) {
+    merged.current_import = {...prevImport, ...nextImport};
+    for (const key of ["message_index", "message_total"]) {
+      const prevValue = Number(prevImport?.[key]);
+      const nextValue = Number(nextImport?.[key]);
+      if (Number.isFinite(prevValue) || Number.isFinite(nextValue)) {
+        merged.current_import[key] = Math.max(Number.isFinite(prevValue) ? prevValue : 0, Number.isFinite(nextValue) ? nextValue : 0);
+      }
+    }
+    for (const key of ["sample", "session", "role", "dia_id", "content", "note"]) {
+      if (!String(merged.current_import?.[key] || "").trim() && String(prevImport?.[key] || "").trim()) {
+        merged.current_import[key] = prevImport[key];
+      }
+    }
+  }
+  const prevWarnings = Array.isArray(previous?.warnings) ? previous.warnings : [];
+  const nextWarnings = Array.isArray(incoming?.warnings) ? incoming.warnings : [];
+  if (prevWarnings.length > nextWarnings.length) merged.warnings = prevWarnings.slice();
+  const prevCurrentImport = previous?.current_import && typeof previous.current_import === "object" ? previous.current_import : {};
+  const nextCurrentImport = incoming?.current_import && typeof incoming.current_import === "object" ? incoming.current_import : {};
+  if (Object.keys(prevCurrentImport).length || Object.keys(nextCurrentImport).length) {
+    merged.current_import = {...prevCurrentImport, ...nextCurrentImport};
+    for (const key of ["message_index", "message_total"]) {
+      const prevValue = Number(prevCurrentImport?.[key]);
+      const nextValue = Number(nextCurrentImport?.[key]);
+      if (Number.isFinite(prevValue) || Number.isFinite(nextValue)) {
+        merged.current_import[key] = Math.max(Number.isFinite(prevValue) ? prevValue : 0, Number.isFinite(nextValue) ? nextValue : 0);
+      }
+    }
+    for (const key of ["sample", "session", "role", "dia_id", "content", "note"]) {
+      if (!String(merged.current_import?.[key] || "").trim() && String(prevCurrentImport?.[key] || "").trim()) {
+        merged.current_import[key] = prevCurrentImport[key];
+      }
+    }
+  }
+  return merged;
+}
+
+function mergeRunningTaskSummary(previous = {}, incoming = {}) {
+  const merged = {
+    ...(previous && typeof previous === "object" ? previous : {}),
+    ...(incoming && typeof incoming === "object" ? incoming : {}),
+  };
+  for (const key of ["rows", "graded", "correct", "wrong", "samples", "api_errors", "memory_hit_total", "answer_total_tokens"]) {
+    const prevValue = Number(previous?.[key]);
+    const nextValue = Number(incoming?.[key]);
+    if (Number.isFinite(prevValue) || Number.isFinite(nextValue)) {
+      merged[key] = Math.max(Number.isFinite(prevValue) ? prevValue : 0, Number.isFinite(nextValue) ? nextValue : 0);
+    }
+  }
+  return merged;
+}
+
+function mergeRunningTaskDiagnostics(previous = {}, incoming = {}) {
+  const merged = {
+    ...(previous && typeof previous === "object" ? previous : {}),
+    ...(incoming && typeof incoming === "object" ? incoming : {}),
+  };
+  const numericKeys = [
+    "rate_limit_count",
+    "model_api_error_count",
+    "retrieval_retry_count",
+    "embedding_timeout_count",
+    "embedding_circuit_breaker_count",
+    "generic_failure_count",
+    "model_issue_count",
+  ];
+  for (const key of numericKeys) {
+    const prevValue = Number(previous?.[key]);
+    const nextValue = Number(incoming?.[key]);
+    if (Number.isFinite(prevValue) || Number.isFinite(nextValue)) {
+      merged[key] = Math.max(Number.isFinite(prevValue) ? prevValue : 0, Number.isFinite(nextValue) ? nextValue : 0);
+    }
+  }
+  const arrayKeys = [
+    "rate_limit_hits",
+    "model_api_error_hits",
+    "retrieval_retry_hits",
+    "embedding_timeout_hits",
+    "embedding_circuit_breaker_hits",
+    "generic_failure_hits",
+    "model_issue_hits",
+  ];
+  for (const key of arrayKeys) {
+    const prevItems = Array.isArray(previous?.[key]) ? previous[key] : [];
+    const nextItems = Array.isArray(incoming?.[key]) ? incoming[key] : [];
+    if (prevItems.length > nextItems.length) merged[key] = prevItems.slice();
+  }
+  return merged;
+}
+
+function mergeTaskSnapshot(previous = {}, incoming = {}) {
+  const merged = {...previous, ...incoming};
+  const mergedStatus = String(incoming?.status || previous?.status || "").toLowerCase();
+  const shouldPreserveRunningState = mergedStatus === "running" || mergedStatus === "stopping";
+  if (previous.meta || incoming.meta) {
+    merged.meta = {
+      ...(previous.meta && typeof previous.meta === "object" ? previous.meta : {}),
+      ...(incoming.meta && typeof incoming.meta === "object" ? incoming.meta : {}),
+    };
+    if ((previous.meta?.config || incoming.meta?.config) && typeof merged.meta === "object") {
+      merged.meta.config = {
+        ...(previous.meta?.config && typeof previous.meta.config === "object" ? previous.meta.config : {}),
+        ...(incoming.meta?.config && typeof incoming.meta.config === "object" ? incoming.meta.config : {}),
+      };
+    }
+  }
+  if (previous.progress || incoming.progress) {
+    merged.progress = shouldPreserveRunningState
+      ? mergeRunningTaskProgress(previous.progress, incoming.progress)
+      : {
+        ...(previous.progress && typeof previous.progress === "object" ? previous.progress : {}),
+        ...(incoming.progress && typeof incoming.progress === "object" ? incoming.progress : {}),
+      };
+  }
+  if (previous.summary || incoming.summary) {
+    merged.summary = shouldPreserveRunningState
+      ? mergeRunningTaskSummary(previous.summary, incoming.summary)
+      : {
+        ...(previous.summary && typeof previous.summary === "object" ? previous.summary : {}),
+        ...(incoming.summary && typeof incoming.summary === "object" ? incoming.summary : {}),
+      };
+    if ((previous.summary?.summary_json || incoming.summary?.summary_json) && typeof merged.summary === "object") {
+      merged.summary.summary_json = {
+        ...(previous.summary?.summary_json && typeof previous.summary.summary_json === "object" ? previous.summary.summary_json : {}),
+        ...(incoming.summary?.summary_json && typeof incoming.summary.summary_json === "object" ? incoming.summary.summary_json : {}),
+      };
+    }
+  }
+  if (previous.log_diagnostics || incoming.log_diagnostics) {
+    merged.log_diagnostics = shouldPreserveRunningState
+      ? mergeRunningTaskDiagnostics(previous.log_diagnostics, incoming.log_diagnostics)
+      : {
+        ...(previous.log_diagnostics && typeof previous.log_diagnostics === "object" ? previous.log_diagnostics : {}),
+        ...(incoming.log_diagnostics && typeof incoming.log_diagnostics === "object" ? incoming.log_diagnostics : {}),
+      };
+  }
+  for (const key of ["output_file", "run_dir", "log_file", "error", "message", "pid"]) {
+    if (!String(incoming?.[key] || "").trim() && String(previous?.[key] || "").trim()) {
+      merged[key] = previous[key];
+    }
+  }
+  return merged;
+}
+
 function stampTaskSnapshot(task) {
   if (!task || typeof task !== "object") return task;
-  const snapshot = {...task, __snapshot_received_at: Date.now() / 1000};
-  const taskId = String(snapshot.id || "").trim();
+  const taskId = String(task.id || "").trim();
+  const previous = taskId
+    ? ([state.currentImportTask, state.currentLocomoTask, state.currentRunningTask]
+      .find((item) => String(item?.id || "").trim() === taskId) || {})
+    : {};
+  const snapshot = mergeTaskSnapshot(previous, task);
+  snapshot.__snapshot_received_at = Date.now() / 1000;
   const status = String(snapshot.status || "").toLowerCase();
   if (taskId) {
     if (snapshot.progress && typeof snapshot.progress === "object") {
@@ -2400,7 +3665,10 @@ function taskWithLiveProgress(task = {}) {
 function isGenericBenchmarkQaTask(task = {}, format = "") {
   const normalized = normalizeDatasetFormat(format || taskDatasetFormat(task, ""));
   const kind = String(task?.kind || "").trim();
-  return normalized && normalized !== "locomo" && (kind === "openviking_generic_qa" || kind === "echomemory_generic_qa");
+  return (
+    (normalized && normalized !== "locomo" && (kind === "openviking_generic_qa" || kind === "echomemory_generic_qa"))
+    || (normalized === "locomo" && (kind === "openviking_qa" || kind === "echomemory_qa"))
+  );
 }
 
 function parseGenericBenchmarkExecutionProgress(logText = "", task = {}, seed = {}) {
@@ -2409,6 +3677,7 @@ function parseGenericBenchmarkExecutionProgress(logText = "", task = {}, seed = 
   let importTotal = Number(seed.import_total || 0);
   let qaIndex = Number(seed.qa_index || 0);
   let qaTotal = Number(seed.qa_total || 0);
+  let qaPreview = seed.qa_preview && typeof seed.qa_preview === "object" ? {...seed.qa_preview} : null;
   for (const line of lines) {
     let match = line.match(/\[import\]\s+(\d+)\/(\d+)\s+/);
     if (match) {
@@ -2419,6 +3688,16 @@ function parseGenericBenchmarkExecutionProgress(logText = "", task = {}, seed = 
     if (match) {
       qaIndex = Number(match[1] || 0);
       qaTotal = Number(match[2] || 0);
+      const rawDetail = String(line.slice(match[0].length) || "").trim();
+      const detailMatch = rawDetail.match(/^(\S+)\s+(.*)$/);
+      const questionId = String(detailMatch?.[1] || "").trim();
+      const question = String(detailMatch?.[2] || rawDetail || "").trim();
+      qaPreview = {
+        question_id: questionId,
+        question,
+        answer: "",
+        source: "log_tail",
+      };
     }
   }
   const configuredTotal = Number(task?.meta?.config?.count || task?.config?.count || 0);
@@ -2435,6 +3714,7 @@ function parseGenericBenchmarkExecutionProgress(logText = "", task = {}, seed = 
     import_total: importTotal,
     qa_index: qaIndex,
     qa_total: qaTotal,
+    qa_preview: qaPreview,
     pct: Math.max(0, Math.min(100, Number(pctBase.toFixed(1)))),
     source: "log_tail",
   };
@@ -2571,6 +3851,7 @@ async function ensureGenericBenchmarkExecutionProgress(task = {}, format = "") {
 }
 
 function taskDisplayTitle(task = {}, format = "") {
+  task = task || {};
   const stage = taskStageLabel(task.kind || "", task);
   const backend = taskBackendLabel(task);
   const scope = taskSampleScope(task, format);
@@ -2578,12 +3859,12 @@ function taskDisplayTitle(task = {}, format = "") {
 }
 
 function isLocomoRunRecord(run = {}) {
+  run = run || {};
   const kind = String(run.kind || "").trim();
   if (["judge", "stats", "adapter"].includes(kind)) return false;
   const format = runDatasetFormat(run);
   if (format) return format === "locomo";
   const haystack = `${run.name || ""} ${run.id || ""} ${run.kind || ""} ${run.agent_type || ""} ${run.output_file || ""} ${run.run_dir || ""}`;
-  if (/(chenmo|陈默)/i.test(haystack)) return false;
   if (looksNonLocomoArtifact(haystack)) return false;
   return looksLocomoArtifact(haystack)
     || run.kind === "openviking_import"
@@ -2597,6 +3878,7 @@ function isLocomoRunRecord(run = {}) {
 }
 
 function isLocomoTaskOutput(kind, task = {}, fallbackFormat = "") {
+  task = task || {};
   const taskKind = task.kind || kind || "";
   if (isMemoryImportKind(taskKind) || taskKind === "adapter") return false;
   const format = taskDatasetFormat(task, fallbackFormat);
@@ -2668,14 +3950,96 @@ function currentLocomoResultCsv() {
   return currentLocomoDataset() ? input : "";
 }
 
+function judgeTaskArtifactPaths(task = {}) {
+  const summary = task?.summary || {};
+  const summaryJson = summary.summary_json || {};
+  const config = task?.meta?.config || task?.config || {};
+  return [...new Set([
+    task.output_file,
+    summary.output_file,
+    summary.input,
+    summary.input_file,
+    summary.result_file,
+    summaryJson.output_file,
+    summaryJson.input,
+    summaryJson.input_file,
+    summaryJson.result_file,
+    config.input,
+    config.input_file,
+    config.result_file,
+    config.output_file,
+  ].map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
+function judgeTaskMatchesCurrentResult(task = {}, resultCsv = currentLocomoResultCsv()) {
+  task = task || {};
+  if ((task.kind || "") !== "judge" || !isTaskActive(task)) return false;
+  const format = enrichTaskDatasetFormat(task, state.taskDatasetFormats[task.id] || task.dataset_format || "");
+  if (format && format !== "locomo") return false;
+  const current = String(resultCsv || "").trim();
+  if (!current) return !format || format === "locomo";
+  const currentDir = dirname(current);
+  return judgeTaskArtifactPaths(task).some((path) => path === current || (currentDir && dirname(path) === currentDir));
+}
+
+function compareTaskRecencyDesc(left = {}, right = {}) {
+  const leftTs = parseTaskTimestamp(left.updated_at || left.started_at || left.created_at || 0);
+  const rightTs = parseTaskTimestamp(right.updated_at || right.started_at || right.created_at || 0);
+  return rightTs - leftTs;
+}
+
+function currentLocomoJudgeTask(resultCsv = currentLocomoResultCsv()) {
+  const dedup = new Map();
+  const pools = [
+    ...(Array.isArray(state.runningTasksForView) ? state.runningTasksForView : []),
+    ...(Array.isArray(state.scopedTasks) ? state.scopedTasks.filter(isTaskActive) : []),
+    ...runningTaskCandidates(),
+  ];
+  pools.forEach((task) => {
+    if (task?.id && !dedup.has(task.id)) dedup.set(task.id, taskWithLiveProgress(task));
+  });
+  const tasks = [...dedup.values()];
+  const matching = tasks
+    .filter((task) => judgeTaskMatchesCurrentResult(task, resultCsv))
+    .sort(compareTaskRecencyDesc);
+  if (matching.length) return matching[0];
+  if (resultCsv) return null;
+  return tasks
+    .filter((task) => judgeTaskMatchesCurrentResult(task, ""))
+    .sort(compareTaskRecencyDesc)[0] || null;
+}
+
 function latestLocomoQaRun(runs = []) {
-  const scoped = currentAccountOnlyEnabled("runsCurrentAccountOnly")
-    ? runs.filter(matchesCurrentAccount)
-    : runs;
-  const pool = scoped.length ? scoped : runs;
+  const pool = (Array.isArray(runs) ? runs : []).filter(Boolean);
   return pool.find((run) => isRecentLocomoQaRun(run) && run.output_file)
     || pool.find((run) => isLocomoTaskOutput(run.kind || "", run, normalizeDatasetFormat(run.dataset_format || runDatasetFormat(run) || "")) && run.output_file)
     || null;
+}
+
+function preferredJudgeHistoryRun(runs = [], currentInput = "") {
+  const list = Array.isArray(runs) ? runs.filter(Boolean) : [];
+  if (!list.length) return null;
+  const normalizedInput = String(currentInput || "").trim();
+  if (normalizedInput) {
+    const match = list.find((run) => String(run.output_file || "").trim() === normalizedInput);
+    if (match) return match;
+  }
+  return list[0] || null;
+}
+
+function preferredReportRun(runs = []) {
+  const list = Array.isArray(runs) ? runs.filter(Boolean) : [];
+  if (!list.length) return null;
+  if (state.selectedRunDir) {
+    const selected = list.find((run) => String(run.run_dir || "") === String(state.selectedRunDir || ""));
+    if (selected) return selected;
+  }
+  const currentOutput = currentLocomoResultCsv();
+  if (currentOutput) {
+    const outputMatch = list.find((run) => String(run.output_file || "").trim() === String(currentOutput).trim());
+    if (outputMatch) return outputMatch;
+  }
+  return list.find((run) => runHasFormalScore(run)) || list[0] || null;
 }
 
 async function ensureCurrentLocomoResultInput(options = {}) {
@@ -2817,7 +4181,16 @@ function mergeBackendAccountState(data = {}) {
   records.forEach((record) => {
     if (!record?.id || !record.config) return;
     const local = readAccountConfig(record.id);
-    const merged = usefulAccountConfig(local) ? {...local, ...record.config} : {...record.config};
+    const merged = usefulAccountConfig(local)
+      ? {
+        ...local,
+        ...record.config,
+        backendConfigs: {
+          ...(local.backendConfigs && typeof local.backendConfigs === "object" ? local.backendConfigs : {}),
+          ...(record.config.backendConfigs && typeof record.config.backendConfigs === "object" ? record.config.backendConfigs : {}),
+        },
+      }
+      : {...record.config};
     cacheAccountConfig(record.id, merged);
     saveAccountConfig(record.id, merged);
   });
@@ -2853,6 +4226,15 @@ function currentAccountConfigPatch() {
   const agentToken = $("systemAgentToken")?.value.trim() || "";
   const judgeToken = $("systemJudgeToken")?.value.trim() || $("judgeToken")?.value.trim() || "";
   const memoryToken = $("systemMemoryToken")?.value.trim() || $("ovVlmApiKey")?.value.trim() || "";
+  const savedCfg = readAccountConfig(currentAccount());
+  const locomoQaPromptMode = $("locomoQaPromptMode")?.value || $("echomemQaPromptMode")?.value || "vikingboat_lite";
+  const locomoQaRetrievalMode = $("locomoQaRetrievalMode")?.value || $("echomemQaRetrievalMode")?.value || "search";
+  const locomoQaToolSet = $("locomoQaToolSet")?.value.trim() || $("echomemQaToolSet")?.value.trim() || "vikingbot_native_safe";
+  const locomoQaToolLoop = $("locomoQaToolLoop")?.checked ?? ($("echomemQaToolLoop")?.checked ?? true);
+  const locomoQaToolSearchLimit = $("locomoQaToolSearchLimit")?.value || $("echomemQaToolSearchLimit")?.value || String(VIKINGBOAT_LITE_TOOL_SEARCH_LIMIT);
+  const locomoQaToolMinScore = $("locomoQaToolMinScore")?.value || $("echomemQaToolMinScore")?.value || "0.35";
+  const locomoQaMaxIterations = $("locomoQaMaxIterations")?.value || $("echomemQaMaxIterations")?.value || String(VIKINGBOAT_LITE_MAX_ITERATIONS);
+  const locomoQaQuestionTimeout = $("locomoQaQuestionTimeout")?.value || $("echomemQaQuestionTimeout")?.value || "600";
   return {
     memoryBackend: $("memoryBackendSelect")?.value || "openviking",
     ovHost: $("ovHost")?.value.trim() || "",
@@ -2862,6 +4244,33 @@ function currentAccountConfigPatch() {
     echomemRoot: $("echomemRoot")?.value.trim() || "",
     memoryUserId: $("memoryUserId")?.value.trim() || "default",
     memoryAgentId: $("memoryAgentId")?.value.trim() || "default",
+    locomoQaUseTools: $("locomoQaUseTools")?.checked ?? true,
+    hotpotQaUseTools: $("hotpotQaUseTools")?.checked ?? (savedCfg.hotpotQaUseTools !== false),
+    hotpotQaCount: $("hotpotQaCount")?.value.trim() || savedCfg.hotpotQaCount || "50",
+    echomemQaTopK: $("echomemQaTopK")?.value || String(VIKINGBOAT_LITE_TOP_K),
+    echomemQaScoreThreshold: $("echomemQaScoreThreshold")?.value || "0.1",
+    echomemQaToolSearchLimit: locomoQaToolSearchLimit,
+    echomemQaToolMinScore: locomoQaToolMinScore,
+    echomemQaMaxIterations: locomoQaMaxIterations,
+    echomemQaMemoryBudgetChars: $("echomemQaMemoryBudgetChars")?.value || "6000",
+    echomemQaUserMemoryBudgetChars: $("echomemQaUserMemoryBudgetChars")?.value || "4000",
+    echomemQaAgentMemoryBudgetChars: $("echomemQaAgentMemoryBudgetChars")?.value || "2000",
+    echomemQaPrefetchReadCount: $("echomemQaPrefetchReadCount")?.value || "4",
+    echomemQaPrefetchContextChars: $("echomemQaPrefetchContextChars")?.value || "5000",
+    echomemQaToolLogChars: $("echomemQaToolLogChars")?.value || "1200",
+    echomemQaQuestionTimeout: locomoQaQuestionTimeout,
+    echomemQaRetrievalMode: locomoQaRetrievalMode,
+    echomemQaPromptMode: locomoQaPromptMode,
+    echomemQaToolSet: locomoQaToolSet,
+    echomemQaToolLoop: Boolean(locomoQaToolLoop),
+    echomemQaInitialToolPrefetch: Boolean($("echomemQaInitialToolPrefetch")?.checked),
+    echomemQaFallbackToOneShot: Boolean($("echomemQaFallbackToOneShot")?.checked),
+    echomemQaVikingboatCompat: Boolean($("echomemQaVikingboatCompat")?.checked),
+    echomemQaLocalSessionSummaries: Boolean($("echomemQaLocalSessionSummaries")?.checked),
+    echomemQaLocalAtoms: Boolean($("echomemQaLocalAtoms")?.checked),
+    echomemQaLocalMessages: Boolean($("echomemQaLocalMessages")?.checked),
+    echomemQaLocalTimelineHints: Boolean($("echomemQaLocalTimelineHints")?.checked),
+    echomemQaLocalMemoryArtifacts: Boolean($("echomemQaLocalMemoryArtifacts")?.checked),
     ovApiKey: $("ovApiKey")?.value.trim() || "",
     judgeBaseUrl: $("systemJudgeBaseUrl")?.value.trim() || $("judgeBaseUrl")?.value.trim() || "",
     judgeModel: $("systemJudgeModel")?.value.trim() || $("judgeModel")?.value.trim() || "",
@@ -2908,6 +4317,11 @@ function syncAccountFields(account) {
   if ($("memoryAccount")) $("memoryAccount").value = value;
   if ($("systemAccountLabel")) $("systemAccountLabel").textContent = value;
   updateAccountActionState();
+  renderWorkspaceStatusStrip();
+  renderImportSidebarPanels();
+  syncHotpotQaHeaderMeta();
+  syncGenericWorkbenchHeaderMeta("proagentbench");
+  syncGenericWorkbenchHeaderMeta("tau2bench");
 }
 
 function setAccountActionStatus(text, tone = "") {
@@ -2998,6 +4412,33 @@ function accountConfigDefaults() {
     memoryInjectBaseUrl: state.config.vlm_base_url || "https://dashscope.aliyuncs.com/compatible-mode/v1",
     memoryInjectModel: state.config.vlm_model || "",
     chatTopK: "30",
+    locomoQaUseTools: true,
+    hotpotQaUseTools: true,
+    hotpotQaCount: "50",
+    echomemQaTopK: String(VIKINGBOAT_LITE_TOP_K),
+    echomemQaScoreThreshold: "0.1",
+    echomemQaToolSearchLimit: String(VIKINGBOAT_LITE_TOOL_SEARCH_LIMIT),
+    echomemQaToolMinScore: "0.35",
+    echomemQaMaxIterations: String(VIKINGBOAT_LITE_MAX_ITERATIONS),
+    echomemQaMemoryBudgetChars: "6000",
+    echomemQaUserMemoryBudgetChars: "4000",
+    echomemQaAgentMemoryBudgetChars: "2000",
+    echomemQaPrefetchReadCount: "4",
+    echomemQaPrefetchContextChars: "5000",
+    echomemQaToolLogChars: "1200",
+    echomemQaQuestionTimeout: "600",
+    echomemQaRetrievalMode: "search",
+    echomemQaPromptMode: "vikingboat_lite",
+    echomemQaToolSet: "vikingbot_native_safe",
+    echomemQaToolLoop: true,
+    echomemQaInitialToolPrefetch: false,
+    echomemQaFallbackToOneShot: true,
+    echomemQaVikingboatCompat: false,
+    echomemQaLocalSessionSummaries: true,
+    echomemQaLocalAtoms: true,
+    echomemQaLocalMessages: false,
+    echomemQaLocalTimelineHints: true,
+    echomemQaLocalMemoryArtifacts: true,
   };
 }
 
@@ -3094,6 +4535,41 @@ function applyAccountConfig(account) {
   if ($("echomemRoot")) $("echomemRoot").value = cfg.echomemRoot || "";
   if ($("memoryUserId")) $("memoryUserId").value = cfg.memoryUserId || "default";
   if ($("memoryAgentId")) $("memoryAgentId").value = cfg.memoryAgentId || "default";
+  if ($("locomoQaUseTools")) $("locomoQaUseTools").checked = cfg.locomoQaUseTools !== false;
+  if ($("locomoQaPromptMode")) $("locomoQaPromptMode").value = cfg.echomemQaPromptMode || "vikingboat_lite";
+  if ($("locomoQaRetrievalMode")) $("locomoQaRetrievalMode").value = cfg.echomemQaRetrievalMode || "search";
+  if ($("locomoQaToolSet")) $("locomoQaToolSet").value = cfg.echomemQaToolSet || "vikingbot_native_safe";
+  if ($("locomoQaToolLoop")) $("locomoQaToolLoop").checked = cfg.echomemQaToolLoop !== false;
+  setInputValue("locomoQaToolSearchLimit", cfg.echomemQaToolSearchLimit || String(VIKINGBOAT_LITE_TOOL_SEARCH_LIMIT));
+  setInputValue("locomoQaToolMinScore", cfg.echomemQaToolMinScore || "0.35");
+  setInputValue("locomoQaMaxIterations", cfg.echomemQaMaxIterations || String(VIKINGBOAT_LITE_MAX_ITERATIONS));
+  setInputValue("locomoQaQuestionTimeout", cfg.echomemQaQuestionTimeout || "600");
+  setInputValue("echomemQaTopK", cfg.echomemQaTopK || String(VIKINGBOAT_LITE_TOP_K));
+  setInputValue("echomemQaScoreThreshold", cfg.echomemQaScoreThreshold || "0.1");
+  setInputValue("locomoQaToolSearchLimit", cfg.echomemQaToolSearchLimit || String(VIKINGBOAT_LITE_TOOL_SEARCH_LIMIT));
+  setInputValue("locomoQaToolMinScore", cfg.echomemQaToolMinScore || "0.35");
+  setInputValue("locomoQaMaxIterations", cfg.echomemQaMaxIterations || String(VIKINGBOAT_LITE_MAX_ITERATIONS));
+  setInputValue("echomemQaMemoryBudgetChars", cfg.echomemQaMemoryBudgetChars || "6000");
+  setInputValue("echomemQaUserMemoryBudgetChars", cfg.echomemQaUserMemoryBudgetChars || "4000");
+  setInputValue("echomemQaAgentMemoryBudgetChars", cfg.echomemQaAgentMemoryBudgetChars || "2000");
+  setInputValue("echomemQaPrefetchReadCount", cfg.echomemQaPrefetchReadCount || "4");
+  setInputValue("echomemQaPrefetchContextChars", cfg.echomemQaPrefetchContextChars || "5000");
+  setInputValue("echomemQaToolLogChars", cfg.echomemQaToolLogChars || "1200");
+  setInputValue("locomoQaQuestionTimeout", cfg.echomemQaQuestionTimeout || "600");
+  setInputValue("locomoQaToolSet", cfg.echomemQaToolSet || "vikingbot_native_safe");
+  if ($("locomoQaRetrievalMode")) $("locomoQaRetrievalMode").value = cfg.echomemQaRetrievalMode || "search";
+  if ($("locomoQaPromptMode")) $("locomoQaPromptMode").value = cfg.echomemQaPromptMode || "vikingboat_lite";
+  if ($("locomoQaToolLoop")) $("locomoQaToolLoop").checked = cfg.echomemQaToolLoop !== false;
+  if ($("echomemQaInitialToolPrefetch")) $("echomemQaInitialToolPrefetch").checked = Boolean(cfg.echomemQaInitialToolPrefetch);
+  if ($("echomemQaFallbackToOneShot")) $("echomemQaFallbackToOneShot").checked = cfg.echomemQaFallbackToOneShot !== false;
+  if ($("echomemQaVikingboatCompat")) $("echomemQaVikingboatCompat").checked = Boolean(cfg.echomemQaVikingboatCompat);
+  if ($("echomemQaLocalSessionSummaries")) $("echomemQaLocalSessionSummaries").checked = cfg.echomemQaLocalSessionSummaries !== false;
+  if ($("echomemQaLocalAtoms")) $("echomemQaLocalAtoms").checked = cfg.echomemQaLocalAtoms !== false;
+  if ($("echomemQaLocalMessages")) $("echomemQaLocalMessages").checked = Boolean(cfg.echomemQaLocalMessages);
+  if ($("hotpotQaUseTools")) $("hotpotQaUseTools").checked = cfg.hotpotQaUseTools !== false;
+  setInputValue("hotpotQaCount", cfg.hotpotQaCount || "50");
+  if ($("echomemQaLocalTimelineHints")) $("echomemQaLocalTimelineHints").checked = cfg.echomemQaLocalTimelineHints !== false;
+  if ($("echomemQaLocalMemoryArtifacts")) $("echomemQaLocalMemoryArtifacts").checked = cfg.echomemQaLocalMemoryArtifacts !== false;
   const regeneratedWorkspace = maybeRegenerateWorkspaceForBackend(account, cfg.memoryBackend || "openviking");
   if (regeneratedWorkspace) {
     const nextConfig = {...cfg, ovWorkspace: regeneratedWorkspace, memoryWorkspace: regeneratedWorkspace};
@@ -3121,6 +4597,9 @@ function applyAccountConfig(account) {
   updateSystemConfigSummary();
   updateWorkspaceMode();
   renderImportPaths();
+  syncLongMemHeaderSummary();
+  syncGenericWorkbenchHeaderMeta("proagentbench");
+  syncGenericWorkbenchHeaderMeta("tau2bench");
   runSystemPreflight(true).catch(() => {});
 }
 
@@ -3145,6 +4624,9 @@ function updateSystemConfigSummary() {
   if ($("systemAccountLabel")) $("systemAccountLabel").textContent = account;
   if ($("systemBackendLabel")) $("systemBackendLabel").textContent = memoryBackendLabel(backend);
   renderGlobalBackendBadge();
+  syncLongMemHeaderSummary();
+  syncGenericWorkbenchHeaderMeta("proagentbench");
+  syncGenericWorkbenchHeaderMeta("tau2bench");
   if ($("systemOpenVikingLabel")) {
     $("systemOpenVikingLabel").textContent = backend === "echomemory"
       ? "local EchoMemory SDK"
@@ -3155,7 +4637,8 @@ function updateSystemConfigSummary() {
   renderHotpotQaModelReadiness();
   if ($("systemJudgeLabel")) $("systemJudgeLabel").textContent = judgeCfg.model || "-";
   if ($("systemMemoryModelLabel")) $("systemMemoryModelLabel").textContent = memoryCfg.model || "-";
-  if ($("systemAccountStateFile")) $("systemAccountStateFile").textContent = state.accountStateFile || "-";
+  if ($("systemStorageRootLabel")) $("systemStorageRootLabel").textContent = storageRoot || "-";
+  if ($("systemAccountStateFile")) $("systemAccountStateFile").value = state.accountStateFile || "-";
   renderBackendIsolationSummary();
   renderAccountReadiness();
   renderAccountConfigSnapshot();
@@ -3170,15 +4653,14 @@ function updateBackendUi() {
   const backendLabel = memoryBackendLabel(backend);
   const shortLabel = memoryBackendShortLabel(backend);
   renderGlobalBackendBadge();
+  syncLongMemHeaderSummary();
+  syncGenericWorkbenchHeaderMeta("proagentbench");
+  syncGenericWorkbenchHeaderMeta("tau2bench");
   if ($("importWorkspaceLabel")) {
     $("importWorkspaceLabel").textContent = `记忆目录`;
   }
   if ($("importSampleLabel")) {
-    const dataset = currentLocomoDataset();
-    const summary = dataset?.samples && dataset?.questions
-      ? ` · ${formatInt(dataset.samples)} 个对话样本 · 共 ${formatInt(dataset.questions)} 题`
-      : "";
-    $("importSampleLabel").textContent = `导入会话${summary}`;
+    $("importSampleLabel").textContent = "导入会话";
   }
   if ($("backendConnectionSummary")) {
     $("backendConnectionSummary").textContent = backend === "echomemory"
@@ -3212,9 +4694,10 @@ function updateBackendUi() {
       : "OpenViking root/api key，本地 dev 模式可留空";
   }
   refreshImportActionLabels();
-  renderImportReadinessPanel();
   renderQaReadinessPanel();
   renderJudgeReadinessPanel();
+  renderWorkspaceStatusStrip();
+  renderImportSidebarPanels();
 }
 
 function renderAccountConfigSnapshot() {
@@ -3233,9 +4716,20 @@ function renderAccountConfigSnapshot() {
     ["记忆目录", cfg.ovWorkspace || "-"],
     ["读取目录", cfg.memoryWorkspace || cfg.ovWorkspace || "-"],
     ["User / Agent", `${cfg.memoryUserId || "default"} / ${cfg.memoryAgentId || "default"}`],
+    ["QA 调用工具", cfg.locomoQaUseTools === false ? "关闭" : "开启"],
+    ["Echo QA Prompt", cfg.echomemQaPromptMode || "vikingboat_lite"],
+    ["Echo QA Retrieval", cfg.echomemQaRetrievalMode || "search"],
+    ["Echo QA Tool Set", cfg.echomemQaToolSet || "vikingbot_native_safe"],
+    ["Echo QA Top-K", cfg.echomemQaTopK || String(VIKINGBOAT_LITE_TOP_K)],
+    ["Echo QA 工具循环", cfg.echomemQaToolLoop === false ? "关闭" : "开启"],
+    ["Echo QA 最大迭代", cfg.echomemQaMaxIterations || String(VIKINGBOAT_LITE_MAX_ITERATIONS)],
     ["判分地址", cfg.judgeBaseUrl || "-"],
     ["判分模型", cfg.judgeModel || "-"],
     ["召回数量", cfg.chatTopK || "默认"],
+    ["Echo QA 检索模式", cfg.echomemQaRetrievalMode || "search"],
+    ["Echo QA Prompt", cfg.echomemQaPromptMode || "vikingboat_lite"],
+    ["Echo QA 工具检索", `${cfg.echomemQaToolSearchLimit || VIKINGBOAT_LITE_TOOL_SEARCH_LIMIT} / ${cfg.echomemQaToolMinScore || "0.35"}`],
+    ["Echo QA 预算", `${cfg.echomemQaUserMemoryBudgetChars || "4000"} + ${cfg.echomemQaAgentMemoryBudgetChars || "2000"}`],
   ];
   target.innerHTML = `
     <div class="snapshot-grid">
@@ -3344,6 +4838,14 @@ function storageRootForBackend(workspace = "", account = "", backend = "openviki
   return `${workspace}/viking/${accountId}`;
 }
 
+function memoryRootForBackend(workspace = "", account = "", backend = "openviking") {
+  const root = storageRootForBackend(workspace, account, backend);
+  if (!root) return "";
+  const normalized = normalizeMemoryBackend(backend);
+  if (normalized === "echomemory") return `${root}/engines/echo0_plugin/memory`;
+  return `${root}/user/default/memories`;
+}
+
 function importPathRowsForBackend({workspace = "", account = "", backend = "openviking", userId = "default", agentId = "default"} = {}) {
   const normalized = normalizeMemoryBackend(backend);
   const root = storageRootForBackend(workspace, account, normalized);
@@ -3351,10 +4853,12 @@ function importPathRowsForBackend({workspace = "", account = "", backend = "open
   if (normalized === "echomemory") {
     return [
       {label: "记忆写入目录", value: root, copy: true, open: true},
+      {label: "长期记忆目录", value: memoryRootForBackend(workspace, account, normalized), copy: true, open: true},
     ];
   }
   return [
     {label: "记忆写入目录", value: root, copy: true, open: true},
+    {label: "长期记忆目录", value: memoryRootForBackend(workspace, account, normalized), copy: true, open: true},
   ];
 }
 
@@ -3369,6 +4873,22 @@ function currentConfiguredWorkspace(backend = currentMemoryBackend()) {
     || $("memoryWorkspace")?.value
     || ""
   ).trim();
+}
+
+function activeImportWorkspaceForBackend(backend = currentMemoryBackend()) {
+  const normalized = normalizeMemoryBackend(backend);
+  const candidates = [state.currentImportTask, state.currentRunningTask, state.currentLocomoTask]
+    .filter((task) => task?.id && isLocomoImportTask(task) && isTaskActive(task));
+  for (const task of candidates) {
+    const scope = importScopeFromTask(task);
+    if (scope.backend === normalized && scope.workspace) return scope.workspace;
+  }
+  const recentImport = latestMemoryImportRun(Array.isArray(state.recentRuns) ? state.recentRuns : [], {
+    backend: normalized,
+    workspaceScoped: false,
+  });
+  if (recentImport?.workspace) return String(recentImport.workspace || "").trim();
+  return "";
 }
 
 function setAccountCreateExpanded(expanded) {
@@ -3517,6 +5037,29 @@ function preflightCard(title, status, value, details = []) {
       </div>
       <strong>${escapeHtml(value || "-")}</strong>
       ${rows ? `<ul>${rows}</ul>` : ""}
+    </article>
+  `;
+}
+
+function systemPreflightCard(title, status, value, details = []) {
+  const tone = preflightTone(status);
+  const rows = details.filter(Boolean);
+  const previewRows = rows.slice(0, 2).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const extraRows = rows.slice(2).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  return `
+    <article class="preflight-card system-preflight-card ${tone}">
+      <div class="preflight-card-head">
+        <span>${escapeHtml(title)}</span>
+        <em>${escapeHtml(preflightLabel(status))}</em>
+      </div>
+      <strong>${escapeHtml(value || "-")}</strong>
+      ${previewRows ? `<ul class="system-preflight-points">${previewRows}</ul>` : ""}
+      ${extraRows ? `
+        <details class="system-preflight-more">
+          <summary>更多详情</summary>
+          <ul>${extraRows}</ul>
+        </details>
+      ` : ""}
     </article>
   `;
 }
@@ -3686,7 +5229,7 @@ function renderDeliveryBoundaryGate(data, targetId = "deliveryBoundaryPanel") {
       <strong>${escapeHtml(registered.join(", ") || "-")}</strong>
       <p>期望后端：${escapeHtml(expected.join(", ") || "-")}</p>
     </article>
-    <article class="handoff-audit-card ${sidebar.length === 9 ? "ok" : "warn"}">
+    <article class="handoff-audit-card ${sidebar.length === 8 ? "ok" : "warn"}">
       <span>侧边栏</span>
       <strong>${escapeHtml(sidebar.length)} 个固定入口</strong>
       <p>${escapeHtml(sidebar.map((item) => item.label).join(" / ") || "-")}</p>
@@ -3780,16 +5323,15 @@ function renderHandoffDashboard(data, targetId = "handoffDashboardPanel") {
         ${tenQuestionIds.length ? copyButtonHtml(tenQuestionIds.join(","), "复制 10 题") : ""}
         ${recommendation.sample_id ? `<button class="secondary compact-button" type="button" data-locomo-sample="${escapeHtml(recommendation.sample_id)}" data-locomo-view="evalView">切到推荐 conv</button>` : ""}
         ${tenQuestionIds.length ? `<button class="secondary compact-button" type="button" data-locomo-sample="${escapeHtml(recommendation.sample_id || "all")}" data-locomo-questions="${escapeHtml(tenQuestionIds.join(","))}" data-locomo-view="evalView">加载推荐 10 题</button>` : ""}
-        <button class="secondary compact-button" type="button" data-view-jump="datasetView">去数据集</button>
       </div>
     </article>
     <article class="handoff-dashboard-card paths">
       <span>当前路径</span>
       <strong>数据集与记忆空间</strong>
       <dl class="smoke-plan-kv">
-        <dt>数据集</dt><dd><code>${escapeHtml(dataset.path || "-")}</code></dd>
-        <dt>工作空间</dt><dd><code>${escapeHtml(workspace.workspace || "-")}</code></dd>
-        <dt>存储根</dt><dd><code>${escapeHtml(workspace.storage_root || "-")}</code></dd>
+        <dt>数据集</dt><dd><code title="${escapeHtml(dataset.path || "-")}">${escapeHtml(dataset.path || "-")}</code></dd>
+        <dt>工作空间</dt><dd><code title="${escapeHtml(workspace.workspace || "-")}">${escapeHtml(workspace.workspace || "-")}</code></dd>
+        <dt>存储根</dt><dd><code title="${escapeHtml(workspace.storage_root || "-")}">${escapeHtml(workspace.storage_root || "-")}</code></dd>
       </dl>
     </article>
     ${cards.map((card) => `
@@ -4247,8 +5789,54 @@ function bindViewJumpButtons(rootSelector) {
   document.querySelectorAll(`${rootSelector} [data-view-jump]`).forEach((button) => {
     if (button.dataset.viewJumpBound === "1") return;
     button.dataset.viewJumpBound = "1";
-    button.addEventListener("click", () => showView(button.dataset.viewJump));
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      handleContextualViewJump(button);
+    });
   });
+}
+
+function bindInternalNavigationButtons(rootSelector) {
+  document.querySelectorAll(`${rootSelector} [data-internal-href]`).forEach((button) => {
+    if (button.dataset.internalHrefBound === "1") return;
+    button.dataset.internalHrefBound = "1";
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      const targetView = String(button.dataset.viewJump || "").trim();
+      if (targetView) {
+        handleContextualViewJump(button, {userTriggered: true});
+        return;
+      }
+      const href = String(button.dataset.internalHref || "").trim();
+      if (!href) return;
+      window.location.assign(href);
+    });
+  });
+}
+
+function syncQaToolCallingInputs(enabled, sourceId = "") {
+  const next = enabled !== false;
+  const hotpotState = $("hotpotQaToolStateLabel");
+  if (hotpotState && (sourceId === "hotpotQaUseTools" || $("hotpotQaUseTools"))) {
+    hotpotState.textContent = next ? "Enabled" : "Disabled";
+    hotpotState.dataset.tone = next ? "ok" : "muted";
+  }
+  if (sourceId === "hotpotQaUseTools") {
+    if ($("hotpotQaUseTools")) $("hotpotQaUseTools").checked = next;
+    return;
+  }
+  if ($("locomoQaUseTools")) $("locomoQaUseTools").checked = next;
+}
+
+function syncLocomoQaRuntimeInputsToAccountConfig() {
+  const cfg = currentAccountConfigPatch();
+  saveAccountConfig(currentAccount(), cfg);
+  updateSystemConfigSummary();
+  refreshLocomoQaActionLabels();
+  renderQaReadinessPanel();
+  renderAccountConfigSnapshot();
+  renderEvalConsoleContext();
+  toast("LoCoMo 参数已保存");
 }
 
 async function applyLocomoPreset(button) {
@@ -4260,8 +5848,8 @@ async function applyLocomoPreset(button) {
   const targetView = button.dataset.locomoView || "evalView";
   const path = $("data")?.value?.trim() || "";
   if (!path) {
-    showView("datasetView");
-    return toast("请先在数据集步骤确认 LoCoMo JSON 路径");
+    showView("openvikingView");
+    return toast("请先在记忆导入里确认 LoCoMo JSON 路径");
   }
   if (!currentLocomoDataset()) {
     await loadDataset();
@@ -4354,9 +5942,9 @@ function renderSmokePlan(data, targetId = "smokePlanPanel") {
       <span>当前路径</span>
       <strong>数据集与记忆空间</strong>
       <dl class="smoke-plan-kv">
-        <dt>数据集</dt><dd><code>${escapeHtml(dataset.path || "-")}</code></dd>
-        <dt>工作空间</dt><dd><code>${escapeHtml(workspace.workspace || "-")}</code></dd>
-        <dt>存储根</dt><dd><code>${escapeHtml(workspace.storage_root || "-")}</code></dd>
+        <dt>数据集</dt><dd><code title="${escapeHtml(dataset.path || "-")}">${escapeHtml(dataset.path || "-")}</code></dd>
+        <dt>工作空间</dt><dd><code title="${escapeHtml(workspace.workspace || "-")}">${escapeHtml(workspace.workspace || "-")}</code></dd>
+        <dt>存储根</dt><dd><code title="${escapeHtml(workspace.storage_root || "-")}">${escapeHtml(workspace.storage_root || "-")}</code></dd>
       </dl>
     </article>
     ${steps.map((step, index) => `
@@ -5186,6 +6774,17 @@ function renderSystemPreflight(data = state.systemPreflight) {
   const models = data.models || {};
   const runtime = data.runtime || {};
   const security = data.security || {};
+  const statuses = [
+    backendAdapter.status,
+    workspace.status,
+    dataset.status,
+    models.status,
+    runtime.status,
+    security.status,
+  ];
+  const okCount = statuses.filter((item) => preflightTone(item) === "ok").length;
+  const warnCount = statuses.filter((item) => preflightTone(item) === "warn").length;
+  const badCount = statuses.filter((item) => preflightTone(item) === "bad").length;
   const datasetLabel = dataset.format === "locomo"
     ? `${dataset.samples ?? 0} conv / ${dataset.questions ?? 0} QA`
     : (dataset.message || dataset.format || "数据集未就绪");
@@ -5194,7 +6793,7 @@ function renderSystemPreflight(data = state.systemPreflight) {
     models.judge?.model ? `判分 ${models.judge.model}` : "",
   ].filter(Boolean).join(" · ") || "模型未配置";
   target.innerHTML = `
-    <article class="preflight-card summary ${preflightTone(data.status)}">
+    <article class="preflight-card summary system-preflight-overview ${preflightTone(data.status)}">
       <div class="preflight-card-head">
         <span>总体</span>
         <em>${escapeHtml(preflightLabel(data.status))}</em>
@@ -5203,49 +6802,64 @@ function renderSystemPreflight(data = state.systemPreflight) {
       <p>${escapeHtml(data.checked_at || "")}</p>
       ${data.share_summary ? copyButtonHtml(data.share_summary, "复制公开版预检") : ""}
     </article>
-    ${preflightCard("记忆后端", backendAdapter.status, memoryBackendLabel(data.backend), [
-      backendAdapter.registered ? "后端已接入" : "后端未接入",
-      backendAdapter.contract_status ? `契约：${backendContractLabel(backendAdapter.contract_status)}` : "",
-      backendAdapter.missing_required_capabilities?.length ? `缺少必需能力：${backendAdapter.missing_required_capabilities.join(", ")}` : "必需能力完整",
-      backendAdapter.missing_required_methods?.length ? `缺少必需方法：${backendAdapter.missing_required_methods.join(", ")}` : "必需方法完整",
-      backendAdapter.missing_recommended_capabilities?.length ? `建议补齐能力：${backendAdapter.missing_recommended_capabilities.join(", ")}` : "",
-      backendAdapter.missing_optional_methods?.length ? `建议补齐方法：${backendAdapter.missing_optional_methods.join(", ")}` : "",
-    ])}
-    ${preflightCard("目录", workspace.status, workspace.storage_root || workspace.workspace || workspace.input_workspace || "-", [
-      workspace.input_workspace ? `输入：${workspace.input_workspace}` : "",
-      workspace.workspace ? `实际 workspace：${workspace.workspace}` : "",
-      workspace.workspace_exists ? "目录存在" : "目录不存在",
-      workspace.storage_root_exists ? "存储根目录存在" : "存储根目录未创建",
-      workspace.workspace_was_normalized ? "已按当前账户自动归一化旧目录" : "",
-      workspace.layout ? `布局：${workspace.layout}` : "",
-    ])}
-    ${preflightCard("数据集", dataset.status, datasetLabel, [
-      dataset.exists ? "文件存在" : "文件不存在",
-      dataset.path || "",
-    ])}
-    ${preflightCard("模型", models.status, modelLabel, [
-      models.answer?.base_url_set ? "回答模型地址已配置" : "回答模型地址未配置",
-      models.judge?.base_url_set ? "判分地址已配置" : "判分地址未配置",
-      models.echomemory?.embedding_token_set ? "EchoMemory embedding 密钥已配置" : "EchoMemory embedding 密钥未检测到",
-      models.echomemory?.chat_token_set ? "EchoMemory chat 密钥已配置" : "EchoMemory chat 密钥未检测到",
-      (models.answer?.token_set || models.judge?.token_set || models.echomemory?.embedding_token_set || models.echomemory?.chat_token_set) ? "至少一个密钥来源已设置" : "未检测到环境密钥",
-    ])}
-    ${preflightCard("运行时", runtime.status, runtime.url || runtime.root || runtime.label || "-", [
-      runtime.kind || "",
-      runtime.probe?.ok ? "服务探测成功" : (runtime.message || runtime.probe?.error || ""),
-      runtime.explicit_root === false && !runtime.default_root ? "EchoMemory root 未显式设置" : "",
-      runtime.default_root ? "使用官方默认源码路径" : "",
-      runtime.sdk_layout ? "SDK 目录结构可用" : "",
-      runtime.source?.required_tag ? `要求版本：${runtime.source.required_tag}` : "",
-      runtime.source?.describe ? `当前版本：${runtime.source.describe}` : "",
-      runtime.source?.short_commit ? `commit：${runtime.source.short_commit}` : "",
-      runtime.version_ok === false ? "版本未对齐" : "",
-      runtime.next_action || "",
-    ])}
-    ${preflightCard("Security", security.status, security.secrets_redacted ? "密钥已脱敏" : "需要检查", [
-      security.token_values_returned ? "预检返回了 token 值" : "预检不返回 token 值",
-      Array.isArray(security.do_not_share) ? `不要外发：${security.do_not_share.join(", ")}` : "",
-    ])}
+    <div class="system-preflight-stats" aria-label="预检状态摘要">
+      <article class="system-preflight-stat">
+        <span>通过</span>
+        <strong>${okCount}</strong>
+      </article>
+      <article class="system-preflight-stat warn">
+        <span>需确认</span>
+        <strong>${warnCount}</strong>
+      </article>
+      <article class="system-preflight-stat bad">
+        <span>失败</span>
+        <strong>${badCount}</strong>
+      </article>
+    </div>
+    <div class="system-preflight-list">
+      ${systemPreflightCard("记忆后端", backendAdapter.status, memoryBackendLabel(data.backend), [
+        backendAdapter.registered ? "后端已接入" : "后端未接入",
+        backendAdapter.contract_status ? `契约：${backendContractLabel(backendAdapter.contract_status)}` : "",
+        backendAdapter.missing_required_capabilities?.length ? `缺少必需能力：${backendAdapter.missing_required_capabilities.join(", ")}` : "必需能力完整",
+        backendAdapter.missing_required_methods?.length ? `缺少必需方法：${backendAdapter.missing_required_methods.join(", ")}` : "必需方法完整",
+        backendAdapter.missing_recommended_capabilities?.length ? `建议补齐能力：${backendAdapter.missing_recommended_capabilities.join(", ")}` : "",
+        backendAdapter.missing_optional_methods?.length ? `建议补齐方法：${backendAdapter.missing_optional_methods.join(", ")}` : "",
+      ])}
+      ${systemPreflightCard("目录", workspace.status, workspace.storage_root || workspace.workspace || workspace.input_workspace || "-", [
+        workspace.workspace_exists ? "目录存在" : "目录不存在",
+        workspace.storage_root_exists ? "存储根目录存在" : "存储根目录未创建",
+        workspace.input_workspace ? `输入：${workspace.input_workspace}` : "",
+        workspace.workspace ? `实际 workspace：${workspace.workspace}` : "",
+        workspace.workspace_was_normalized ? "已按当前账户自动归一化旧目录" : "",
+        workspace.layout ? `布局：${workspace.layout}` : "",
+      ])}
+      ${systemPreflightCard("数据集", dataset.status, datasetLabel, [
+        dataset.exists ? "文件存在" : "文件不存在",
+        dataset.path || "",
+      ])}
+      ${systemPreflightCard("模型", models.status, modelLabel, [
+        models.answer?.base_url_set ? "回答模型地址已配置" : "回答模型地址未配置",
+        models.judge?.base_url_set ? "判分地址已配置" : "判分地址未配置",
+        (models.answer?.token_set || models.judge?.token_set || models.echomemory?.embedding_token_set || models.echomemory?.chat_token_set) ? "至少一个密钥来源已设置" : "未检测到环境密钥",
+        models.echomemory?.embedding_token_set ? "EchoMemory embedding 密钥已配置" : "EchoMemory embedding 密钥未检测到",
+        models.echomemory?.chat_token_set ? "EchoMemory chat 密钥已配置" : "EchoMemory chat 密钥未检测到",
+      ])}
+      ${systemPreflightCard("运行时", runtime.status, runtime.url || runtime.root || runtime.label || "-", [
+        runtime.probe?.ok ? "服务探测成功" : (runtime.message || runtime.probe?.error || runtime.kind || ""),
+        runtime.source?.describe ? `当前版本：${runtime.source.describe}` : "",
+        runtime.source?.required_tag ? `要求版本：${runtime.source.required_tag}` : "",
+        runtime.source?.short_commit ? `commit：${runtime.source.short_commit}` : "",
+        runtime.explicit_root === false && !runtime.default_root ? "EchoMemory root 未显式设置" : "",
+        runtime.default_root ? "使用官方默认源码路径" : "",
+        runtime.sdk_layout ? "SDK 目录结构可用" : "",
+        runtime.version_ok === false ? "版本未对齐" : "",
+        runtime.next_action || "",
+      ])}
+      ${systemPreflightCard("安全", security.status, security.secrets_redacted ? "密钥已脱敏" : "需要检查", [
+        security.token_values_returned ? "预检返回了 token 值" : "预检不返回 token 值",
+        Array.isArray(security.do_not_share) ? `不要外发：${security.do_not_share.join(", ")}` : "",
+      ])}
+    </div>
     ${renderPreflightFixes(data.fixes)}
   `;
 }
@@ -5459,7 +7073,7 @@ function renderBackendCards(backends = []) {
     `;
   }).join("");
   document.querySelectorAll("#backendCards [data-view-jump]").forEach((button) => {
-    button.addEventListener("click", () => showView(button.dataset.viewJump));
+    button.addEventListener("click", () => handleContextualViewJump(button, {userTriggered: true}));
   });
 }
 
@@ -5575,9 +7189,38 @@ function datasetRunnerNote(format, note = "", fallback = "") {
   const normalized = normalizeDatasetFormat(format);
   const text = String(note || "").trim();
   if (normalized === "locomo" && /只展示\s*LoCoMo|上方流程条|LoCoMo 数据结构|问答|判分|其它数据集|benchmark/i.test(text)) {
-    return "数据已读取；请选择要导入的会话，确认目录后点击“导入所选对话”。";
+    return "数据已读取；选择导入会话后点击“导入对话”。";
   }
   return text || fallback;
+}
+
+function locomoImportDatasetNoteHtml({
+  title = "读取后显示数据状态",
+  summary = "",
+  detail = "",
+  tone = "",
+  issues = [],
+  warnings = [],
+} = {}) {
+  const toneClass = tone ? ` ${escapeHtml(tone)}` : "";
+  const hints = [
+    ...(Array.isArray(issues) ? issues.map((text) => ({tone: "bad", text})) : []),
+    ...(Array.isArray(warnings) ? warnings.map((text) => ({tone: "warn", text})) : []),
+  ].filter((item) => String(item.text || "").trim());
+  return `
+    <div class="locomo-inline-message${toneClass}" data-locomo-density="compact">
+      <div class="locomo-inline-message-row">
+        <strong>${escapeHtml(title || "读取后显示数据状态")}</strong>
+        ${summary ? `<span>${escapeHtml(summary)}</span>` : ""}
+      </div>
+      ${detail ? `<p>${escapeHtml(detail)}</p>` : ""}
+      ${hints.length ? `
+        <ul class="locomo-inline-list">
+          ${hints.map((item) => `<li class="${escapeHtml(item.tone)}">${escapeHtml(item.text)}</li>`).join("")}
+        </ul>
+      ` : ""}
+    </div>
+  `;
 }
 
 function isSampleDatasetPath(path = "", record = {}) {
@@ -5587,11 +7230,144 @@ function isSampleDatasetPath(path = "", record = {}) {
     || /\.sample\./.test(text);
 }
 
+function canonicalLongMemDatasetRecord(id = "") {
+  const target = String(id || "").trim().toLowerCase();
+  if (!target) return null;
+  return (state.datasetRegistry || []).find((item) => String(item.id || "").trim().toLowerCase() === target && item.exists)
+    || (state.datasetRegistry || []).find((item) => String(item.id || "").trim().toLowerCase() === target)
+    || null;
+}
+
+function currentLongMemSearchQuery() {
+  return String($("longMemQuestionSearch")?.value || "").trim();
+}
+
+function currentLongMemDatasetMode() {
+  return document.body?.dataset?.longMemDatasetMode === "custom" ? "custom" : "preset";
+}
+
+function setLongMemDatasetMode(mode = "preset") {
+  const normalized = mode === "custom" ? "custom" : "preset";
+  if (document.body) document.body.dataset.longMemDatasetMode = normalized;
+  $("longMemDatasetModePreset")?.classList.toggle("active", normalized === "preset");
+  $("longMemDatasetModeCustom")?.classList.toggle("active", normalized === "custom");
+  const dataInput = $("longMemData");
+  if (dataInput) dataInput.dataset.mode = normalized;
+  if (normalized === "custom") {
+    dataInput?.focus();
+    dataInput?.select?.();
+  }
+}
+
+function resetLongMemQuestionPreviewState() {
+  state.longMemQuestionOffset = 0;
+  state.longMemQuestionNextOffset = null;
+  state.longMemQuestionTotalLoaded = 0;
+  state.longMemQuestionQuery = currentLongMemSearchQuery();
+}
+
+function longMemQuestionScopeLabel() {
+  const sample = $("longMemSample")?.value || "all";
+  if (sample === "all") return "全部样本";
+  const option = $("longMemSample")?.selectedOptions?.[0];
+  return option?.textContent?.trim() || sample;
+}
+
+function renderLongMemQuestionToolbar() {
+  const sample = $("longMemSample")?.value || "all";
+  const isAll = sample === "all";
+  const query = state.longMemQuestionQuery || "";
+  const totalLoaded = Number(state.longMemQuestionTotalLoaded || state.longMemQuestions.length || 0);
+  const hasNext = state.longMemQuestionNextOffset != null;
+  const offset = Number(state.longMemQuestionOffset || 0);
+  const target = $("longMemQuestionToolbar");
+  if (!target) return;
+  target.innerHTML = `
+    <div class="analysis-box-note">
+      <strong>${escapeHtml(isAll ? `当前加载 ${formatInt(totalLoaded)} 题` : longMemQuestionScopeLabel())}</strong>
+      <p>${escapeHtml(
+        isAll
+          ? `范围：全部样本 · offset ${offset}${query ? ` · 搜索 ${query}` : ""}${hasNext ? ` · 下一页 ${state.longMemQuestionNextOffset}` : " · 已到最后一页"}`
+          : "范围：单个样本，当前会显示该样本下全部题目。"
+      )}</p>
+    </div>
+    <div class="panel-actions">
+      <button class="secondary" type="button" id="longMemReloadPreview">${escapeHtml(isAll ? "重新加载前 100 题" : "重新加载题目")}</button>
+      ${isAll && hasNext ? `<button class="secondary" type="button" id="longMemLoadNextPage" data-next-offset="${escapeHtml(state.longMemQuestionNextOffset)}">加载下一页</button>` : ""}
+    </div>
+  `;
+  $("longMemReloadPreview")?.addEventListener("click", () => loadLongMemQuestionPreview({offset: 0}).catch((e) => toast(e.message)));
+  $("longMemLoadNextPage")?.addEventListener("click", (event) => {
+    const next = Number(event.currentTarget?.dataset?.nextOffset || 0);
+    loadLongMemQuestionPreview({offset: next}).catch((e) => toast(e.message));
+  });
+}
+
 function datasetRecordForPath(path = "", format = "") {
   const normalized = normalizeDatasetFormat(format);
   return (state.datasetRegistry || []).find((item) => datasetPathMatches(item.path, path) || datasetPathMatches(item.resolved_path, path))
     || (normalized ? (state.datasetRegistry || []).find((item) => normalizeDatasetFormat(item.format) === normalized && (datasetPathMatches(item.path, path) || datasetPathMatches(item.resolved_path, path))) : null)
     || {};
+}
+
+function currentLongMemDatasetPath() {
+  return String($("longMemData")?.value || "").trim();
+}
+
+function resolveLongMemDataset(path = "") {
+  const resolvedPath = String(path || currentLongMemDatasetPath()).trim();
+  const registryRecord = resolvedPath ? datasetRecordForPath(resolvedPath, "longmemeval") : {};
+  const validatedRecord = state.longMemDataset || null;
+  const sameValidatedDataset = Boolean(
+    validatedRecord
+      && resolvedPath
+      && (
+        datasetPathMatches(validatedRecord.path, resolvedPath)
+        || datasetPathMatches(validatedRecord.resolved_path, resolvedPath)
+      )
+  );
+  if (sameValidatedDataset) {
+    return {
+      ...registryRecord,
+      ...validatedRecord,
+      path: validatedRecord.path || registryRecord.path || resolvedPath,
+      resolved_path: validatedRecord.resolved_path || registryRecord.resolved_path || resolvedPath,
+    };
+  }
+  return {
+    ...registryRecord,
+    path: registryRecord.path || resolvedPath,
+    resolved_path: registryRecord.resolved_path || resolvedPath,
+  };
+}
+
+function syncLongMemDatasetState(path = "", options = {}) {
+  const resolvedPath = String(path || currentLongMemDatasetPath()).trim();
+  const input = $("longMemData");
+  if (input && resolvedPath && input.value.trim() !== resolvedPath) {
+    input.value = resolvedPath;
+  }
+  const record = resolveLongMemDataset(resolvedPath);
+  if (!options.skipRemember && resolvedPath) {
+    rememberActiveDatasetView("longMemEvalView", "longmemeval", resolvedPath);
+  }
+  if (!options.skipMode) {
+    setLongMemDatasetMode(rowsMatchLongMemDataset(resolvedPath) ? "preset" : "custom");
+  }
+  if (!options.skipEntryStatus) {
+    renderLongMemEntryStatus(resolvedPath, record);
+  } else if (!options.skipStatusBand) {
+    renderLongMemStatusBand();
+  }
+  return record;
+}
+
+function isResolvedLongMemDatasetValidated(dataset = null, path = "") {
+  if (!dataset) return false;
+  const resolvedPath = String(path || currentLongMemDatasetPath()).trim();
+  const validatedPath = String(state.longMemDataset?.path || state.longMemDataset?.resolved_path || "").trim();
+  if (!resolvedPath || !validatedPath) return false;
+  return datasetPathMatches(validatedPath, resolvedPath);
 }
 
 function datasetSizeLabel(record = {}) {
@@ -5606,16 +7382,20 @@ function renderGenericGateNotice(key, gate, data = null) {
   const config = benchmarkConfig(key);
   const target = $(config.result);
   if (!target || gate.ok) return;
+  const hotpotScoped = normalizeDatasetFormat(config.adapterFormat || key) === "hotpotqa";
+  const noteClass = hotpotScoped ? "hqa-note" : "dataset-next-step";
+  const badNoteClass = hotpotScoped ? "hqa-note is-bad" : "dataset-next-step bad-text";
+  const actionsClass = hotpotScoped ? "hqa-action-row" : "panel-actions";
   target.innerHTML = `
-    <p class="dataset-next-step bad-text"><strong>当前不能作为正式分数：</strong>${escapeHtml(gate.reason)}</p>
-    <p class="dataset-next-step">这页会固定停留在 ${escapeHtml(config.label)}；仍可启动小样本核验，完整数据路径会走正式 MemoryBench 记忆问答链路。</p>
-    <div class="panel-actions">
+    <p class="${badNoteClass}"><strong>当前不能作为正式分数：</strong>${escapeHtml(gate.reason)}</p>
+    <p class="${noteClass}">这页会固定停留在 ${escapeHtml(config.label)}；仍可启动小样本核验，完整数据路径会走正式 MemoryBench 记忆问答链路。</p>
+    <div class="${actionsClass}">
       ${benchmarkPlanLinkHtml()}
-      <button class="secondary" type="button" data-view-jump="runsView">查看任务/报告</button>
+      <button class="secondary" type="button" data-view-jump="${hotpotScoped ? "hotpotQaView" : "runsView"}"${hotpotScoped ? ' data-hotpot-section="hotpotQaResultSection" data-hotpot-stage="report"' : ""}>查看任务/报告</button>
     </div>
   `;
   target.querySelectorAll("[data-view-jump]").forEach((button) => {
-    button.addEventListener("click", () => showView(button.dataset.viewJump));
+    button.addEventListener("click", () => handleContextualViewJump(button));
   });
 }
 
@@ -5677,16 +7457,43 @@ function benchmarkQuestionElements(key) {
   return {
     picker: $(`${config.adapterFormat}QuestionPicker`) || $(`${key}QuestionPicker`) || $(config.preview),
     search: $(`${config.adapterFormat}QuestionSearch`) || $(`${key}QuestionSearch`),
+    range: $(`${config.adapterFormat}Range`) || $(`${key}Range`) || $("hotpotQaRange"),
     selectedText: $(`${config.adapterFormat}SelectedText`) || $(`${key}SelectedText`),
   };
 }
 
+function questionRowKey(row = {}) {
+  const questionId = String(row.question_id || "").trim();
+  if (questionId) return `qid:${questionId}`;
+  const sampleId = String(row.sample_id || row.sample_index || "").trim();
+  const question = String(row.question || "").trim();
+  const answer = String(row.answer || "").trim();
+  return `fallback:${sampleId}::${question}::${answer}`;
+}
+
+function dedupeQuestionRows(rows = []) {
+  const seen = new Set();
+  const uniqueRows = [];
+  let duplicates = 0;
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const key = questionRowKey(row);
+    if (seen.has(key)) {
+      duplicates += 1;
+      continue;
+    }
+    seen.add(key);
+    uniqueRows.push(row);
+  }
+  return {rows: uniqueRows, duplicates};
+}
+
 function filteredBenchmarkQuestions(key) {
   const {questions} = benchmarkQuestionState(key);
-  const {search} = benchmarkQuestionElements(key);
+  const {search, range} = benchmarkQuestionElements(key);
   const query = String(search?.value || "").trim().toLowerCase();
-  if (!query) return questions;
-  return questions.filter((q) => {
+  const category = String(range?.value || "").trim();
+  const filtered = questions.filter((q) => {
+    if (category && category !== "all" && String(q.category || "").trim() !== category.replace(/^C/i, "")) return false;
     const haystack = [
       q.question_id,
       q.sample_id,
@@ -5695,32 +7502,65 @@ function filteredBenchmarkQuestions(key) {
       q.category,
       q.question_time,
     ].join(" ").toLowerCase();
-    return haystack.includes(query);
+    return !query || haystack.includes(query);
   });
+  const deduped = dedupeQuestionRows(filtered);
+  state.benchmarkQuestionDuplicateCounts[key] = deduped.duplicates;
+  return deduped.rows;
 }
 
 function renderBenchmarkQuestionSelection(key) {
+  if (key === "hotpotqa") {
+    renderHotpotQaQuestionSelection();
+    return;
+  }
   const config = benchmarkConfig(key);
   const {selected} = benchmarkQuestionState(key);
   const {picker, selectedText} = benchmarkQuestionElements(key);
   if (!picker) return;
   const rows = filteredBenchmarkQuestions(key);
-  const visibleRows = rows.slice(0, 100);
+  const visibleRows = rows.slice(0, 120);
+  const toggleId = `toggleBenchmarkVisibleQuestions-${key}`;
+  const duplicateCount = Number(state.benchmarkQuestionDuplicateCounts[key] || 0);
   const hiddenHint = rows.length > visibleRows.length
-    ? `<p class="dataset-next-step">仅显示前 100 题；用搜索缩小范围。</p>`
+    ? `<p class="dataset-next-step">仅显示前 120 题；用搜索缩小范围。</p>`
     : "";
-  picker.innerHTML = hiddenHint + visibleRows.map((q) => `
-    <label class="question-row">
-      <input type="checkbox" data-benchmark="${escapeHtml(key)}" data-question-id="${escapeHtml(q.question_id || "")}" ${selected.has(q.question_id) ? "checked" : ""}>
-      <span>
-        <strong>${escapeHtml(q.question || "(未识别 question 字段)")}</strong>
-        <small>${escapeHtml(q.sample_id || "-")} · ${escapeHtml(q.question_id || "-")} · ${escapeHtml(q.category || "-")}</small>
-        <em>标准答案：${escapeHtml(q.answer || "-")}</em>
-      </span>
-    </label>
-  `).join("") || `<p>没有加载到可选题目。先校验 ${escapeHtml(config.label)} 数据集，再点“题目预览”。</p>`;
+  const duplicateHint = duplicateCount
+    ? `<p class="dataset-next-step">已按 question_id 折叠 ${escapeHtml(formatInt(duplicateCount))} 条重复题目。</p>`
+    : "";
+  picker.innerHTML = hiddenHint + duplicateHint + (visibleRows.length ? `
+    <div class="question-table-shell benchmark-question-shell">
+      <table class="question-table benchmark-question-table hqa-question-table">
+        <thead>
+          <tr>
+            <th class="question-check-col">
+              <input type="checkbox" id="${escapeHtml(toggleId)}" aria-label="批量勾选当前可见题目" ${visibleRows.every((q) => selected.has(q.question_id)) ? "checked" : ""}>
+            </th>
+            <th>Question</th>
+            <th>Conv ID</th>
+            <th>Question ID</th>
+            <th>Category</th>
+            <th>Ground Truth</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${visibleRows.map((q) => `
+            <tr class="question-table-row ${selected.has(q.question_id) ? "selected" : ""}">
+              <td class="question-check-col"><input type="checkbox" data-question-id="${escapeHtml(q.question_id || "")}" ${selected.has(q.question_id) ? "checked" : ""}></td>
+              <td class="question-cell question-main-cell"><strong>${escapeHtml(q.question || "(未识别 question 字段)")}</strong></td>
+              <td class="question-cell question-mono-cell">${escapeHtml(q.sample_id || "-")}</td>
+              <td class="question-cell question-mono-cell">${escapeHtml(q.question_id || "-")}</td>
+              <td class="question-cell question-tag-cell">${locomoCategoryBadge(q.category)}</td>
+              <td class="question-cell question-answer-cell">${escapeHtml(q.answer || "-")}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  ` : `<p>没有加载到可选题目。先校验 ${escapeHtml(config.label)} 数据集，再点“加载题目”。</p>`);
   picker.querySelectorAll("input[type='checkbox']").forEach((box) => {
     box.addEventListener("change", () => {
+      if (box.id === toggleId) return;
       const questionId = box.dataset.questionId || "";
       if (!questionId) return;
       if (box.checked) selected.add(questionId);
@@ -5728,6 +7568,17 @@ function renderBenchmarkQuestionSelection(key) {
       renderBenchmarkSelectionSummary(key);
     });
   });
+  const toggleBenchmarkVisibleQuestions = $(toggleId);
+  if (toggleBenchmarkVisibleQuestions) {
+    toggleBenchmarkVisibleQuestions.indeterminate = visibleRows.some((q) => selected.has(q.question_id)) && !visibleRows.every((q) => selected.has(q.question_id));
+    toggleBenchmarkVisibleQuestions.addEventListener("change", () => {
+      visibleRows.forEach((row) => {
+        if (toggleBenchmarkVisibleQuestions.checked) selected.add(row.question_id);
+        else selected.delete(row.question_id);
+      });
+      renderBenchmarkQuestionSelection(key);
+    });
+  }
   renderBenchmarkSelectionSummary(key);
 }
 
@@ -5744,7 +7595,7 @@ function renderBenchmarkSelectionSummary(key) {
 
 function selectVisibleBenchmarkQuestions(key) {
   const {selected} = benchmarkQuestionState(key);
-  filteredBenchmarkQuestions(key).slice(0, 100).forEach((q) => {
+  filteredBenchmarkQuestions(key).slice(0, 120).forEach((q) => {
     if (q.question_id) selected.add(q.question_id);
   });
   renderBenchmarkQuestionSelection(key);
@@ -5797,7 +7648,6 @@ function datasetCategoryLabel(format, category) {
   if (normalizedFormat === "locomo") {
     return LOCOMO_CATEGORY_LABELS[key] || `LoCoMo C${key || "-"}`;
   }
-  if (normalizedFormat === "chenmo") return key || "未分类";
   return key ? `类别 ${key}` : "未分类";
 }
 
@@ -5807,7 +7657,6 @@ function datasetCategoryHint(format, category) {
   if (normalizedFormat === "locomo") {
     return LOCOMO_CATEGORY_HINTS[key] || "该题型来自数据集原始 category 字段。";
   }
-  if (normalizedFormat === "chenmo") return "ChenMo 推理问题章节，用于查看不同推理能力上的通过情况。";
   return "该分类来自数据集原始字段。";
 }
 
@@ -5822,6 +7671,18 @@ function locomoCategoryBadge(category) {
   const label = locomoCategoryLabel(key);
   const hint = datasetCategoryHint("locomo", key);
   return `<span class="category-badge category-${escapeHtml(key || "unknown")}" title="${escapeHtml(hint)}">${escapeHtml(label)}</span>`;
+}
+
+function genericCategoryBadge(format, category) {
+  const key = String(category || "").trim();
+  const normalizedFormat = String(format || "").toLowerCase();
+  const label = datasetCategoryLabel(normalizedFormat, key);
+  const hint = datasetCategoryHint(normalizedFormat, key);
+  const formatLabel = datasetTypeLabel(normalizedFormat) || normalizedFormat || "Dataset";
+  const badgeLabel = normalizedFormat === "longmemeval"
+    ? (key ? label : "未分类")
+    : (key ? `${formatLabel} ${label}` : label);
+  return `<span class="category-badge category-generic" title="${escapeHtml(hint)}">${escapeHtml(badgeLabel)}</span>`;
 }
 
 function locomoOverviewMetric(label, value, tone = "") {
@@ -5893,26 +7754,34 @@ function flowStatusClass(status = "") {
 
 function locomoFlowMainView(view = "") {
   const value = String(view || "");
-  if (value === "datasetView" || value === "workbenchView") return "openvikingView";
+  if (value === "workbenchView") return "openvikingView";
+  if (value === "datasetView") return "openvikingView";
   if (value === "memoryView") return "runsView";
   return value;
 }
 
 const LOCOMO_FLOW_CARDS = [
-  {key: "openvikingView", view: "openvikingView", title: "记忆导入", detail: "读取数据、导入 conv、检查完整性"},
-  {key: "evalView", view: "evalView", title: "问答测试", detail: "选择问答、查看相关记忆"},
-  {key: "judgeView", view: "judgeView", title: "判分", detail: "检查结果文件并判分当前结果"},
-  {key: "runsView", view: "runsView", title: "查看报告", detail: "查看结果、原始报告与对比摘要"},
+  {key: "openvikingView", view: "openvikingView", title: "记忆导入", detail: "选择会话并写入记忆"},
+  {key: "evalView", view: "evalView", title: "问答测试", detail: "运行 QA 与查看证据"},
+  {key: "judgeView", view: "judgeView", title: "判分", detail: "Judge 与失败补跑"},
+  {key: "runsView", view: "runsView", title: "报告与对比", detail: "报告生成与结果对比"},
 ];
 
 function benchmarkFlowContext(viewId = "") {
   const activeView = String(viewId || document.body?.dataset?.activeView || "");
+  if (activeView === "runsView" || activeView === "judgeView" || activeView === "openvikingView" || activeView === "evalView") {
+    return null;
+  }
   const directFormat = datasetFormatForView(activeView);
   if (directFormat && directFormat !== "locomo") {
     return {view: activeView, format: directFormat, label: datasetTypeLabel(directFormat)};
   }
-  const activeFormat = normalizeDatasetFormat(state.activeDatasetFormat || "");
-  const activeBenchmarkView = state.activeBenchmarkView || viewForDatasetFormat(activeFormat, "");
+  const savedBenchmark = readLastBenchmarkDataset();
+  const savedFormat = normalizeDatasetFormat(savedBenchmark.format || "");
+  const activeFormat = normalizeDatasetFormat(state.activeDatasetFormat || savedFormat || "");
+  const activeBenchmarkView = state.activeBenchmarkView
+    || String(savedBenchmark.view || "").trim()
+    || viewForDatasetFormat(activeFormat, "");
   if (activeView === "runsView" && activeFormat && activeFormat !== "locomo" && activeBenchmarkView) {
     return {view: activeBenchmarkView, format: activeFormat, label: datasetTypeLabel(activeFormat)};
   }
@@ -5938,13 +7807,40 @@ function benchmarkFlowCards(context = {}) {
     {key: "import", view: targetView, title: importTitle, detail: importDetail},
     {key: "qa", view: targetView, title: "问答测试", detail: "加载题目、勾选样本、启动真实模型链路"},
     {key: "judge", view: targetView, title: "判分", detail: "自动判分 / 官方指标摘要随任务生成"},
-    {key: "report", view: "runsView", title: "查看报告", detail: "进入结果中心查看任务、摘要、原始报告和对比"},
+    {key: "report", view: normalizedFormat === "hotpotqa" ? "hotpotQaView" : "runsView", title: "查看报告", detail: "进入结果中心查看任务、摘要、原始报告和对比"},
   ];
 }
 
 function normalizeBenchmarkFlowStage(stage = "") {
   const value = String(stage || "").trim();
   return ["import", "qa", "judge", "report"].includes(value) ? value : "";
+}
+
+function normalizeLongMemStage(stage = "") {
+  const value = String(stage || "").trim();
+  return ["data", "memory", "qa", "report"].includes(value) ? value : "";
+}
+
+function longMemStageFromBenchmarkStage(stage = "") {
+  const value = normalizeBenchmarkFlowStage(stage);
+  if (value === "qa") return "qa";
+  if (value === "judge" || value === "report") return "report";
+  if (value === "import") return "data";
+  return "";
+}
+
+function setLongMemStage(stage = "") {
+  const panel = $("longMemEvalView");
+  if (!panel) return "";
+  const normalized = normalizeLongMemStage(stage) || state.longMemStage || "data";
+  state.longMemStage = normalized;
+  panel.dataset.activeLongmemStage = normalized;
+  panel.querySelectorAll(".longmem-step").forEach((button) => {
+    const active = normalizeLongMemStage(button.dataset.stageGroup || "") === normalized;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-current", active ? "step" : "false");
+  });
+  return normalized;
 }
 
 function defaultBenchmarkFlowStage(viewId = "") {
@@ -5954,30 +7850,201 @@ function defaultBenchmarkFlowStage(viewId = "") {
   return viewId === "runsView" ? "report" : "import";
 }
 
+function resolveStandaloneHotpotFallback(viewId = "", options = {}) {
+  const targetView = String(viewId || "").trim();
+  if (!targetView) return {viewId: targetView, options};
+  if (options.fromSidebar) return {viewId: targetView, options};
+  if (!isHotpotQaNavigationContext()) return {viewId: targetView, options};
+  if (!["openvikingView", "evalView", "judgeView", "runsView"].includes(targetView)) {
+    return {viewId: targetView, options};
+  }
+  const nextOptions = {...options};
+  const nextStage = normalizeBenchmarkFlowStage(nextOptions.benchmarkStage || nextOptions.flowStage || "")
+    || (targetView === "openvikingView"
+      ? "import"
+      : targetView === "evalView"
+      ? "qa"
+      : "report");
+  if (!nextOptions.benchmarkStage) nextOptions.benchmarkStage = nextStage;
+  if (!nextOptions.flowStage) nextOptions.flowStage = nextStage;
+  if (!nextOptions.hotpotQaSection) nextOptions.hotpotQaSection = hotpotQaStageSectionId(nextStage);
+  return {viewId: "hotpotQaView", options: nextOptions};
+}
+
+function hotpotQaStageSectionId(stage = "") {
+  const normalized = normalizeBenchmarkFlowStage(stage) || "import";
+  if (normalized === "qa") return "hotpotQaQaSection";
+  if (normalized === "judge" || normalized === "report") return "hotpotQaResultSection";
+  return "hotpotQaConfigSection";
+}
+
+function scrollHotpotQaSectionIntoView(section, options = {}) {
+  if (!section) return;
+  const behavior = options.behavior === "auto" ? "auto" : "smooth";
+  const scrollRoot = document.querySelector(".app-content");
+  if (scrollRoot && typeof scrollRoot.scrollTo === "function") {
+    const rootRect = scrollRoot.getBoundingClientRect();
+    const sectionRect = section.getBoundingClientRect();
+    const targetTop = Math.max(0, scrollRoot.scrollTop + sectionRect.top - rootRect.top - 18);
+    scrollRoot.scrollTo({top: targetTop, behavior});
+    return;
+  }
+  section.scrollIntoView({behavior, block: "start", inline: "nearest"});
+}
+
+function focusHotpotQaStage(stage = "", options = {}) {
+  const section = $(hotpotQaStageSectionId(stage));
+  if (!section) return;
+  window.clearTimeout(state.hotpotQaStageFocusTimer || 0);
+  document.querySelectorAll("#hotpotQaView .hqa-stage-focus").forEach((node) => {
+    node.classList.remove("hqa-stage-focus");
+  });
+  scrollHotpotQaSectionIntoView(section, options);
+  section.classList.add("hqa-stage-focus");
+  state.hotpotQaStageFocusTimer = window.setTimeout(() => {
+    section.classList.remove("hqa-stage-focus");
+    state.hotpotQaStageFocusTimer = null;
+  }, 1600);
+}
+
+function focusHotpotQaSection(sectionId = "", options = {}) {
+  const section = $(sectionId);
+  if (!section) return;
+  window.clearTimeout(state.hotpotQaStageFocusTimer || 0);
+  document.querySelectorAll("#hotpotQaView .hqa-stage-focus").forEach((node) => {
+    node.classList.remove("hqa-stage-focus");
+  });
+  scrollHotpotQaSectionIntoView(section, options);
+  section.classList.add("hqa-stage-focus");
+  state.hotpotQaStageFocusTimer = window.setTimeout(() => {
+    section.classList.remove("hqa-stage-focus");
+    state.hotpotQaStageFocusTimer = null;
+  }, 1600);
+}
+
+function syncHotpotQaStageFromContext(task = null, record = null, options = {}) {
+  if (activeViewId() !== "hotpotQaView") return;
+  const panel = $("hotpotQaView");
+  if (!panel) return;
+  const currentStage = normalizeBenchmarkFlowStage(
+    state.activeBenchmarkFlowStage
+    || panel.dataset.activeBenchmarkStage
+    || ""
+  ) || "import";
+  if (!options.force && currentStage !== "import") return;
+  const preferredStage = normalizeBenchmarkFlowStage(options.preferredStage || "");
+  const preferredSection = String(options.sectionId || "").trim();
+  const activeTask = task && isTaskActive(task) ? task : null;
+  const effectiveRecord = record || state.hotpotQaActiveRecord || {};
+  const hasRows = Number(state.hotpotQaQuestionRunsRows?.length || state.hotpotQaQuestionRunsReportedRows || 0) > 0;
+  const hasResultArtifacts = Boolean(String(effectiveRecord?.output_file || effectiveRecord?.run_dir || "").trim());
+  const canPromoteToReport = !activeTask
+    && preferredStage === "report"
+    && hasResultArtifacts
+    && currentStage !== "report";
+  const nextStage = preferredStage
+    || (activeTask ? "qa" : ((hasRows || hasResultArtifacts) ? "report" : ""));
+  const manualStage = normalizeBenchmarkFlowStage(state.hotpotQaManualStage || "");
+  if (!options.force && manualStage && currentStage === manualStage && nextStage && nextStage !== manualStage) {
+    return;
+  }
+  if (!nextStage || (nextStage === currentStage && !canPromoteToReport)) return;
+  if (!options.force && currentStage !== "import" && !canPromoteToReport) return;
+  state.activeBenchmarkView = "hotpotQaView";
+  state.activeBenchmarkFlowStage = nextStage;
+  applyBenchmarkFlowStage("hotpotQaView", nextStage);
+  syncViewUrl("hotpotQaView", {
+    benchmarkStage: nextStage,
+    hotpotQaSection: preferredSection || hotpotQaStageSectionId(nextStage),
+  });
+}
+
+function isHotpotQaNavigationContext(button = null) {
+  const activeView = activeViewId();
+  const activePanel = document.querySelector(".view-panel.active")?.id || "";
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlView = retiredViewFallback(urlParams.get("view") || "") || String(urlParams.get("view") || "").trim();
+  if (activeView === "hotpotQaView") return true;
+  if (activePanel === "hotpotQaView") return true;
+  if (urlView === "hotpotQaView") return true;
+  if (button?.dataset?.hotpotSection || button?.dataset?.hotpotStage) return true;
+  if (button?.closest?.("#hotpotQaView")) return true;
+  const benchmarkContext = benchmarkFlowContext(activeView);
+  if (normalizeDatasetFormat(benchmarkContext?.format || "") === "hotpotqa") return true;
+  const selectedRunFormat = runDatasetFormat(state.selectedRunRecord || {});
+  if (activeView === "runsView" && normalizeDatasetFormat(selectedRunFormat) === "hotpotqa") return true;
+  return false;
+}
+
+function resolveHotpotQaViewJump(button, options = {}) {
+  const targetView = String(button?.dataset?.viewJump || "").trim();
+  const nextOptions = {...options};
+  const taggedHotpotStage = normalizeBenchmarkFlowStage(button?.dataset?.hotpotStage || "");
+  const taggedHotpotSection = String(button?.dataset?.hotpotSection || "").trim();
+  if (taggedHotpotStage && !nextOptions.benchmarkStage) nextOptions.benchmarkStage = taggedHotpotStage;
+  if (taggedHotpotSection && !nextOptions.hotpotQaSection) nextOptions.hotpotQaSection = taggedHotpotSection;
+  const fromHotpotQaView = isHotpotQaNavigationContext(button);
+  if (fromHotpotQaView && ["openvikingView", "evalView", "judgeView", "runsView"].includes(targetView)) {
+    const hint = [
+      targetView,
+      taggedHotpotSection,
+      taggedHotpotStage,
+      button?.id,
+      button?.className,
+      button?.textContent,
+      button?.getAttribute?.("aria-label"),
+      button?.getAttribute?.("title"),
+    ].map((value) => String(value || "").trim().toLowerCase()).join(" ");
+    const importJump = targetView === "openvikingView" || /写入准备|文档写入|记忆导入|启动前检查|dataset/.test(hint);
+    const currentTaskJump = /运行状态|查看任务/.test(hint);
+    const qaJump = targetView === "evalView" || /问答测试|运行 qa|运行问答|去问答测试|进入问答测试/.test(hint);
+    const judgeJump = targetView === "judgeView" || /判分|judge/.test(hint);
+    nextOptions.benchmarkStage = nextOptions.benchmarkStage || (
+      importJump ? "import" : (qaJump || currentTaskJump ? "qa" : (judgeJump ? "judge" : "report"))
+    );
+    nextOptions.hotpotQaSection = nextOptions.hotpotQaSection || (
+      importJump
+        ? "hotpotQaConfigSection"
+        : currentTaskJump
+        ? "hotpotQaCurrentSection"
+        : (qaJump ? "hotpotQaQaSection" : "hotpotQaResultSection")
+    );
+    return {viewId: "hotpotQaView", options: nextOptions};
+  }
+  return {viewId: targetView, options: nextOptions};
+}
+
+function handleContextualViewJump(button, options = {}) {
+  const resolved = resolveHotpotQaViewJump(button, options);
+  showView(resolved.viewId, resolved.options);
+}
+
 function applyBenchmarkFlowStage(viewId = "", stage = "") {
   const panel = $(viewId);
   if (!panel) return;
   const normalized = normalizeBenchmarkFlowStage(stage) || defaultBenchmarkFlowStage(viewId);
   panel.dataset.activeBenchmarkStage = normalized;
-  panel.querySelectorAll(".benchmark-stage-tab").forEach((button) => {
+  const stageSelector = viewId === "hotpotQaView" ? ".hqa-step[data-hotpot-stage]" : ".benchmark-stage-tab";
+  panel.querySelectorAll(stageSelector).forEach((button) => {
     const active = String(button.dataset.flowKey || "") === normalized;
     button.classList.toggle("active", active);
+    button.classList.toggle("is-active", active);
     button.classList.toggle("is-selected", active);
     button.setAttribute("aria-current", active ? "step" : "false");
   });
 }
 
 function renderFlowNavCards(nav, cards = [], activeKey = "") {
-  const buttons = [...nav.querySelectorAll(".flow-card")];
+  const buttons = [...nav.querySelectorAll(".locomo-flow-tab, .flow-card")];
   buttons.forEach((button, index) => {
     const card = cards[index];
     if (!card) {
       button.hidden = true;
       return;
     }
-    const number = button.querySelector("span");
-    const title = button.querySelector("strong");
-    const detail = button.querySelector("small");
+    const number = button.querySelector(".locomo-step-index, .flow-card-badge, .step-index");
+    const title = button.querySelector(".step-title, strong, b");
+    const detail = button.querySelector(".step-detail, small, em");
     if (number) number.textContent = String(index + 1);
     if (title) title.textContent = card.title || "";
     if (detail) detail.textContent = card.detail || "";
@@ -5989,6 +8056,7 @@ function renderFlowNavCards(nav, cards = [], activeKey = "") {
     button.classList.remove("flow-ok", "flow-warn", "flow-bad", "flow-todo", "flow-muted", "flow-running");
     const isActive = (card.key || card.view || "") === activeKey || (card.view || "") === activeKey;
     button.classList.toggle("active", isActive);
+    button.classList.toggle("is-active", isActive);
     button.classList.toggle("is-selected", isActive);
     button.setAttribute("aria-current", isActive ? "step" : "false");
     button.title = isActive ? `当前步骤：${card.title || ""}` : `进入${card.title || ""}`;
@@ -5996,14 +8064,15 @@ function renderFlowNavCards(nav, cards = [], activeKey = "") {
 }
 
 const LOCOMO_BLOCK_META = {
+  dataset: {title: "数据集", view: "datasetView"},
   import: {title: "记忆导入", view: "openvikingView"},
   qa: {title: "问答测试", view: "evalView"},
   judge: {title: "判分", view: "judgeView"},
-  report: {title: "查看报告", view: "runsView"},
+  report: {title: "报告与对比", view: "runsView"},
 };
 
 const LOCOMO_STAGE_BLOCK = {
-  dataset: "import",
+  dataset: "dataset",
   import: "import",
   integrity: "import",
   qa: "qa",
@@ -6059,9 +8128,20 @@ function aggregateLocomoFlowStages(stages = []) {
   return Object.entries(LOCOMO_BLOCK_META).map(([block, meta]) => {
     const blockStages = grouped[block] || [];
     const primary = firstActionableStage(blockStages);
+    if (block === "dataset") {
+      const source = primary.id ? primary : (blockStages[0] || {});
+      return {
+        ...source,
+        id: "dataset",
+        title: meta.title,
+        view: meta.view,
+        status: source.status || "todo",
+        detail: source.detail || "选择或校验 LoCoMo JSON。",
+        action: source.action || flowActionLabel(source),
+      };
+    }
     if (block === "import") {
       const details = [
-        compactStageDetail("数据集", byId.dataset),
         compactStageDetail("导入", byId.import),
         compactStageDetail("完整性", byId.integrity),
         ...systemWarnings.map((stage) => compactStageDetail(stage.title || stage.id || "系统", stage)),
@@ -6176,7 +8256,7 @@ function syncLocomoFlowNavStatus(stages = []) {
     const cls = flowStatusClass(stage.status);
     if (!byView[view] || (priority[cls] || 0) > (priority[byView[view]] || 0)) byView[view] = cls;
   });
-  nav.querySelectorAll(".flow-card").forEach((button) => {
+  nav.querySelectorAll(".locomo-flow-tab, .flow-card").forEach((button) => {
     button.classList.remove("flow-ok", "flow-warn", "flow-bad", "flow-todo", "flow-muted", "flow-running");
     const cls = byView[button.dataset.viewJump || ""];
     if (cls) button.classList.add(cls);
@@ -6293,35 +8373,6 @@ function renderLocomoFlowStatusPanel(data) {
   return true;
 }
 
-function renderImportStageRail(status = {}) {
-  const rail = $("importStageRail");
-  if (!rail) return;
-  const lastImport = currentWorkspaceScopedLastImport();
-  const imported = currentImportedMemoryStatus();
-  const task = state.currentImportTask || {};
-  const running = isImportTaskInBackground(task);
-  const importDisplay = locomoImportDisplayState(lastImport, imported);
-  const complete = status.complete || importDisplay.currentRunComplete;
-  const historical = importDisplay.historicalSeen;
-  const warned = status.warn || historical || (lastImport.integrity && String(lastImport.integrity).toLowerCase() !== "complete");
-  const activeStage = running ? "commit" : (complete ? "smoke" : ((historical || lastImport.output_file) ? "verify" : "parse"));
-  const doneStages = new Set();
-  if (currentLocomoDataset()) doneStages.add("parse");
-  if (lastImport.workspace || task.id) {
-    ["session", "messages"].forEach((stage) => doneStages.add(stage));
-  }
-  if (lastImport.output_file || task.output_file) doneStages.add("commit");
-  if (complete) {
-    ["parse", "session", "messages", "commit", "verify", "smoke"].forEach((stage) => doneStages.add(stage));
-  }
-  rail.querySelectorAll("[data-stage]").forEach((item) => {
-    const stage = item.dataset.stage || "";
-    item.classList.toggle("done", doneStages.has(stage));
-    item.classList.toggle("active", !complete && activeStage === stage);
-    item.classList.toggle("warn", warned && stage === "verify");
-  });
-}
-
 function locomoTrackToneLabel(tone) {
   if (tone === "ok") return "已就绪";
   if (tone === "active") return "运行中";
@@ -6373,17 +8424,15 @@ function renderLocomoWorkbenchTrack() {
   const judgeReady = outputCsv && summary.accuracy != null;
   const importStatus = importComplete
     ? "已完成"
-    : (importHistorical ? "已有历史导入" : (importRan ? "需确认" : (datasetReady ? "可导入" : "待加载")));
+    : (importRan ? "需确认" : (datasetReady ? "可导入" : "待加载"));
   const importDetail = [
     datasetReady ? `数据集 ${dataset.samples ?? "-"} conv / ${dataset.questions ?? "-"} QA` : "先读取 LoCoMo JSON",
     `${backendLabel} · 账户 ${currentAccount()}`,
     importComplete
       ? "最近一次导入已完成"
-      : (importHistorical
-        ? "当前目录已存在历史导入；重新导入前请先点“自动生成目录”"
-        : (importRan ? "导入已运行，请检查完整性" : "选择 conv 或全量导入")),
+      : (importRan ? "导入已运行，请检查完整性" : "选择 conv 或全量导入"),
   ].join(" · ");
-  const importMetric = (importComplete || importHistorical)
+  const importMetric = importComplete
     ? `摘要 ${imported.complete_count ?? "-"} / ${imported.summary_count ?? "-"} · 记忆文件 ${imported.memory_files ?? "-"}`
     : (lastImport.sample_id || lastImport.sample || (datasetReady ? "选择 conv 或全量" : "LoCoMo JSON"));
   const cards = [
@@ -6463,10 +8512,14 @@ function renderLocomoOverview() {
     panel.hidden = true;
     panel.innerHTML = "";
     renderLocomoWorkbenchTrack();
+    renderWorkspaceStatusStrip();
+    renderImportSidebarPanels();
     return;
   }
   if (state.locomoFlowStatus || state.locomoFlowLoading) {
     renderLocomoFlowStatusPanel(state.locomoFlowStatus);
+    renderWorkspaceStatusStrip();
+    renderImportSidebarPanels();
     return;
   }
   const dataset = currentLocomoDataset();
@@ -6509,10 +8562,9 @@ function renderLocomoOverview() {
       </div>
       <div class="overview-metrics">
         ${locomoOverviewMetric("结果行", summary.rows ?? "-")}
-        ${locomoOverviewMetric("Token 估算", summary.total_injection_tokens_est || summary.answer_total_tokens || "-")}
-        ${locomoOverviewMetric("证据", outputCsv ? "已记录" : "-")}
+        ${locomoOverviewMetric("Token", summary.total_injection_tokens_est || summary.answer_total_tokens || "-")}
       </div>
-      <p>${escapeHtml(outputCsv || "选择问答后运行测试，页面会显示进度、答案和相关记忆。")}</p>
+      <p>${escapeHtml(outputCsv ? "结果已生成" : "选择问答后运行测试。")}</p>
     </article>
     <article class="overview-card ${qaTone}">
       <div class="overview-card-head">
@@ -6539,10 +8591,11 @@ function renderLocomoOverview() {
     </article>
   `;
   panel.querySelectorAll("[data-view-jump]").forEach((button) => {
-    button.addEventListener("click", () => showView(button.dataset.viewJump));
+    button.addEventListener("click", () => handleContextualViewJump(button));
   });
   renderLocomoWorkbenchTrack();
-  renderImportStageRail({complete: importComplete, warn: Boolean(lastImport.output_file && !importComplete)});
+  renderWorkspaceStatusStrip();
+  renderImportSidebarPanels();
 }
 
 async function refreshLocomoFlowStatus(silent = false) {
@@ -6636,13 +8689,30 @@ async function apiWithTimeout(path, options = {}, timeoutMs = 5000) {
   }
 }
 
-function escapeHtml(value) {
-  return String(value ?? "").replace(/[<>&"]/g, (c) => ({
-    "<": "&lt;",
-    ">": "&gt;",
-    "&": "&amp;",
-    '"': "&quot;",
-  }[c]));
+async function fetchTextWithTimeout(path, options = {}, timeoutMs = 5000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(path, {
+      ...options,
+      signal: controller.signal,
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      const error = new Error(`${res.status} ${res.statusText}`);
+      error.status = res.status;
+      error.text = text;
+      throw error;
+    }
+    return text;
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`请求超时 ${Math.round(timeoutMs / 1000)}s`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function filterVisibleTaskLogText(text = "", task = null, logBoxId = "") {
@@ -6681,35 +8751,6 @@ function filterVisibleTaskLogText(text = "", task = null, logBoxId = "") {
   if (!merged.length) return `${folded}\n`;
   const trailingNewline = raw.endsWith("\n") ? "\n" : "";
   return `${folded}\n${merged.join("\n")}${trailingNewline}`;
-}
-
-function summarizeImportTokenUsage(task = null) {
-  const usage = task?.log_diagnostics?.token_usage
-    || task?.summary
-    || task
-    || {};
-  const callSites = usage.call_sites || {};
-  const parts = [];
-  for (const site of ["atom_extraction", "overview_generation", "abstract_generation", "entity_merge"]) {
-    const bucket = callSites[site];
-    if (!bucket) continue;
-    const totalTokens = Number(bucket.total_tokens || 0);
-    const callCount = Number(bucket.call_count || 0);
-    if (!totalTokens && !callCount) continue;
-    parts.push(`${site} ${formatInt(totalTokens)} tokens / ${formatInt(callCount)} calls`);
-  }
-  return parts;
-}
-
-function normalizeVisibleMemoryBackendName(value) {
-  return String(value ?? "")
-    .replace(/EchoMem\s*\/\s*EchoMemory/g, "EchoMemory")
-    .replace(/EchoMem\/EchoMemory/g, "EchoMemory")
-    .replace(/\bEchoMem\b/g, "EchoMemory");
-}
-
-function percent(n) {
-  return n == null || Number.isNaN(n) ? "待判分" : `${Math.round(n * 1000) / 10}%`;
 }
 
 function agentTypeForKind(kind) {
@@ -6768,81 +8809,6 @@ function renderKpis(target, rows) {
     <div class="kpi"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>
   `).join("");
   el.hidden = !visibleRows.length;
-}
-
-function renderDatasetCategories(data, targetId = "datasetCategoryPanel") {
-  const target = $(targetId);
-  if (!target) return;
-  const entries = Object.entries(data.categories || {}).sort((a, b) => {
-    const left = Number(a[0]);
-    const right = Number(b[0]);
-    if (Number.isFinite(left) && Number.isFinite(right)) return left - right;
-    return String(a[0]).localeCompare(String(b[0]), "zh-Hans-CN");
-  });
-  if (!entries.length) {
-    target.innerHTML = "";
-    return;
-  }
-  const total = entries.reduce((sum, [, value]) => sum + Number(value || 0), 0);
-  const isLocomo = String(data.format || "").toLowerCase() === "locomo";
-  target.innerHTML = `
-    <div class="category-panel-head">
-      <strong>${escapeHtml(isLocomo ? "题型分布" : "分类分布")}</strong>
-      <span>${escapeHtml(total ? `${formatInt(total)} 题` : "无题型数据")}</span>
-    </div>
-    <div class="category-card-grid">
-      ${entries.map(([category, count]) => {
-        const value = Number(count || 0);
-        const pct = total ? `${Math.round((value / total) * 1000) / 10}%` : "-";
-        return `
-          <article class="category-card">
-            <span>${isLocomo ? locomoCategoryBadge(category) : escapeHtml(category)}</span>
-            <strong>${escapeHtml(formatInt(value))} 题</strong>
-            <small>${escapeHtml(datasetCategoryLabel(data.format, category))} · 占比 ${escapeHtml(pct)}</small>
-            <p>${escapeHtml(datasetCategoryHint(data.format, category))}</p>
-          </article>
-        `;
-      }).join("")}
-    </div>
-  `;
-}
-
-function formatInt(value) {
-  if (value == null || value === "" || Number.isNaN(Number(value))) return "-";
-  return Number(value).toLocaleString();
-}
-
-function formatDateTimeLocal(value) {
-  const date = value instanceof Date ? value : new Date(value);
-  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "-";
-  try {
-    return date.toLocaleString("zh-Hans-CN", {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-  } catch {
-    return date.toISOString();
-  }
-}
-
-function formatDateTime(value) {
-  const date = value instanceof Date ? value : new Date(value);
-  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "-";
-  try {
-    return date.toLocaleString("zh-Hans-CN", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-  } catch {
-    return date.toISOString();
-  }
 }
 
 function benchmarkRunningSummaryFreshness(task = {}, summary = {}) {
@@ -6907,6 +8873,119 @@ function renderJudgeEstimate(summary = {}) {
   box.hidden = !(pending || estimateTokens || avgTokens);
 }
 
+function judgeStatusTone(label = "") {
+  const normalized = String(label || "").trim().toLowerCase();
+  if (/完成|success|done|complete/.test(normalized)) return "done";
+  if (/运行|处理中|pending|waiting|queue|start|准备|判分中/.test(normalized)) return "running";
+  if (/失败|error|fail|bad|中断|cancel/.test(normalized)) return "bad";
+  return "idle";
+}
+
+function renderJudgeContextStrip(summary = state.lastJudgeSummary || {}, task = null) {
+  const input = currentLocomoResultCsv();
+  const liveTask = task ? taskWithLiveProgress(task) : currentLocomoJudgeTask(input);
+  const rows = Number(summary.rows ?? summary.summary_json?.count ?? 0);
+  const resultFileEl = $("judgeContextResultFile");
+  const rowsEl = $("judgeContextRows");
+  const modelEl = $("judgeContextModel");
+  const statusPillEl = $("judgeContextStatusPill");
+  const statusMetaEl = $("judgeContextStatusMeta");
+  const recentEl = $("judgeContextRecent");
+  if (resultFileEl) {
+    resultFileEl.textContent = input ? basename(input) || input : "等待结果文件";
+    resultFileEl.title = input || "";
+  }
+  if (rowsEl) rowsEl.textContent = rows ? `${formatInt(rows)} rows` : "-";
+  if (modelEl) {
+    const cfg = judgeModelConfig();
+    modelEl.textContent = cfg.model || "未配置";
+    modelEl.title = cfg.baseUrl || "";
+  }
+  const statusLabel = liveTask
+    ? taskStatusLabel(liveTask)
+    : (rows ? (pendingCount(summary) > 0 ? "待判分" : "已完成") : (input ? "结果已选择" : "待开始"));
+  const statusMeta = liveTask?.progress?.elapsed_seconds != null
+    ? `已运行 ${formatDuration(liveTask.progress.elapsed_seconds)}`
+    : (rows ? `${formatInt(rows)} 题结果` : (input ? "等待正式判分" : "先选择 QA 结果"));
+  if (statusPillEl) {
+    const tone = judgeStatusTone(statusLabel);
+    statusPillEl.className = `status-pill judge-status-pill ${tone}`;
+    statusPillEl.textContent = statusLabel;
+  }
+  if (statusMetaEl) statusMetaEl.textContent = statusMeta;
+  if (recentEl) {
+    const recent = liveTask?.started_at || liveTask?.created_at || summary.updated_at || "";
+    recentEl.textContent = recent ? formatDateTimeLocal(recent) : "暂无";
+    recentEl.title = recent || "";
+  }
+}
+
+function updateJudgeStatusStrip(summary = state.lastJudgeSummary || {}, task = null) {
+  const pendingEl = $("judgePendingMetric");
+  const pendingNoteEl = $("judgePendingMetricNote");
+  const completedEl = $("judgeCompletedMetric");
+  const completedNoteEl = $("judgeCompletedMetricNote");
+  const progressEl = $("judgeProgressMetric");
+  const progressFillEl = $("judgeStatusProgressFill");
+  const progressNoteEl = $("judgeProgressMetricNote");
+  const startedEl = $("judgeStartedMetric");
+  const startedNoteEl = $("judgeStartedMetricNote");
+  const runStateEl = $("judgeRunStateMetric");
+  const runStateNoteEl = $("judgeRunStateMetricNote");
+  const accuracyEl = $("judgeAccuracyMetric");
+  const accuracyNoteEl = $("judgeAccuracyMetricNote");
+  if (!pendingEl || !completedEl || !progressEl || !progressFillEl || !runStateEl) return;
+  const liveTask = task ? taskWithLiveProgress(task) : null;
+  const summaryJson = summary.summary_json || {};
+  const rows = Number(summary.rows ?? summaryJson.count ?? 0);
+  const graded = Number(summary.graded ?? summaryJson.graded ?? 0);
+  const pending = rows ? pendingCount(summary) : Math.max(0, Number(summary.result_counts?.UNSCORED || 0));
+  const completed = rows ? Math.max(0, rows - pending) : graded;
+  const progressPct = rows > 0
+    ? Math.max(0, Math.min(100, (completed / Math.max(rows, 1)) * 100))
+    : (liveTask?.progress?.total
+      ? Math.max(0, Math.min(100, (Number(liveTask.progress.current || 0) / Math.max(Number(liveTask.progress.total || 1), 1)) * 100))
+      : 0);
+  const startedRaw = liveTask?.started_at || liveTask?.created_at || "";
+  const startedText = startedRaw ? formatDateTimeLocal(startedRaw) : "-";
+  const hasInput = Boolean(currentLocomoResultCsv());
+  const statusLabel = liveTask
+    ? taskStatusLabel(liveTask)
+    : (rows
+      ? (pending > 0 ? "待判分" : "已完成")
+      : (hasInput ? "结果已选择" : "待选择结果"));
+  pendingEl.textContent = formatInt(pending || 0);
+  if (pendingNoteEl) pendingNoteEl.textContent = rows ? `${formatInt(rows)} 题结果中待正式 judge` : "等待读取结果摘要";
+  completedEl.textContent = formatInt(completed || 0);
+  if (completedNoteEl) completedNoteEl.textContent = rows ? `${formatInt(rows)} 题总计` : "等待读取结果摘要";
+  progressEl.textContent = `${Math.round(progressPct)}%`;
+  progressFillEl.style.width = `${progressPct}%`;
+  if (progressNoteEl) {
+    progressNoteEl.textContent = liveTask?.progress?.eta_seconds != null
+      ? `剩余 ${formatDuration(liveTask.progress.eta_seconds)}`
+      : (rows ? `${formatInt(completed)} / ${formatInt(rows)} 已处理` : "等待判分任务");
+  }
+  if (startedEl) startedEl.textContent = startedText;
+  if (startedNoteEl) startedNoteEl.textContent = liveTask ? (liveTask.name || "判分任务运行中") : "等待任务启动";
+  runStateEl.textContent = statusLabel || "待开始";
+  if (runStateNoteEl) {
+    runStateNoteEl.textContent = liveTask?.progress?.elapsed_seconds != null
+      ? `已运行 ${formatDuration(liveTask.progress.elapsed_seconds)}`
+      : (rows ? (pending > 0 ? "待正式 judge" : "判分完成") : (hasInput ? "等待判分" : "请选择结果文件"));
+  }
+  if (accuracyEl) {
+    accuracyEl.textContent = hasJudgeScore(summary) ? percent(summary.accuracy) : "待判分";
+  }
+  if (accuracyNoteEl) {
+    accuracyNoteEl.textContent = hasJudgeScore(summary)
+      ? (rows ? `${formatInt(rows)} 题综合` : "已判分")
+      : "尚无判分结果";
+  }
+  renderJudgeContextStrip(summary, liveTask);
+  renderJudgeScoreSummary(summary, liveTask);
+  renderJudgeModelSummary(summary);
+}
+
 function hasJudgeScore(summary = {}) {
   return summary?.accuracy !== undefined && summary?.accuracy !== null && summary?.accuracy !== "";
 }
@@ -6929,14 +9008,113 @@ function judgeModelReadiness() {
   };
 }
 
+function judgeOutputDirectory(input = currentLocomoResultCsv()) {
+  const explicitOutputDir = String(state.config?.output_dir || "").trim();
+  if (explicitOutputDir) return explicitOutputDir;
+  if (input) return dirname(input);
+  return "";
+}
+
+function renderJudgeScoreSummary(summary = state.lastJudgeSummary || {}, task = null) {
+  const target = $("judgeScoreSummary");
+  if (!target) return;
+  const summaryJson = summary.summary_json || {};
+  const rows = Number(summary.rows ?? summaryJson.count ?? 0);
+  const graded = Number(summary.graded ?? summaryJson.graded ?? 0);
+  const pending = rows ? pendingCount(summary) : Math.max(0, Number(summary.result_counts?.UNSCORED || 0));
+  const completed = rows ? Math.max(0, rows - pending) : graded;
+  const correct = Number(summary.correct ?? summary.result_counts?.CORRECT ?? summaryJson.correct ?? 0);
+  const wrong = Number(summary.wrong ?? summary.result_counts?.WRONG ?? summaryJson.wrong ?? 0);
+  const updatedAt = String(summary.updated_at || summaryJson.updated_at || task?.updated_at || task?.ended_at || task?.started_at || "").trim();
+  if (!rows && !graded && !correct && !wrong && !updatedAt) {
+    target.innerHTML = `
+      <article class="workbench-idle-note">
+        <strong>等待结果摘要</strong>
+        <p>读取结果文件后，这里会显示 Accuracy、Correct、Wrong、Pending、Total 和更新时间。</p>
+      </article>
+    `;
+    return;
+  }
+  const metrics = [
+    ["Accuracy", hasJudgeScore(summary) ? percent(summary.accuracy) : "待判分"],
+    ["Correct", formatInt(correct || 0)],
+    ["Wrong", formatInt(wrong || 0)],
+    ["Pending", formatInt(pending || 0)],
+    ["Total", formatInt(rows || completed || 0)],
+    ["Last updated", updatedAt ? formatDateTimeLocal(updatedAt) : "等待刷新"],
+  ];
+  target.innerHTML = metrics.map(([label, value]) => `
+    <article class="judge-score-item">
+      <span>${escapeHtml(label)}</span>
+      <strong class="judge-kv-value" title="${escapeHtml(String(value || ""))}">${escapeHtml(String(value || "-"))}</strong>
+    </article>
+  `).join("");
+}
+
+function renderJudgeModelSummary(summary = state.lastJudgeSummary || {}) {
+  const target = $("judgeModelSummary");
+  if (!target) return;
+  const cfg = judgeModelConfig();
+  const input = currentLocomoResultCsv();
+  const outputDir = judgeOutputDirectory(input);
+  const rows = Number(summary.rows ?? summary.summary_json?.count ?? 0);
+  const readiness = [
+    {
+      label: "Judge model",
+      status: cfg.model || "未配置",
+      tone: cfg.model ? "ok" : "warn",
+    },
+    {
+      label: "Model endpoint",
+      status: cfg.baseUrl ? "ready" : "missing",
+      tone: cfg.baseUrl ? "ok" : "warn",
+    },
+    {
+      label: "API key",
+      status: cfg.token ? "filled" : "missing",
+      tone: cfg.token ? "ok" : "warn",
+    },
+    {
+      label: "Result file",
+      status: input ? "valid" : "waiting",
+      tone: input ? "ok" : "warn",
+      title: input || "",
+      valueClass: input ? "path" : "",
+      detail: input ? compactPath(input, 28, 20) : "等待 QA 结果",
+    },
+    {
+      label: "Output directory",
+      status: outputDir ? "writable" : "waiting",
+      tone: outputDir ? "ok" : "warn",
+      title: outputDir || "",
+      valueClass: outputDir ? "path" : "",
+      detail: outputDir ? compactPath(outputDir, 28, 20) : "等待结果目录",
+    },
+  ];
+  target.innerHTML = `
+    ${readiness.map((item) => `
+      <article class="judge-model-row ${escapeHtml(item.tone || "")}">
+        <span class="judge-model-dot" aria-hidden="true"></span>
+        <div class="judge-model-copy">
+          <span>${escapeHtml(item.label)}</span>
+          <strong class="judge-kv-value ${escapeHtml(item.valueClass || "")}" title="${escapeHtml(item.title || item.status || "")}">${escapeHtml(item.status || "-")}</strong>
+          ${item.detail ? `<p class="judge-path" title="${escapeHtml(item.title || "")}">${escapeHtml(item.detail)}</p>` : ""}
+        </div>
+      </article>
+    `).join("")}
+    <p class="judge-model-summary-note">${escapeHtml(rows ? `已读取 ${formatInt(rows)} rows，可继续查看错题与报告。` : "等待读取结果摘要。")}</p>
+  `;
+}
+
 function judgeStatusReadiness(summary = {}) {
   const summaryJson = summary.summary_json || {};
   const rows = Number(summary.rows ?? summaryJson.count ?? 0);
   const graded = Number(summary.graded ?? summaryJson.graded ?? 0);
   if (!rows) {
+    const hasInput = Boolean(currentLocomoResultCsv());
     return {
-      value: "等待更新",
-      detail: "刷新读取 rows / pending。",
+      value: hasInput ? "等待判分" : "待选择结果",
+      detail: hasInput ? "已选择结果文件，刷新或开始判分。" : "先选择结果文件再判分。",
       tone: "warn",
     };
   }
@@ -6996,15 +9174,15 @@ function judgeReportReadiness(summary = {}, input = currentLocomoResultCsv()) {
 
 function renderJudgeReadinessPanel(summary = state.lastJudgeSummary || {}, task = null) {
   const target = $("judgeReadinessPanel");
-  if (!target) return;
   const input = currentLocomoResultCsv();
+  const effectiveTask = judgeTaskMatchesCurrentResult(task, input) ? taskWithLiveProgress(task) : currentLocomoJudgeTask(input);
   const summaryJson = summary.summary_json || {};
   const rows = Number(summary.rows ?? summaryJson.count ?? 0);
   const pending = rows ? pendingCount(summary) : 0;
   const avgTokens = Number(summary.avg_injection_tokens_est || summaryJson.avg_injection_tokens_est || 0);
   const tokenEstimate = pending && avgTokens ? Math.round(pending * avgTokens) : 0;
   const validation = state.lastJudgeValidation || {};
-  const judgeRunning = (task?.kind || state.taskKind) === "judge" && (task?.status || "") === "running";
+  const judgeRunning = Boolean(effectiveTask && isTaskActive(effectiveTask));
   const resultTone = input ? "ok" : "warn";
   const status = judgeRunning
     ? {value: "判分运行中", detail: "任务完成后会自动刷新结果摘要。", tone: "active"}
@@ -7029,16 +9207,18 @@ function renderJudgeReadinessPanel(summary = state.lastJudgeSummary || {}, task 
   const preflightText = validation.ok === true
     ? "预检通过"
     : (validation.ok === false ? "预检未通过，查看下方检查项" : "可点“检查”验证文件和判分配置");
-  target.innerHTML = `
-    ${cards.map((card) => `
-      <article class="${escapeHtml(card.tone || "")}">
-        <span>${escapeHtml(card.label)}</span>
-        <strong>${escapeHtml(card.value || "-")}</strong>
-        <p>${escapeHtml(card.detail || "")}</p>
-      </article>
-    `).join("")}
-    <p class="judge-readiness-note">${escapeHtml(preflightText)}；报告在“查看报告”页查看。</p>
-  `;
+  if (target) {
+    target.innerHTML = `
+      ${cards.map((card) => `
+        <article class="judge-readiness-item ${escapeHtml(card.tone || "")}">
+          <span>${escapeHtml(card.label)}</span>
+          <strong class="judge-kv-value" title="${escapeHtml(card.detail || card.value || "")}">${escapeHtml(card.value || "-")}</strong>
+          <p title="${escapeHtml(card.detail || "")}">${escapeHtml(card.detail || "")}</p>
+        </article>
+      `).join("")}
+    `;
+  }
+  updateJudgeStatusStrip(summary, effectiveTask);
   const emptyState = $("judgeEmptyState");
   if (emptyState) {
     const hasHistory = Boolean($("judgeHistoryList")?.querySelector("[data-output-file]"));
@@ -7097,6 +9277,7 @@ function renderJudgeIdleCards({input = currentLocomoResultCsv(), hasSummaryRows 
     artifactList.hidden = false;
     artifactList.innerHTML = `
       <article class="workbench-idle-note">
+        <span class="workbench-idle-icon">${renderUiIcon("file-spreadsheet", 20)}</span>
         <strong>${input ? "结果路径待刷新" : "还没有结果路径"}</strong>
         <p>${input ? "点击右上角“刷新判分结果”后，这里会展示结果文件、目录和判分摘要。" : "运行 QA 或从历史结果切换后，这里会展示结果文件和相关产物路径。"}</p>
       </article>
@@ -7107,8 +9288,9 @@ function renderJudgeIdleCards({input = currentLocomoResultCsv(), hasSummaryRows 
   if (historyList && !historyList.querySelector("[data-output-file]")) {
     historyList.innerHTML = `
       <article class="workbench-idle-note">
-        <strong>最近 LoCoMo 结果还没加载出来</strong>
-        <p>这里会列出可直接切换的历史结果；如果刚跑完 QA，点右上角刷新即可补进来。</p>
+        <span class="workbench-idle-icon">${renderUiIcon("history", 20)}</span>
+        <strong>${input ? "正在同步 LoCoMo 历史结果" : "等待 LoCoMo 历史结果"}</strong>
+        <p>${input ? "正在读取最近可切换的 LoCoMo QA 结果，请稍候。" : "运行 QA 或切换历史结果后，这里会列出可直接切换的 LoCoMo 结果。"}</p>
       </article>
     `;
   }
@@ -7118,16 +9300,24 @@ function renderJudgeIdleCards({input = currentLocomoResultCsv(), hasSummaryRows 
     sampleRows.hidden = false;
     sampleRows.innerHTML = `
       <article class="workbench-idle-note">
-        <strong>${hasSummaryRows ? "当前结果还没有错题" : "错题列表等待判分"}</strong>
-        <p>${hasSummaryRows ? "如果正式判分后没有 WRONG，这里会保持为空。" : "完成 judge 后，这里会只列出 WRONG 题目，方便继续排查。"}<\/p>
+        <span class="workbench-idle-icon">${renderUiIcon(hasSummaryRows ? "circle-check-big" : "list-x", 20)}</span>
+        <strong>${hasSummaryRows ? "当前结果没有 WRONG 题" : "暂无错题"}</strong>
+        <p>${hasSummaryRows ? "正式判分后没有 WRONG，这里会保持为空。" : "完成 judge 后，这里会只列出 WRONG 题目，方便继续排查。"}<\/p>
       </article>
     `;
   }
 
   const detailPane = $("judgeQuestionDetailPane");
   if (detailPane && !String(detailPane.textContent || "").trim()) {
-    detailPane.innerHTML = "<p class=\"muted-list-note\">点上面的错题后，这里显示判分依据。</p>";
+    detailPane.innerHTML = `
+      <article class="workbench-idle-note">
+        <span class="workbench-idle-icon">${renderUiIcon("scan-search", 20)}</span>
+        <strong>未选择题目</strong>
+        <p>点上面的错题后，这里显示单题判分依据。</p>
+      </article>
+    `;
   }
+  updateJudgeStatusStrip(state.lastJudgeSummary || {}, currentLocomoJudgeTask());
 }
 
 function renderJudgeViewIdleState() {
@@ -7148,11 +9338,19 @@ function renderJudgeViewIdleState() {
 async function hydrateJudgeView() {
   const input = currentLocomoResultCsv() || await ensureCurrentLocomoResultInput({forceRuns: true}).catch(() => "");
   await renderJudgeHistoryList(input);
-  if (input) {
+  const effectiveInput = currentLocomoResultCsv();
+  if (effectiveInput) {
     await refreshResult();
     return;
   }
   renderJudgeViewIdleState();
+  window.setTimeout(() => {
+    if (activeViewId() !== "judgeView") return;
+    const hasHistory = Boolean($("judgeHistoryList")?.querySelector("[data-output-file]"));
+    const hasInput = Boolean(currentLocomoResultCsv() || $("judgeInput")?.value.trim());
+    if (hasHistory || hasInput) return;
+    hydrateJudgeView().catch(() => null);
+  }, 1200);
 }
 
 function updateJudgeAndReportActionButtons({input = currentLocomoResultCsv(), judgeRunning = false} = {}) {
@@ -7171,7 +9369,9 @@ function updateJudgeAndReportActionButtons({input = currentLocomoResultCsv(), ju
   ["runJudgeInline"].forEach((id) => {
     const button = $(id);
     if (!button) return;
-    button.disabled = judgeRunning || !hasJudgeInput;
+    // 仅在判分进行中禁用；无结果文件时保持可点击，点击后由 runJudgeForCurrentResult 给出提示
+    button.disabled = judgeRunning;
+    button.classList.toggle("needs-input", !judgeRunning && !hasJudgeInput);
     button.title = judgeTitle;
   });
   const qaRunning = Boolean(isTaskActive(state.currentLocomoTask));
@@ -7189,34 +9389,43 @@ function updateJudgeAndReportActionButtons({input = currentLocomoResultCsv(), ju
       ? "当前问答任务仍在运行，请稍候"
       : (available ? `${label}：当前有 ${formatInt(count)} 题` : emptyTitle);
   });
-  const exportButton = $("exportRunReport");
-  if (exportButton) {
+  ["exportRunReport", "exportRunReportHeader"].forEach((id) => {
+    const exportButton = $(id);
+    if (!exportButton) return;
     const hasRun = Boolean(state.selectedRunDir);
     exportButton.disabled = !hasRun || state.selectedRunDetailLoading || state.selectedRunReportLoading;
-    exportButton.textContent = state.selectedRunReportLoading ? "正在生成报告..." : "查看报告";
+    const buttonText = state.selectedRunReportLoading ? "正在生成报告..." : "查看报告";
+    const textNode = exportButton.querySelector(".button-text, span:last-child");
+    if (textNode) textNode.textContent = buttonText;
+    else exportButton.textContent = buttonText;
     exportButton.title = !hasRun
       ? "请先在结果列表里选择一个任务"
       : (state.selectedRunDetailLoading
         ? "当前结果详情读取中，请稍候"
         : (state.selectedRunReportLoading ? "报告生成中，请稍候" : "查看并在需要时刷新当前选中结果的报告"));
-  }
-  const compareButton = $("compareSelectedRuns");
-  if (compareButton) {
+  });
+  ["compareSelectedRuns", "compareSelectedRunsHeader"].forEach((id) => {
+    const compareButton = $(id);
+    if (!compareButton) return;
     const compareState = compareSelectionState();
     const compareCount = compareState.selectedCount;
     compareButton.disabled = state.runCompareLoading || compareState.effectiveCount < 2;
-    compareButton.textContent = state.runCompareLoading
+    const buttonText = state.runCompareLoading
       ? "正在生成对比..."
       : (compareCount ? `对比选中结果 (${compareCount}/2)` : "对比选中结果");
+    const textNode = compareButton.querySelector(".button-text, span:last-child");
+    if (textNode) textNode.textContent = buttonText;
+    else compareButton.textContent = buttonText;
     compareButton.title = compareState.effectiveCount >= 2
       ? (state.runCompareLoading ? "正在读取摘要并生成对比报告" : "对比 2 个 LoCoMo 历史结果，并生成 HTML 报告")
       : "请至少勾选 2 个 LoCoMo 历史结果";
-  }
-  const clearButton = $("clearSelectedRuns");
-  if (clearButton) {
+  });
+  ["clearSelectedRuns", "clearSelectedRunsHeader"].forEach((id) => {
+    const clearButton = $(id);
+    if (!clearButton) return;
     clearButton.disabled = !state.selectedRunCompareIds.size;
     clearButton.title = state.selectedRunCompareIds.size ? "清空当前结果对比选择" : "当前没有已勾选的对比结果";
-  }
+  });
   renderRunsSelectionState();
 }
 
@@ -7239,9 +9448,14 @@ function compareSelectionState() {
 function renderRunCompareBaselineStatus() {
   const note = $("runCompareBaselineNote");
   if (!note) return;
-  note.innerHTML = "<strong>对比规则</strong><span>只允许选择 2 份 LoCoMo 历史结果做对比。</span>";
+  note.innerHTML = `
+    <span class="ui-icon" data-ui-icon="triangle-alert" data-ui-icon-size="16" aria-hidden="true"></span>
+    <strong>对比规则</strong>
+    <span>最多选择 2 份 LoCoMo 历史结果。</span>
+  `;
   note.title = "";
   note.className = "native-baseline-status";
+  hydrateUiIcons(note);
 }
 
 async function refreshNativeOpenVikingBaseline() {
@@ -7262,7 +9476,7 @@ function resetRunsDetailPanels() {
   state.selectedRunSummary = null;
   state.lastReportFile = "";
   renderKpis("runDetailKpis", []);
-  ["runAuditPanel", "failureAttributionPanel", "evidenceContractPanel", "runArtifactList", "runQuestionList", "questionDetailPane", "runReportResult", "runDiffResult", "runCompareResult", "wrongClusterResult", "longMemBaselineResult", "configSnapshotResult"].forEach((id) => {
+  ["runAuditPanel", "failureAttributionPanel", "evidenceContractPanel", "runArtifactList", "runQuestionList", "questionDetailPane", "runReportResult", "runDiffResult", "runCompareResult", "wrongClusterResult", "longMemBaselineResult", "longMemLatestResultPanel", "configSnapshotResult"].forEach((id) => {
     const el = $(id);
     if (el) el.innerHTML = "";
   });
@@ -7271,6 +9485,8 @@ function resetRunsDetailPanels() {
     if (el) el.hidden = true;
   });
   if ($("runDetailPanel")) $("runDetailPanel").hidden = true;
+  if ($("runComparePlaceholder")) $("runComparePlaceholder").hidden = false;
+  if ($("runCompareResult")) $("runCompareResult").hidden = true;
   if ($("runReportDetails")) {
     $("runReportDetails").hidden = true;
     $("runReportDetails").removeAttribute("open");
@@ -7285,58 +9501,127 @@ function renderRunsSelectionState() {
   const hasRuns = Array.isArray(state.recentRuns) && state.recentRuns.length > 0;
   const loading = Boolean(state.runsLoading);
   const detailPanel = $("runDetailPanel");
-  const analysisStack = document.querySelector("#runsView .report-analysis-stack");
-  empty.hidden = hasSelectedRun || loading;
-  actionPanel.hidden = !hasRuns || !hasSelectedRun;
+  const analysisStack = document.querySelector("#runsView .locomo-report-analysis-stack");
+  const comparePlaceholder = $("runComparePlaceholder");
+  const compareResult = $("runCompareResult");
+  const runsBenchmarkContext = benchmarkFlowContext("runsView");
+  const savedBenchmark = readLastBenchmarkDataset();
+  const runsFormat = normalizeDatasetFormat(
+    runsBenchmarkContext?.format
+      || savedBenchmark.format
+      || state.activeDatasetFormat
+      || ""
+  );
+  const hotpotScoped = runsFormat === "hotpotqa" || String(state.activeBenchmarkView || "") === "hotpotQaView";
+  const qaJumpAttrs = 'data-view-jump="evalView"';
+  const qaJumpLabel = "去问答测试";
+  const compareState = compareSelectionState();
+  empty.hidden = hasSelectedRun;
+  actionPanel.hidden = !hasRuns;
   if (detailPanel && !hasSelectedRun) detailPanel.hidden = true;
   if (analysisStack) analysisStack.hidden = !hasSelectedRun;
-  if (!hasSelectedRun && !loading) {
+  if (compareResult && !compareResult.innerHTML.trim()) compareResult.hidden = true;
+  if (comparePlaceholder) comparePlaceholder.hidden = state.selectedRunCompareIds.size >= 2 && Boolean(compareResult?.innerHTML.trim());
+  if (!hasSelectedRun) {
     const currentAccountOnly = currentAccountOnlyEnabled("runsCurrentAccountOnly");
-    empty.innerHTML = hasRuns
+    empty.innerHTML = loading
       ? `
-        <span class="label">结果工作台</span>
-        <strong>先从左侧选择一条结果</strong>
-        <p>选中后这里会显示结果摘要、文件路径、题目详情，以及 HTML 报告和两份历史结果对比。</p>
-        <div class="workbench-empty-grid">
-          <article>
-            <span>1</span>
-            <strong>选择结果</strong>
-            <p>左侧列表只保留近 24 小时内已经产出 QA 结果文件的记录。</p>
-          </article>
-          <article>
-            <span>2</span>
-            <strong>查看报告</strong>
-            <p>单条结果会展开摘要、产物路径和题目级详情。</p>
-          </article>
-          <article>
-            <span>3</span>
-            <strong>对比两份结果</strong>
-            <p>最多勾选 2 条 LoCoMo 历史结果，生成对比摘要。</p>
-          </article>
+        <div class="locomo-report-empty-hero">
+          <span class="report-empty-icon ui-icon" data-ui-icon="loader-circle" data-ui-icon-size="20" aria-hidden="true"></span>
+          <div>
+            <span class="label">结果工作台</span>
+            <strong>正在同步结果</strong>
+            <p>读取当前平台可见的 LoCoMo QA 历史结果，请稍候。</p>
+          </div>
+        </div>
+        <div class="locomo-report-empty-actions panel-actions">
+          <button class="secondary" id="refreshRunsEmptyInline">
+            <span class="ui-icon" data-ui-icon="refresh-cw" data-ui-icon-size="16" aria-hidden="true"></span>
+            <span>重新刷新</span>
+          </button>
+          <button class="secondary" type="button" ${qaJumpAttrs}>
+            <span class="ui-icon" data-ui-icon="message-circle-question" data-ui-icon-size="16" aria-hidden="true"></span>
+            <span>${qaJumpLabel}</span>
+          </button>
+        </div>
+      `
+      : hasRuns
+      ? `
+        <div class="locomo-report-empty-hero">
+          <span class="report-empty-icon ui-icon" data-ui-icon="file-text" data-ui-icon-size="20" aria-hidden="true"></span>
+          <div>
+            <span class="label">结果工作台</span>
+            <strong>等待选择结果</strong>
+            <p>先从左侧选择一条结果，再查看报告或勾选两份历史结果进行对比。</p>
+          </div>
+        </div>
+        <div class="locomo-report-empty-actions panel-actions">
+          <button class="secondary" id="refreshRunsEmptyInline">
+            <span class="ui-icon" data-ui-icon="refresh-cw" data-ui-icon-size="16" aria-hidden="true"></span>
+            <span>刷新结果</span>
+          </button>
+          <button class="secondary" type="button" ${qaJumpAttrs}>
+            <span class="ui-icon" data-ui-icon="message-circle-question" data-ui-icon-size="16" aria-hidden="true"></span>
+            <span>${qaJumpLabel}</span>
+          </button>
         </div>
       `
       : `
-        <span class="label">结果工作台</span>
-        <strong>近 24 小时还没有可用结果</strong>
-        <p>${currentAccountOnly ? "当前账户范围内还没有可展示的 QA 结果；先运行问答测试，或者取消“只看当前空间”。" : "当前范围内还没有可展示的 QA 结果；先运行问答测试后再回来查看报告。"}</p>
-        <div class="workbench-empty-grid">
-          <article>
-            <span>QA</span>
-            <strong>先生成结果文件</strong>
-            <p>报告页只收录已经写出结果文件的 QA 任务，不展示仅导入或未完成任务。</p>
-          </article>
-          <article>
-            <span>24h</span>
-            <strong>只看最近结果</strong>
-            <p>这里默认只看近 24 小时记录，历史更早的结果不会进入当前列表。</p>
-          </article>
-          <article>
-            <span>范围</span>
-            <strong>${currentAccountOnly ? "当前仅看本空间" : "当前看全部空间"}</strong>
-            <p>${currentAccountOnly ? "如果结果在别的账户，取消左侧的“只看当前空间”再刷新。" : "如果要缩小到当前账户，勾选左侧的“只看当前空间”。"}</p>
-          </article>
+        <div class="locomo-report-empty-hero">
+          <span class="report-empty-icon ui-icon" data-ui-icon="search-check" data-ui-icon-size="20" aria-hidden="true"></span>
+          <div>
+            <span class="label">结果工作台</span>
+            <strong>近 24 小时还没有可用结果</strong>
+            <p>${currentAccountOnly ? "当前账户范围内还没有可展示的 QA 结果；先运行问答测试，或者取消“只看当前空间”。" : "当前范围内还没有可展示的 QA 结果；先运行问答测试后再回来查看报告。"}</p>
+          </div>
+        </div>
+        <div class="locomo-report-empty-actions panel-actions">
+          <button class="secondary" id="refreshRunsEmptyInline">
+            <span class="ui-icon" data-ui-icon="refresh-cw" data-ui-icon-size="16" aria-hidden="true"></span>
+            <span>刷新结果</span>
+          </button>
+          <button class="secondary" type="button" ${qaJumpAttrs}>
+            <span class="ui-icon" data-ui-icon="message-circle-question" data-ui-icon-size="16" aria-hidden="true"></span>
+            <span>${qaJumpLabel}</span>
+          </button>
         </div>
       `;
+    hydrateUiIcons(empty);
+    bindViewJumpButtons("#runsEmptyState");
+  }
+  if (hasRuns) {
+    const selectedLabels = compareState.selected.map((run) => {
+      const meta = runDatasetMeta(run);
+      return `${runDisplayTitle(run, meta)} · ${compactTimestamp(run.created_at || "") || "-"}`;
+    });
+    const compareSummaryText = compareState.effectiveCount >= 2
+      ? `${selectedLabels[0] || "Run A"} vs ${selectedLabels[1] || "Run B"}`
+      : compareState.selectedCount === 1
+      ? `已选择：${selectedLabels[0] || "1 份结果"}，再选择 1 份进行对比。`
+      : "选择最多 2 份历史结果进行对比。";
+    actionPanel.innerHTML = `
+      <div class="report-compare-bar">
+        <div class="report-compare-copy">
+          <span class="report-compare-label">Compare Selection</span>
+          <strong>${escapeHtml(compareSummaryText)}</strong>
+        </div>
+        <div class="report-compare-chips">
+          ${compareState.selected.map((run) => `
+            <span class="report-compare-chip" title="${escapeHtml(runDisplayTitle(run, runDatasetMeta(run)))}">
+              ${escapeHtml(runDisplayTitle(run, runDatasetMeta(run)))}
+            </span>
+          `).join("")}
+        </div>
+        <div class="report-compare-actions panel-actions">
+          <button class="secondary" id="clearSelectedRunsInline"${compareState.selectedCount ? "" : " disabled"}>清空</button>
+          <button class="primary" id="compareSelectedRunsInline"${compareState.effectiveCount >= 2 ? "" : " disabled"}>开始对比</button>
+        </div>
+      </div>
+    `;
+    $("clearSelectedRunsInline")?.addEventListener("click", clearSelectedRuns);
+    $("compareSelectedRunsInline")?.addEventListener("click", () => compareSelectedRuns().catch((e) => toast(e.message)));
+  } else {
+    actionPanel.innerHTML = "";
   }
   renderRunCompareBaselineStatus();
 }
@@ -7373,9 +9658,34 @@ function renderJudgeConfirmation(input, summary = {}, options = {}) {
     document.querySelector(".judge-confirm")?.remove();
     toast("已取消判分");
   });
-  $("confirmJudgeRun")?.addEventListener("click", () => {
+  $("confirmJudgeRun")?.addEventListener("click", async () => {
+    const confirmButton = $("confirmJudgeRun");
+    const cancelButton = $("cancelJudgeConfirm");
+    const confirmCard = document.querySelector(".judge-confirm");
+    if (confirmButton) {
+      confirmButton.disabled = true;
+      confirmButton.textContent = "提交中...";
+    }
+    if (cancelButton) cancelButton.disabled = true;
     state.judgeConfirmInput = input;
-    runJudgeForCurrentResult({...options, confirmed: true}).catch((e) => toast(e.message));
+    try {
+      await runJudgeForCurrentResult({...options, confirmed: true});
+      confirmCard?.remove();
+    } catch (error) {
+      const detail = String(error?.data?.error || error?.message || "判分任务提交失败").trim();
+      const existingError = confirmCard?.querySelector?.(".judge-confirm-error");
+      if (confirmCard && !existingError) {
+        confirmCard.insertAdjacentHTML("beforeend", `<p class="judge-confirm-error">${escapeHtml(detail)}</p>`);
+      } else if (existingError) {
+        existingError.textContent = detail;
+      }
+      if (confirmButton) {
+        confirmButton.disabled = false;
+        confirmButton.textContent = "判分";
+      }
+      if (cancelButton) cancelButton.disabled = false;
+      toast(`判分启动失败：${detail}`);
+    }
   });
 }
 
@@ -7389,7 +9699,13 @@ function locomoDatasetNeedsHydration() {
 
 function ensureLocomoDatasetLoadedForView(viewId = "") {
   if (!["openvikingView", "evalView", "judgeView", "memoryView"].includes(viewId)) return;
-  const path = $("data")?.value?.trim() || "";
+  const dataInput = $("data");
+  const saved = readLastLocomoDataset();
+  const fallbackPath = relativeDatasetPath(saved.path || preferredLocomoDatasetPath() || "");
+  const path = dataInput?.value?.trim() || fallbackPath;
+  if (dataInput && !dataInput.value.trim() && path) {
+    dataInput.value = path;
+  }
   if (!path || state.locomoDatasetLoading || !locomoDatasetNeedsHydration()) return;
   state.locomoDatasetLoading = true;
   loadDataset(true)
@@ -7398,7 +9714,6 @@ function ensureLocomoDatasetLoadedForView(viewId = "") {
       state.locomoDatasetLoading = false;
       renderImportPaths();
       renderQaReadinessPanel();
-      renderImportReadinessPanel();
     });
 }
 
@@ -7414,9 +9729,18 @@ function pendingFilterPayload() {
 
 function showView(viewId, options = {}) {
   if (!viewId) return;
+  const hotpotResolved = resolveStandaloneHotpotFallback(viewId, options);
+  viewId = hotpotResolved.viewId || viewId;
+  options = hotpotResolved.options || options;
   if (viewId === "workbenchView") viewId = "openvikingView";
   if (RETIRED_VIEW_FALLBACKS[viewId]) viewId = RETIRED_VIEW_FALLBACKS[viewId];
   if (!document.getElementById(viewId)?.classList.contains("view-panel")) viewId = "openvikingView";
+  const requestedBenchmarkStage = normalizeBenchmarkFlowStage(options.benchmarkStage || options.flowStage || "");
+  if (viewId === "hotpotQaView" && requestedBenchmarkStage) {
+    state.hotpotQaManualStage = requestedBenchmarkStage;
+  } else if (viewId !== "hotpotQaView") {
+    state.hotpotQaManualStage = "";
+  }
   if (options.userTriggered && state.bootHydrating && viewId !== (state.bootRequestedView || "")) {
     state.userNavigatedDuringBoot = true;
   }
@@ -7438,21 +9762,30 @@ function showView(viewId, options = {}) {
   document.querySelectorAll(".nav-item").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === activeNavView);
   });
+  updateAppTopbarBrand(viewId);
+  syncStandaloneBenchmarkChrome(viewId);
   const panel = $(viewId);
   if (panel) {
     if ($("viewTitle")) $("viewTitle").textContent = panel.dataset.title || "";
     if ($("viewSubtitle")) $("viewSubtitle").textContent = panel.dataset.subtitle || "";
+    bindViewJumpButtons(`#${viewId}`);
   }
   const benchmarkContext = benchmarkFlowContext(viewId);
   if (benchmarkContext) {
-    const requestedStage = normalizeBenchmarkFlowStage(options.benchmarkStage || options.flowStage || "");
     const sameBenchmark = previousBenchmarkView === benchmarkContext.view;
-    const nextStage = requestedStage
+    const nextStage = requestedBenchmarkStage
       || (sameBenchmark ? normalizeBenchmarkFlowStage(state.activeBenchmarkFlowStage) : "")
       || defaultBenchmarkFlowStage(viewId);
     state.activeBenchmarkView = benchmarkContext.view;
     state.activeBenchmarkFlowStage = nextStage;
     applyBenchmarkFlowStage(benchmarkContext.view, nextStage);
+  }
+  if (viewId === "longMemEvalView") {
+    const requestedLongMemStage = normalizeLongMemStage(options.longMemStage || "")
+      || longMemStageFromBenchmarkStage(options.benchmarkStage || options.flowStage || "")
+      || state.longMemStage
+      || "data";
+    setLongMemStage(requestedLongMemStage);
   }
   updateWorkflowSelection(workflowKey);
   updateLocomoFlowNav(viewId);
@@ -7467,6 +9800,7 @@ function showView(viewId, options = {}) {
     const standaloneFormat = datasetFormatForView(viewId);
     if (standaloneFormat === "hotpotqa") updateHotpotQaInlineLiveReport(null);
     if (standaloneFormat === "hotpotqa") renderHotpotQaModelReadiness();
+    if (standaloneFormat === "hotpotqa") ensureHotpotQaDatasetOverview().catch(() => null);
     if (standaloneFormat) {
       forceRefreshStandaloneBenchmarkView(standaloneFormat).catch(() => null);
     }
@@ -7506,6 +9840,15 @@ function showView(viewId, options = {}) {
   }
   updateJudgeAndReportActionButtons();
   updateStopActionButtons();
+  if (viewId === "hotpotQaView" && requestedBenchmarkStage) {
+    focusHotpotQaStage(requestedBenchmarkStage, {behavior: options.userTriggered ? "smooth" : "auto"});
+  }
+  if (viewId === "hotpotQaView" && options.hotpotQaSection) {
+    focusHotpotQaSection(options.hotpotQaSection, {behavior: options.userTriggered ? "smooth" : "auto"});
+  }
+  if (viewId === "hotpotQaView" && normalizeBenchmarkFlowStage(state.activeBenchmarkFlowStage || requestedBenchmarkStage || "") === "report") {
+    queueHotpotQaReportHydration();
+  }
 }
 
 function syncViewUrl(viewId, options = {}) {
@@ -7514,6 +9857,17 @@ function syncViewUrl(viewId, options = {}) {
     const url = new URL(window.location.href);
     url.searchParams.set("ui_refresh", UI_REFRESH_VERSION);
     url.searchParams.set("view", viewId);
+    if (viewId === "hotpotQaView") {
+      const stage = normalizeBenchmarkFlowStage(options.benchmarkStage || options.flowStage || state.activeBenchmarkFlowStage || "");
+      const section = String(options.hotpotQaSection || "").trim();
+      if (stage) url.searchParams.set("benchmark_stage", stage);
+      else url.searchParams.delete("benchmark_stage");
+      if (section) url.searchParams.set("hotpot_section", section);
+      else url.searchParams.delete("hotpot_section");
+    } else {
+      url.searchParams.delete("benchmark_stage");
+      url.searchParams.delete("hotpot_section");
+    }
     if (options.taskLog) {
       url.searchParams.set("task_log", options.taskLog);
     } else if (options.clearTaskLog !== false) {
@@ -7527,6 +9881,8 @@ function syncViewUrl(viewId, options = {}) {
 
 function stabilizeViewScroll(viewId) {
   requestAnimationFrame(() => {
+    document.querySelector(".app-content")?.scrollTo?.({top: 0, left: 0, behavior: "auto"});
+    document.getElementById(viewId)?.scrollTo?.({top: 0, left: 0, behavior: "auto"});
     window.scrollTo({top: 0, left: 0, behavior: "auto"});
   });
 }
@@ -7534,7 +9890,24 @@ function stabilizeViewScroll(viewId) {
 function initialViewFromUrl() {
   try {
     const view = new URLSearchParams(window.location.search).get("view") || "";
-    return document.getElementById(view)?.classList.contains("view-panel") ? view : "";
+    const normalizedView = retiredViewFallback(view) || view;
+    return document.getElementById(normalizedView)?.classList.contains("view-panel") ? normalizedView : "";
+  } catch {
+    return "";
+  }
+}
+
+function initialBenchmarkStageFromUrl() {
+  try {
+    return normalizeBenchmarkFlowStage(new URLSearchParams(window.location.search).get("benchmark_stage") || "");
+  } catch {
+    return "";
+  }
+}
+
+function initialHotpotQaSectionFromUrl() {
+  try {
+    return String(new URLSearchParams(window.location.search).get("hotpot_section") || "").trim();
   } catch {
     return "";
   }
@@ -7570,6 +9943,11 @@ function updateLocomoFlowNav(viewId) {
   if (!nav) return;
   const flowViews = new Set(["workbenchView", "datasetView", "openvikingView", "evalView", "judgeView", "runsView", "memoryView"]);
   const benchmarkContext = benchmarkFlowContext(viewId);
+  if (benchmarkContext && normalizeDatasetFormat(benchmarkContext.format || "") !== "locomo") {
+    nav.hidden = true;
+    if ($("locomoOverviewPanel")) $("locomoOverviewPanel").hidden = true;
+    return;
+  }
   const visible = flowViews.has(viewId) || Boolean(benchmarkContext);
   nav.hidden = !visible;
   if ($("locomoOverviewPanel")) $("locomoOverviewPanel").hidden = true;
@@ -7580,13 +9958,18 @@ function updateLocomoFlowNav(viewId) {
       ? "report"
       : normalizeBenchmarkFlowStage(state.activeBenchmarkFlowStage) || defaultBenchmarkFlowStage(viewId);
     renderFlowNavCards(nav, cards, activeStage);
-    nav.querySelectorAll(".flow-card").forEach((button) => {
+    nav.querySelectorAll(".locomo-flow-tab, .flow-card").forEach((button) => {
       if (button.dataset.viewJumpBound === "1") return;
       button.dataset.viewJumpBound = "1";
       button.addEventListener("click", () => {
         const flowKey = button.dataset.flowKey || "";
         const targetView = button.dataset.viewJump || benchmarkContext.view || viewId;
-        showView(targetView, {benchmarkStage: flowKey, flowStage: flowKey, preserveScroll: true});
+        showView(targetView, {
+          benchmarkStage: flowKey,
+          flowStage: flowKey,
+          preserveScroll: true,
+          userTriggered: true,
+        });
       });
     });
     return;
@@ -7594,6 +9977,15 @@ function updateLocomoFlowNav(viewId) {
   nav.setAttribute("aria-label", "LoCoMo 评测流程");
   const activeView = locomoFlowMainView(viewId);
   renderFlowNavCards(nav, LOCOMO_FLOW_CARDS, activeView);
+  nav.querySelectorAll(".locomo-flow-tab, .flow-card").forEach((button) => {
+    if (button.dataset.viewJumpBound === "1") return;
+    button.dataset.viewJumpBound = "1";
+    button.addEventListener("click", () => {
+      const targetView = button.dataset.viewJump || "";
+      if (!targetView) return;
+      showView(targetView, {preserveScroll: true, userTriggered: true});
+    });
+  });
 }
 
 function normalizeLegacyLabels() {
@@ -7704,6 +10096,26 @@ function importScopeFromTask(task = {}, fallback = {}) {
   return {backend, account, workspace};
 }
 
+function importSampleScopeFromTask(task = {}, fallback = {}) {
+  const progress = task?.progress || {};
+  const currentImport = progress.current_import || {};
+  const taskConfig = task?.meta?.config || task?.config || {};
+  const sampleValue = String(
+    taskConfig.sample
+    || progress.sample
+    || currentImport.sample
+    || fallback.sampleValue
+    || "all",
+  ).trim() || "all";
+  const sampleText = String(
+    taskConfig.sample_label
+    || currentImport.sample_label
+    || fallback.sampleText
+    || "",
+  ).trim();
+  return {sampleValue, sampleText};
+}
+
 function syncImportTaskFields(task = {}, options = {}) {
   const scope = importScopeFromTask(task);
   if (scope.account) {
@@ -7715,11 +10127,18 @@ function syncImportTaskFields(task = {}, options = {}) {
       syncAccountFields(scope.account);
     }
   }
-  if (scope.workspace) {
+  const backendMatchesCurrent = !scope.backend || scope.backend === currentMemoryBackend();
+  if (scope.workspace && backendMatchesCurrent) {
     if ($("ovWorkspace")) $("ovWorkspace").value = scope.workspace;
     if ($("memoryWorkspace")) $("memoryWorkspace").value = scope.workspace;
   }
-  if (scope.backend && $("memoryBackendSelect")) $("memoryBackendSelect").value = scope.backend;
+  if (scope.backend && backendMatchesCurrent && $("memoryBackendSelect")) $("memoryBackendSelect").value = scope.backend;
+  const sampleScope = importSampleScopeFromTask(task, options);
+  if (sampleScope.sampleValue && $("importSample")) {
+    const select = $("importSample");
+    const match = Array.from(select.options || []).find((option) => String(option.value || "").trim() === sampleScope.sampleValue);
+    if (match) select.value = sampleScope.sampleValue;
+  }
   return scope;
 }
 
@@ -7786,8 +10205,14 @@ async function loadTaskLogIntoBox(task, kind = "") {
   const data = await api(`/api/tasks/${encodeURIComponent(taskRecord.id)}/log?offset=0`);
   state.logOffsets[taskRecord.id] = data.offset || 0;
   box.dataset.taskId = String(taskRecord.id || "");
-  box.textContent = filterVisibleTaskLogText(data.text || "", taskRecord, ui.logBox) || "这个任务还没有写出日志。";
-  box.scrollTop = box.scrollHeight;
+  box.textContent = trimTaskLogDisplay(filterVisibleTaskLogText(data.text || "", taskRecord, ui.logBox) || "这个任务还没有写出日志。", ui.logBox);
+  markLogBoxEmptyState(box);
+  if (ui.logBox === "longMemLogBox") {
+    renderLongMemLogPath(runLogPathFromRecord(taskRecord));
+  }
+  if (ui.logBox !== "longMemLogBox" || longMemLogAutoScrollEnabled()) {
+    box.scrollTop = box.scrollHeight;
+  }
   box.closest(".log-details")?.setAttribute("open", "");
   return data.task || taskRecord;
 }
@@ -7811,13 +10236,20 @@ async function loadLogPathIntoBox(path, logBoxId = "importLogBox") {
   if (!box) return false;
   box.dataset.logPath = logPath;
   renderImportLogPath(logPath);
+  if (logBoxId === "longMemLogBox") renderLongMemLogPath(logPath);
   try {
     const data = await api(`/api/log-tail?path=${encodeURIComponent(logPath)}&limit=240000`);
-    box.textContent = filterVisibleTaskLogText(data.text || "", null, logBoxId) || "这个日志文件还没有内容。";
-    box.scrollTop = box.scrollHeight;
+    const rawText = filterVisibleTaskLogText(data.text || "", null, logBoxId) || "这个日志文件还没有内容。";
+    const displayText = trimTaskLogDisplay(rawText, logBoxId);
+    box.textContent = displayText || "这个日志文件还没有内容。";
+    markLogBoxEmptyState(box);
+    if (logBoxId !== "longMemLogBox" || longMemLogAutoScrollEnabled()) {
+      box.scrollTop = box.scrollHeight;
+    }
     return Boolean(data.exists);
   } catch (error) {
     box.textContent = `日志读取失败：${error.message || error}\n${logPath}`;
+    markLogBoxEmptyState(box);
     return false;
   }
 }
@@ -7827,26 +10259,141 @@ function renderImportLogPath(path = "") {
   if (!target) return;
   const logPath = String(path || "").trim();
   if (!logPath) {
-    target.innerHTML = "<p>日志路径会显示在这里。</p>";
+    target.hidden = true;
+    setInnerHtmlIfChanged(target, "<p class=\"locomo-path\">日志路径会显示在这里。</p>");
     return;
   }
-  target.innerHTML = `
-    <article class="path-row">
-      <span>日志文件</span>
-      <code>${escapeHtml(displayPath(logPath))}</code>
-      <div class="path-row-actions">
-        <button class="path-copy" type="button" data-copy="${escapeHtml(logPath)}">复制</button>
-        <button class="path-open" type="button" data-path="${escapeHtml(logPath)}">打开</button>
+  target.hidden = false;
+  const html = locomoArtifactRowHtml("日志文件", logPath, {copy: true, open: true});
+  const changed = setInnerHtmlIfChanged(target, html);
+  if (!changed) return;
+  bindCopyButtons("#importLogPathRow");
+  bindOpenButtons("#importLogPathRow");
+}
+
+function locomoToneLabel(severity = "warn") {
+  if (severity === "bad") return "错误";
+  if (severity === "ok") return "正常";
+  return "提醒";
+}
+
+function locomoArtifactRowHtml(label, value, options = {}) {
+  const rawValue = String(value || "").trim();
+  const displayValue = options.raw ? rawValue : displayPath(rawValue);
+  const className = options.className ? ` ${escapeHtml(options.className)}` : "";
+  const extraActions = options.extraActions || "";
+  return `
+    <article class="locomo-artifact-row${className}">
+      <span class="locomo-artifact-label">${escapeHtml(label || "-")}</span>
+      <code class="locomo-artifact-path" title="${escapeHtml(rawValue || displayValue || "-")}">${escapeHtml(displayValue || "-")}</code>
+      <div class="locomo-artifact-actions">
+        ${options.copy && rawValue ? `<button class="locomo-button locomo-button-secondary path-copy" type="button" data-copy="${escapeHtml(rawValue)}">复制</button>` : ""}
+        ${options.open && rawValue ? `<button class="locomo-button locomo-button-secondary path-open" type="button" data-path="${escapeHtml(rawValue)}">打开</button>` : ""}
+        ${extraActions}
       </div>
     </article>
   `;
-  bindCopyButtons("#importLogPathRow");
-  bindOpenButtons("#importLogPathRow");
+}
+
+function locomoEmptyNoteHtml(title, detail, className = "", options = {}) {
+  const extraClass = className ? ` ${escapeHtml(className)}` : "";
+  const densityAttr = options.density ? ` data-locomo-density="${escapeHtml(options.density)}"` : "";
+  const iconHtml = options.icon
+    ? `<span class="ui-icon locomo-empty-icon" data-ui-icon="${escapeHtml(options.icon)}" data-ui-icon-size="16" aria-hidden="true"></span>`
+    : "";
+  return `
+    <div class="locomo-empty-state${extraClass}"${densityAttr}>
+      ${iconHtml}
+      <strong>${escapeHtml(title || "暂无内容")}</strong>
+      ${detail ? `<p>${escapeHtml(detail)}</p>` : ""}
+    </div>
+  `;
+}
+
+function locomoInlineMessageHtml(title, detail = "", tone = "") {
+  const toneClass = tone ? ` ${escapeHtml(tone)}` : "";
+  return `
+    <div class="locomo-inline-message${toneClass}">
+      <strong>${escapeHtml(title || "提示")}</strong>
+      ${detail ? `<p>${escapeHtml(detail)}</p>` : ""}
+    </div>
+  `;
+}
+
+function locomoReadinessRowHtml(label, detail = "", options = {}) {
+  const tone = String(options.tone || "").trim();
+  const toneClass = tone ? ` ${escapeHtml(tone)}` : "";
+  const titleAttr = options.title ? ` title="${escapeHtml(options.title)}"` : "";
+  const valueHtml = options.value
+    ? `<span class="locomo-readiness-value"${options.valueTitle ? ` title="${escapeHtml(options.valueTitle)}"` : ""}>${escapeHtml(options.value)}</span>`
+    : "";
+  const statusHtml = options.status
+    ? `<span class="locomo-status-pill${toneClass}">${escapeHtml(options.status)}</span>`
+    : valueHtml;
+  return `
+    <article class="locomo-readiness-row${toneClass}">
+      <span class="locomo-readiness-dot${toneClass}" aria-hidden="true"></span>
+      <div class="locomo-readiness-copy">
+        <strong${titleAttr}>${escapeHtml(label || "-")}</strong>
+        ${detail ? `<span class="locomo-readiness-detail"${titleAttr}>${escapeHtml(detail)}</span>` : ""}
+      </div>
+      ${statusHtml}
+    </article>
+  `;
+}
+
+function renderImportCommitPanels(summaryRows = [], detailRows = [], artifactRows = []) {
+  const summaryTarget = $("commitKpis");
+  if (summaryTarget) {
+    const summaryHtml = summaryRows.length
+      ? `
+        <div class="locomo-readiness-list">
+          ${summaryRows.map((row) => locomoReadinessRowHtml(
+            row.label || "-",
+            row.title || "",
+            {
+              value: row.value || row.html || "-",
+              valueTitle: row.title || row.value || row.html || "-",
+              tone: "muted",
+            }
+          )).join("")}
+        </div>
+      `
+      : "";
+    summaryTarget.innerHTML = summaryHtml;
+  }
+  const previewTarget = $("importMemoryPreview");
+  if (!previewTarget) return;
+  const sections = [];
+  if (detailRows.length) {
+    sections.push(`
+      <section>
+        <p data-locomo-caption>导入摘要</p>
+        <div class="locomo-readiness-list">
+          ${detailRows.join("")}
+        </div>
+      </section>
+    `);
+  }
+  if (artifactRows.length) {
+    sections.push(`
+      <section>
+        <p data-locomo-caption>导入产物</p>
+        <div class="locomo-artifact-list">
+          ${artifactRows.join("")}
+        </div>
+      </section>
+    `);
+  }
+  previewTarget.innerHTML = sections.join("") || locomoEmptyNoteHtml("等待导入结果", "导入完成后，这里会显示摘要、会话记录和产物入口。");
+  bindCopyButtons("#importMemoryPreview");
+  bindOpenButtons("#importMemoryPreview");
 }
 
 async function loadLatestImportLogFallback() {
   const box = $("importLogBox");
   if (!box || !/日志会显示在这里|这个任务还没有写出日志/.test(String(box.textContent || "").trim())) return;
+  if (isImportTaskInBackground(state.currentImportTask || {})) return;
   const lastImport = currentWorkspaceScopedLastImport();
   const lastLog = runLogPathFromRecord(lastImport);
   if (lastLog && await loadLogPathIntoBox(lastLog, "importLogBox")) return;
@@ -7854,12 +10401,13 @@ async function loadLatestImportLogFallback() {
     box.textContent = `历史日志查询失败：${error.message || error}`;
     return {};
   });
-  const run = (data.runs || []).find((item) => isMemoryImportKind(item.kind || "") && importRecordMatchesCurrentWorkspace(item, currentMemoryBackend()));
+  const run = (data.runs || []).find((item) => isRenderableLocomoImportRun(item) && importRecordMatchesCurrentWorkspace(item, currentMemoryBackend()));
   const runLog = runLogPathFromRecord(run || {});
   if (runLog) {
     await loadLogPathIntoBox(runLog, "importLogBox");
   } else if (!box.dataset.logPath) {
     box.textContent = "暂无运行中的导入任务，也没有找到历史导入日志文件。";
+    markLogBoxEmptyState(box);
   }
 }
 
@@ -7867,7 +10415,7 @@ function openTaskLogBox(logBoxId) {
   const box = $(logBoxId);
   if (!box) return null;
   box.closest(".log-details")?.setAttribute("open", "");
-  box.closest(".import-section")?.classList.add("live-log-section");
+  box.closest(".locomo-panel")?.classList.add("locomo-log-live");
   return box;
 }
 
@@ -7878,6 +10426,7 @@ function resetTaskLogPlaceholder(logBoxId) {
   if (!text || /日志会显示在这里|这个任务还没有写出日志/.test(text)) {
     box.textContent = "";
   }
+  markLogBoxEmptyState(box);
   return box;
 }
 
@@ -7925,8 +10474,6 @@ function generateWorkspaceForCurrentAccount() {
   clearImportedMemoryStatusForWorkspace(generated, account);
   persistCurrentAccountConfig();
   renderImportPaths();
-  renderImportReadinessPanel();
-  renderQaReadinessPanel();
   refreshImportActionLabels();
   refreshImportedMemories().catch(() => {});
   toast(`已生成新的${memoryBackendLabel(backend)}记忆目录`);
@@ -7962,6 +10509,8 @@ async function loadConfig() {
   const lastImport = readCurrentAccountLastImport();
   const lastDataset = readLastLocomoDataset();
   const initialView = initialViewFromUrl();
+  const initialBenchmarkStage = initialBenchmarkStageFromUrl();
+  const initialHotpotQaSection = initialHotpotQaSectionFromUrl();
   state.bootRequestedView = initialView || "openvikingView";
   state.bootHydrating = true;
   state.userNavigatedDuringBoot = false;
@@ -8015,7 +10564,14 @@ async function loadConfig() {
   if ($("memoryWorkspace")) $("memoryWorkspace").value = $("ovWorkspace").value || "";
   if ($("memoryAccount")) $("memoryAccount").value = activeAccount;
   applyAccountConfig(activeAccount);
-  if (initialView) showView(initialView, {preserveScroll: true, clearTaskLog: false});
+  if (initialView) {
+    showView(initialView, {
+      preserveScroll: true,
+      clearTaskLog: false,
+      benchmarkStage: initialBenchmarkStage,
+      hotpotQaSection: initialHotpotQaSection,
+    });
+  }
   renderImportPaths();
   await Promise.allSettled([
     loadBackends(),
@@ -8064,7 +10620,16 @@ async function loadConfig() {
     || activeViewAfterBootWork === initialView
     || shouldRestoreBenchmarkView;
   if (initialView && !state.userNavigatedDuringBoot) {
-    if (stayedOnBootView) showView(initialView, {preserveScroll: shouldRestoreBenchmarkView});
+    if (stayedOnBootView) {
+      showView(initialView, {
+        preserveScroll: shouldRestoreBenchmarkView,
+        benchmarkStage: initialBenchmarkStage,
+        hotpotQaSection: initialHotpotQaSection,
+      });
+      if (initialView === "judgeView") {
+        hydrateJudgeView().catch(() => null);
+      }
+    }
   } else if (!activeViewAfterBootWork) {
     showView("openvikingView", {preserveScroll: true});
   }
@@ -8085,10 +10650,10 @@ async function loadConfig() {
 
 async function loadDatasetRegistry() {
   const data = await api("/api/datasets");
-  state.datasetRegistry = data.datasets || [];
+  state.datasetRegistry = (data.datasets || []).filter((item) => normalizeDatasetFormat(item?.format || "") !== "chenmo");
   const cards = $("datasetCards");
   if (cards) {
-    const visibleDatasets = state.datasetRegistry.filter((item) => normalizeDatasetFormat(item.format) !== "chenmo");
+    const visibleDatasets = state.datasetRegistry;
     if ($("data") && !$("data").value.trim()) {
       $("data").value = preferredLocomoDatasetPath();
     }
@@ -8132,6 +10697,10 @@ async function openDatasetCard(path, format = "") {
     await openDatasetCard(data.resolved_path || path, normalized);
     return;
   }
+  if (normalized === "chenmo") {
+    toast("该数据集入口已下线");
+    return;
+  }
   const resolvedPath = path;
   if (normalized === "locomo") {
     if ($("data")) $("data").value = relativeDatasetPath(resolvedPath);
@@ -8146,11 +10715,6 @@ async function openDatasetCard(path, format = "") {
   if (normalized === "locomo") {
     rememberActiveDatasetView(targetView || "evalView", normalized, resolvedPath);
     await loadDataset();
-    return;
-  }
-  if (normalized === "chenmo") {
-    toast("ChenMo 评测入口已移除");
-    showView("openvikingView");
     return;
   }
   const benchmarkKey = genericBenchmarkKeyForFormat(normalized);
@@ -8189,7 +10753,6 @@ async function validateSelectedDatasetCard(path) {
     ["样本数", data.samples ?? "-"],
     ["题目数", data.questions ?? "-"],
   ]);
-  renderDatasetCategories(data);
   if ($("datasetRunnerNote")) {
     $("datasetRunnerNote").innerHTML = `
       <p><strong>${escapeHtml(datasetTypeLabel(data.format))} 已加入系统</strong> · ${escapeHtml(data.samples ?? "-")} 个样本 · ${escapeHtml(data.questions ?? "-")} 题</p>
@@ -8203,34 +10766,62 @@ function renderLongMemDatasetCards() {
   const target = $("longMemDatasetCards");
   if (!target) return;
   const rows = state.datasetRegistry.filter((item) => String(item.format || "").toLowerCase() === "longmemeval");
-  if ($("longMemData") && !$("longMemData").value.trim()) {
-    const preferred = rows.find((item) => /oracle/i.test(String(item.id || "")) && item.exists)
+  const input = $("longMemData");
+  if (input && !input.value.trim()) {
+    const savedPath = String(readLastBenchmarkDataset().path || "").trim();
+    const preferred = (savedPath && rows.find((item) => datasetPathMatches(item.path, savedPath) || datasetPathMatches(item.resolved_path, savedPath)))
+      || rows.find((item) => /oracle/i.test(String(item.id || "")) && item.exists)
       || rows.find((item) => /oracle/i.test(String(item.name || "")) && item.exists)
       || rows.find((item) => item.exists) || rows[0];
-    if (preferred?.path) $("longMemData").value = preferred.path;
+    if (preferred?.path) input.value = preferred.path;
   }
-  target.innerHTML = rows.map((item) => `
-    <article class="dataset-card ${item.exists ? "" : "missing"}" data-path="${escapeHtml(item.path || "")}">
-      <span>${escapeHtml(datasetTypeLabel(item.format))}</span>
-      <strong>${escapeHtml(item.name || item.id || "-")}</strong>
-      <small>${escapeHtml(item.description || "")}</small>
-      <em>${item.exists ? `${escapeHtml(item.samples ?? "-")} samples · ${escapeHtml(item.questions ?? "-")} questions` : "missing"}</em>
-      <code>${escapeHtml(item.path || "")}</code>
-    </article>
-  `).join("") || "<p>没有在数据集注册表里找到 LongMemEval。可以手动填写 JSON 路径。</p>";
-  document.querySelectorAll("#longMemDatasetCards .dataset-card").forEach((card) => {
+  const query = String($("longMemDatasetSearch")?.value || "").trim().toLowerCase();
+  const filteredRows = query
+    ? rows.filter((item) => {
+      const haystack = [
+        item.id,
+        item.name,
+        item.description,
+        item.path,
+        item.resolved_path,
+      ].join(" ").toLowerCase();
+      return haystack.includes(query);
+    })
+    : rows;
+  target.innerHTML = filteredRows.map((item) => {
+    const selected = item.path === $("longMemData")?.value.trim();
+    const exists = Boolean(item.exists);
+    const meta = [
+      `${formatInt(item.samples)} 样本`,
+      `${formatInt(item.questions)} 题`,
+      item.runner_status === "large_dataset_lazy" ? "懒加载" : "已就绪",
+    ];
+    return `
+      <button class="longmem-dataset-option ${selected ? "active" : ""} ${exists ? "" : "missing"}" type="button" data-path="${escapeHtml(item.path || "")}">
+        <span class="longmem-dataset-radio" aria-hidden="true"></span>
+        <span class="longmem-dataset-copy">
+          <strong>${escapeHtml(item.name || item.id || "-")}</strong>
+          <small>${escapeHtml(meta.filter(Boolean).join("  ·  "))}</small>
+          <em>${escapeHtml(item.description || (exists ? "预置 LongMemEval 数据集。" : "数据文件缺失。"))}</em>
+        </span>
+      </button>
+    `;
+  }).join("") || "<p class=\"muted-list-note\">没有匹配的数据集。可以切到“导入自定义”后直接填写 JSON 路径。</p>";
+  document.querySelectorAll("#longMemDatasetCards .longmem-dataset-option").forEach((card) => {
     card.classList.toggle("active", card.dataset.path === $("longMemData")?.value.trim());
     card.addEventListener("click", async () => {
       if ($("longMemData")) $("longMemData").value = card.dataset.path || "";
-      document.querySelectorAll("#longMemDatasetCards .dataset-card").forEach((item) => item.classList.remove("active"));
+      setLongMemDatasetMode("preset");
+      document.querySelectorAll("#longMemDatasetCards .longmem-dataset-option").forEach((item) => item.classList.remove("active"));
       card.classList.add("active");
-      renderLongMemEntryStatus(card.dataset.path || "", datasetRecordForPath(card.dataset.path || "", "longmemeval"));
+      syncLongMemDatasetState(card.dataset.path || "", {skipMode: true});
       validateLongMemDataset().catch((e) => {
-        renderLongMemEntryStatus(card.dataset.path || "", datasetRecordForPath(card.dataset.path || "", "longmemeval"));
+        syncLongMemDatasetState(card.dataset.path || "", {skipMode: true});
         toast(e.message);
       });
     });
   });
+  syncLongMemDatasetState(currentLongMemDatasetPath(), {skipRemember: true});
 }
 
 function benchmarkConfig(key) {
@@ -8265,13 +10856,16 @@ function renderGenericBenchmarkLaunchError(format = "", payload = null) {
   const config = benchmarkConfig(key);
   const data = payload || genericBenchmarkLaunchError(format);
   if (!data) return;
+  const hotpotScoped = normalizeDatasetFormat(config.adapterFormat || format || "") === "hotpotqa";
+  const noteClass = hotpotScoped ? "hqa-note" : "dataset-next-step";
+  const badNoteClass = hotpotScoped ? "hqa-note is-bad" : "dataset-next-step bad-text";
   if ($(config.status)) {
     $(config.status).innerHTML = `
       <p><strong>${escapeHtml(config.label)} 启动失败</strong></p>
-      <p class="dataset-next-step bad-text">${escapeHtml(data.friendly || "启动失败，请检查模型配置或服务状态")}</p>
-      <p class="dataset-next-step">账户 ${escapeHtml(data.account || currentAccount())} · 回答模型 ${escapeHtml(data.agentModel || "-")} @ ${escapeHtml(data.agentBaseUrl || "-")}</p>
-      <p class="dataset-next-step">判分模型 ${escapeHtml(data.judgeModel || "-")} @ ${escapeHtml(data.judgeBaseUrl || "-")}</p>
-      <p class="dataset-next-step">本次请求 ${escapeHtml(data.requestLabel || "-")} · 数据 ${escapeHtml(data.path || "")}</p>
+      <p class="${badNoteClass}">${escapeHtml(data.friendly || "启动失败，请检查模型配置或服务状态")}</p>
+      <p class="${noteClass}">账户 ${escapeHtml(data.account || currentAccount())} · 回答模型 ${escapeHtml(data.agentModel || "-")} @ ${escapeHtml(data.agentBaseUrl || "-")}</p>
+      <p class="${noteClass}">判分模型 ${escapeHtml(data.judgeModel || "-")} @ ${escapeHtml(data.judgeBaseUrl || "-")}</p>
+      <p class="${noteClass}">本次请求 ${escapeHtml(data.requestLabel || "-")} · 数据 ${escapeHtml(data.path || "")}</p>
       ${errorDetailHtml(data.raw || "")}
     `;
   }
@@ -8279,8 +10873,8 @@ function renderGenericBenchmarkLaunchError(format = "", payload = null) {
     $(config.result).innerHTML = `
       <p><strong>任务未创建</strong></p>
       <p>${escapeHtml(data.friendly || "启动失败，请检查模型配置或服务状态")}</p>
-      <p class="dataset-next-step">服务端在创建阶段已拦截这次运行，所以不会继续消耗题目，也不会出现新的活动进度。</p>
-      <p class="dataset-next-step">优先处理系统配置里的回答模型账号状态或 token；修复后再重新点击“开始测试”。</p>
+      <p class="${noteClass}">服务端在创建阶段已拦截这次运行，所以不会继续消耗题目，也不会出现新的活动进度。</p>
+      <p class="${noteClass}">优先处理系统配置里的回答模型账号状态或 token；修复后再重新点击“开始测试”。</p>
       ${errorDetailHtml(data.raw || "")}
     `;
   }
@@ -8293,40 +10887,2184 @@ function invalidateHotpotQaModelReadiness() {
   state.hotpotQaModelReadinessFetchedAt = 0;
 }
 
+function resetHotpotQaDatasetOverview() {
+  state.hotpotQaDatasetOverview = null;
+  state.hotpotQaDatasetOverviewLoading = false;
+  renderHotpotQaDatasetSummary(null);
+  renderHotpotQaModelReadiness(state.hotpotQaModelReadiness);
+}
+
+function restoreHotpotQaDefaults() {
+  const cfg = {...accountConfigDefaults(), ...readAccountConfig(currentAccount())};
+  const preferredIds = benchmarkConfig("hotpotqa")?.preferredDatasetIds || ["hotpotqa-dev-distractor", "hotpotqa-sample"];
+  const record = preferredIds
+    .map((id) => state.datasetRegistry.find((item) => item.id === id && item.exists))
+    .find(Boolean)
+    || preferredIds.map((id) => state.datasetRegistry.find((item) => item.id === id)).find(Boolean)
+    || null;
+  if ($("hotpotQaData")) {
+    $("hotpotQaData").value = record?.path || activeDatasetPathForFormat("hotpotqa") || "";
+  }
+  if ($("hotpotQaCount")) $("hotpotQaCount").value = "50";
+  if ($("hotpotQaUseTools")) $("hotpotQaUseTools").checked = cfg.hotpotQaUseTools !== false;
+  resetHotpotQaDatasetOverview();
+  rememberActiveDatasetView("hotpotQaView", "hotpotqa", $("hotpotQaData")?.value.trim() || "");
+  if ($("hotpotQaData")?.value.trim()) {
+    saveLastBenchmarkDataset({path: $("hotpotQaData").value.trim(), format: "hotpotqa", view: "hotpotQaView"});
+  }
+  renderHotpotQaQuestionSelection();
+  renderHotpotQaStatusBand(
+    state.currentRunningTask && normalizeDatasetFormat(taskDatasetFormat(state.currentRunningTask, state.taskDatasetFormats[state.currentRunningTask.id] || "")) === "hotpotqa"
+      ? state.currentRunningTask
+      : null,
+    state.currentRunningTask?.id ? (state.runningBenchmarkSummaries[state.currentRunningTask.id] || null) : null,
+  );
+}
+
+function hotpotQaDatasetSplitLabel(path = "") {
+  const text = String(path || "").toLowerCase();
+  if (text.includes("distractor")) return "dev / distractor";
+  if (text.includes("fullwiki")) return text.includes("test") ? "test / fullwiki" : "dev / fullwiki";
+  if (text.includes("train")) return "train";
+  if (text.includes("sample")) return "sample";
+  return "unknown split";
+}
+
+function hotpotQaDatasetChecks(data = state.hotpotQaDatasetOverview, readiness = state.hotpotQaModelReadiness) {
+  const path = genericBenchmarkPath("hotpotqa");
+  const supportingFactsPresent = Number(data?.hotpotqa_supporting_facts_present_count || 0);
+  const answerPresent = Number(data?.hotpotqa_answer_present_count || 0);
+  const contextPresent = Number(data?.hotpotqa_context_present_count || 0);
+  const hasPath = Boolean(path);
+  const hasValidatedData = Boolean(data && (data.questions != null || data.samples != null));
+  const checks = [
+    {
+      label: "数据集可读取",
+      ok: Boolean(hasPath && hasValidatedData),
+      tone: !hasPath ? "bad" : (hasValidatedData ? "ok" : "warn"),
+      detail: !hasPath ? "尚未填写数据路径" : (hasValidatedData ? path : "等待校验数据集"),
+    },
+    {
+      label: "Schema 校验",
+      ok: Boolean(Number(data?.questions || 0) > 0),
+      tone: !hasPath ? "bad" : (!hasValidatedData ? "warn" : (Number(data?.questions || 0) > 0 ? "ok" : "bad")),
+      detail: !hasPath
+        ? "尚未填写数据路径"
+        : (!hasValidatedData
+          ? "等待校验 question 结构"
+          : (Number(data?.questions || 0) > 0 ? `识别 ${formatInt(data?.questions || 0)} 道题` : "没有识别到 question 字段")),
+    },
+    {
+      label: "answer 字段",
+      ok: Number(answerPresent || 0) > 0,
+      tone: !hasPath ? "bad" : (!hasValidatedData ? "warn" : (Number(answerPresent || 0) > 0 ? "ok" : "bad")),
+      detail: !hasPath
+        ? "尚未填写数据路径"
+        : (!hasValidatedData
+          ? "等待校验 answer 字段"
+          : (Number(answerPresent || 0) > 0 ? `${formatInt(answerPresent)} 题含答案` : "没有识别到 answer / gold_answer")),
+    },
+    {
+      label: "supporting facts",
+      ok: Number(supportingFactsPresent || 0) > 0,
+      tone: !hasPath ? "bad" : (!hasValidatedData ? "warn" : (Number(supportingFactsPresent || 0) > 0 ? "ok" : "warn")),
+      detail: !hasPath
+        ? "尚未填写数据路径"
+        : (!hasValidatedData
+          ? "等待校验 supporting facts"
+          : (Number(supportingFactsPresent || 0) > 0 ? `${formatInt(supportingFactsPresent)} 题带 supporting_facts` : "当前摘要未发现 supporting_facts")),
+    },
+    {
+      label: "Context 字段",
+      ok: Number(contextPresent || 0) > 0,
+      tone: !hasPath ? "bad" : (!hasValidatedData ? "warn" : (Number(contextPresent || 0) > 0 ? "ok" : "warn")),
+      detail: !hasPath
+        ? "尚未填写数据路径"
+        : (!hasValidatedData
+          ? "等待校验 context 字段"
+          : (Number(contextPresent || 0) > 0 ? `${formatInt(contextPresent)} 题含上下文` : "当前摘要未发现 context")),
+    },
+    {
+      label: "结果目录",
+      ok: true,
+      tone: "ok",
+      detail: "runs/ 可写",
+    },
+  ];
+  return checks;
+}
+
+function hotpotQaCheckStateLabel(item = {}) {
+  if (item.ok) return "通过";
+  return item.tone === "bad" ? "失败" : "警告";
+}
+
+function hotpotQaPathRowHtml(label = "", value = "", options = {}) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const href = options.href || "";
+  const open = options.open !== false;
+  const copy = options.copy !== false;
+  return `
+    <article class="hqa-path-row">
+      <span>${escapeHtml(label || "-")}</span>
+      <code title="${escapeHtml(text)}">${escapeHtml(text)}</code>
+      <div class="hqa-path-actions">
+        ${copy ? `<button class="path-copy" type="button" data-copy="${escapeHtml(text)}">复制</button>` : ""}
+        ${href ? `<a class="path-link" href="${escapeHtml(href)}" target="_blank" rel="noreferrer">浏览器打开</a>` : ""}
+        ${open ? `<button class="path-open" type="button" data-path="${escapeHtml(text)}">打开</button>` : ""}
+      </div>
+    </article>
+  `;
+}
+
+function hotpotQaDatasetRow(questionId = "") {
+  const qid = String(questionId || "").trim();
+  if (!qid) return null;
+  const rows = Array.isArray(state.benchmarkQuestions.hotpotqa) ? state.benchmarkQuestions.hotpotqa : [];
+  return rows.find((row) => String(row.question_id || "").trim() === qid) || null;
+}
+
+async function ensureHotpotQaDatasetRow(questionId = "") {
+  const qid = String(questionId || "").trim();
+  if (!qid) return null;
+  const existing = hotpotQaDatasetRow(qid);
+  if (existing) return existing;
+  if (state.hotpotQaQuestionLookupLoading[qid]) return null;
+  const path = genericBenchmarkPath("hotpotqa");
+  if (!path) return null;
+  state.hotpotQaQuestionLookupLoading[qid] = true;
+  try {
+    const questionTotal = Number(state.hotpotQaDatasetOverview?.questions || 0);
+    const lookupLimit = Math.max(1, Math.min(12000, questionTotal || 8000));
+    const data = await api(`/api/questions-page?path=${encodeURIComponent(path)}&offset=0&limit=${lookupLimit}&q=${encodeURIComponent(qid)}`);
+    const row = Array.isArray(data?.questions)
+      ? data.questions.find((item) => String(item?.question_id || "").trim() === qid)
+      : null;
+    if (row) {
+      const current = Array.isArray(state.benchmarkQuestions.hotpotqa) ? state.benchmarkQuestions.hotpotqa : [];
+      if (!current.some((item) => String(item?.question_id || "").trim() === qid)) {
+        state.benchmarkQuestions.hotpotqa = [row, ...current];
+      }
+      return row;
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    delete state.hotpotQaQuestionLookupLoading[qid];
+  }
+}
+
+function scheduleHotpotQaDatasetRowLookup(questionId = "") {
+  const qid = String(questionId || "").trim();
+  if (!qid || hotpotQaDatasetRow(qid) || state.hotpotQaQuestionLookupLoading[qid]) return;
+  ensureHotpotQaDatasetRow(qid)
+    .then((row) => {
+      if (row) renderHotpotQaLiveMonitor();
+    })
+    .catch(() => null);
+}
+
+function isHotpotQaTask(task = null) {
+  if (!task?.id && !task?.output_file && !task?.run_dir) return false;
+  return normalizeDatasetFormat(taskDatasetFormat(task, state.taskDatasetFormats[task.id] || task.dataset_format || "")) === "hotpotqa";
+}
+
+function resolveHotpotQaQuestionRunsRecord(record = null) {
+  const candidates = [
+    record,
+    state.hotpotQaActiveRecord,
+    state.currentRunningTask,
+    state.selectedRunRecord,
+  ];
+  return candidates.find((item) => {
+    if (!item || !isHotpotQaTask(item)) return false;
+    return Boolean(String(item.output_file || item.run_dir || "").trim());
+  }) || null;
+}
+
+function sameHotpotQaRun(left = null, right = null) {
+  if (!left || !right) return false;
+  if (left.id && right.id && left.id === right.id) return true;
+  if (left.output_file && right.output_file && left.output_file === right.output_file) return true;
+  if (left.run_dir && right.run_dir && left.run_dir === right.run_dir) return true;
+  return false;
+}
+
+function resolveHotpotQaLiveTask(task = null, record = null) {
+  const candidates = [task, state.currentRunningTask]
+    .filter((item) => item && isHotpotQaTask(item) && isTaskActive(item))
+    .map((item) => taskWithLiveProgress(item));
+  if (!candidates.length) return null;
+  if (record) {
+    const matched = candidates.find((item) => sameHotpotQaRun(item, record));
+    if (matched) return matched;
+  }
+  return candidates[0];
+}
+
+function hotpotQaWorkspaceForDisplay(task = null) {
+  const record = task || state.hotpotQaActiveRecord || null;
+  const liveTask = resolveHotpotQaLiveTask(task, record);
+  const taskConfig = liveTask?.meta?.config || liveTask?.config || record?.meta?.config || record?.config || {};
+  const backend = normalizeMemoryBackend(taskConfig.backend || currentMemoryBackend());
+  const cfg = readAccountConfig(currentAccount());
+  const candidates = backend === "echomemory"
+    ? [
+      taskConfig.workspace,
+      taskConfig.echomemory_workspace,
+      cfg.memoryWorkspace,
+      configuredWorkspaceForBackend("echomemory", {preferSavedConfig: true}),
+      currentConfiguredWorkspace("echomemory"),
+    ]
+    : [
+      taskConfig.workspace,
+      cfg.ovWorkspace,
+      configuredWorkspaceForBackend(backend, {preferSavedConfig: true}),
+      currentConfiguredWorkspace(backend),
+    ];
+  return candidates.map((value) => String(value || "").trim()).find(Boolean) || "";
+}
+
+function hotpotQaCategoryParts(row = {}) {
+  const raw = String(row?.type || row?.category || "").trim();
+  if (!raw) return {type: "", level: ""};
+  const [type = "", level = ""] = raw.split("/").map((value) => String(value || "").trim());
+  return {type, level};
+}
+
+function hotpotQaTypeText(row = {}) {
+  const direct = String(row?.type || "").trim();
+  if (direct) return direct;
+  return hotpotQaCategoryParts(row).type || "-";
+}
+
+function hotpotQaLevelText(row = {}) {
+  const direct = String(row?.level || "").trim();
+  if (direct) return direct;
+  return hotpotQaCategoryParts(row).level || "-";
+}
+
+function hotpotQaContextPresentCount(data = {}) {
+  const direct = hotpotQaNumeric(data?.hotpotqa_context_present_count);
+  if (direct != null) return direct;
+  const previewRows = Array.isArray(state.benchmarkQuestions.hotpotqa) ? state.benchmarkQuestions.hotpotqa : [];
+  const previewHasContext = previewRows.some((row) =>
+    Array.isArray(row?.context) ? row.context.length > 0 : Boolean(row?.context)
+  );
+  const questionTotal = Number(data?.questions || 0);
+  if (previewHasContext && questionTotal > 0) return questionTotal;
+  const supportingCount = hotpotQaNumeric(data?.hotpotqa_supporting_facts_present_count);
+  const answerCount = hotpotQaNumeric(data?.hotpotqa_answer_present_count);
+  const eventTotal = hotpotQaNumeric(data?.memory_events_total);
+  if (questionTotal > 0 && eventTotal && supportingCount === questionTotal && answerCount === questionTotal) {
+    return questionTotal;
+  }
+  return 0;
+}
+
+function hotpotQaPredictionText(row = {}) {
+  const raw = [
+    row.response,
+    row.hypothesis,
+    row.prediction,
+    row.model_answer,
+    row.model_response,
+  ].map((value) => String(value || "").trim()).find(Boolean) || "";
+  if (!raw) return "";
+  const hasToolTrace = /<memory_search>|<\/memory_search>|<tool|<\/tool>/i.test(raw);
+  const cleaned = raw
+    .replace(/<memory_search>[\s\S]*?<\/memory_search>/gi, " ")
+    .replace(/<tool[^>]*>[\s\S]*?<\/tool>/gi, " ")
+    .replace(/<\/?[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const looksIntermediate = /^(let me|i('|’)ll|i will|searching|need to search|let us|first,?\s*i)/i.test(cleaned);
+  if (hasToolTrace && (!cleaned || looksIntermediate || cleaned.length <= 24)) {
+    return "工具调用中，等待最终答案";
+  }
+  return cleaned || raw;
+}
+
+function hotpotQaGoldAnswerText(row = {}, fallback = "") {
+  return [
+    row.answer,
+    row.gold_answer,
+    row.reference_answer,
+    fallback,
+  ].map((value) => String(value || "").trim()).find(Boolean) || "";
+}
+
+function hotpotQaNumeric(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const raw = Number(value);
+  return Number.isFinite(raw) ? raw : null;
+}
+
+function hotpotQaMetricText(value) {
+  const numeric = hotpotQaNumeric(value);
+  return numeric == null ? "-" : percent(numeric);
+}
+
+function hotpotQaLatencyText(row = {}) {
+  const seconds = [
+    row.end_to_end_time_s,
+    row.qa_time_s,
+    row.time_cost,
+    hotpotQaNumeric(row.end_to_end_ms) != null ? hotpotQaNumeric(row.end_to_end_ms) / 1000 : null,
+  ].find((value) => hotpotQaNumeric(value) != null);
+  return formatSecondsMetric(seconds);
+}
+
+function hotpotQaStatusText(row = {}) {
+  return [
+    row.result,
+    row.simple_grade,
+    row.health_status,
+    row.answer_status,
+    row.model_status,
+    row.retrieval_status,
+  ].map((value) => String(value || "").trim()).find(Boolean) || "-";
+}
+
+function hotpotQaEvidenceHitLabel(row = {}, detail = null) {
+  const rowData = detail?.row || row || {};
+  const memoryHits = hotpotQaNumeric(detail?.diagnostics?.memory_hit_count ?? rowData.memory_hit_count);
+  const retrievalCount = hotpotQaNumeric(detail?.diagnostics?.retrieval_count ?? rowData.retrieval_count);
+  if (memoryHits != null && retrievalCount != null && retrievalCount > 0) {
+    return `${formatInt(memoryHits)}/${formatInt(retrievalCount)}`;
+  }
+  if (memoryHits != null) return memoryHits > 0 ? `${formatInt(memoryHits)} hits` : "0 hits";
+  if (retrievalCount != null) return retrievalCount > 0 ? `${formatInt(retrievalCount)} retrieved` : "未检索到证据";
+  return "-";
+}
+
+function hotpotQaEvidencePill(row = {}, detail = null) {
+  const rowData = detail?.row || row || {};
+  const memoryHits = hotpotQaNumeric(detail?.diagnostics?.memory_hit_count ?? rowData.memory_hit_count);
+  const retrievalCount = hotpotQaNumeric(detail?.diagnostics?.retrieval_count ?? rowData.retrieval_count);
+  if (memoryHits != null && retrievalCount != null && retrievalCount > 0) {
+    if (memoryHits <= 0) return {label: "0 hit", tone: "muted", compact: `0/${formatInt(retrievalCount)}`};
+    if (memoryHits >= retrievalCount) return {label: `${formatInt(memoryHits)}/${formatInt(retrievalCount)} hit`, tone: "ok", compact: `${formatInt(memoryHits)}/${formatInt(retrievalCount)}`};
+    return {label: "partial", tone: "warn", compact: `${formatInt(memoryHits)}/${formatInt(retrievalCount)}`};
+  }
+  if (memoryHits != null) return memoryHits > 0
+    ? {label: `${formatInt(memoryHits)} hit`, tone: "ok", compact: `${formatInt(memoryHits)} hit`}
+    : {label: "0 hit", tone: "muted", compact: "0 hit"};
+  if (retrievalCount != null) return retrievalCount > 0
+    ? {label: "partial", tone: "warn", compact: `${formatInt(retrievalCount)} docs`}
+    : {label: "0 hit", tone: "muted", compact: "0 hit"};
+  return {label: "-", tone: "muted", compact: "-"};
+}
+
+function hotpotQaJudgePending(row = {}, detail = null) {
+  const result = String(detail?.judge?.result || row?.result || row?.simple_grade || "").trim().toUpperCase();
+  if (!result) return true;
+  return result === "NEEDS_JUDGE" || result === "PENDING";
+}
+
+function hotpotQaDisplayStatusText(row = {}, detail = null) {
+  const status = hotpotQaStatusText(detail?.row || row || {});
+  if (!hotpotQaJudgePending(detail?.row || row || {}, detail)) return status;
+  return /(FAIL|FAILED|ERROR|INTERRUPT|CANCEL|WRONG)/i.test(status || "") ? status : "NEEDS_JUDGE";
+}
+
+function hotpotQaStatusPillTone(status = "") {
+  const text = String(status || "").trim().toUpperCase();
+  if (!text || text === "-") return "warn";
+  if (text === "NEEDS_JUDGE" || text === "PENDING") return "warn";
+  if (/(DONE|COMPLETE|COMPLETED|SUCCESS|SUCCEEDED|CORRECT|MATCH|已完成|完成)/.test(text)) return "ok";
+  if (/(FAIL|FAILED|ERROR|INTERRUPT|CANCEL|WRONG)/.test(text)) return "bad";
+  return "warn";
+}
+
+function hotpotQaEvidenceItems(detail = null) {
+  const relevant = Array.isArray(detail?.relevant_memory) ? detail.relevant_memory : [];
+  return relevant.slice(0, 10).map((item, index) => {
+    const title = String(item?.title || item?.name || item?.uri || item?.evidence_uri || `evidence-${index + 1}`).trim();
+    const body = compactText(String(item?.content || item?.abstract || item?.text || item?.snippet || item?.uri || "").trim(), 220);
+    const scoreRaw = hotpotQaNumeric(item?.score ?? item?.confidence);
+    return {
+      title,
+      body,
+      rank: Number(item?.rank || index + 1),
+      score: scoreRaw,
+      hitTone: item?.hit === true ? "ok" : (item?.hit === false ? "muted" : "warn"),
+      hitLabel: item?.hit === true ? "hit" : (item?.hit === false ? "miss" : "partial"),
+    };
+  }).filter((item) => item.title || item.body);
+}
+
+function hotpotQaSupportingFactsLabel(questionId = "", row = null) {
+  const datasetRow = row || hotpotQaDatasetRow(questionId);
+  const count = hotpotQaNumeric(datasetRow?.supporting_facts_count);
+  const docs = hotpotQaNumeric(datasetRow?.document_count);
+  const parts = [];
+  if (count != null) parts.push(`${formatInt(count)} expected`);
+  if (docs != null) parts.push(`${formatInt(docs)} docs`);
+  return parts.join(" · ") || "等待 supporting facts 摘要";
+}
+
+function hotpotQaSupportingFactsItems(questionId = "", row = null) {
+  const datasetRow = row || hotpotQaDatasetRow(questionId);
+  const facts = Array.isArray(datasetRow?.supporting_facts) ? datasetRow.supporting_facts : [];
+  return facts.slice(0, 6).map((item, index) => {
+    if (Array.isArray(item)) {
+      const [title, sentenceId] = item;
+      return {
+        title: String(title || `support-${index + 1}`).trim(),
+        sentenceId: sentenceId == null ? "-" : String(sentenceId),
+        snippet: "",
+      };
+    }
+    if (item && typeof item === "object") {
+      return {
+        title: String(item.title || item.name || `support-${index + 1}`).trim(),
+        sentenceId: item.sent_id == null ? (item.sentence_id == null ? "-" : String(item.sentence_id)) : String(item.sent_id),
+        snippet: compactText(String(item.snippet || item.text || item.content || "").trim(), 160),
+      };
+    }
+    return {
+      title: String(item || `support-${index + 1}`).trim(),
+      sentenceId: "-",
+      snippet: "",
+    };
+  }).filter((item) => item.title || item.snippet);
+}
+
+function hotpotQaSampleLabel(value = "") {
+  const text = String(value || "").trim();
+  if (!text || text === "-" || text.toLowerCase() === "all") return "";
+  return text;
+}
+
+function hotpotQaApplyFocusedQuestion(record = {}, row = null, detail = null, options = {}) {
+  const outputPath = String(record?.output_file || "").trim();
+  const questionId = String(
+    detail?.row?.question_id
+    || row?.question_id
+    || detail?.row?.sample_id
+    || row?.sample_id
+    || ""
+  ).trim();
+  state.hotpotQaFocusedQuestionId = questionId;
+  state.hotpotQaFocusedQuestionPath = outputPath;
+  state.hotpotQaFocusedQuestionRow = row || detail?.row || null;
+  state.hotpotQaFocusedQuestionDetail = detail || null;
+  state.hotpotQaFocusedQuestionPinned = Boolean(options.pinned);
+}
+
+async function loadHotpotQaFocusedQuestionDetail(record = {}, questionId = "", row = null, options = {}) {
+  const outputPath = String(record?.output_file || "").trim();
+  const qid = String(questionId || row?.question_id || row?.sample_id || "").trim();
+  if (!outputPath || !qid) return null;
+  if (!options.force
+    && state.hotpotQaFocusedQuestionId === qid
+    && state.hotpotQaFocusedQuestionPath === outputPath
+    && state.hotpotQaFocusedQuestionDetail) {
+    return state.hotpotQaFocusedQuestionDetail;
+  }
+  hotpotQaApplyFocusedQuestion(record, row, null, {pinned: Boolean(options.pinned)});
+  state.hotpotQaFocusedQuestionLoading = true;
+  renderHotpotQaLiveMonitor();
+  try {
+    const detail = await api(`/api/question-detail?path=${encodeURIComponent(outputPath)}&question_id=${encodeURIComponent(qid)}`);
+    if (state.hotpotQaFocusedQuestionId === qid && state.hotpotQaFocusedQuestionPath === outputPath) {
+      state.hotpotQaFocusedQuestionDetail = detail || null;
+      if (detail?.row) state.hotpotQaFocusedQuestionRow = detail.row;
+    }
+    return detail || null;
+  } catch {
+    return null;
+  } finally {
+    if (state.hotpotQaFocusedQuestionId === qid && state.hotpotQaFocusedQuestionPath === outputPath) {
+      state.hotpotQaFocusedQuestionLoading = false;
+      renderHotpotQaLiveMonitor();
+    }
+  }
+}
+
+function renderHotpotQaLiveMonitor(task = null, summary = null) {
+  const currentTaskBox = $("hotpotQaCurrentTask");
+  if (!currentTaskBox) return;
+  const activeRecord = state.hotpotQaActiveRecord || task || null;
+  const liveTask = resolveHotpotQaLiveTask(task, activeRecord);
+  task = liveTask || null;
+  syncHotpotQaStageFromContext(task, activeRecord, {
+    preferredStage: task ? "qa" : "",
+    sectionId: task ? "hotpotQaQaSection" : "",
+  });
+  const progress = liveTask?.progress || {};
+  const execution = taskExecutionProgress(task || {}, "hotpotqa");
+  const activeOutputPath = String(activeRecord?.output_file || "").trim();
+  const preview = normalizeActiveTaskProgressQaPreview(progress, task) || null;
+  const currentQuestionId = String(preview?.questionId || execution?.status_sample || "").trim();
+  const usingPinnedFocus = Boolean(
+    state.hotpotQaFocusedQuestionPinned
+    && state.hotpotQaFocusedQuestionId
+    && state.hotpotQaFocusedQuestionPath
+    && state.hotpotQaFocusedQuestionPath === activeOutputPath
+  );
+  const usingFocusedDetail = Boolean(
+    usingPinnedFocus
+    && state.hotpotQaFocusedQuestionId
+    && state.hotpotQaFocusedQuestionPath
+    && state.hotpotQaFocusedQuestionPath === activeOutputPath
+  );
+  const focusedDetail = usingFocusedDetail ? state.hotpotQaFocusedQuestionDetail : null;
+  const focusedRow = usingFocusedDetail ? (state.hotpotQaFocusedQuestionRow || focusedDetail?.row || null) : null;
+  const previewRow = currentQuestionId
+    ? (state.hotpotQaQuestionRunsRows || []).find((item) => String(item.question_id || item.sample_id || "").trim() === currentQuestionId) || null
+    : null;
+  const effectiveRow = focusedRow || previewRow || null;
+  const effectiveDetail = focusedDetail;
+  const staleFocusedQuestionId = usingPinnedFocus ? state.hotpotQaFocusedQuestionId : "";
+  const effectiveQuestionId = String(
+    effectiveDetail?.row?.question_id
+    || effectiveRow?.question_id
+    || staleFocusedQuestionId
+    || currentQuestionId
+    || ""
+  ).trim();
+  const datasetRow = hotpotQaDatasetRow(effectiveQuestionId) || hotpotQaDatasetRow(currentQuestionId);
+  const prediction = hotpotQaPredictionText(effectiveDetail?.row || effectiveRow || {}) || String(preview?.answer || "").trim() || "-";
+  const goldAnswer = hotpotQaGoldAnswerText(effectiveDetail?.row || effectiveRow || {}, datasetRow?.answer || "") || "-";
+  const questionText = [
+    effectiveDetail?.row?.question,
+    effectiveRow?.question,
+    preview?.question,
+    datasetRow?.question,
+  ].map((value) => String(value || "").trim()).find(Boolean) || "-";
+  const questionLabel = String(
+    effectiveDetail?.row?.sample_id
+    || effectiveRow?.sample_id
+    || preview?.sampleId
+    || datasetRow?.sample_id
+    || "-"
+  ).trim();
+  const sampleLabel = hotpotQaSampleLabel(questionLabel);
+  const typeText = hotpotQaTypeText(effectiveDetail?.row || effectiveRow || datasetRow || preview || {});
+  const levelText = hotpotQaLevelText(effectiveDetail?.row || effectiveRow || datasetRow || preview || {});
+  const judgePending = hotpotQaJudgePending(effectiveRow || {}, effectiveDetail);
+  const emText = judgePending ? "pending" : hotpotQaMetricText(effectiveDetail?.row?.answer_em ?? effectiveRow?.answer_em);
+  const f1Text = judgePending ? "pending" : hotpotQaMetricText(effectiveDetail?.row?.answer_f1 ?? effectiveRow?.answer_f1);
+  const statusText = hotpotQaDisplayStatusText(effectiveDetail?.row || effectiveRow || {}, effectiveDetail);
+  const latencyText = hotpotQaLatencyText(effectiveDetail?.row || effectiveRow || {});
+  const evidenceHit = hotpotQaEvidenceHitLabel(effectiveRow || {}, effectiveDetail);
+  const evidencePill = hotpotQaEvidencePill(effectiveRow || {}, effectiveDetail);
+  const supportingFactsLabel = hotpotQaSupportingFactsLabel(effectiveQuestionId, datasetRow);
+  const supportingFactsItems = hotpotQaSupportingFactsItems(effectiveQuestionId, datasetRow);
+  const evidenceItems = hotpotQaEvidenceItems(effectiveDetail);
+  const supportingFactsExpected = hotpotQaNumeric(datasetRow?.supporting_facts_count) ?? supportingFactsItems.length;
+  const rowPending = Boolean(task && !effectiveRow && !effectiveDetail);
+  const liveStatusText = rowPending && statusText === "-" ? "运行中" : statusText;
+  const predictionPending = prediction === "工具调用中，等待最终答案";
+  const predictionText = rowPending ? "当前题结果行尚未写出" : prediction;
+  const goldText = rowPending && goldAnswer === "-" ? "等待结果行落盘后对照" : goldAnswer;
+  const supportingLabel = rowPending && supportingFactsLabel === "等待 supporting facts 摘要" ? "按 question_id 回填中" : supportingFactsLabel;
+  const evidenceLabel = rowPending && evidenceHit === "-" ? "等待当前题结果行" : evidenceHit;
+  const latencyLabel = rowPending && latencyText === "-" ? "等待结果行" : latencyText;
+  const currentProgress = execution?.total_questions
+    ? `${execution.current_question || execution.answered_questions || 0}/${execution.total_questions}`
+    : (progress.total ? `${progress.current || 0}/${progress.total}` : "-");
+  const progressNote = progress.pct != null
+    ? `${Number(progress.pct || 0).toFixed(1)}%`
+    : (execution?.total_questions ? `${execution.answered_questions || 0} answered` : "等待任务");
+  const evidenceExplanation = "Evidence Hit = retrieved evidence matching expected supporting facts.";
+  const answerMatched = String(prediction || "").trim().toLowerCase() === String(goldAnswer || "").trim().toLowerCase() && prediction !== "-" && goldAnswer !== "-";
+  const modeLabel = usingPinnedFocus
+    ? "已选结果行"
+    : task
+      ? "当前运行"
+      : "最近结果";
+  if (!task && !usingFocusedDetail && !state.hotpotQaQuestionRunsRows.length) {
+    currentTaskBox.innerHTML = `
+      <div class="hqa-empty-state">
+        <span class="ui-icon hqa-empty-icon" data-ui-icon="activity" data-ui-icon-size="18" aria-hidden="true"></span>
+        <strong>等待开始测试</strong>
+        <p>任务启动后，这里会持续刷新当前题目、预测答案、Gold Answer 和检索证据。</p>
+      </div>
+    `;
+    hydrateUiIcons(currentTaskBox);
+    return;
+  }
+  const statusTone = /fail|error|interrupt|cancel/i.test(liveStatusText)
+    ? "bad"
+    : (/done|complete|success|已完成|完成/i.test(liveStatusText) ? "ok" : "warn");
+  const evidenceSummary = [
+    supportingFactsExpected ? `${formatInt(supportingFactsExpected)} expected` : supportingFactsLabel,
+    evidenceItems.length ? `${formatInt(evidenceItems.length)} docs` : "0 docs",
+    evidencePill.compact !== "-" ? `${evidencePill.compact} hit` : "waiting",
+  ].filter(Boolean).join(" · ");
+  const liveRunNote = judgePending
+    ? "Judge 前先核对答案与证据链。"
+    : (evidenceItems.length ? "当前题答案与证据链已同步。" : progressNote);
+  currentTaskBox.innerHTML = `
+    <div class="hqa-live-monitor">
+      <div class="hqa-live-run-item">
+        <div class="hqa-live-run-head">
+          <div class="hqa-live-run-copy">
+            <small>${escapeHtml(modeLabel)}</small>
+            <strong class="hqa-question-id" title="${escapeHtml(effectiveQuestionId || "-")}">${escapeHtml(sampleLabel ? `${sampleLabel} · ${effectiveQuestionId || "-"}` : (effectiveQuestionId || "-"))}</strong>
+          </div>
+          <div class="hqa-live-run-chipline">
+            <span class="hqa-table-pill">${escapeHtml(typeText || "-")}</span>
+            <span class="hqa-table-pill">${escapeHtml(levelText || "-")}</span>
+            <span class="hqa-table-pill ${statusTone}">${escapeHtml(liveStatusText || "等待任务")}</span>
+          </div>
+        </div>
+        <div class="hqa-live-run-statusline">
+          <span><small>Progress</small><strong>${escapeHtml(currentProgress)}</strong></span>
+          <span><small>Evidence Hit</small><strong>${escapeHtml(evidencePill.compact)}</strong></span>
+          <span><small>Latency</small><strong>${escapeHtml(latencyLabel)}</strong></span>
+          <span class="${judgePending ? "is-warn" : ""}"><small>Judge</small><strong>${escapeHtml(judgePending ? "NEEDS_JUDGE" : (liveStatusText || "-"))}</strong></span>
+        </div>
+        <div class="hqa-live-run-note">
+          <small>${escapeHtml(judgePending ? "QA 已完成，等待正式 Judge；EM / F1 会在判分后回填。" : progressNote)}</small>
+          <strong>${escapeHtml(liveRunNote)}</strong>
+        </div>
+      </div>
+      <div class="hqa-live-section hqa-live-section-question hqa-question-block">
+        <span><span class="ui-icon" data-ui-icon="message-circle-question" data-ui-icon-size="14" aria-hidden="true"></span><span>当前问题</span></span>
+        <p class="hqa-question-text">${escapeHtml(questionText)}</p>
+      </div>
+      <div class="hqa-live-section hqa-live-section-answer hqa-answer-compare">
+        <article class="hqa-answer-block ${judgePending ? "" : "is-judge-ready"} ${answerMatched ? "is-answer-match" : ""}">
+          <span><span class="ui-icon" data-ui-icon="bot" data-ui-icon-size="14" aria-hidden="true"></span><span>Predicted Answer</span></span>
+          <p class="hqa-prediction-text">${escapeHtml(predictionText)}</p>
+        </article>
+        <article class="hqa-answer-block ${answerMatched ? "is-answer-match" : ""}">
+          <span><span class="ui-icon" data-ui-icon="badge-check" data-ui-icon-size="14" aria-hidden="true"></span><span>Gold Answer</span></span>
+          <p class="hqa-answer-text">${escapeHtml(goldText)}</p>
+        </article>
+      </div>
+      <div class="hqa-live-section hqa-live-section-evidence hqa-evidence-trace">
+        <div class="hqa-evidence-trace-head">
+          <div>
+            <span><span class="ui-icon" data-ui-icon="network" data-ui-icon-size="14" aria-hidden="true"></span><span>Evidence Trace</span></span>
+            <p class="hqa-evidence-note">${escapeHtml(evidenceExplanation)}</p>
+          </div>
+          <span class="hqa-table-pill ${escapeHtml(evidencePill.tone)}">${escapeHtml(evidencePill.label)}</span>
+        </div>
+        <div class="hqa-evidence-summary-strip">
+          <article>
+            <span>Supporting Facts</span>
+            <strong>${escapeHtml(supportingFactsExpected ? `${formatInt(supportingFactsExpected)} expected` : supportingLabel)}</strong>
+            <small>${escapeHtml(supportingFactsItems.length ? `当前展示 ${Math.min(supportingFactsItems.length, 3)} 条` : "等待 supporting facts")}</small>
+          </article>
+          <article>
+            <span>Retrieved Evidence</span>
+            <strong>${escapeHtml(evidenceItems.length ? `${formatInt(evidenceItems.length)} docs` : "0 docs")}</strong>
+            <small>${escapeHtml(evidenceItems.length ? `当前展示前 ${Math.min(evidenceItems.length, 3)} 条` : "等待 retrieved evidence")}</small>
+          </article>
+          <article>
+            <span>Evidence Hit</span>
+            <strong>${escapeHtml(evidencePill.compact)}</strong>
+            <small>${escapeHtml(judgePending ? "Judge 前先看证据链命中情况" : evidenceExplanation)}</small>
+          </article>
+        </div>
+        <div class="hqa-evidence-columns">
+          <section class="hqa-evidence-block hqa-supporting-facts-block">
+            <div class="hqa-evidence-head">
+              <span><span class="ui-icon" data-ui-icon="network" data-ui-icon-size="14" aria-hidden="true"></span><span>Supporting Facts</span></span>
+              <small>${escapeHtml(supportingFactsExpected ? `${formatInt(supportingFactsExpected)} expected facts` : supportingLabel)}</small>
+            </div>
+            ${supportingFactsItems.length ? `
+            <div class="hqa-evidence-list">
+              ${supportingFactsItems.slice(0, 3).map((item) => `
+                <article class="hqa-evidence-item is-support">
+                  <strong>${escapeHtml(item.title || "-")}</strong>
+                  <small>${escapeHtml(item.sentenceId !== "-" ? `sent ${item.sentenceId}` : "expected fact")}</small>
+                  <p class="hqa-evidence-snippet">${escapeHtml(item.snippet || "支持事实将按数据集字段展示。")}</p>
+                </article>
+              `).join("")}
+            </div>
+            ` : `<p class="hqa-evidence-empty">${escapeHtml(supportingLabel)}</p>`}
+          </section>
+          <section class="hqa-evidence-block hqa-retrieved-evidence-block">
+            <div class="hqa-evidence-head">
+              <span><span class="ui-icon" data-ui-icon="search-check" data-ui-icon-size="14" aria-hidden="true"></span><span>Retrieved Evidence</span></span>
+              <small>${escapeHtml(state.hotpotQaFocusedQuestionLoading ? "加载中..." : (evidenceItems.length ? `${evidenceItems.length} docs` : "暂无详细证据"))}</small>
+            </div>
+            ${evidenceItems.length ? `
+            <div class="hqa-evidence-list">
+              ${evidenceItems.slice(0, 3).map((item) => `
+                <article class="hqa-evidence-item ${item.hitTone === "ok" ? "is-hit" : ""}">
+                  <div class="hqa-evidence-item-head">
+                    <strong>${escapeHtml(item.title || "-")}</strong>
+                    <span class="hqa-table-pill ${escapeHtml(item.hitTone)}">${escapeHtml(item.hitLabel)}</span>
+                  </div>
+                  <small>${escapeHtml(`rank ${item.rank}${item.score != null ? ` · score ${item.score}` : ""}`)}</small>
+                  <p class="hqa-evidence-snippet">${escapeHtml(item.body || "没有摘要")}</p>
+                </article>
+              `).join("")}
+            </div>
+            ` : `<p class="hqa-evidence-empty">${escapeHtml(state.hotpotQaFocusedQuestionLoading ? "正在读取 question detail..." : (rowPending || predictionPending ? "当前题仍在检索 / 工具阶段，详细 evidence 会在结果行稳定后补齐。" : "当前结果行没有可展示的 detailed evidence。"))}</p>`}
+          </section>
+        </div>
+        <small class="hqa-evidence-footnote">${escapeHtml(evidenceSummary)}</small>
+      </div>
+      <div class="hqa-live-section hqa-live-section-judge hqa-live-score-row hqa-judge-status-row">
+        <article class="${judgePending ? "is-pending" : ""}">
+          <span>EM</span>
+          <strong>${escapeHtml(emText)}</strong>
+        </article>
+        <article class="${judgePending ? "is-pending" : ""}">
+          <span>F1</span>
+          <strong>${escapeHtml(f1Text)}</strong>
+        </article>
+        <article>
+          <span>Evidence Hit</span>
+          <strong>${escapeHtml(evidencePill.compact)}</strong>
+        </article>
+        <article>
+          <span>Latency</span>
+          <strong>${escapeHtml(latencyLabel)}</strong>
+        </article>
+        <article class="${judgePending ? "is-warn" : ""}">
+          <span>Judge</span>
+          <strong>${escapeHtml(judgePending ? "NEEDS_JUDGE" : (liveStatusText || "-"))}</strong>
+        </article>
+      </div>
+    </div>
+  `;
+  hydrateUiIcons(currentTaskBox);
+  if (effectiveQuestionId && !datasetRow) scheduleHotpotQaDatasetRowLookup(effectiveQuestionId);
+  if (task && activeOutputPath && currentQuestionId && !usingPinnedFocus && !state.hotpotQaFocusedQuestionLoading) {
+    loadHotpotQaFocusedQuestionDetail(activeRecord || task, currentQuestionId, previewRow, {pinned: false}).catch(() => null);
+  }
+}
+
+function renderHotpotQaQuestionRuns(record = resolveHotpotQaQuestionRunsRecord() || null, rows = state.hotpotQaQuestionRunsRows || []) {
+  const target = $("hotpotQaQuestionRuns");
+  const meta = $("hotpotQaQuestionRunsMeta");
+  if (!target) return;
+  const path = String(record?.output_file || "").trim();
+  const liveTask = resolveHotpotQaLiveTask(null, record);
+  const execution = taskExecutionProgress(liveTask || record || {}, "hotpotqa");
+  const reportedRows = Number(state.hotpotQaQuestionRunsReportedRows || 0);
+  const pendingJudgeRows = Array.isArray(rows)
+    ? rows.filter((row) => hotpotQaJudgePending(row, null)).length
+    : 0;
+  if (meta) {
+    meta.textContent = !path
+      ? "等待结果文件"
+      : (!rows.length && state.hotpotQaQuestionRunsError)
+        ? `已写出 ${formatInt(reportedRows || 0)} 行 · 同步失败`
+      : (!rows.length && reportedRows > 0)
+        ? `已写出 ${formatInt(reportedRows)} 行 · 表格同步中`
+      : (state.hotpotQaQuestionRunsLoading && !rows.length && reportedRows > 0)
+        ? `已写出 ${formatInt(reportedRows)} 行 · 正在同步表格`
+      : (state.hotpotQaQuestionRunsLoading && !rows.length)
+        ? `正在读取 · ${compactPath(displayPath(path), 28, 18)}`
+      : `${rows.length ? formatInt(rows.length) : 0} rows${pendingJudgeRows ? ` · ${formatInt(pendingJudgeRows)} pending judge` : ""} · ${compactPath(displayPath(path), 28, 18)}`;
+  }
+  if (!path) {
+    target.innerHTML = `
+      <div class="hqa-empty-state">
+        <span class="ui-icon hqa-empty-icon" data-ui-icon="bar-chart-3" data-ui-icon-size="18" aria-hidden="true"></span>
+        <strong>运行后展示逐题结果</strong>
+        <p>这里会按题展示 prediction、Gold Answer、EM/F1、evidence hit 和 latency。</p>
+      </div>
+    `;
+    hydrateUiIcons(target);
+    return;
+  }
+  if (state.hotpotQaQuestionRunsLoading && !rows.length) {
+    target.innerHTML = reportedRows > 0
+      ? `<p class="hqa-note">结果文件已写出 ${escapeHtml(formatInt(reportedRows))} 行；当前正在处理第 ${escapeHtml(formatInt(execution?.current_question || execution?.answered_questions || reportedRows || 0))}/${escapeHtml(formatInt(execution?.total_questions || reportedRows || 0))} 题，表格同步中。</p>`
+      : `<p class="hqa-note">正在读取 Question Runs...</p>`;
+    return;
+  }
+  if (!rows.length && state.hotpotQaQuestionRunsError) {
+    target.innerHTML = `
+      <p class="hqa-note">结果文件已写出 ${escapeHtml(formatInt(reportedRows || 0))} 行，但表格同步失败。</p>
+      <p class="hqa-note is-bad">${escapeHtml(state.hotpotQaQuestionRunsError)}</p>
+    `;
+    return;
+  }
+  if (!rows.length) {
+    target.innerHTML = liveTask && isTaskActive(liveTask) && reportedRows > 0
+      ? `<p class="hqa-note">结果文件已写出 ${escapeHtml(formatInt(reportedRows))} 行；当前正在处理第 ${escapeHtml(formatInt(execution?.current_question || execution?.answered_questions || reportedRows || 0))}/${escapeHtml(formatInt(execution?.total_questions || reportedRows || 0))} 题，表格同步中。</p>`
+      : `<p class="hqa-note">当前结果文件还没有写入逐题结果。</p>`;
+    return;
+  }
+  const selectedId = String(state.hotpotQaFocusedQuestionId || "").trim();
+  const truncateQuestionId = (qid = "") => {
+    const text = String(qid || "").trim();
+    if (text.length <= 28) return text;
+    return `${text.slice(0, 10)}...${text.slice(-10)}`;
+  };
+  target.innerHTML = `
+    <div class="hqa-runs-table-shell">
+      <table class="hqa-runs-table">
+        <colgroup>
+          <col class="hqa-col-question-id">
+          <col class="hqa-col-type">
+          <col class="hqa-col-level">
+          <col class="hqa-col-answer">
+          <col class="hqa-col-prediction">
+          <col class="hqa-col-evidence">
+          <col class="hqa-col-latency">
+          <col class="hqa-col-status">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>question_id</th>
+            <th>type</th>
+            <th>level</th>
+            <th>answer</th>
+            <th>prediction</th>
+            <th>evidence hit</th>
+            <th>latency</th>
+            <th>status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row, index) => {
+            const qid = String(row.question_id || row.sample_id || `row-${index + 1}`).trim();
+            const datasetRow = hotpotQaDatasetRow(qid);
+            const prediction = hotpotQaPredictionText(row) || "-";
+            const answer = hotpotQaGoldAnswerText(row, datasetRow?.answer || "") || "-";
+            const level = hotpotQaLevelText(row.level ? row : (datasetRow || row));
+            const type = hotpotQaTypeText(row.type || row.category ? row : (datasetRow || row));
+            const evidenceHit = hotpotQaEvidenceHitLabel(row, null);
+            const evidencePill = hotpotQaEvidencePill(row, null);
+            const selected = selectedId && qid === selectedId;
+            const statusText = hotpotQaDisplayStatusText(row, null);
+            const statusTone = hotpotQaStatusPillTone(statusText);
+            return `
+              <tr class="hqa-run-row ${selected ? "selected" : ""}" data-question-id="${escapeHtml(qid)}">
+                <td class="hqa-run-cell is-mono hqa-question-id-cell" title="${escapeHtml(qid)}"><strong class="hqa-question-id">${escapeHtml(truncateQuestionId(qid))}</strong></td>
+                <td class="hqa-run-cell is-tag"><span class="hqa-cell-ellipsis">${escapeHtml(type)}</span></td>
+                <td class="hqa-run-cell is-mono">${escapeHtml(level)}</td>
+                <td class="hqa-run-cell hqa-answer" title="${escapeHtml(answer)}"><span class="hqa-cell-ellipsis">${escapeHtml(compactText(answer, 88))}</span></td>
+                <td class="hqa-run-cell hqa-prediction" title="${escapeHtml(prediction)}"><span class="hqa-cell-ellipsis">${escapeHtml(compactText(prediction, 116))}</span></td>
+                <td class="hqa-run-cell is-mono"><span class="hqa-table-pill ${escapeHtml(evidencePill.tone)}" title="${escapeHtml(`Evidence Hit = retrieved evidence matching expected supporting facts · ${evidenceHit}`)}">${escapeHtml(evidencePill.label)}</span></td>
+                <td class="hqa-run-cell is-mono">${escapeHtml(hotpotQaLatencyText(row))}</td>
+                <td class="hqa-run-cell is-mono"><span class="hqa-table-pill ${statusTone}">${escapeHtml(statusText)}</span></td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+  target.querySelectorAll(".hqa-run-row").forEach((rowNode, index) => {
+    rowNode.addEventListener("click", () => {
+      const row = rows[index];
+      const qid = String(row?.question_id || row?.sample_id || "").trim();
+      hotpotQaApplyFocusedQuestion(record, row, null, {pinned: true});
+      const liveTask = resolveHotpotQaLiveTask(null, record);
+      syncHotpotQaStageFromContext(liveTask, record, {
+        preferredStage: liveTask ? "qa" : "report",
+        sectionId: liveTask ? "hotpotQaCurrentSection" : "hotpotQaResultSection",
+        force: true,
+      });
+      renderHotpotQaQuestionRuns(record, rows);
+      renderHotpotQaLiveMonitor(liveTask);
+      loadHotpotQaFocusedQuestionDetail(record, qid, row, {pinned: true}).catch(() => null);
+    });
+  });
+}
+
+function trimTaskLogDisplay(text = "", logBoxId = "") {
+  const rawText = String(text || "");
+  if (logBoxId === "hotpotQaLogBox") {
+    return rawText.split(/\r?\n/).slice(-50).join("\n");
+  }
+  return rawText;
+}
+
+function hotpotQaStatusPillClass(status = "") {
+  const text = String(status || "").trim().toLowerCase();
+  if (!text || text === "-") return "warn";
+  if (/(complete|completed|success|succeeded|ok|done|已完成|完成)/.test(text)) return "ok";
+  if (/(fail|failed|error|bad|interrupt|cancel)/.test(text)) return "bad";
+  return "warn";
+}
+
+function hotpotQaSummaryValue(summary = {}, summaryJson = {}, ...keys) {
+  for (const key of keys) {
+    if (!key) continue;
+    const direct = summary?.[key];
+    if (direct !== undefined && direct !== null && direct !== "") return direct;
+    const nested = summaryJson?.[key];
+    if (nested !== undefined && nested !== null && nested !== "") return nested;
+  }
+  return null;
+}
+
+function hotpotQaAggregateEvidenceStats(rows = state.hotpotQaQuestionRunsRows || []) {
+  const stats = {
+    total: 0,
+    rowsWithRetrieval: 0,
+    hitRows: 0,
+    partialRows: 0,
+    missRows: 0,
+  };
+  if (!Array.isArray(rows) || !rows.length) return stats;
+  rows.forEach((row) => {
+    const hits = hotpotQaNumeric(row?.memory_hit_count);
+    const retrieved = hotpotQaNumeric(row?.retrieval_count);
+    if (hits == null && retrieved == null) return;
+    stats.total += 1;
+    if ((retrieved ?? 0) > 0) stats.rowsWithRetrieval += 1;
+    if ((hits ?? 0) > 0 && (retrieved ?? 0) > 0 && hits >= retrieved) {
+      stats.hitRows += 1;
+    } else if ((hits ?? 0) > 0) {
+      stats.partialRows += 1;
+    } else {
+      stats.missRows += 1;
+    }
+  });
+  return stats;
+}
+
+function renderHotpotQaReportSummary(target, {
+  record = {},
+  summary = {},
+  artifactStatus = {},
+  statusLabel = "",
+} = {}) {
+  if (!target) return;
+  const summaryJson = summary.summary_json || {};
+  const rows = Number(summary.rows ?? summaryJson.rows ?? summaryJson.count ?? 0);
+  const graded = Number(summary.graded ?? summaryJson.graded ?? Math.max(0, rows - Number(summary.result_counts?.UNSCORED ?? summaryJson.result_counts?.UNSCORED ?? 0)));
+  const failed = Number(summary.failed_rows ?? summary.error_rows ?? summaryJson.failed_rows ?? summaryJson.error_rows ?? 0);
+  const answerEm = hotpotQaSummaryValue(summary, summaryJson, "official_answer_em", "answer_em");
+  const answerF1 = hotpotQaSummaryValue(summary, summaryJson, "official_answer_f1", "answer_f1");
+  const avgQaTime = hotpotQaSummaryValue(summary, summaryJson, "avg_qa_time_s", "avg_time");
+  const avgEndToEnd = hotpotQaSummaryValue(summary, summaryJson, "avg_end_to_end_time_s");
+  const runDir = String(record.run_dir || (record.output_file ? dirname(record.output_file) : "")).trim();
+  const output = String(record.output_file || "").trim();
+  const logFile = String(record.log_file || (runDir ? `${runDir}/run.log` : "")).trim();
+  const configSnapshot = runDir ? `${runDir}/config_snapshot.json` : "";
+  const reportHtml = runDir ? `${runDir}/report.html` : "";
+  const errorCases = String(artifactStatus.failure_diagnosis?.path || (output ? output.replace(/\.[^/.]+$/i, ".wrong_analysis.json") : "")).trim();
+  const reportHref = artifactHref(reportHtml);
+  const startedAt = record.started_at || record.created_at || "";
+  const splitLabel = hotpotQaDatasetSplitLabel(state.hotpotQaDatasetOverview?.resolved_path || genericBenchmarkPath("hotpotqa") || "");
+  const snapshot = hotpotQaCompletionSnapshot(record || {}, summary || {}, artifactStatus || {});
+  const statusText = snapshot.statusLabel || statusLabel || "-";
+  const statusTone = hotpotQaStatusPillClass(statusText);
+  const evidenceStats = hotpotQaAggregateEvidenceStats(state.hotpotQaQuestionRunsRows || []);
+  const retrievalHitRate = hotpotQaSummaryValue(summary, summaryJson, "retrieval_hit_rate", "memory_coverage");
+  const pending = Number(summary.result_counts?.UNSCORED ?? summaryJson.result_counts?.UNSCORED ?? Math.max(0, rows - graded));
+  const artifactRows = [
+    {label: "Result JSON / CSV", value: output, href: false},
+    {label: "Summary file", value: artifactStatus.summary?.path || (runDir ? `${runDir}/summary.json` : ""), href: false},
+    {label: "Report HTML", value: reportHtml, href: reportHref || ""},
+    {label: "Log file", value: logFile, href: false},
+    {label: "Error cases", value: errorCases, href: false},
+    {label: "Config snapshot", value: configSnapshot, href: false},
+  ].filter((item) => String(item.value || "").trim());
+  const rowsWithIssues = (state.hotpotQaQuestionRunsRows || []).filter((row) => {
+    const status = hotpotQaStatusText(row);
+    const evidence = hotpotQaEvidenceHitLabel(row, null);
+    const em = hotpotQaNumeric(row?.answer_em);
+    const f1 = hotpotQaNumeric(row?.answer_f1);
+    return /fail|error|interrupt|cancel/i.test(status)
+      || (em != null && em < 1)
+      || (f1 != null && f1 < 1)
+      || evidence === "0 hits"
+      || evidence === "未检索到证据";
+  }).slice(0, 12);
+  const recentResultMeta = [
+    startedAt ? `最近运行 ${formatDateTimeLocal(startedAt)}` : "",
+    splitLabel ? `split ${splitLabel}` : "",
+    record.id ? `task ${compactText(String(record.id), 36, 12)}` : "",
+  ].filter(Boolean).join(" · ");
+  const reportActions = [
+    reportHref ? `<a class="secondary button-link" href="${escapeHtml(reportHref)}" target="_blank" rel="noreferrer">查看报告</a>` : "",
+    runDir ? `<button class="secondary path-open" type="button" data-path="${escapeHtml(runDir)}">打开结果目录</button>` : "",
+    output ? `<button class="secondary path-open" type="button" data-path="${escapeHtml(output)}">导出 CSV</button>` : "",
+    output ? `<button class="secondary path-copy" type="button" data-copy="${escapeHtml(output)}">复制路径</button>` : "",
+  ].filter(Boolean).join("");
+  target.hidden = false;
+  target.innerHTML = `
+    <div class="hqa-report-shell">
+      <section class="hqa-report-section">
+        <div class="hqa-report-section-head">
+          <h3>结果摘要</h3>
+          <div class="hqa-report-actions">
+            <span class="hqa-table-pill ${statusTone}">${escapeHtml(statusText)}</span>
+            ${reportActions}
+          </div>
+        </div>
+        <div class="hqa-report-metric-grid">
+          <article><span>Total Questions</span><strong>${escapeHtml(formatInt(rows))}</strong></article>
+          <article><span>Completed</span><strong>${escapeHtml(formatInt(Math.max(0, rows - pending)))}</strong></article>
+          <article><span>EM</span><strong>${escapeHtml(hotpotQaMetricText(answerEm))}</strong></article>
+          <article><span>F1</span><strong>${escapeHtml(hotpotQaMetricText(answerF1))}</strong></article>
+          <article><span>Evidence Hit</span><strong>${escapeHtml(retrievalHitRate != null ? percent(Number(retrievalHitRate)) : (evidenceStats.total ? `${formatInt(evidenceStats.hitRows)}/${formatInt(evidenceStats.total)}` : "-"))}</strong></article>
+          <article><span>Avg Latency</span><strong>${escapeHtml(formatSecondsMetric(avgEndToEnd ?? avgQaTime))}</strong></article>
+          <article><span>Failed</span><strong>${escapeHtml(formatInt(failed))}</strong></article>
+        </div>
+      </section>
+
+      <section class="hqa-report-section">
+        <div class="hqa-report-section-head">
+          <h3>最近结果</h3>
+          <small>${escapeHtml(recentResultMeta || "等待结果")}</small>
+        </div>
+        <div class="hqa-report-recent-panel">
+          <div class="hqa-report-recent-copy">
+            <strong>${escapeHtml(record.name || statusText || "最近一次结果")}</strong>
+            <p>${escapeHtml(snapshot.detailText || "保留最近一次 HotpotQA 运行的核心指标、结果路径和报告入口。")}</p>
+          </div>
+          <div class="hqa-report-recent-grid">
+            <article><span>Dataset / Split</span><strong title="${escapeHtml(splitLabel || "-")}">${escapeHtml(splitLabel || "-")}</strong></article>
+            <article><span>Task ID</span><strong title="${escapeHtml(String(record.id || "-"))}">${escapeHtml(compactText(String(record.id || "-"), 26, 10))}</strong></article>
+            <article><span>题数</span><strong>${escapeHtml(formatInt(rows))}</strong></article>
+            <article><span>EM</span><strong>${escapeHtml(hotpotQaMetricText(answerEm))}</strong></article>
+            <article><span>F1</span><strong>${escapeHtml(hotpotQaMetricText(answerF1))}</strong></article>
+            <article><span>Evidence Hit</span><strong>${escapeHtml(retrievalHitRate != null ? percent(Number(retrievalHitRate)) : (evidenceStats.total ? `${formatInt(evidenceStats.hitRows)}/${formatInt(evidenceStats.total)}` : "-"))}</strong></article>
+            <article><span>Result File</span><strong title="${escapeHtml(output || "-")}">${escapeHtml(compactText(output || "-", 36, 14))}</strong></article>
+            <article><span>Report</span><strong title="${escapeHtml(reportHtml || "-")}">${escapeHtml(compactText(reportHtml || "-", 36, 14))}</strong></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="hqa-report-section">
+        <div class="hqa-report-section-head">
+          <h3>产物列表</h3>
+          <small>结果与报告文件</small>
+        </div>
+        <div class="hqa-report-artifact-list">
+          ${artifactRows.map((item) => reportPathRow(item.label, item.value, {
+            href: item.href,
+            openLabel: "打开",
+            browserLabel: "浏览器打开",
+            compactActions: true,
+          })).join("")}
+        </div>
+      </section>
+
+      <section class="hqa-report-section">
+        <div class="hqa-report-section-head">
+          <h3>错误 / 低分题</h3>
+          <small>${escapeHtml(rowsWithIssues.length ? `当前展示 ${rowsWithIssues.length} 条` : "暂无错误明细")}</small>
+        </div>
+        ${rowsWithIssues.length ? `
+          <div class="hqa-report-table-shell">
+            <table class="hqa-report-table">
+              <thead>
+                <tr>
+                  <th>question_id</th>
+                  <th>question</th>
+                  <th>gold answer</th>
+                  <th>prediction</th>
+                  <th>EM</th>
+                  <th>F1</th>
+                  <th>evidence hit</th>
+                  <th>reason / note</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsWithIssues.map((row, index) => {
+                  const qid = String(row.question_id || row.sample_id || `row-${index + 1}`).trim();
+                  const datasetRow = hotpotQaDatasetRow(qid);
+                  const question = String(row.question || datasetRow?.question || "-").trim();
+                  const gold = hotpotQaGoldAnswerText(row, datasetRow?.answer || "") || "-";
+                  const prediction = hotpotQaPredictionText(row) || "-";
+                  const evidence = hotpotQaEvidenceHitLabel(row, null);
+                  const status = hotpotQaStatusText(row);
+                  const em = hotpotQaMetricText(row.answer_em);
+                  const f1 = hotpotQaMetricText(row.answer_f1);
+                  const note = [
+                    /fail|error|interrupt|cancel/i.test(status) ? status : "",
+                    evidence === "0 hits" || evidence === "未检索到证据" ? evidence : "",
+                    em !== "-" && em !== "100.0%" ? `EM ${em}` : "",
+                    f1 !== "-" && f1 !== "100.0%" ? `F1 ${f1}` : "",
+                  ].filter(Boolean).join(" · ") || "-";
+                  return `
+                    <tr class="hqa-report-row" data-question-id="${escapeHtml(qid)}">
+                      <td class="is-mono" title="${escapeHtml(qid)}">${escapeHtml(compactText(qid, 24, 10))}</td>
+                      <td title="${escapeHtml(question)}">${escapeHtml(compactText(question, 72))}</td>
+                      <td title="${escapeHtml(gold)}">${escapeHtml(compactText(gold, 54))}</td>
+                      <td title="${escapeHtml(prediction)}">${escapeHtml(compactText(prediction, 54))}</td>
+                      <td class="is-mono">${escapeHtml(em)}</td>
+                      <td class="is-mono">${escapeHtml(f1)}</td>
+                      <td class="is-mono"><span class="hqa-table-pill ${hotpotQaStatusPillClass(evidence === "-" ? "warn" : (evidence === "0 hits" || evidence === "未检索到证据" ? "bad" : "ok"))}">${escapeHtml(evidence)}</span></td>
+                      <td title="${escapeHtml(note)}">${escapeHtml(compactText(note, 68))}</td>
+                    </tr>
+                  `;
+                }).join("")}
+              </tbody>
+            </table>
+          </div>
+        ` : `
+          <div class="hqa-report-empty">
+            <strong>暂无错误明细</strong>
+            <p>完成评测后可在这里查看 failed / low-F1 / evidence miss 题目。</p>
+          </div>
+        `}
+      </section>
+    </div>
+  `;
+  hydrateUiIcons(target);
+  bindCopyButtons("#hotpotQaNativeSummary");
+  bindOpenButtons("#hotpotQaNativeSummary");
+  target.querySelectorAll(".hqa-report-row").forEach((node, index) => {
+    node.addEventListener("click", () => {
+      const row = rowsWithIssues[index];
+      const qid = String(row?.question_id || row?.sample_id || "").trim();
+      if (!qid) return;
+      hotpotQaApplyFocusedQuestion(record, row, null, {pinned: true});
+      renderHotpotQaQuestionRuns(record, state.hotpotQaQuestionRunsRows || []);
+      renderHotpotQaLiveMonitor(null);
+      loadHotpotQaFocusedQuestionDetail(record, qid, row, {pinned: true}).catch(() => null);
+      showView("hotpotQaView", {
+        preserveScroll: true,
+        benchmarkStage: "qa",
+        hotpotQaSection: "hotpotQaCurrentSection",
+      });
+    });
+  });
+}
+
+function parseCsvTextRows(text = "", limit = 120) {
+  const source = String(text || "");
+  if (!source.trim()) return [];
+  const rows = [];
+  let current = [];
+  let field = "";
+  let inQuotes = false;
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (source[i + 1] === '"') {
+          field += '"';
+          i += 1;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += ch;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inQuotes = true;
+      continue;
+    }
+    if (ch === ",") {
+      current.push(field);
+      field = "";
+      continue;
+    }
+    if (ch === "\n") {
+      current.push(field);
+      rows.push(current);
+      current = [];
+      field = "";
+      if (rows.length > limit) break;
+      continue;
+    }
+    if (ch === "\r") continue;
+    field += ch;
+  }
+  if (field.length || current.length) {
+    current.push(field);
+    rows.push(current);
+  }
+  if (rows.length < 2) return [];
+  const headers = rows[0].map((item) => String(item || "").trim());
+  return rows.slice(1, limit + 1).map((values) => {
+    const row = {};
+    headers.forEach((header, index) => {
+      if (!header) return;
+      row[header] = values[index] ?? "";
+    });
+    return row;
+  }).filter((row) => Object.keys(row).length);
+}
+
+async function loadHotpotQaQuestionRunsFallback(path = "", limit = 120) {
+  const targetPath = String(path || "").trim();
+  if (!targetPath) return [];
+  const publicHref = artifactHref(targetPath);
+  if (publicHref) {
+    const publicText = await fetchTextWithTimeout(publicHref, {}, 12000).catch(() => "");
+    const publicRows = parseCsvTextRows(publicText || "", limit);
+    if (publicRows.length) return publicRows;
+  }
+  const file = await apiWithTimeout(`/api/file?path=${encodeURIComponent(targetPath)}`, {}, 12000).catch(() => null);
+  return parseCsvTextRows(file?.text || "", limit);
+}
+
+async function refreshHotpotQaQuestionRuns(record = resolveHotpotQaQuestionRunsRecord() || null, options = {}) {
+  const target = $("hotpotQaQuestionRuns");
+  if (!target) return;
+  record = resolveHotpotQaQuestionRunsRecord(record) || null;
+  const path = String(record?.output_file || "").trim();
+  if (!path) {
+    state.hotpotQaQuestionRunsRows = [];
+    state.hotpotQaQuestionRunsPath = "";
+    state.hotpotQaQuestionRunsError = "";
+    state.hotpotQaFocusedQuestionId = "";
+    state.hotpotQaFocusedQuestionPath = "";
+    state.hotpotQaFocusedQuestionRow = null;
+    state.hotpotQaFocusedQuestionDetail = null;
+    state.hotpotQaFocusedQuestionPinned = false;
+    renderHotpotQaQuestionRuns(record, []);
+    renderHotpotQaLiveMonitor(resolveHotpotQaLiveTask(null, record));
+    return;
+  }
+  const cacheFreshMs = 4000;
+  const loadedAt = Number(state.hotpotQaQuestionRunsLoadedAt || 0);
+  const requestedPath = String(state.hotpotQaQuestionRunsRequestedPath || "").trim();
+  if (!options.force && state.hotpotQaQuestionRunsLoading && requestedPath === path) {
+    renderHotpotQaQuestionRuns(record, path === state.hotpotQaQuestionRunsPath ? state.hotpotQaQuestionRunsRows : []);
+    return;
+  }
+  if (
+    !options.force
+    && path === state.hotpotQaQuestionRunsPath
+    && loadedAt > 0
+    && Date.now() - loadedAt < cacheFreshMs
+    && Array.isArray(state.hotpotQaQuestionRunsRows)
+    && state.hotpotQaQuestionRunsRows.length
+  ) {
+    renderHotpotQaQuestionRuns(record, state.hotpotQaQuestionRunsRows);
+    renderHotpotQaLiveMonitor(resolveHotpotQaLiveTask(null, record));
+    return;
+  }
+  const seq = ++state.hotpotQaQuestionRunsSeq;
+  const cachedRows = path === state.hotpotQaQuestionRunsPath ? state.hotpotQaQuestionRunsRows : [];
+  state.hotpotQaQuestionRunsLoading = true;
+  state.hotpotQaQuestionRunsError = "";
+  state.hotpotQaQuestionRunsRequestedPath = path;
+  renderHotpotQaQuestionRuns(record, cachedRows);
+  try {
+    const limit = Math.max(60, Math.min(240, Number(record?.summary?.rows || record?.summary?.summary_json?.rows || 120) || 120));
+    let rows = [];
+    try {
+      const data = await apiWithTimeout(`/api/csv-preview?path=${encodeURIComponent(path)}&limit=${limit}`, {}, 12000);
+      rows = Array.isArray(data?.rows) ? data.rows : [];
+    } catch {
+      rows = [];
+    }
+    if (!rows.length) {
+      rows = await loadHotpotQaQuestionRunsFallback(path, limit).catch((error) => {
+        throw error;
+      });
+    }
+    if (seq !== state.hotpotQaQuestionRunsSeq) return;
+    state.hotpotQaQuestionRunsRows = rows;
+    state.hotpotQaQuestionRunsPath = path;
+    state.hotpotQaQuestionRunsLoadedAt = Date.now();
+    if (!state.hotpotQaFocusedQuestionPinned || !state.hotpotQaFocusedQuestionId || state.hotpotQaFocusedQuestionPath !== path) {
+      const pinInitialFocus = !resolveHotpotQaLiveTask(null, record);
+      const currentQuestionId = String(
+        normalizeActiveTaskProgressQaPreview((state.currentRunningTask || {}).progress || {}, state.currentRunningTask || {})?.questionId
+        || rows[0]?.question_id
+        || rows[0]?.sample_id
+        || ""
+      ).trim();
+      const initialRow = rows.find((item) => String(item.question_id || item.sample_id || "").trim() === currentQuestionId) || rows[0] || null;
+      if (initialRow) {
+        hotpotQaApplyFocusedQuestion(record, initialRow, null, {pinned: pinInitialFocus});
+        loadHotpotQaFocusedQuestionDetail(
+          record,
+          currentQuestionId || String(initialRow.question_id || initialRow.sample_id || "").trim(),
+          initialRow,
+          {pinned: pinInitialFocus},
+        ).catch(() => null);
+      }
+    }
+    renderHotpotQaQuestionRuns(record, rows);
+    renderHotpotQaLiveMonitor(resolveHotpotQaLiveTask(null, record));
+  } catch (error) {
+    if (seq !== state.hotpotQaQuestionRunsSeq) return;
+    if (!cachedRows.length) state.hotpotQaQuestionRunsRows = [];
+    state.hotpotQaQuestionRunsError = String(error?.message || error || "Question Runs sync failed");
+    renderHotpotQaQuestionRuns(record, cachedRows);
+  } finally {
+    if (seq === state.hotpotQaQuestionRunsSeq) {
+      state.hotpotQaQuestionRunsLoading = false;
+      if (state.hotpotQaQuestionRunsRequestedPath === path) state.hotpotQaQuestionRunsRequestedPath = "";
+      renderHotpotQaQuestionRuns(record, state.hotpotQaQuestionRunsRows);
+    }
+  }
+}
+
+function renderHotpotQaResultPanel(target, {
+  record = {},
+  summary = {},
+  artifactStatus = {},
+  statusLabel = "",
+  mode = "final",
+  note = "",
+} = {}) {
+  if (!target) return;
+  state.hotpotQaActiveRecord = record && (record.output_file || record.run_dir) ? record : (state.hotpotQaActiveRecord || null);
+  if (record?.id && isHotpotQaTask(record) && isTaskActive(record)) {
+    state.currentRunningTask = record;
+    rememberTaskDatasetFormat(record.id, "hotpotqa");
+  }
+  const summaryJson = summary.summary_json || {};
+  const rows = Number(summary.rows ?? summaryJson.rows ?? summaryJson.count ?? 0);
+  if (rows > 0) state.hotpotQaQuestionRunsReportedRows = rows;
+  const answerEm = summary.official_answer_em ?? summaryJson.official_answer_em ?? summary.answer_em ?? summaryJson.answer_em;
+  const answerF1 = summary.official_answer_f1 ?? summaryJson.official_answer_f1 ?? summary.answer_f1 ?? summaryJson.answer_f1;
+  const snapshot = hotpotQaCompletionSnapshot(record || {}, summary || {}, artifactStatus || {});
+  const avgQaTime = summary.avg_qa_time_s ?? summaryJson.avg_qa_time_s ?? summary.avg_time;
+  const avgEndToEndTime = summary.avg_end_to_end_time_s ?? summaryJson.avg_end_to_end_time_s;
+  const totalQaTime = summary.total_qa_time_s ?? summaryJson.total_qa_time_s;
+  const output = record.output_file || "";
+  const runDir = record.run_dir || dirname(output);
+  const reportHtml = runDir ? `${runDir}/report.html` : "";
+  const reportHref = artifactHref(reportHtml);
+  const reportReady = Boolean(artifactStatus.report_html?.exists || reportHref);
+  const liveHref = "/generated-reports/hotpotqa_echomemory_live_current.html";
+  const pathRows = mode === "running"
+    ? [
+      output ? {label: "结果文件", value: output} : null,
+      {label: "实时报告", value: liveHref, href: liveHref, open: false, raw: true},
+    ]
+    : [
+      output ? {label: "结果文件", value: output} : null,
+      reportHtml ? {label: "HTML 报告", value: reportHtml, href: reportHref || ""} : null,
+    ];
+  const defaultNote = mode === "running"
+    ? "运行中这里只保留结果文件、实时报告和累计分数；当前题、阶段瓶颈和逐题对照分别看右侧监控、左侧运行摘要和下方表格。"
+    : "结果区只保留关键分数、结果文件和报告入口；当前题和逐题对照分别看右侧监控与下方表格。";
+  const statusDisplay = snapshot.statusLabel || statusLabel || "-";
+  const incomingNote = String(note || defaultNote || "").trim();
+  const noteText = snapshot.detailText && incomingNote.startsWith(snapshot.detailText)
+    ? incomingNote
+    : [snapshot.detailText, incomingNote].filter(Boolean).join(" · ");
+  const metricsHtml = mode === "running"
+    ? `
+      <div class="report-kv hqa-metric-grid">
+        <article><span>已写出题数</span><strong>${escapeHtml(formatInt(rows))}</strong></article>
+        <article><span>答案 EM</span><strong>${answerEm == null ? "-" : escapeHtml(percent(answerEm))}</strong></article>
+        <article><span>答案 F1</span><strong>${answerF1 == null ? "-" : escapeHtml(percent(answerF1))}</strong></article>
+        <article><span>答案评测</span><strong>${escapeHtml(snapshot.officialFailed ? "失败" : (snapshot.answerReady ? "已完成" : "-"))}</strong></article>
+        <article><span>导入告警</span><strong>${escapeHtml(snapshot.importWarningCount > 0 ? `${formatInt(snapshot.importWarningCount)} 项` : "0")}</strong></article>
+        <article><span>累计 QA 时间</span><strong>${escapeHtml(formatSecondsMetric(totalQaTime))}</strong></article>
+      </div>
+    `
+    : `
+      <div class="report-kv hqa-metric-grid">
+        <article><span>结果状态</span><strong>${escapeHtml(statusDisplay)}</strong></article>
+        <article><span>结果题数</span><strong>${escapeHtml(formatInt(rows))}</strong></article>
+        <article><span>答案 EM</span><strong>${answerEm == null ? "-" : escapeHtml(percent(answerEm))}</strong></article>
+        <article><span>答案 F1</span><strong>${answerF1 == null ? "-" : escapeHtml(percent(answerF1))}</strong></article>
+        <article><span>答案评测</span><strong>${escapeHtml(snapshot.officialFailed ? "失败" : (snapshot.answerReady ? "已完成" : "-"))}</strong></article>
+        <article><span>导入告警</span><strong>${escapeHtml(snapshot.importWarningCount > 0 ? `${formatInt(snapshot.importWarningCount)} 项` : "0")}</strong></article>
+        <article><span>平均 QA 时间</span><strong>${escapeHtml(formatSecondsMetric(avgQaTime))}</strong></article>
+        <article><span>平均端到端</span><strong>${escapeHtml(formatSecondsMetric(avgEndToEndTime))}</strong></article>
+      </div>
+    `;
+  if (mode === "running") {
+    renderSharedResultSummary(target, {
+      eyebrow: "运行产物",
+      title: "结果文件与实时报告",
+      description: snapshot.officialFailed ? "官方 answer eval 仍未成功；这里只保留当前产物和累计分数。" : "任务仍在写入结果；这里只保留当前产物和累计分数。",
+      metricsHtml,
+      paths: pathRows,
+      note: noteText,
+      actions: [
+        {label: "查看当前题目", href: benchmarkNavigationHref("hotpotQaView", {benchmarkStage: "qa", hotpotQaSection: "hotpotQaCurrentSection"}), viewJump: "hotpotQaView", hotpotSection: "hotpotQaCurrentSection", hotpotStage: "qa", sameTab: true},
+        {label: "打开实时报告", href: reportReady ? (reportHref || liveHref) : liveHref},
+        {label: "报告对比", href: benchmarkNavigationHref("hotpotQaView", {benchmarkStage: "report", hotpotQaSection: "hotpotQaResultSection"}), viewJump: "hotpotQaView", hotpotSection: "hotpotQaResultSection", hotpotStage: "report", sameTab: true},
+      ],
+      rootClass: "hqa-result-summary",
+      headClass: "hqa-result-head",
+      copyClass: "hqa-result-copy",
+      bodyClass: "hqa-result-body",
+      pathRowHtml: hotpotQaPathRowHtml,
+      actionsClass: "hqa-action-row hqa-recent-result-actions",
+      emptyClass: "hqa-empty-state",
+      pathListClass: "hqa-result-paths",
+      noteClass: "hqa-result-note",
+      shellClass: "hqa-recent-result is-running",
+    });
+  } else {
+    const recentRows = [
+      record.started_at || record.created_at ? ["最近运行", formatDateTimeLocal(record.started_at || record.created_at)] : null,
+      ["状态", statusDisplay || "-"],
+      ["题数", formatInt(rows)],
+      ["EM / F1", `${answerEm == null ? "-" : percent(answerEm)} / ${answerF1 == null ? "-" : percent(answerF1)}`],
+    ].filter(Boolean).map(([label, value]) => `
+      <article>
+        <span>${escapeHtml(label)}</span>
+        <strong title="${escapeHtml(String(value || "-"))}">${escapeHtml(compactText(String(value || "-"), 34, 12))}</strong>
+      </article>
+    `).join("");
+    target.innerHTML = `
+      <div class="hqa-report-recent-panel">
+        <div class="hqa-report-recent-copy">
+          <strong>${escapeHtml(statusDisplay || "最近一次结果")}</strong>
+          <p>${escapeHtml(snapshot.detailText || "保留最近一次 HotpotQA 运行的结果文件、报告入口和路径操作。")}</p>
+        </div>
+        <div class="hqa-report-recent-grid">${recentRows}</div>
+        <div class="hqa-result-paths">
+          ${pathRows.map((item) => item ? hotpotQaPathRowHtml(item.label, item.value, item) : "").join("")}
+        </div>
+        <div class="hqa-action-row hqa-recent-result-actions">
+          <button class="secondary" type="button" data-view-jump="hotpotQaView" data-hotpot-section="hotpotQaCurrentSection" data-hotpot-stage="qa">查看当前题目</button>
+          <a class="secondary button-link" href="${escapeHtml(reportReady ? (reportHref || liveHref) : liveHref)}" target="_blank" rel="noreferrer">打开报告</a>
+          ${runDir ? `<button class="secondary path-open" type="button" data-path="${escapeHtml(runDir)}">打开结果目录</button>` : ""}
+          ${output ? `<button class="secondary path-copy" type="button" data-copy="${escapeHtml(output)}">复制路径</button>` : ""}
+        </div>
+        ${noteText ? `<p class="hqa-result-note">${escapeHtml(noteText)}</p>` : ""}
+      </div>
+    `;
+    target.querySelectorAll("[data-view-jump]").forEach((button) => {
+      button.addEventListener("click", () => handleContextualViewJump(button));
+    });
+  }
+  bindCopyButtons("#hotpotQaRunResult");
+  bindOpenButtons("#hotpotQaRunResult");
+  const nativeSummary = $("hotpotQaNativeSummary");
+  if (nativeSummary) {
+    if (mode === "final" && (rows > 0 || runDir || output)) {
+      renderHotpotQaReportSummary(nativeSummary, {
+        record,
+        summary,
+        artifactStatus,
+        statusLabel: statusDisplay,
+      });
+    } else {
+      nativeSummary.hidden = true;
+      nativeSummary.innerHTML = "";
+    }
+  }
+  const currentStage = normalizeBenchmarkFlowStage(
+    state.activeBenchmarkFlowStage || $("hotpotQaView")?.dataset?.activeBenchmarkStage || ""
+  );
+  const keepReportStage = mode === "final" && (!currentStage || currentStage === "report");
+  syncHotpotQaStageFromContext(
+    isTaskActive(record) ? record : null,
+    record,
+    {
+      preferredStage: keepReportStage ? "report" : "",
+      sectionId: keepReportStage ? "hotpotQaResultSection" : "",
+      force: keepReportStage,
+    },
+  );
+  refreshHotpotQaQuestionRuns(state.hotpotQaActiveRecord || record).catch(() => null);
+}
+
+function renderHotpotQaDatasetSummary(data = state.hotpotQaDatasetOverview) {
+  const target = $("hotpotQaDatasetSummary");
+  if (!target) return;
+  const splitInput = $("hotpotQaSplitDisplay");
+  const loading = Boolean(state.hotpotQaDatasetOverviewLoading);
+  if (!data) {
+    const currentPath = genericBenchmarkPath("hotpotqa");
+    if (splitInput) splitInput.value = currentPath ? hotpotQaDatasetSplitLabel(currentPath) : "等待校验";
+    target.innerHTML = `
+      <div class="hqa-empty-state">
+        <strong>等待校验数据集</strong>
+        <p>${escapeHtml(loading ? "正在读取 split、题量和字段门禁摘要。" : "校验后显示 Question Scope、Type、Level、Schema 和 Supporting Facts 摘要。")}</p>
+      </div>
+    `;
+    return;
+  }
+  const path = data.resolved_path || genericBenchmarkPath("hotpotqa") || "";
+  const split = hotpotQaDatasetSplitLabel(path);
+  if (splitInput) splitInput.value = split || "unknown split";
+  const questionTotal = Number(data.questions || 0);
+  const sampleTotal = Number(data.samples || 0);
+  const typeDist = compactCountMap(data.hotpotqa_type_distribution || {}, 4) || "-";
+  const levelDist = compactCountMap(data.hotpotqa_level_distribution || {}, 4) || "-";
+  const supportingCount = Number(data?.hotpotqa_supporting_facts_present_count || 0);
+  const contextCount = hotpotQaContextPresentCount(data || {});
+  const answerCount = Number(data?.hotpotqa_answer_present_count || 0);
+  const schemaReady = questionTotal > 0;
+  const contextReady = questionTotal > 0 && contextCount === questionTotal;
+  const supportingReady = questionTotal > 0 && supportingCount === questionTotal;
+  const answerReady = questionTotal > 0 && answerCount === questionTotal;
+  const metadata = [
+    {
+      label: "Question Scope",
+      value: questionTotal > 0 ? `${formatInt(questionTotal)} / ${formatInt(sampleTotal || questionTotal)}` : "-",
+      tone: questionTotal > 0 ? "ok" : "warn",
+      title: questionTotal > 0 ? `${formatInt(questionTotal)} / ${formatInt(sampleTotal || questionTotal)}` : "-",
+    },
+    {
+      label: "Type",
+      value: typeDist,
+      tone: typeDist !== "-" ? "ok" : "warn",
+      title: typeDist,
+    },
+    {
+      label: "Level",
+      value: levelDist,
+      tone: levelDist !== "-" ? "ok" : "warn",
+      title: levelDist,
+    },
+    {
+      label: "Schema",
+      value: schemaReady ? "ready" : "pending",
+      tone: schemaReady ? "ok" : "warn",
+      title: schemaReady ? "ready" : "pending",
+    },
+    {
+      label: "Supporting Facts",
+      value: questionTotal > 0 ? `${formatInt(supportingCount)} / ${formatInt(questionTotal)}` : "-",
+      tone: supportingReady ? "ok" : "warn",
+      title: questionTotal > 0 ? `${formatInt(supportingCount)} / ${formatInt(questionTotal)}` : "-",
+    },
+  ];
+  const dataState = schemaReady && contextReady && supportingReady && answerReady
+    ? "Schema / Context / Supporting Facts / Answer 已就绪"
+    : "仍有字段待校验，建议先修复再启动";
+  target.innerHTML = `
+    <div class="hqa-metadata-strip">
+      ${metadata.map((item) => `
+        <article class="hqa-metadata-item is-${escapeHtml(item.tone)}">
+          <span class="hqa-metadata-label">${escapeHtml(item.label)}</span>
+          <strong class="hqa-metadata-value" title="${escapeHtml(item.title)}">${escapeHtml(item.value)}</strong>
+        </article>
+      `).join("")}
+    </div>
+    <div class="hqa-hint-row ${schemaReady && contextReady && supportingReady && answerReady ? "" : "is-warn"}">
+      <span>${escapeHtml(split || "unknown split")}</span>
+      <strong title="${escapeHtml(dataState)}">${escapeHtml(dataState)}</strong>
+    </div>
+  `;
+}
+
 function renderHotpotQaModelReadiness(data = state.hotpotQaModelReadiness) {
   const target = $("hotpotQaModelReadiness");
   if (!target) return;
+  target.hidden = false;
   const agentCfg = agentModelConfig();
   const judgeCfg = judgeModelConfig();
+  const liveTask = resolveHotpotQaLiveTask();
   const launchError = genericBenchmarkLaunchError("hotpotqa");
   const checkedAt = data?.checkedAt ? formatDateTimeLocal(data.checkedAt) : "";
   const answer = data?.answer || null;
   const judge = data?.judge || null;
+  const dataset = state.hotpotQaDatasetOverview || null;
+  const datasetPath = dataset?.resolved_path || genericBenchmarkPath("hotpotqa") || "";
+  const split = hotpotQaDatasetSplitLabel(datasetPath);
+  const questionTotal = Number(dataset?.questions || 0);
+  const contextPresent = hotpotQaContextPresentCount(dataset || {});
+  const supportingFactsPresent = Number(dataset?.hotpotqa_supporting_facts_present_count || 0);
+  const answerPresent = Number(dataset?.hotpotqa_answer_present_count || 0);
+  const datasetReadable = Boolean(datasetPath && dataset && questionTotal > 0);
+  const schemaReady = datasetReadable && Boolean(questionTotal > 0);
+  const contextReady = questionTotal > 0 && contextPresent === questionTotal;
+  const supportingReady = questionTotal > 0 && supportingFactsPresent === questionTotal;
+  const answerReady = questionTotal > 0 && answerPresent === questionTotal;
   const answerSummary = state.hotpotQaModelReadinessLoading
     ? "正在检查..."
     : answer
       ? (answer.ok
-        ? `可用 · ${answer.model || agentCfg.model || "-"}`
+        ? "可用"
         : `${friendlyUiError(answer.error || "", "回答模型不可用")} · status ${answer.status || "-"}`)
       : "尚未检查";
   const judgeSummary = state.hotpotQaModelReadinessLoading
     ? "正在检查..."
     : judge
       ? (judge.ok
-        ? `可用 · ${judge.model || judgeCfg.model || "-"}`
+        ? "可用"
         : `${friendlyUiError(judge.error || "", "判分模型不可用")} · status ${judge.status || "-"}`)
       : "尚未检查";
   if (state.hotpotQaModelReadinessLoading) target.dataset.loading = "1";
   else delete target.dataset.loading;
+  const backend = normalizeMemoryBackend(currentMemoryBackend());
+  const workspace = hotpotQaWorkspaceForDisplay(liveTask);
+  const gate = genericBenchmarkRunGate("hotpotqa", datasetPath, datasetReadable ? dataset : null);
+  const requestedCount = benchmarkCount("hotpotQaCount", 50);
+  const requestedCountLabel = requestedCount === 0 ? "全量" : `${formatInt(requestedCount)} 题`;
+  const flow = hotpotQaRuntimeFlow(liveTask, liveTask?.id ? (state.runningBenchmarkSummaries[liveTask.id] || null) : null);
+  const toolEnabled = currentQaToolCallingEnabled("hotpotqa");
+  const modelsReady = Boolean(answer?.ok && judge?.ok);
+  const hasModelFailure = Boolean((answer && !answer.ok) || (judge && !judge.ok));
+  const canLaunch = Boolean(datasetReadable && schemaReady && contextReady && supportingReady && answerReady && modelsReady && workspace);
+  const launchState = liveTask && isTaskActive(liveTask)
+    ? {label: "Running", tone: "live"}
+    : launchError
+      ? {label: "Failed", tone: "bad"}
+      : canLaunch
+        ? {label: "Ready", tone: gate.ok ? "ok" : "warn"}
+        : hasModelFailure || (datasetPath && !datasetReadable)
+          ? {label: "Failed", tone: "bad"}
+          : {label: "Waiting", tone: "warn"};
+  const launchReason = liveTask && isTaskActive(liveTask)
+    ? "问答任务已启动；开始测试按钮已锁定，可切到多跳问答查看实时进度。"
+    : launchError
+      ? (launchError.friendly || "最近一次启动失败，请检查模型配置或服务状态。")
+      : !datasetPath
+        ? "先填写 HotpotQA 数据路径。"
+        : !datasetReadable
+          ? "先完成数据集校验，确认 question / answer / context 字段可读。"
+          : !schemaReady
+            ? "当前 question 结构还没校验完成。"
+            : !modelsReady
+              ? (hasModelFailure ? "模型预检未通过，先修复回答模型或判分模型。" : "建议先检查模型，再开始测试。")
+              : !workspace
+                ? "先确认当前 workspace / 结果目录配置。"
+                : !gate.ok
+                  ? gate.reason
+                  : "可以开始测试。";
+  const checks = [
+    {
+      label: "Dataset",
+      tone: datasetReadable ? "ok" : (datasetPath ? "warn" : "bad"),
+      detail: datasetReadable ? `${formatInt(questionTotal)} 题可读` : (datasetPath ? "等待校验数据集" : "未设置 HotpotQA 路径"),
+    },
+    {
+      label: "Schema",
+      tone: schemaReady ? "ok" : (datasetReadable ? "warn" : "bad"),
+      detail: schemaReady ? "question / type / level 已识别" : "等待 split 与题目结构校验",
+    },
+    {
+      label: "Context",
+      tone: questionTotal > 0 ? (contextReady ? "ok" : "warn") : "warn",
+      detail: questionTotal > 0 ? `${formatInt(contextPresent)}/${formatInt(questionTotal)} 题有上下文` : "等待数据集校验",
+    },
+    {
+      label: "Supporting Facts",
+      tone: questionTotal > 0 ? (supportingReady ? "ok" : "warn") : "warn",
+      detail: questionTotal > 0 ? `${formatInt(supportingFactsPresent)}/${formatInt(questionTotal)} 题齐全` : "等待数据集校验",
+    },
+    {
+      label: "Gold Answer",
+      tone: questionTotal > 0 ? (answerReady ? "ok" : "bad") : "warn",
+      detail: questionTotal > 0 ? `${formatInt(answerPresent)}/${formatInt(questionTotal)} 题可对照` : "等待数据集校验",
+    },
+    {
+      label: "Models",
+      tone: modelsReady ? "ok" : (hasModelFailure ? "bad" : "warn"),
+      detail: modelsReady ? "回答 / 判分模型可用" : (hasModelFailure ? "模型预检失败" : "等待模型检查"),
+    },
+    {
+      label: "Workspace",
+      tone: workspace ? "ok" : "warn",
+      detail: workspace ? compactPath(workspaceDisplayPath(workspace, currentAccount(), backend), 30, 16) : "等待配置 workspace",
+    },
+  ];
+  const answerTone = state.hotpotQaModelReadinessLoading ? "warn" : (answer?.ok ? "ok" : (answer ? "bad" : "warn"));
+  const judgeTone = state.hotpotQaModelReadinessLoading ? "warn" : (judge?.ok ? "ok" : (judge ? "bad" : "warn"));
+  const statusBox = $("hotpotQaStatus");
+  const progressWrap = $("hotpotQaProgressBar")?.parentElement || null;
+  const progressText = $("hotpotQaProgressText");
+  if (statusBox) {
+    statusBox.innerHTML = `<div class="hqa-hint-row ${launchState.tone === "bad" ? "is-bad" : (launchState.tone === "warn" ? "is-warn" : "")}"><span>${escapeHtml(launchState.label)}</span><strong title="${escapeHtml(launchReason)}">${escapeHtml(launchReason)}</strong></div>`;
+    statusBox.hidden = false;
+  }
+  if (progressWrap) progressWrap.hidden = !(liveTask && isTaskActive(liveTask));
+  if (progressText) progressText.hidden = !(liveTask && isTaskActive(liveTask));
   target.innerHTML = `
-    <p><strong>启动前模型检查</strong>${checkedAt ? ` · ${escapeHtml(checkedAt)}` : ""}</p>
-    <p class="dataset-next-step">回答模型 ${escapeHtml(agentCfg.model || "-")} @ ${escapeHtml(agentCfg.baseUrl || "-")}</p>
-    <p class="dataset-next-step ${answer && !answer.ok ? "bad-text" : ""}">${escapeHtml(answerSummary)}</p>
-    <p class="dataset-next-step">判分模型 ${escapeHtml(judgeCfg.model || "-")} @ ${escapeHtml(judgeCfg.baseUrl || "-")}</p>
-    <p class="dataset-next-step ${judge && !judge.ok ? "bad-text" : ""}">${escapeHtml(judgeSummary)}</p>
-    ${launchError ? `<p class="dataset-next-step bad-text">最近一次启动被拦截：${escapeHtml(launchError.friendly || "模型检查未通过")}</p>` : ""}
-    <p class="dataset-next-step">这一步只做模型可用性预检，不会启动任务。</p>
+    <div class="hqa-readiness-shell">
+      <div class="hqa-model-strip">
+        <article class="hqa-model-row ${answerTone}">
+          <span class="hqa-model-label">QA Model</span>
+          <div class="hqa-model-main">
+            <strong class="hqa-model-name" title="${escapeHtml(agentCfg.model || "-")}">${escapeHtml(agentCfg.model || "-")}</strong>
+            <small>${escapeHtml(answerSummary)}</small>
+          </div>
+        </article>
+        <article class="hqa-model-row ${judgeTone}">
+          <span class="hqa-model-label">Answer Eval</span>
+          <div class="hqa-model-main">
+            <strong class="hqa-model-name" title="${escapeHtml(judgeCfg.model || "-")}">${escapeHtml(judgeCfg.model || "-")}</strong>
+            <small>${escapeHtml(judgeSummary)}</small>
+          </div>
+        </article>
+      </div>
+      <div class="hqa-readiness-head">
+        <strong>Readiness</strong>
+        <small>${escapeHtml(checkedAt ? `最近检查 ${checkedAt}` : "等待模型检查")}</small>
+      </div>
+      <div class="hqa-readiness-list">
+        ${checks.map((item) => `
+          <article class="hqa-readiness-row ${escapeHtml(item.tone || "warn")}">
+            <span class="hqa-status-dot" aria-hidden="true"></span>
+            <span class="hqa-readiness-label">${escapeHtml(item.label || "-")}</span>
+            <strong class="hqa-readiness-value" title="${escapeHtml(item.detail || "-")}">${escapeHtml(item.detail || "-")}</strong>
+          </article>
+        `).join("")}
+      </div>
+      <div class="hqa-hint-row ${launchState.tone === "bad" ? "is-bad" : (launchState.tone === "warn" ? "is-warn" : "")}">
+        <span>${escapeHtml(workspace ? "Workspace 与结果写入状态已连接" : "等待 Workspace")}</span>
+        <strong title="${escapeHtml(launchReason)}">${escapeHtml(launchReason)}</strong>
+      </div>
+    </div>
   `;
+}
+
+function bindHotpotQaRuntimeProxyControls() {
+  const proxySpecs = [
+    {proxyId: "hotpotQaTopKProxy", targetId: "echomemQaTopK", fallback: VIKINGBOAT_LITE_TOP_K},
+    {proxyId: "hotpotQaToolLimitProxy", targetId: "locomoQaToolSearchLimit", fallback: VIKINGBOAT_LITE_TOOL_SEARCH_LIMIT},
+    {proxyId: "hotpotQaIterLimitProxy", targetId: "locomoQaMaxIterations", fallback: VIKINGBOAT_LITE_MAX_ITERATIONS},
+  ];
+  proxySpecs.forEach(({proxyId, targetId, fallback}) => {
+    const input = $(proxyId);
+    if (!input || input.dataset.bound === "1") return;
+    input.dataset.bound = "1";
+    input.addEventListener("change", () => {
+      const raw = String(input.value || "").trim();
+      const parsed = Number(raw);
+      const normalized = Number.isFinite(parsed) && parsed > 0 ? String(Math.floor(parsed)) : String(fallback);
+      input.value = normalized;
+      if ($(targetId)) $(targetId).value = normalized;
+      persistCurrentAccountConfig();
+      renderHotpotQaRunConfig(
+        state.currentRunningTask && normalizeDatasetFormat(taskDatasetFormat(state.currentRunningTask, state.taskDatasetFormats[state.currentRunningTask.id] || "")) === "hotpotqa"
+          ? state.currentRunningTask
+          : null,
+        state.currentRunningTask?.id ? (state.runningBenchmarkSummaries[state.currentRunningTask.id] || null) : null,
+      );
+      renderHotpotQaModelReadiness(state.hotpotQaModelReadiness);
+    });
+  });
+}
+
+function hotpotQaToolCallingState(task = null, summary = null) {
+  const summaryJson = summary?.summary_json || {};
+  const toolCalls = Number(summary?.tool_call_total ?? summaryJson.tool_call_total ?? 0);
+  const toolRows = Number(summary?.tool_call_rows ?? summaryJson.tool_call_rows ?? 0);
+  const taskConfig = task?.meta?.config || task?.config || {};
+  const flow = hotpotQaRuntimeFlow(task, summary);
+  const topK = summary?.top_k ?? summaryJson.top_k ?? taskConfig.top_k ?? "";
+  const toolSearchLimit = summary?.tool_search_limit ?? summaryJson.tool_search_limit ?? taskConfig.tool_search_limit ?? "";
+  const maxIterations = summary?.max_iterations ?? summaryJson.max_iterations ?? taskConfig.max_iterations ?? "";
+  const label = toolCalls > 0
+    ? `已调用 ${formatInt(toolCalls)} 次`
+    : (flow.toolLoopEnabled ? "已启用" : (flow.retrievalConfigured ? "未进入工具回路" : "已关闭"));
+  const note = [
+    toolRows ? `${formatInt(toolRows)} 行发生调用` : "",
+    flow.retrievalConfigured ? "检索已启用" : "",
+    !flow.toolLoopEnabled && flow.retrievalConfigured ? "仅检索，不调用工具" : "",
+    topK ? `Top-K ${topK}` : "",
+    toolSearchLimit ? `工具检索 ${toolSearchLimit}` : "",
+    maxIterations ? `迭代 ${maxIterations}` : "",
+  ].filter(Boolean).join(" · ") || (flow.toolLoopEnabled ? "按配置运行" : (flow.retrievalConfigured ? "当前只跑检索链路" : "本次不调用工具"));
+  return {label, note};
+}
+
+function hotpotQaRuntimeFlow(task = null, summary = null) {
+  const summaryJson = summary?.summary_json || {};
+  const taskConfig = task?.meta?.config || task?.config || {};
+  const toolLoopEnabled = typeof taskConfig.openviking_tool_loop === "boolean"
+    ? taskConfig.openviking_tool_loop
+    : (typeof taskConfig.vikingboat_tool_loop === "boolean"
+      ? taskConfig.vikingboat_tool_loop
+      : currentQaToolCallingEnabled("hotpotqa"));
+  const retrievalMode = String(
+    taskConfig.retrieval_mode
+    || summary?.retrieval_mode
+    || summaryJson.retrieval_mode
+    || ""
+  ).trim().toLowerCase();
+  const searchLimit = Number(taskConfig.tool_search_limit || summary?.tool_search_limit || summaryJson.tool_search_limit || 0);
+  const topK = Number(taskConfig.top_k || summary?.top_k || summaryJson.top_k || 0);
+  const retrievalConfigured = Boolean(
+    toolLoopEnabled
+    || (retrievalMode && !["none", "off", "disabled", "direct", "one_shot", "oneshot"].includes(retrievalMode))
+    || searchLimit > 0
+    || topK > 0
+  );
+  const avgInjection = summary?.avg_memory_injection_time_s ?? summaryJson.avg_memory_injection_time_s;
+  const avgSettle = summary?.avg_memory_settle_wait_time_s ?? summaryJson.avg_memory_settle_wait_time_s;
+  const avgQaTime = summary?.avg_qa_time_s ?? summaryJson.avg_qa_time_s;
+  const phaseText = String(task?.progress?.phase || task?.phase || "").trim().toLowerCase();
+  const averageStages = [
+    {label: "写入", value: avgInjection},
+    {label: "索引等待", value: avgSettle},
+    {label: "QA", value: avgQaTime},
+  ].filter((item) => item.value != null);
+  averageStages.sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
+  const averageBottleneck = averageStages[0] || null;
+  let currentStage = "";
+  if (phaseText.includes("commit") || phaseText.includes("index") || phaseText.includes("settle")) currentStage = "索引等待";
+  else if (phaseText.includes("qa") || phaseText.includes("answer")) currentStage = "QA";
+  else if (phaseText.includes("import") || phaseText.includes("inject") || phaseText.includes("write")) currentStage = "写入";
+  else currentStage = averageBottleneck?.label || "";
+  const executionMode = toolLoopEnabled
+    ? "检索 + Tool Calling"
+    : (retrievalConfigured ? "检索回答" : "直接回答");
+  const executionChain = toolLoopEnabled
+    ? "题目 -> 检索 -> 多跳推理 -> 工具调用 -> 结果写出"
+    : (retrievalConfigured
+      ? "题目 -> 检索 -> 多跳推理 -> 结果写出"
+      : "题目 -> 直接回答 -> 结果写出");
+  const retrievalNote = toolLoopEnabled
+    ? "按当前参数执行检索、工具调用和多跳推理"
+    : (retrievalConfigured ? "当前会检索证据，但不进入 Tool Calling 回路" : "当前不会进入检索或工具回路");
+  return {
+    toolLoopEnabled,
+    retrievalConfigured,
+    executionMode,
+    executionChain,
+    retrievalNote,
+    averageBottleneck,
+    currentStage,
+  };
+}
+
+function renderHotpotQaRunConfig(task = null, summary = null) {
+  const target = $("hotpotQaRunConfig");
+  if (!target) return;
+  const taskConfig = task?.meta?.config || task?.config || {};
+  const cfg = {...accountConfigDefaults(), ...readAccountConfig(currentAccount()), ...currentAccountConfigPatch()};
+  const flow = hotpotQaRuntimeFlow(task, summary);
+  const topK = String(taskConfig.top_k ?? cfg.echomemQaTopK ?? VIKINGBOAT_LITE_TOP_K);
+  const searchLimit = String(taskConfig.tool_search_limit ?? cfg.echomemQaToolSearchLimit ?? VIKINGBOAT_LITE_TOOL_SEARCH_LIMIT);
+  const iterations = String(taskConfig.max_iterations ?? cfg.echomemQaMaxIterations ?? VIKINGBOAT_LITE_MAX_ITERATIONS);
+  const locked = Boolean(task && isTaskActive(task));
+  const summaryJson = summary?.summary_json || {};
+  const execution = task ? taskExecutionProgress(task, "hotpotqa") : null;
+  const progress = task?.progress || {};
+  const answered = Number(execution?.answered_questions ?? progress.current ?? 0);
+  const totalQuestions = Number(taskConfig.count ?? execution?.total_questions ?? progress.total ?? benchmarkCount("hotpotQaCount", 50));
+  const rows = Number(summary?.rows ?? summaryJson.rows ?? 0);
+  const avgInjection = summary?.avg_memory_injection_time_s ?? summaryJson.avg_memory_injection_time_s;
+  const avgSettle = summary?.avg_memory_settle_wait_time_s ?? summaryJson.avg_memory_settle_wait_time_s;
+  const avgQaTime = summary?.avg_qa_time_s ?? summaryJson.avg_qa_time_s;
+  const avgEndToEnd = summary?.avg_end_to_end_time_s ?? summaryJson.avg_end_to_end_time_s
+    ?? ((avgInjection != null || avgSettle != null || avgQaTime != null) ? Number(avgInjection || 0) + Number(avgSettle || 0) + Number(avgQaTime || 0) : null);
+  const topKInput = $("hotpotQaTopKProxy");
+  const toolLimitInput = $("hotpotQaToolLimitProxy");
+  const iterLimitInput = $("hotpotQaIterLimitProxy");
+  if (topKInput) {
+    topKInput.value = topK;
+    topKInput.disabled = locked;
+  }
+  if (toolLimitInput) {
+    toolLimitInput.value = searchLimit;
+    toolLimitInput.disabled = locked;
+  }
+  if (iterLimitInput) {
+    iterLimitInput.value = iterations;
+    iterLimitInput.disabled = locked;
+  }
+  const phasePillTone = flow.currentStage === "QA" ? "ok" : (flow.currentStage ? "warn" : "muted");
+  const bottleneckPillTone = flow.averageBottleneck?.label === "QA" ? "warn" : (flow.averageBottleneck?.label ? "ok" : "muted");
+  const durationCell = (value, fallback = "-") => value != null ? formatDuration(Number(value || 0)) : fallback;
+  const runtimeRows = [
+    {label: "Pipeline", value: flow.executionChain},
+    {label: "当前阶段", value: flow.currentStage ? `<span class="hqa-inline-pill ${phasePillTone}">${escapeHtml(flow.currentStage)}</span>` : "-"},
+    {label: "进度", value: totalQuestions ? `${formatInt(answered)}/${formatInt(totalQuestions)}` : "-"},
+    {label: "结果写出", value: totalQuestions ? `${formatInt(rows)}/${formatInt(totalQuestions)}` : (rows ? formatInt(rows) : "-")},
+    {label: "当前瓶颈", value: flow.averageBottleneck?.label ? `<span class="hqa-inline-pill ${bottleneckPillTone}">${escapeHtml(flow.averageBottleneck.label)}</span>` : "-"},
+    {label: "Top-K", value: escapeHtml(topK)},
+    {label: "Tool", value: escapeHtml(searchLimit)},
+    {label: "Iter", value: escapeHtml(iterations)},
+    {label: "平均写入", value: escapeHtml(durationCell(avgInjection))},
+    {label: "平均索引", value: escapeHtml(durationCell(avgSettle))},
+    {label: "平均 QA", value: escapeHtml(durationCell(avgQaTime))},
+    {label: "平均端到端", value: escapeHtml(durationCell(avgEndToEnd))},
+  ];
+  target.innerHTML = `
+    <div class="hqa-runtime-summary">
+      <div class="hqa-runtime-summary-head">
+        <strong>Runtime Summary</strong>
+        <small>${escapeHtml(flow.executionMode)}</small>
+      </div>
+      <div class="hqa-kv-grid">
+        ${runtimeRows.map((item) => `
+          <article class="hqa-kv-row ${item.label === "Pipeline" ? "is-wide" : ""}">
+            <span class="hqa-kv-label">${escapeHtml(item.label)}</span>
+            <strong class="hqa-kv-value" title="${typeof item.value === "string" ? item.value.replace(/<[^>]+>/g, "") : ""}">${item.value}</strong>
+          </article>
+        `).join("")}
+      </div>
+      <div class="hqa-hint-row ${locked ? "" : "is-warn"}">
+        <span>${escapeHtml(flow.retrievalNote)}</span>
+        <strong>${escapeHtml(locked ? "当前任务正在运行，启动参数已锁定。进度与结果请到多跳问答 / 结果摘要查看。" : "开始测试前确认题量、Top-K、Tool 与迭代上限。")}</strong>
+      </div>
+    </div>
+  `;
+  bindHotpotQaRuntimeProxyControls();
+}
+
+async function ensureHotpotQaDatasetOverview(force = false) {
+  const path = genericBenchmarkPath("hotpotqa");
+  if (!path) {
+    state.hotpotQaDatasetOverview = null;
+    state.hotpotQaDatasetOverviewLoading = false;
+    renderHotpotQaDatasetSummary(null);
+    renderHotpotQaModelReadiness(state.hotpotQaModelReadiness);
+    return null;
+  }
+  if (state.hotpotQaDatasetOverviewLoading) return state.hotpotQaDatasetOverview;
+  const currentPath = String(state.hotpotQaDatasetOverview?.resolved_path || state.hotpotQaDatasetOverview?.path || "").trim();
+  if (!force && state.hotpotQaDatasetOverview && currentPath && datasetPathMatches(currentPath, path)) {
+    renderHotpotQaDatasetSummary(state.hotpotQaDatasetOverview);
+    renderHotpotQaModelReadiness(state.hotpotQaModelReadiness);
+    return state.hotpotQaDatasetOverview;
+  }
+  state.hotpotQaDatasetOverviewLoading = true;
+  renderHotpotQaDatasetSummary(state.hotpotQaDatasetOverview);
+  try {
+    return await validateGenericBenchmark("hotpotqa", {silent: true});
+  } catch {
+    renderHotpotQaDatasetSummary(state.hotpotQaDatasetOverview);
+    renderHotpotQaModelReadiness(state.hotpotQaModelReadiness);
+    return state.hotpotQaDatasetOverview;
+  } finally {
+    state.hotpotQaDatasetOverviewLoading = false;
+    renderHotpotQaDatasetSummary(state.hotpotQaDatasetOverview);
+    renderHotpotQaModelReadiness(state.hotpotQaModelReadiness);
+  }
+}
+
+function renderHotpotQaStatusBand(task = null, summary = null) {
+  const band = $("hotpotQaStatusBand");
+  if (!band) return;
+  if (task?.id || task?.output_file || task?.run_dir) {
+    state.hotpotQaActiveRecord = task;
+  }
+  const liveTask = task ? taskWithLiveProgress(task) : null;
+  const progress = liveTask?.progress || {};
+  const execution = taskExecutionProgress(task || {}, "hotpotqa");
+  const scope = benchmarkQuestionScope(task || {}, "hotpotqa");
+  const taskConfig = task?.meta?.config || task?.config || {};
+  const flow = hotpotQaRuntimeFlow(task, summary);
+  const runtimeToolEnabled = flow.toolLoopEnabled;
+  const datasetOverview = state.hotpotQaDatasetOverview || null;
+  const splitLabel = hotpotQaDatasetSplitLabel(datasetOverview?.resolved_path || genericBenchmarkPath("hotpotqa") || "");
+  const requestedCount = Number(taskConfig.count ?? execution?.total_questions ?? progress.total ?? benchmarkCount("hotpotQaCount", 50));
+  const totalLoadedQuestions = Number(datasetOverview?.questions || state.benchmarkQuestions.hotpotqa?.length || 0);
+  const countLabel = requestedCount === 0 ? "全量" : `${formatInt(requestedCount)} 题`;
+  const countNote = totalLoadedQuestions ? `数据集共 ${formatInt(totalLoadedQuestions)} 题` : "0=全量";
+  const currentQuestion = execution?.total_questions
+    ? `${execution.current_question || execution.answered_questions || 0}/${execution.total_questions}`
+    : (progress.total ? `已处理 ${progress.current || 0}/${progress.total}` : "-");
+  const artifactStatus = summary?._artifact_status || {};
+  const snapshot = hotpotQaCompletionSnapshot(task || {}, summary || {}, artifactStatus);
+  const completedByArtifacts = task ? taskHasTerminalArtifacts(task, "hotpotqa", artifactStatus) : false;
+  const statusLabel = task ? (snapshot.statusLabel || taskDisplayStatusLabel(task, "hotpotqa", artifactStatus)) : (state.hotpotQaModelReadiness ? "已检查" : "待开始");
+  const started = task?.started_at || task?.created_at || "";
+  const eta = progress.eta_seconds != null ? formatDuration(progress.eta_seconds) : "-";
+  const toolCalling = hotpotQaToolCallingState(task, summary);
+  const answerEm = summary?.official_answer_em ?? summary?.summary_json?.official_answer_em ?? summary?.answer_em ?? summary?.summary_json?.answer_em;
+  const answerF1 = summary?.official_answer_f1 ?? summary?.summary_json?.official_answer_f1 ?? summary?.answer_f1 ?? summary?.summary_json?.answer_f1;
+  const writtenRows = Number((summary?.rows ?? summary?.summary_json?.rows ?? state.hotpotQaQuestionRunsRows.length) || 0);
+  const judgePending = (answerEm == null && answerF1 == null) && Boolean(task || writtenRows > 0 || state.hotpotQaQuestionRunsRows.length);
+  const activeQuestion = Number(execution?.current_question || execution?.answered_questions || progress.current || 0);
+  const progressEl = $("hotpotQaStatusProgress");
+  const progressNoteEl = $("hotpotQaStatusProgressNote");
+  const runEl = $("hotpotQaStatusRunState");
+  const runNoteEl = $("hotpotQaStatusRunStateNote");
+  const toolCard = band.querySelector('[data-status-key="tools"]');
+  const toolEl = $("hotpotQaStatusToolCalling");
+  const toolNoteEl = $("hotpotQaStatusToolCallingNote");
+  const runCard = band.querySelector('[data-status-key="runstate"]');
+  const progressCard = band.querySelector('[data-status-key="progress"]');
+  const metricsCard = band.querySelector('[data-status-key="metrics"]');
+  const metricsEl = $("hotpotQaStatusMetrics");
+  const metricsNoteEl = $("hotpotQaStatusMetricsNote");
+  const evidenceCard = band.querySelector('[data-status-key="evidence"]');
+  const evidenceEl = $("hotpotQaStatusEvidence");
+  const evidenceNoteEl = $("hotpotQaStatusEvidenceNote");
+  const splitMetaEl = $("hotpotQaStatusSplitMeta");
+  const countMetaEl = $("hotpotQaStatusCountMeta");
+  const startedMetaEl = $("hotpotQaStatusStartedMeta");
+  const taskMetaEl = $("hotpotQaStatusTaskMeta");
+  const etaMetaEl = $("hotpotQaStatusEtaMeta");
+  const progressBarInlineEl = $("hotpotQaStatusProgressBarInline");
+  const countInput = $("hotpotQaCount");
+  const toolToggle = $("hotpotQaUseTools");
+  const launchButton = document.querySelector('.generic-run-adapter[data-benchmark="hotpotqa"]');
+  if (countInput) {
+    if (task && isTaskActive(task)) countInput.value = String(requestedCount === 0 ? 0 : requestedCount);
+    countInput.disabled = Boolean(task && isTaskActive(task));
+  }
+  if (toolToggle) {
+    if (task && isTaskActive(task)) toolToggle.checked = runtimeToolEnabled;
+    toolToggle.disabled = Boolean(task && isTaskActive(task));
+    toolToggle.setAttribute("aria-disabled", toolToggle.disabled ? "true" : "false");
+    syncQaToolCallingInputs(toolToggle.checked, "hotpotQaUseTools");
+  }
+  if (launchButton) {
+    launchButton.disabled = Boolean(task && isTaskActive(task));
+  }
+  if (progressEl) progressEl.textContent = currentQuestion;
+  if (progressNoteEl) progressNoteEl.textContent = execution?.total_questions
+    ? (
+      task && isTaskActive(task) && writtenRows > 0 && activeQuestion > writtenRows
+        ? `已写出 ${writtenRows}/${execution.total_questions} · 第 ${activeQuestion} 题处理中`
+        : `${execution.answered_questions || 0}/${execution.total_questions} answered`
+    )
+    : (scope?.total ? `当前范围 ${scope.current || 0}/${scope.total}` : "等待运行");
+  if (toolEl) toolEl.textContent = toolCalling.label;
+  if (toolNoteEl) toolNoteEl.textContent = toolCalling.note;
+  if (toolCard) toolCard.title = toolCalling.note || toolCalling.label || "";
+  if (runEl) runEl.textContent = statusLabel;
+  if (runNoteEl) {
+    const avgSettle = summary?.avg_memory_settle_wait_time_s ?? summary?.summary_json?.avg_memory_settle_wait_time_s;
+    const phaseNote = progress.phase || progress.detail || "运行中";
+    runNoteEl.textContent = snapshot.detailText
+      ? snapshot.detailText
+      : task && avgSettle != null && avgSettle >= 45
+      ? `${phaseNote} · 当前 phase 在${flow.currentStage || "索引等待"}，主要等待索引完成`
+      : (task ? phaseNote : "等待开始");
+  }
+  if (runCard) runCard.title = runNoteEl?.textContent || statusLabel || "";
+  if (metricsEl) metricsEl.textContent = (answerEm != null || answerF1 != null) ? `${percent(answerEm ?? 0)} / ${percent(answerF1 ?? 0)}` : (judgePending ? "Needs Judge" : "-");
+  if (metricsNoteEl) metricsNoteEl.textContent = snapshot.officialFailed
+    ? "answer eval failed"
+    : (answerEm != null || answerF1 != null)
+    ? "answer-only metrics"
+    : (judgePending ? "QA 已完成，等待正式 Judge 回填 EM / F1" : "等待结果");
+  if (metricsCard) metricsCard.title = metricsNoteEl?.textContent || "";
+  if (evidenceEl || evidenceNoteEl) {
+    const evidenceStats = hotpotQaAggregateEvidenceStats(state.hotpotQaQuestionRunsRows || []);
+    const retrievalHitRate = summary?.retrieval_hit_rate ?? summary?.summary_json?.retrieval_hit_rate ?? summary?.memory_coverage ?? summary?.summary_json?.memory_coverage;
+    const evidenceLabel = evidenceStats.total
+      ? `${formatInt(evidenceStats.hitRows)}/${formatInt(evidenceStats.total)}`
+      : (retrievalHitRate != null ? percent(Number(retrievalHitRate)) : "-");
+    const evidenceNote = evidenceStats.total
+      ? `matching expected supporting facts · ${formatInt(evidenceStats.partialRows)} partial · ${formatInt(evidenceStats.missRows)} miss`
+      : (judgePending ? "等待结果行同步后统计 evidence hit" : "等待证据");
+    if (evidenceEl) evidenceEl.textContent = evidenceLabel;
+    if (evidenceNoteEl) evidenceNoteEl.textContent = evidenceNote;
+    if (evidenceCard) evidenceCard.title = `Evidence Hit = retrieved evidence matching expected supporting facts.\n${evidenceNote}`;
+  }
+  if (progressBarInlineEl) {
+    const pct = progress.pct != null
+      ? Math.max(0, Math.min(100, Number(progress.pct || 0)))
+      : (execution?.total_questions
+        ? Math.max(0, Math.min(100, ((execution.answered_questions || 0) / Math.max(1, execution.total_questions)) * 100))
+        : 0);
+    progressBarInlineEl.style.width = `${pct}%`;
+  }
+  if (splitMetaEl) splitMetaEl.textContent = splitLabel ? `split ${splitLabel}` : "split -";
+  if (countMetaEl) countMetaEl.textContent = countLabel ? `题量 ${countLabel}` : `题量 ${countNote}`;
+  if (startedMetaEl) startedMetaEl.textContent = started ? `开始时间 ${formatDateTimeLocal(started)}` : "开始时间 -";
+  if (taskMetaEl) {
+    const taskId = String(task?.id || "").trim();
+    taskMetaEl.textContent = taskId ? `task ${compactText(taskId, 40, 14)}` : "task -";
+  }
+  if (etaMetaEl) etaMetaEl.textContent = progress.eta_seconds != null ? `ETA ${eta}` : (task ? "ETA 等待刷新" : "ETA -");
+  [progressCard, toolCard, runCard, metricsCard, evidenceCard].forEach((card) => {
+    card?.classList.remove("is-live", "is-success", "is-alert", "is-idle", "is-warn");
+  });
+  if (progressCard) progressCard.classList.add(task ? "is-live" : "is-idle");
+  if (toolCard) toolCard.classList.add(runtimeToolEnabled ? "is-live" : "is-idle");
+  if (runCard) {
+    const tone = !task ? "is-idle"
+      : snapshot.statusTone === "success" || completedByArtifacts ? "is-success"
+      : snapshot.statusTone === "error" ? "is-alert"
+      : snapshot.statusTone === "warn" ? "is-alert"
+      : isTaskActive(task) ? "is-live"
+      : ["failed", "interrupted", "cancelled", "canceled"].includes(String(task.status || "").trim().toLowerCase()) ? "is-alert" : "is-live";
+    runCard.classList.add(tone);
+  }
+  if (metricsCard) metricsCard.classList.add((answerEm != null || answerF1 != null) ? "is-success" : (judgePending ? "is-warn" : "is-idle"));
+  if (evidenceCard) {
+    const evidenceStats = hotpotQaAggregateEvidenceStats(state.hotpotQaQuestionRunsRows || []);
+    const missRatio = evidenceStats.total ? (evidenceStats.missRows / evidenceStats.total) : 0;
+    evidenceCard.classList.add(
+      !evidenceStats.total ? "is-idle"
+      : missRatio >= 0.5 ? "is-alert"
+      : evidenceStats.missRows > 0 ? "is-warn"
+      : evidenceStats.partialRows > 0 ? "is-live"
+      : "is-success"
+    );
+  }
+  renderHotpotQaRunConfig(task, summary);
+  renderHotpotQaModelReadiness(state.hotpotQaModelReadiness);
+  renderHotpotQaLiveMonitor(task, summary);
+  if (task && String(task.output_file || "").trim()) {
+    const nextPath = String(task.output_file || "").trim();
+    const pathChanged = state.hotpotQaQuestionRunsPath !== nextPath;
+    const missingRows = !Array.isArray(state.hotpotQaQuestionRunsRows) || !state.hotpotQaQuestionRunsRows.length;
+    if (pathChanged || (missingRows && !state.hotpotQaQuestionRunsLoading)) {
+      refreshHotpotQaQuestionRuns(task, {force: pathChanged}).catch(() => null);
+    }
+  }
+  if ($("hotpotQaKpis")) $("hotpotQaKpis").hidden = true;
+}
+
+function renderHotpotQaQuestionSelection() {
+  const key = "hotpotqa";
+  const {questions, selected} = benchmarkQuestionState(key);
+  const picker = $("hotpotQaPreview");
+  if (!picker) return;
+  const rows = filteredBenchmarkQuestions(key);
+  const visibleRows = rows.slice(0, 120);
+  const toggleId = "toggleBenchmarkVisibleQuestions-hotpotqa";
+  const duplicateCount = Number(state.benchmarkQuestionDuplicateCounts[key] || 0);
+  if (!questions.length) {
+    const countInput = $("hotpotQaCount");
+    const toolToggle = $("hotpotQaUseTools");
+    const activeTask = state.currentRunningTask && normalizeDatasetFormat(taskDatasetFormat(state.currentRunningTask, state.taskDatasetFormats[state.currentRunningTask.id] || "")) === "hotpotqa"
+      ? state.currentRunningTask
+      : null;
+    if (countInput) countInput.disabled = Boolean(activeTask && isTaskActive(activeTask));
+    if (toolToggle) {
+      toolToggle.disabled = Boolean(activeTask && isTaskActive(activeTask));
+      toolToggle.setAttribute("aria-disabled", toolToggle.disabled ? "true" : "false");
+    }
+    picker.innerHTML = `<div class="hqa-empty-state"><strong>暂无题目</strong><p>先点击“加载题目”。</p></div>`;
+    renderBenchmarkSelectionSummary(key);
+    return;
+  }
+  const duplicateHint = duplicateCount
+    ? `<p class="hqa-note">已按 question_id 折叠 ${escapeHtml(formatInt(duplicateCount))} 条重复题目。</p>`
+    : "";
+  picker.innerHTML = `
+    ${duplicateHint}
+    <div class="hqa-runs-table-shell">
+      <table class="hqa-question-table">
+        <thead>
+          <tr>
+            <th class="hqa-check-col">
+              <input type="checkbox" id="${toggleId}" aria-label="批量勾选当前可见题目" ${visibleRows.every((q) => selected.has(q.question_id)) ? "checked" : ""}>
+            </th>
+            <th>Question</th>
+            <th>Gold Answer</th>
+            <th>Type / Level</th>
+            <th>Supporting Facts</th>
+            <th>Example ID</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${visibleRows.map((q) => `
+            <tr class="hqa-question-row ${selected.has(q.question_id) ? "selected" : ""}">
+              <td class="hqa-check-col"><input type="checkbox" data-question-id="${escapeHtml(q.question_id || "")}" ${selected.has(q.question_id) ? "checked" : ""}></td>
+              <td class="hqa-question-cell hqa-question-main"><strong>${escapeHtml(q.question || "(未识别 question 字段)")}</strong></td>
+              <td class="hqa-question-cell">${escapeHtml(q.answer || "-")}</td>
+              <td class="hqa-question-cell hqa-question-tag"><strong>${escapeHtml(q.type || "-")}</strong><small>${escapeHtml(q.level || "-")}</small></td>
+              <td class="hqa-question-cell hqa-question-mono">${escapeHtml(String(q.supporting_facts_count ?? "-"))}</td>
+              <td class="hqa-question-cell hqa-question-mono"><strong>${escapeHtml(q.sample_id || "-")}</strong><small>${escapeHtml(q.question_id || "-")}</small></td>
+              <td><span class="hqa-table-pill ${selected.has(q.question_id) ? "ok" : "warn"}">${escapeHtml(selected.has(q.question_id) ? "已选" : "待运行")}</span></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+  picker.querySelectorAll("input[type='checkbox']").forEach((box) => {
+    box.addEventListener("change", () => {
+      if (box.id === toggleId) return;
+      const questionId = box.dataset.questionId || "";
+      if (!questionId) return;
+      if (box.checked) selected.add(questionId);
+      else selected.delete(questionId);
+      renderHotpotQaQuestionSelection();
+    });
+  });
+  const toggle = $(toggleId);
+  if (toggle) {
+    toggle.indeterminate = visibleRows.some((q) => selected.has(q.question_id)) && !visibleRows.every((q) => selected.has(q.question_id));
+    toggle.addEventListener("change", () => {
+      visibleRows.forEach((row) => {
+        if (toggle.checked) selected.add(row.question_id);
+        else selected.delete(row.question_id);
+      });
+      renderHotpotQaQuestionSelection();
+    });
+  }
+  renderBenchmarkSelectionSummary(key);
+  renderHotpotQaStatusBand(state.currentRunningTask && normalizeDatasetFormat(taskDatasetFormat(state.currentRunningTask, state.taskDatasetFormats[state.currentRunningTask.id] || "")) === "hotpotqa" ? state.currentRunningTask : null, state.currentRunningTask?.id ? (state.runningBenchmarkSummaries[state.currentRunningTask.id] || null) : null);
 }
 
 async function refreshHotpotQaModelReadiness(force = false) {
@@ -8386,21 +13124,281 @@ function genericBenchmarkPath(key) {
   return $(config.dataInput)?.value.trim() || "";
 }
 
+function renderLongMemStatusBand(task = null, summary = null) {
+  const band = $("longMemStatusBand");
+  if (!band) return;
+  const dataset = resolveLongMemDataset() || null;
+  const currentPath = currentLongMemDatasetPath();
+  const validatedDataset = isResolvedLongMemDatasetValidated(dataset, currentPath);
+  const hasDataset = !!(dataset && (dataset.resolved_path || dataset.path || dataset.name));
+  const datasetMissing = hasDataset && dataset.exists === false;
+  const lazyMode = hasDataset && dataset.runner_status === "large_dataset_lazy";
+  const liveTask = task ? taskWithLiveProgress(task) : null;
+  const progress = liveTask?.progress || {};
+  const execution = taskExecutionProgress(task || {}, "longmemeval");
+  const artifactStatus = summary?._artifact_status || {};
+  const completedByArtifacts = task ? taskHasTerminalArtifacts(task, "longmemeval", artifactStatus) : false;
+  const summaryJson = summary?.summary_json || {};
+
+  const datasetEl = $("longMemStatusDataset");
+  const datasetNoteEl = $("longMemStatusDatasetNote");
+  const samplesEl = $("longMemStatusSamples");
+  const samplesNoteEl = $("longMemStatusSamplesNote");
+  const questionsEl = $("longMemStatusQuestions");
+  const questionsNoteEl = $("longMemStatusQuestionsNote");
+  const completedEl = $("longMemStatusCompleted");
+  const completedNoteEl = $("longMemStatusCompletedNote");
+  const runEl = $("longMemStatusRunState");
+  const runNoteEl = $("longMemStatusRunStateNote");
+
+  const datasetCard = band.querySelector('[data-status-key="dataset"]');
+  const samplesCard = band.querySelector('[data-status-key="samples"]');
+  const questionsCard = band.querySelector('[data-status-key="questions"]');
+  const completedCard = band.querySelector('[data-status-key="completed"]');
+  const runCard = band.querySelector('[data-status-key="runstate"]');
+
+  const size = hasDataset ? datasetSizeLabel(dataset) : "";
+  const totalLoaded = Number(state.longMemQuestionTotalLoaded || state.longMemQuestions.length || 0);
+  const selectedCount = state.selectedLongMemQuestions?.size || 0;
+  const splitLabel = validatedDataset ? longMemQuestionScopeLabel() : "Waiting";
+  const datasetTitle = hasDataset ? (dataset.name || datasetTypeLabel(dataset.format) || "LongMemEval") : "Waiting";
+  const questionTotal = Number(dataset?.questions || execution?.total_questions || 0);
+  const importTotal = Number(dataset?.samples || execution?.total_samples || 0);
+  const injectedCount = Number(execution?.completed_samples || progress.completed || progress.current || 0);
+  const answeredCount = Number(execution?.answered_questions || progress.current || 0);
+  const runStatusLabel = task
+    ? taskDisplayStatusLabel(task, "longmemeval", artifactStatus)
+    : (!hasDataset ? "Waiting" : (datasetMissing ? "Failed" : "Idle"));
+  const officialScore = summary?.overall_accuracy
+    ?? summaryJson.overall_accuracy
+    ?? summary?.official_score
+    ?? summaryJson.official_score
+    ?? null;
+
+  if (datasetEl) datasetEl.textContent = hasDataset ? `${datasetTitle}${validatedDataset && splitLabel !== "Waiting" ? ` · ${splitLabel}` : ""}` : "Waiting";
+  if (datasetNoteEl) datasetNoteEl.textContent = hasDataset
+    ? (datasetMissing
+      ? "文件缺失"
+      : (validatedDataset
+        ? [size || datasetTypeLabel(dataset.format) || "已读取", lazyMode ? "大文件懒加载" : "按当前范围"].filter(Boolean).join(" · ")
+        : "待校验"))
+    : "等待读取";
+  if (samplesEl) samplesEl.textContent = hasDataset ? memoryBackendLabel(currentMemoryBackend()) : "Waiting";
+  if (samplesNoteEl) samplesNoteEl.textContent = hasDataset ? `${currentAccount()} · 当前后端` : "等待加载";
+  if (questionsEl) questionsEl.textContent = task
+    ? (importTotal ? `${formatInt(injectedCount)}/${formatInt(importTotal)}` : (injectedCount ? formatInt(injectedCount) : "Idle"))
+    : (hasDataset ? (importTotal ? `0/${formatInt(importTotal)}` : "Idle") : "Idle");
+  if (questionsNoteEl) questionsNoteEl.textContent = totalLoaded ? `已加载 ${formatInt(totalLoaded)} 题` : "等待导入";
+  if (completedEl) completedEl.textContent = task
+    ? (questionTotal ? `${formatInt(answeredCount)}/${formatInt(questionTotal)}` : (answeredCount ? formatInt(answeredCount) : "Idle"))
+    : (selectedCount ? `${formatInt(selectedCount)}/${formatInt(questionTotal || selectedCount)}` : "Idle");
+  if (completedNoteEl) completedNoteEl.textContent = task
+    ? (officialScore != null ? `official ${percent(officialScore)}` : (completedByArtifacts ? "结果已写出" : "问答进度"))
+    : (selectedCount ? "已选题目" : "等待问答");
+  if (runEl) runEl.textContent = runStatusLabel;
+  if (runNoteEl) runNoteEl.textContent = task
+    ? (completedByArtifacts
+      ? "summary / judge / official 产物已就绪"
+      : (progress.phase || progress.detail || "运行中"))
+    : (!hasDataset ? "等待启动" : (datasetMissing ? "请检查路径" : "可开始测试"));
+
+  [datasetCard, samplesCard, questionsCard, completedCard, runCard].forEach((card) => {
+    card?.classList.remove("is-live", "is-success", "is-alert", "is-idle");
+  });
+  if (datasetCard) datasetCard.classList.add(!hasDataset ? "is-idle" : datasetMissing ? "is-alert" : "is-success");
+  if (samplesCard) samplesCard.classList.add(validatedDataset && dataset.samples != null ? "is-live" : "is-idle");
+  if (questionsCard) questionsCard.classList.add(validatedDataset && dataset.questions != null ? "is-live" : "is-idle");
+  if (completedCard) completedCard.classList.add(task ? (completedByArtifacts ? "is-success" : "is-live") : (selectedCount ? "is-success" : "is-idle"));
+  if (runCard) {
+    const failed = ["failed", "interrupted", "cancelled", "canceled"].includes(String(task?.status || "").trim().toLowerCase());
+    runCard.classList.add(
+      !task
+        ? (!hasDataset ? "is-idle" : datasetMissing ? "is-alert" : "is-success")
+        : completedByArtifacts ? "is-success"
+        : failed ? "is-alert"
+        : isTaskActive(task) ? "is-live"
+        : "is-success"
+    );
+  }
+}
+
+function syncLongMemHeaderSummary() {
+  const accountEl = $("longMemHeaderAccount");
+  if (accountEl) accountEl.textContent = currentAccount();
+  const backend = currentMemoryBackend();
+  const backendLabel = memoryBackendLabel(backend);
+  const backendEl = $("longMemHeaderBackend");
+  if (backendEl) backendEl.textContent = backendLabel;
+  const backendStateEl = $("longMemHeaderBackendState");
+  if (backendStateEl) backendStateEl.textContent = backendSupportsAgentWorkbench(backend) ? "正常" : "待接入";
+  const modelEl = $("longMemHeaderModel");
+  if (modelEl) {
+    const agentCfg = agentModelConfig();
+    modelEl.textContent = agentCfg.model || "未配置";
+    modelEl.title = agentCfg.baseUrl ? `${agentCfg.model || "未配置"} · ${agentCfg.baseUrl}` : (agentCfg.model || "未配置");
+  }
+}
+
+function openSelectedLongMemReport() {
+  const runDir = state.selectedRunDir || state.selectedRunRecord?.run_dir || "";
+  const reportPath = state.lastReportFile || (runDir ? `${runDir}/report.html` : "");
+  if (!reportPath) return toast("当前还没有可打开的报告");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "path-open";
+  button.dataset.path = reportPath;
+  document.body.appendChild(button);
+  button.click();
+  button.remove();
+}
+
+function openSelectedLongMemRunDir() {
+  const runDir = state.selectedRunDir || state.selectedRunRecord?.run_dir || "";
+  if (!runDir) return toast("当前还没有可打开的结果目录");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "path-open";
+  button.dataset.path = runDir;
+  document.body.appendChild(button);
+  button.click();
+  button.remove();
+}
+
 function renderLongMemEntryStatus(path = "", record = {}) {
   if (!$("longMemStatus")) return;
   const size = datasetSizeLabel(record);
   const backendLabel = memoryBackendLabel(currentMemoryBackend());
+  const availability = $("longMemDetailAvailability");
+  if (availability) {
+    const stateText = path ? (record.exists === false ? "缺失" : "可用") : "待选择";
+    availability.textContent = stateText;
+    availability.dataset.state = stateText;
+  }
+  if ($("longMemFileInfo")) {
+    const sourcePath = record.resolved_path || record.path || path || "-";
+    $("longMemFileInfo").innerHTML = [
+      longMemPathRowHtml("数据文件", sourcePath, {copy: sourcePath !== "-", open: sourcePath !== "-"}),
+      longMemPathRowHtml("文件大小", size || "-", {copy: false, open: false}),
+      longMemPathRowHtml("数据格式", datasetTypeLabel(record.format || "longmemeval"), {copy: false, open: false}),
+    ].filter(Boolean).join("");
+    bindCopyButtons("#longMemFileInfo");
+    bindOpenButtons("#longMemFileInfo");
+  }
+  if ($("longMemDetailNotes")) {
+    const note = datasetRunnerNote("longmemeval", record.runner_note, "建议先使用 Oracle 50 题校验链路，再跑正式全量。");
+    $("longMemDetailNotes").innerHTML = longMemNoteBlockHtml([
+      note,
+      `当前后端：${backendLabel}。${path ? "切换数据集后建议重新刷新详情。" : "请选择预置数据集或直接填写自定义路径。"}`,
+    ]);
+  }
+  renderLongMemReadinessList([
+    {label: "Dataset readable", status: path ? (record.exists === false ? "失败" : "待校验") : "待选择", tone: path ? (record.exists === false ? "bad" : "warn") : ""},
+    {label: "Schema valid", status: record.questions > 0 ? "通过" : "待确认", tone: record.questions > 0 ? "ok" : "warn"},
+    {label: "Conversation field found", status: record.samples > 0 ? "通过" : "待确认", tone: record.samples > 0 ? "ok" : "warn"},
+    {label: "Question field found", status: record.questions > 0 ? "通过" : "待确认", tone: record.questions > 0 ? "ok" : "warn"},
+    {label: "Answer field found", status: record.questions > 0 ? "通过" : "待确认", tone: record.questions > 0 ? "ok" : "warn"},
+    {label: "Workspace writable", status: path ? "待运行验证" : "待选择数据", tone: "warn"},
+  ]);
   $("longMemStatus").innerHTML = `
-    <p><strong>当前数据集</strong>${size ? ` · ${escapeHtml(size)}` : ""}</p>
-    <p class="dataset-next-step">${escapeHtml(path || "请先选择或填写 LongMemEval JSON。")}</p>
-    <p class="dataset-next-step">当前后端：${escapeHtml(backendLabel)}。建议先用 Oracle 50 题做对比，再决定是否跑正式全量。</p>
+    <p><strong>${escapeHtml(record.name || "当前数据集")}</strong>${size ? ` · ${escapeHtml(size)}` : ""} · ${escapeHtml(backendLabel)}</p>
     <div class="panel-actions">
       <button class="secondary" type="button" data-view-jump="runsView">查看任务/报告</button>
+      <button class="secondary" type="button" data-view-jump="longMemEvalView" data-flow-key="qa">进入问答测试</button>
     </div>
   `;
   $("longMemStatus").querySelectorAll("[data-view-jump]").forEach((button) => {
-    button.addEventListener("click", () => showView(button.dataset.viewJump));
+    button.addEventListener("click", () => {
+      const options = button.dataset.flowKey ? {benchmarkStage: button.dataset.flowKey} : {};
+      showView(button.dataset.viewJump, options);
+    });
   });
+  renderLongMemIssueBrief(record);
+  renderLongMemStatusBand();
+  syncLongMemHeaderSummary();
+}
+
+function longMemIssueSignals(record = {}, fallbackPath = "") {
+  const summary = record?.import_summary || {};
+  const firstRecord = Array.isArray(summary.records) ? summary.records[0] : null;
+  const importStatus = String(summary.status || firstRecord?.status || record?.status || "").trim() || "-";
+  const pendingAsync = firstRecord?.pending_async_memory_after_commit
+    ?? summary.pending_async_samples > 0
+    ?? summary.pending_async_memory
+    ?? null;
+  const readyFlags = {
+    atom: firstRecord?.atom_memory_complete_after_commit,
+    retrieval: firstRecord?.retrieval_ready_after_commit,
+    cursor: firstRecord?.cursor_complete_after_commit,
+    qa: firstRecord?.qa_ready_after_commit,
+    vector: firstRecord?.commit_artifacts?.vector_ready,
+    abstract: firstRecord?.commit_artifacts?.abstract_exists,
+    overview: firstRecord?.commit_artifacts?.overview_exists,
+    graph: firstRecord?.commit_artifacts?.memory_artifacts?.graph_exists,
+  };
+  const evidenceLines = [];
+  if (pendingAsync) evidenceLines.push("导入后仍处于 pending_async_memory，说明写入没有立即完成就绪态。");
+  if (readyFlags.atom === false) evidenceLines.push("atom_memory_complete_after_commit=false，说明 atom 层没有及时完成。");
+  if (readyFlags.retrieval === false) evidenceLines.push("retrieval_ready_after_commit=false，说明检索层还没就绪。");
+  if (readyFlags.qa === false) evidenceLines.push("qa_ready_after_commit=false，QA 入口不能稳定接上。");
+  if (readyFlags.vector === false) evidenceLines.push("vector_ready=false，向量索引没有完成。");
+  if (readyFlags.abstract === false || readyFlags.overview === false) evidenceLines.push("abstract/overview 产物为空，说明导入后派生摘要还没落下。");
+  if (readyFlags.graph === false) evidenceLines.push("graph_exists=false，图结构没有就绪。");
+  return {
+    path: fallbackPath || record?.path || record?.resolved_path || "",
+    importStatus,
+    pendingAsync: Boolean(pendingAsync),
+    readyFlags,
+    evidenceLines,
+    commitWarning: String(firstRecord?.commit_warning || summary.commit_warning || record?.commit_warning || "").trim(),
+    timing: {
+      importElapsed: firstRecord?.import_elapsed_s ?? summary.total_memory_injection_time_s ?? null,
+      settleWait: firstRecord?.memory_settle_wait_elapsed_s ?? summary.total_memory_settle_wait_time_s ?? null,
+      llmTokens: summary.llm_total_tokens ?? summary.import_total_tokens ?? null,
+      judgeTokens: summary.judge_total_tokens ?? null,
+      accuracy: summary.overall_accuracy ?? summary.official_score ?? record?.accuracy ?? null,
+    },
+  };
+}
+
+function renderLongMemIssueBrief(record = {}) {
+  const target = $("longMemIssueBrief");
+  const qaTarget = $("longMemProblemSignals");
+  const judgeTarget = $("longMemEchoIssues");
+  const signal = longMemIssueSignals(record, $("longMemData")?.value.trim() || "");
+  const lines = signal.evidenceLines.length
+    ? signal.evidenceLines
+    : ["当前没有明显的导入阻塞信号。"];
+  const timingNote = [
+    signal.timing.importElapsed != null ? `导入 ${Number(signal.timing.importElapsed).toFixed(1)}s` : "",
+    signal.timing.settleWait != null ? `settle ${Number(signal.timing.settleWait).toFixed(1)}s` : "",
+    signal.timing.llmTokens != null ? `LLM ${formatInt(signal.timing.llmTokens)} tokens` : "",
+    signal.timing.judgeTokens != null ? `judge ${formatInt(signal.timing.judgeTokens)} tokens` : "",
+    signal.timing.accuracy != null ? `acc ${percent(signal.timing.accuracy)}` : "",
+  ].filter(Boolean).join(" · ");
+  const detailHtml = `
+    ${longMemNoteBlockHtml([
+      `问题归因 · ${signal.importStatus || "-"}`,
+      ...lines.slice(0, 4),
+      signal.commitWarning || "导入阶段没有额外警告。",
+      timingNote || "当前没有可用的时长/Token 汇总。",
+    ])}
+  `;
+  const summaryHtml = `
+    ${longMemNoteBlockHtml([
+      `运行说明 · ${lines[0] || "当前没有明显的导入阻塞信号。"}`,
+      timingNote || "当前没有可用的时长/Token 汇总。",
+    ])}
+  `;
+  const hasEvidence = signal.evidenceLines.length > 0 || Boolean(signal.commitWarning);
+  if (target) {
+    target.innerHTML = detailHtml;
+    target.hidden = true;
+  }
+  if (qaTarget) qaTarget.innerHTML = summaryHtml;
+  if (judgeTarget) {
+    judgeTarget.innerHTML = hasEvidence ? detailHtml : "";
+    judgeTarget.hidden = !hasEvidence;
+  }
 }
 
 function renderGenericEntryStatus(key, path = "", record = {}) {
@@ -8409,14 +13407,17 @@ function renderGenericEntryStatus(key, path = "", record = {}) {
   const size = datasetSizeLabel(record);
   const gate = genericBenchmarkRunGate(key, path, record);
   const backendLabel = memoryBackendLabel(currentMemoryBackend());
+  const hotpotScoped = normalizeDatasetFormat(config.adapterFormat || key) === "hotpotqa";
+  const noteClass = hotpotScoped ? "hqa-note" : "dataset-next-step";
+  const badNoteClass = hotpotScoped ? "hqa-note is-bad" : "dataset-next-step bad-text";
   const workflowText = config.adapterFormat === "hotpotqa"
     ? `该入口会固定停留在当前数据集页面，启动后运行正式 ${backendLabel} HotpotQA 文档问答：逐题写入上下文文档、检索证据、调用答案模型、自动判分，并可在查看报告页打开结果和原始报告。`
     : `该入口会固定停留在当前数据集页面，启动后运行正式 MemoryBench ${backendLabel} 记忆问答：导入上下文、检索证据、调用答案模型、自动判分，并可在查看报告页打开结果和原始报告。`;
   $(config.status).innerHTML = `
     <p><strong>已进入 ${escapeHtml(config.label)} 评测页</strong>${size ? ` · ${escapeHtml(size)}` : ""}</p>
-    <p class="dataset-next-step">${escapeHtml(path || config.emptyPathHint)}</p>
-    <p class="dataset-next-step">${escapeHtml(gate.ok ? workflowText : gate.reason)}</p>
-    <p class="dataset-next-step">${escapeHtml(benchmarkMetricNote(config))}</p>
+    <p class="${noteClass}">${escapeHtml(path || config.emptyPathHint)}</p>
+    <p class="${gate.ok ? noteClass : badNoteClass}">${escapeHtml(gate.ok ? workflowText : gate.reason)}</p>
+    <p class="${noteClass}">${escapeHtml(benchmarkMetricNote(config))}</p>
   `;
   if (config.adapterFormat === "hotpotqa") updateHotpotQaInlineLiveReport(null);
   updateGenericRunButton(key, record);
@@ -8428,7 +13429,7 @@ function updateHotpotQaInlineLiveReport(task = null, options = {}) {
   const meta = $("hotpotQaLiveInlineMeta");
   const idle = $("hotpotQaLiveInlineIdle");
   if (!frame || !open || !meta) return;
-  const fallbackHref = "/generated-reports/hotpotqa_openviking_vs_echomemory_live_50_current.html";
+  const fallbackHref = "/generated-reports/hotpotqa_echomemory_live_current.html";
   const reportPath = task?.run_dir ? `${task.run_dir}/report.html` : "";
   const reportHref = artifactHref(reportPath);
   const hasReportHtml = Boolean(options.reportReady || options.summary?._artifact_status?.report_html?.exists);
@@ -8487,19 +13488,79 @@ function renderGenericRunningStatus(key, task = {}, summary = null) {
   const elapsed = task.duration != null ? formatDuration(task.duration) : (progress.elapsed_seconds != null ? formatDuration(progress.elapsed_seconds) : "-");
   const eta = progress.eta_seconds != null ? formatDuration(progress.eta_seconds) : "-";
   const output = task.output_file || "";
+  const artifactStatus = summary?._artifact_status || {};
+  const statusLabel = taskDisplayStatusLabel(task, format, artifactStatus);
+  const completedByArtifacts = taskHasTerminalArtifacts(task, format, artifactStatus);
+  const hotpotScoped = normalizeDatasetFormat(config.adapterFormat || format || key) === "hotpotqa";
+  if (hotpotScoped) {
+    target.innerHTML = `
+      <p class="hqa-note"><strong>运行状态：</strong>${escapeHtml(`${config.label} ${statusLabel}`)}</p>
+      <p class="hqa-note">${escapeHtml(
+        completedByArtifacts
+          ? "结果产物已齐，界面正在等待任务状态回收。"
+          : (authoritativeProgressLabel || "正在恢复任务状态")
+      )}</p>
+      <p class="hqa-note">${escapeHtml(
+        rows
+          ? `已写 ${formatInt(rows)} 行结果 · 最近完成题 ${lastQuestionId || "-"}`
+          : "结果行尚未写出"
+      )}</p>
+      <p class="hqa-note">${escapeHtml(
+        `平均注入 ${formatSecondsMetric(avgInjection)} · 平均 QA ${formatSecondsMetric(avgQa)} · 平均端到端 ${formatSecondsMetric(avgEndToEnd)}`
+      )}</p>
+      <p class="hqa-note">${escapeHtml(
+        `累计注入 ${formatSecondsMetric(totalInjection)} · 累计 QA ${formatSecondsMetric(totalQa)} · 累计端到端 ${formatSecondsMetric(totalEndToEnd)}`
+      )}</p>
+      <p class="hqa-note">${escapeHtml(output || "结果路径待生成")}</p>
+    `;
+    if (config.adapterFormat === "hotpotqa") {
+      updateHotpotQaInlineLiveReport(task, {
+        account: recordAccount(task),
+        summary,
+      });
+    }
+    if (normalizeDatasetFormat(format) === "longmemeval") {
+      renderLongMemStatusBand(task, summary);
+    }
+    return;
+  }
   target.innerHTML = `
-    <p><strong>${escapeHtml(config.label)} 运行中</strong>${authoritativeProgressLabel ? ` · ${escapeHtml(authoritativeProgressLabel)}` : ""}</p>
-    <p class="dataset-next-step">已用 ${escapeHtml(elapsed)} · 剩余 ${escapeHtml(eta)} · 已写结果 ${escapeHtml(formatInt(rows))} 行</p>
-    <p class="dataset-next-step">平均注入 ${escapeHtml(formatSecondsMetric(avgInjection))} · 平均 QA ${escapeHtml(formatSecondsMetric(avgQa))} · 平均端到端 ${escapeHtml(formatSecondsMetric(avgEndToEnd))}</p>
-    <p class="dataset-next-step">累计注入 ${escapeHtml(formatSecondsMetric(totalInjection))} · 累计 QA ${escapeHtml(formatSecondsMetric(totalQa))} · 累计端到端 ${escapeHtml(formatSecondsMetric(totalEndToEnd))}</p>
-    ${lastQuestionId ? `<p class="dataset-next-step">最近完成题 ${escapeHtml(lastQuestionId)}</p>` : ""}
-    ${output ? `<p class="dataset-next-step">${escapeHtml(output)}</p>` : ""}
+    <div class="mini-status-stack">
+      <article class="${completedByArtifacts ? "ok" : "ok"}">
+        <span>运行状态</span>
+        <strong>${escapeHtml(`${config.label} ${statusLabel}`)}</strong>
+        <small>${escapeHtml(
+          completedByArtifacts
+            ? "结果产物已齐，界面正在等待任务状态回收。"
+            : (authoritativeProgressLabel || "正在恢复任务状态")
+        )}</small>
+      </article>
+      <article class="ok">
+        <span>时间</span>
+        <strong>${escapeHtml(elapsed)} / ${escapeHtml(eta)}</strong>
+        <small>${escapeHtml(
+          completedByArtifacts
+            ? `${formatInt(rows)} 行结果已写出`
+            : (rows ? `${formatInt(rows)} 行结果` : "尚未写入结果")
+        )}</small>
+      </article>
+      <article class="${lastQuestionId ? "warn" : "ok"}">
+        <span>最近完成题</span>
+        <strong>${escapeHtml(lastQuestionId || "-")}</strong>
+        <small>${escapeHtml(output || "结果路径待生成")}</small>
+      </article>
+    </div>
+    <small class="dataset-next-step">平均注入 ${escapeHtml(formatSecondsMetric(avgInjection))} · 平均 QA ${escapeHtml(formatSecondsMetric(avgQa))} · 平均端到端 ${escapeHtml(formatSecondsMetric(avgEndToEnd))}</small>
+    <small class="dataset-next-step">累计注入 ${escapeHtml(formatSecondsMetric(totalInjection))} · 累计 QA ${escapeHtml(formatSecondsMetric(totalQa))} · 累计端到端 ${escapeHtml(formatSecondsMetric(totalEndToEnd))}</small>
   `;
   if (config.adapterFormat === "hotpotqa") {
     updateHotpotQaInlineLiveReport(task, {
       account: recordAccount(task),
       summary,
     });
+  }
+  if (normalizeDatasetFormat(format) === "longmemeval") {
+    renderLongMemStatusBand(task, summary);
   }
 }
 
@@ -8514,23 +13575,26 @@ function initializeGenericBenchmarkDefaults() {
       .find(Boolean)
       || state.datasetRegistry.find((item) => item.id === config.defaultDatasetId);
     if (record?.path) input.value = record.path;
-	    if (record?.exists && $(config.status)) {
-	      const sampleLike = /(^|[/.])[^/]*sample[^/]*\.(jsonl?|ndjson)$/i.test(record.path || "")
-	        || String(record.id || "").toLowerCase().includes("sample");
-	      const backendLabel = memoryBackendLabel(currentMemoryBackend());
-	      const readinessLabel = sampleLike ? "示例数据已就绪" : "默认数据已就绪";
-	      const scopeNote = sampleLike
-	        ? "当前是内置 sample。它用于小样本核验；换完整数据路径后可产出正式 MemoryBench 分数。"
-	        : `当前默认使用已注册数据文件；开始测试会运行正式 MemoryBench ${backendLabel} 记忆问答，官方原 benchmark 指标会在报告中单独标注。`;
-	      $(config.status).innerHTML = `
-	        <p><strong>${escapeHtml(config.label)} ${escapeHtml(readinessLabel)}</strong> · ${escapeHtml(record.questions ?? "-")} 题 · ${escapeHtml(record.samples ?? "-")} 样本</p>
-	        <p class="dataset-next-step">${escapeHtml(record.path || "")}</p>
-	        <p class="dataset-next-step ${sampleLike ? "bad-text" : ""}">${escapeHtml(scopeNote)}</p>
-	        <p class="dataset-next-step">${escapeHtml(benchmarkMetricNote(config))}</p>
-	      `;
-	    }
-	    updateGenericRunButton(key, record);
-	  }
+    if (record?.exists && $(config.status)) {
+      const sampleLike = /(^|[/.])[^/]*sample[^/]*\.(jsonl?|ndjson)$/i.test(record.path || "")
+        || String(record.id || "").toLowerCase().includes("sample");
+      const backendLabel = memoryBackendLabel(currentMemoryBackend());
+      const readinessLabel = sampleLike ? "示例数据已就绪" : "默认数据已就绪";
+      const scopeNote = sampleLike
+        ? "当前是内置 sample。它用于小样本核验；换完整数据路径后可产出正式 MemoryBench 分数。"
+        : `当前默认使用已注册数据文件；开始测试会运行正式 MemoryBench ${backendLabel} 记忆问答，官方原 benchmark 指标会在报告中单独标注。`;
+      const hotpotScoped = normalizeDatasetFormat(config.adapterFormat || key) === "hotpotqa";
+      const noteClass = hotpotScoped ? "hqa-note" : "dataset-next-step";
+      const badNoteClass = hotpotScoped ? "hqa-note is-bad" : "dataset-next-step bad-text";
+      $(config.status).innerHTML = `
+        <p><strong>${escapeHtml(config.label)} ${escapeHtml(readinessLabel)}</strong> · ${escapeHtml(record.questions ?? "-")} 题 · ${escapeHtml(record.samples ?? "-")} 样本</p>
+        <p class="${noteClass}">${escapeHtml(record.path || "")}</p>
+        <p class="${sampleLike ? badNoteClass : noteClass}">${escapeHtml(scopeNote)}</p>
+        <p class="${noteClass}">${escapeHtml(benchmarkMetricNote(config))}</p>
+      `;
+    }
+    updateGenericRunButton(key, record);
+  }
 }
 
 async function loadGenericExample(key) {
@@ -8553,15 +13617,19 @@ function renderGenericBenchmarkKpis(key, data) {
   ]);
 }
 
-async function validateGenericBenchmark(key) {
+async function validateGenericBenchmark(key, options = {}) {
   const config = benchmarkConfig(key);
   const path = genericBenchmarkPath(key);
   if (!path) return toast(config.emptyPathHint);
   const data = await api(`/api/dataset?path=${encodeURIComponent(path)}`);
+  if (key === "hotpotqa") state.hotpotQaDatasetOverview = data;
   renderGenericBenchmarkKpis(key, data);
   const gate = genericBenchmarkRunGate(key, path, data);
   if ($(config.status)) {
     const backendLabel = memoryBackendLabel(currentMemoryBackend());
+    const hotpotScoped = normalizeDatasetFormat(config.adapterFormat || key) === "hotpotqa";
+    const noteClass = hotpotScoped ? "hqa-note" : "dataset-next-step";
+    const badNoteClass = hotpotScoped ? "hqa-note is-bad" : "dataset-next-step bad-text";
     const warnings = [];
     const workflowNote = config.adapterFormat === "hotpotqa"
       ? `运行正式 ${backendLabel} HotpotQA 文档问答：逐题写入样本上下文文档、检索证据、调用答案模型，并自动执行判分。`
@@ -8570,22 +13638,26 @@ async function validateGenericBenchmark(key) {
     if (!data.memory_events_total || data.memory_events_total === 0) warnings.push("没有识别到 events/messages/context 字段");
     const sampleLike = /(^|[/.])[^/]*sample[^/]*\.(jsonl?|ndjson)$/i.test(path);
     const warningHtml = warnings.length
-      ? `<p class="bad-text">需要检查字段映射：${escapeHtml(warnings.join("；"))}</p>`
+      ? `<p class="${hotpotScoped ? "hqa-note is-bad" : "bad-text"}">需要检查字段映射：${escapeHtml(warnings.join("；"))}</p>`
       : "";
-	    const sampleHtml = sampleLike
-	      ? `<p class="dataset-next-step bad-text">当前路径是内置 sample。它用于小样本核验，不作为正式分数。</p>`
-	      : "";
-	    $(config.status).innerHTML = `
-	      ${warningHtml}
-	      <p><strong>${escapeHtml(config.label)} 校验完成</strong> · 格式 ${escapeHtml(String(data.format || "").toLowerCase() === "generic" ? config.adapterFormat : (data.format || "-"))} · ${escapeHtml(data.resolved_path || path)}</p>
-	      <p class="dataset-next-step">${escapeHtml(datasetRunnerNote(data.format, data.runner_note, workflowNote))}</p>
-	      ${sampleHtml}
-	      ${gate.ok ? "" : `<p class="dataset-next-step bad-text">${escapeHtml(gate.reason)}</p>`}
-	      <p class="dataset-next-step">${escapeHtml(benchmarkMetricNote(config))}</p>
-	    `;
+    const sampleHtml = sampleLike
+      ? `<p class="${badNoteClass}">当前路径是内置 sample。它用于小样本核验，不作为正式分数。</p>`
+      : "";
+    $(config.status).innerHTML = `
+      ${warningHtml}
+      <p><strong>${escapeHtml(config.label)} 校验完成</strong> · 格式 ${escapeHtml(String(data.format || "").toLowerCase() === "generic" ? config.adapterFormat : (data.format || "-"))} · ${escapeHtml(data.resolved_path || path)}</p>
+      <p class="${noteClass}">${escapeHtml(datasetRunnerNote(data.format, data.runner_note, workflowNote))}</p>
+      ${sampleHtml}
+      ${gate.ok ? "" : `<p class="${badNoteClass}">${escapeHtml(gate.reason)}</p>`}
+      <p class="${noteClass}">${escapeHtml(benchmarkMetricNote(config))}</p>
+    `;
+  }
+  if (key === "hotpotqa") {
+    renderHotpotQaDatasetSummary(data);
+    renderHotpotQaModelReadiness(state.hotpotQaModelReadiness);
   }
   updateGenericRunButton(key, data);
-  toast(`${config.label} 校验完成`);
+  if (!options.silent) toast(`${config.label} 校验完成`);
   return data;
 }
 
@@ -8612,7 +13684,8 @@ async function previewGenericBenchmark(key) {
   const rows = data.questions || [];
   state.benchmarkQuestions[key] = rows;
   state.selectedBenchmarkQuestions[key] = new Set([...benchmarkQuestionState(key).selected].filter((id) => rows.some((q) => q.question_id === id)));
-  renderBenchmarkQuestionSelection(key);
+  if (key === "hotpotqa") renderHotpotQaQuestionSelection();
+  else renderBenchmarkQuestionSelection(key);
   toast(`${config.label} 已加载 ${data.count || 0} 条预览`);
 }
 
@@ -8631,6 +13704,27 @@ async function runGenericBenchmark(key) {
   const count = benchmarkCount(config.countInput, 3);
   const selectedQuestions = [...benchmarkQuestionState(key).selected].join(",");
   const effectiveCount = selectedQuestions ? 0 : count;
+  const localCfg = readAccountConfig(currentAccount());
+  const useTools = currentQaToolCallingEnabled(config.adapterFormat);
+  const genericToolLoopEnabled = config.adapterFormat === "hotpotqa"
+    ? Boolean(useTools)
+    : Boolean(useTools && localCfg.echomemQaToolLoop !== false);
+  const genericToolPayload = backend === "openviking"
+    ? vikingbotAlignedQaPayload(useTools)
+    : {
+      prompt_mode: String(localCfg.echomemQaPromptMode || "vikingboat_lite").trim() || "vikingboat_lite",
+      retrieval_mode: String(localCfg.echomemQaRetrievalMode || "search").trim() || "search",
+      top_k: Math.max(1, Number(localCfg.echomemQaTopK || VIKINGBOAT_LITE_TOP_K)),
+      score_threshold: Number(localCfg.echomemQaScoreThreshold || 0.1),
+      tool_set: String(localCfg.echomemQaToolSet || "vikingbot_native_safe").trim() || "vikingbot_native_safe",
+      tool_search_limit: Math.max(1, Number(localCfg.echomemQaToolSearchLimit || VIKINGBOAT_LITE_TOOL_SEARCH_LIMIT)),
+      tool_min_score: Number(localCfg.echomemQaToolMinScore || 0.35),
+      max_iterations: Math.max(1, Number(localCfg.echomemQaMaxIterations || VIKINGBOAT_LITE_MAX_ITERATIONS)),
+      vikingboat_tool_loop: genericToolLoopEnabled,
+      initial_tool_prefetch: false,
+      fallback_to_one_shot: localCfg.echomemQaFallbackToOneShot !== false,
+      read_openviking_content: true,
+    };
   clearGenericBenchmarkLaunchError(config.adapterFormat);
   let task;
   try {
@@ -8642,11 +13736,11 @@ async function runGenericBenchmark(key) {
       questions: selectedQuestions,
       sample: "all",
       identity_mode: "isolated_sample",
-	      auto_judge: true,
+	      auto_judge: config.adapterFormat === "hotpotqa" ? false : true,
 	      official_eval_after: Boolean(config.officialEvalAfter),
-	      read_openviking_content: true,
       top_k: Math.max(1, Number($("chatTopK")?.value || 8)),
       commit_timeout_s: 300,
+      ...genericToolPayload,
 	      name: `${config.label} ${backendLabel} MemoryBench QA ${selectedQuestions ? `${benchmarkQuestionState(key).selected.size} selected` : benchmarkCountLabel(effectiveCount)}`,
     });
   } catch (error) {
@@ -8677,6 +13771,7 @@ async function runGenericBenchmark(key) {
   showView(expectedView, {preserveScroll: true});
   state.currentRunningTask = task || null;
   updateProgress(taskWithLiveProgress(task || {}), task?.kind || taskKind);
+  renderHotpotQaStatusBand(task || null, state.runningBenchmarkSummaries[task?.id] || null);
   if (config.adapterFormat) {
     forceRefreshStandaloneBenchmarkView(config.adapterFormat).catch(() => null);
   }
@@ -8684,35 +13779,51 @@ async function runGenericBenchmark(key) {
   const runDir = task?.run_dir || dirname(output);
   if ($(config.result)) {
     const runningNote = config.adapterFormat === "hotpotqa"
-      ? `这一步运行 ${backendLabel} HotpotQA 文档问答：逐题写入文档、检索当前题证据、调用答案模型、自动判分。${benchmarkMetricNote(config)} 当前页会保留；右上角运行中入口显示进度，结果中心查看报告。若输入仍是 sample 文件，本次结果只代表小样本核验。`
-      : `这一步运行 MemoryBench ${backendLabel} 记忆问答：写入会话并提交、检索长期记忆、调用答案模型、自动判分。${benchmarkMetricNote(config)} 当前页会保留；右上角运行中入口显示进度，结果中心查看报告。若输入仍是 sample 文件，本次结果只代表小样本核验。`;
-    $(config.result).innerHTML = `
-      <article class="path-row">
-        <span>任务</span>
-        <code>${escapeHtml(task?.id || state.taskId || "")}</code>
-        <button class="path-copy" type="button" data-copy="${escapeHtml(task?.id || state.taskId || "")}">复制</button>
-      </article>
-      <article class="path-row">
-        <span>结果文件</span>
-        <code>${escapeHtml(output)}</code>
-        <button class="path-copy" type="button" data-copy="${escapeHtml(output)}">复制</button>
-      </article>
-      <article class="path-row">
-        <span>任务目录</span>
-        <code>${escapeHtml(runDir)}</code>
-        <button class="path-copy" type="button" data-copy="${escapeHtml(runDir)}">复制</button>
-      </article>
-	      <p>${escapeHtml(runningNote)}</p>
-	      ${gate.ok ? "" : `<p class="dataset-next-step bad-text">正式分数门禁：${escapeHtml(gate.reason)} 本次仍作为小样本核验运行。</p>`}
-	      <p class="dataset-next-step">选题：${escapeHtml(selectedQuestions ? `${benchmarkQuestionState(key).selected.size} 题` : benchmarkCountLabel(effectiveCount))}</p>
-      <div class="panel-actions">
-        <button class="secondary" type="button" data-view-jump="runsView">查看任务/报告</button>
-      </div>
-    `;
-    bindCopyButtons(`#${config.result}`);
-    $(config.result).querySelectorAll("[data-view-jump]").forEach((button) => {
-      button.addEventListener("click", () => showView(button.dataset.viewJump));
-    });
+      ? `这一步运行 ${backendLabel} HotpotQA 文档问答：逐题写入文档、检索当前题证据、调用答案模型、自动判分。${benchmarkMetricNote(config)} Tool Calling ${useTools ? "开启" : "关闭"}。当前页会保留；右上角运行中入口显示进度，结果中心查看报告。若输入仍是 sample 文件，本次结果只代表小样本核验。`
+      : `这一步运行 MemoryBench ${backendLabel} 记忆问答：写入会话并提交、检索长期记忆、调用答案模型、自动判分。${benchmarkMetricNote(config)} Tool Calling ${useTools ? "开启" : "关闭"}。当前页会保留；右上角运行中入口显示进度，结果中心查看报告。若输入仍是 sample 文件，本次结果只代表小样本核验。`;
+    const summaryOptions = {
+      eyebrow: "实时结果摘要",
+      title: `${config.label} 任务已启动`,
+      description: runningNote,
+      paths: [
+        task?.id || state.taskId ? {label: "任务", value: task?.id || state.taskId || "", raw: true, open: false} : null,
+        output ? {label: "结果文件", value: output} : null,
+        runDir ? {label: "任务目录", value: runDir} : null,
+      ],
+      note: `${gate.ok ? "" : `正式分数门禁：${gate.reason} 本次仍作为小样本核验运行。 `}选题：${selectedQuestions ? `${benchmarkQuestionState(key).selected.size} 题` : benchmarkCountLabel(effectiveCount)}`,
+      actions: [
+        config.adapterFormat === "hotpotqa"
+          ? {label: "查看任务", href: benchmarkNavigationHref("hotpotQaView", {benchmarkStage: "qa", hotpotQaSection: "hotpotQaCurrentSection"}), viewJump: "hotpotQaView", hotpotSection: "hotpotQaCurrentSection", hotpotStage: "qa", sameTab: true}
+          : {label: "查看任务", viewJump: "runsView"},
+        config.adapterFormat === "hotpotqa"
+          ? {label: "报告对比", href: benchmarkNavigationHref("hotpotQaView", {benchmarkStage: "report", hotpotQaSection: "hotpotQaResultSection"}), viewJump: "hotpotQaView", hotpotSection: "hotpotQaResultSection", hotpotStage: "report", sameTab: true}
+          : {label: "报告对比", viewJump: "runsView"},
+      ],
+    };
+    if (config.adapterFormat === "hotpotqa") {
+      renderSharedResultSummary($(config.result), {
+        ...summaryOptions,
+        rootClass: "hqa-result-summary",
+        headClass: "hqa-result-head",
+        copyClass: "hqa-result-copy",
+        bodyClass: "hqa-result-body",
+        pathRowHtml: hotpotQaPathRowHtml,
+        actionsClass: "hqa-action-row hqa-recent-result-actions",
+        emptyClass: "hqa-empty-state",
+        pathListClass: "hqa-result-paths",
+        noteClass: "hqa-result-note",
+        shellClass: "hqa-recent-result is-running",
+      });
+    } else {
+      renderSharedResultSummary($(config.result), {
+        ...summaryOptions,
+        shellClass: "generic-running-result-summary",
+      });
+    }
+  }
+  if (config.adapterFormat === "hotpotqa") {
+    renderHotpotQaStatusBand(task || null, state.runningBenchmarkSummaries[task?.id] || null);
+    renderHotpotQaQuestionSelection();
   }
   toast(`${config.label} ${backendLabel} 测试已开始`);
 }
@@ -8723,6 +13834,20 @@ async function renderGenericBenchmarkResultSummary(task = {}, format = "") {
   const config = benchmarkConfig(key);
   const target = $(config.result);
   if (!target) return;
+  const normalizedFormat = normalizeDatasetFormat(format || task.dataset_format || "");
+  if (normalizedFormat === "hotpotqa") {
+    const liveTask = resolveHotpotQaLiveTask();
+    if (liveTask && isTaskActive(liveTask) && !sameHotpotQaRun(task, liveTask)) {
+      const runningSummary = state.runningBenchmarkSummaries[liveTask.id]
+        || await loadRunningBenchmarkSummary(liveTask, "hotpotqa").catch(() => null)
+        || null;
+      renderGenericBenchmarkRunningSummary(liveTask, "hotpotqa", {
+        account: recordAccount(liveTask) || "default",
+        summary: runningSummary,
+      });
+      return;
+    }
+  }
   let record = task || {};
   let summary = task?.summary || {};
   let artifactStatus = {};
@@ -8744,6 +13869,12 @@ async function renderGenericBenchmarkResultSummary(task = {}, format = "") {
       ...artifactSummary,
     };
   }
+  if (normalizedFormat === "hotpotqa") {
+    renderHotpotQaStatusBand(record, summary);
+  }
+  if (normalizedFormat === "longmemeval") {
+    renderLongMemStatusBand(record, summary);
+  }
   const summaryJson = summary.summary_json || {};
   const rows = Number(summary.rows ?? summaryJson.rows ?? summaryJson.count ?? 0);
   const avgMemoryInjectionTime = summary.avg_memory_injection_time_s ?? summaryJson.avg_memory_injection_time_s;
@@ -8762,9 +13893,63 @@ async function renderGenericBenchmarkResultSummary(task = {}, format = "") {
   const runDir = record.run_dir || task.run_dir || dirname(output);
   const reportHtml = runDir ? `${runDir}/report.html` : "";
   const reportHtmlHref = artifactHref(reportHtml);
-  const statusLabel = status ? taskStatusLabel({status}) : "";
+  const statusLabel = taskDisplayStatusLabel(record || task, format || task.dataset_format || "", artifactStatus) || (status ? taskStatusLabel({status}) : "");
   const isTerminalFailure = ["failed", "interrupted", "cancelled", "canceled"].includes(status);
-  target.innerHTML = `
+  if (normalizedFormat === "hotpotqa") {
+    const snapshot = hotpotQaCompletionSnapshot(record || task || {}, summary || {}, artifactStatus || {});
+    renderHotpotQaResultPanel(target, {
+      record,
+      summary,
+      artifactStatus,
+      statusLabel: snapshot.statusLabel || statusLabel || "最近一次结果",
+      mode: "final",
+      note: isTerminalFailure && !snapshot.answerReady
+        ? `这次任务没有完整跑完；当前结果只保留已写出的 ${formatInt(rows)} 行和现有产物。`
+        : "结果摘要默认展示最近一次 HotpotQA 运行的关键分数、结果路径和报告入口。",
+    });
+    return;
+  }
+  if (normalizedFormat === "longmemeval") {
+    const completed = Number(summary.completed ?? summary.rows ?? summaryJson.rows ?? summaryJson.count ?? 0);
+    const totalQuestions = Number((summary.total_questions ?? summary.questions ?? record.questions ?? summaryJson.total_questions ?? completed) || 0);
+    const failedCount = Number(summary.wrong ?? summary.failed ?? summaryJson.wrong ?? summaryJson.failed ?? 0);
+    const accuracy = summary.overall_accuracy
+      ?? summaryJson.overall_accuracy
+      ?? summary.official_score
+      ?? summaryJson.official_score
+      ?? summary.accuracy
+      ?? summaryJson.accuracy;
+    const em = summary.answer_em ?? summaryJson.answer_em ?? summary.official_answer_em ?? summaryJson.official_answer_em;
+    const f1 = summary.answer_f1 ?? summaryJson.answer_f1 ?? summary.official_answer_f1 ?? summaryJson.official_answer_f1;
+    const avgLatency = summary.avg_qa_time_s ?? summaryJson.avg_qa_time_s ?? summary.avg_time ?? summaryJson.avg_time;
+    const artifactRows = [
+      output ? {label: "Result JSON", value: output} : null,
+      runDir ? {label: "Run Directory", value: runDir} : null,
+      reportHtml ? {label: "Report HTML", value: reportHtml, href: reportHtmlHref || ""} : null,
+      logFile ? {label: "Error Log", value: logFile} : null,
+    ].filter(Boolean);
+    const metricsHtml = `
+      <div class="benchmark-workbench-metrics lme-result-metrics">
+        <article><span>Total Questions</span><strong>${escapeHtml(totalQuestions ? formatInt(totalQuestions) : "-")}</strong></article>
+        <article><span>Completed</span><strong>${escapeHtml(completed ? formatInt(completed) : "-")}</strong></article>
+        <article><span>Accuracy / EM</span><strong>${escapeHtml(`${accuracy == null ? "-" : percent(accuracy)} / ${em == null ? "-" : percent(em)}`)}</strong></article>
+        <article><span>F1</span><strong>${escapeHtml(f1 == null ? "-" : percent(f1))}</strong></article>
+        <article><span>Avg Latency</span><strong>${escapeHtml(formatSecondsMetric(avgLatency))}</strong></article>
+        <article><span>Failed</span><strong>${escapeHtml(formatInt(failedCount || 0))}</strong></article>
+      </div>
+    `;
+    renderSharedResultSummary(target, {
+      eyebrow: "最近结果摘要",
+      title: "LongMemEval 最近结果",
+      description: statusLabel || "LongMemEval 最近一次运行",
+      metricsHtml,
+      paths: artifactRows,
+      note: isTerminalFailure ? "当前任务没有完整跑完，建议先检查 run.log 和结果目录。" : "",
+      ...longMemSharedResultSummaryOptions("lme-result-shell"),
+    });
+    return;
+  }
+  const metricsHtml = `
     <div class="report-kv">
       <article><span>任务状态</span><strong>${escapeHtml(statusLabel || "-")}</strong></article>
       <article><span>结果行数</span><strong>${escapeHtml(formatInt(rows))}</strong></article>
@@ -8779,42 +13964,29 @@ async function renderGenericBenchmarkResultSummary(task = {}, format = "") {
       <article><span>答案 EM</span><strong>${answerEm == null ? "-" : escapeHtml(percent(answerEm))}</strong></article>
       <article><span>答案 F1</span><strong>${answerF1 == null ? "-" : escapeHtml(percent(answerF1))}</strong></article>
     </div>
-    <article class="path-row">
-      <span>结果文件</span>
-      <code>${escapeHtml(output)}</code>
-      <button class="path-copy" type="button" data-copy="${escapeHtml(output)}">复制</button>
-    </article>
-    <article class="path-row">
-      <span>任务目录</span>
-      <code>${escapeHtml(runDir)}</code>
-      <button class="path-copy" type="button" data-copy="${escapeHtml(runDir)}">复制</button>
-    </article>
-    ${reportHtml ? `
-      <article class="path-row">
-        <span>HTML 报告</span>
-        <code>${escapeHtml(reportHtml)}</code>
-        <button class="path-copy" type="button" data-copy="${escapeHtml(reportHtml)}">复制</button>
-        ${reportHtmlHref ? `<a class="path-link" href="${escapeHtml(reportHtmlHref)}" target="_blank" rel="noreferrer">浏览器打开</a>` : ""}
-        <button class="path-open" type="button" data-path="${escapeHtml(reportHtml)}">打开</button>
-      </article>
-    ` : ""}
-    ${logFile ? `
-      <article class="path-row">
-        <span>运行日志</span>
-        <code>${escapeHtml(logFile)}</code>
-        <button class="path-copy" type="button" data-copy="${escapeHtml(logFile)}">复制</button>
-      </article>
-    ` : ""}
-    ${isTerminalFailure ? `<p>这次 ${escapeHtml(config.label)} 任务没有跑完。当前结果只包含已写出的 ${escapeHtml(formatInt(rows))} 行；排查请先看 run.log。</p>` : ""}
-    ${(artifactStatus.summary?.exists || artifactStatus.hotpotqa_answer_summary?.exists) ? `
-      <div class="panel-actions">
-        <button class="secondary" type="button" data-view-jump="runsView">查看任务/报告</button>
-      </div>
-    ` : ""}
   `;
-  bindCopyButtons(`#${config.result}`);
-  target.querySelectorAll("[data-view-jump]").forEach((button) => {
-    button.addEventListener("click", () => showView(button.dataset.viewJump));
+  renderSharedResultSummary(target, {
+    eyebrow: "最近结果摘要",
+    title: `${config.label} 最近结果`,
+    description: "结果文件、任务目录、报告与对比入口统一收在这一块。",
+    metricsHtml,
+    paths: [
+      output ? {label: "结果文件", value: output} : null,
+      runDir ? {label: "任务目录", value: runDir} : null,
+      reportHtml ? {label: "HTML 报告", value: reportHtml, href: reportHtmlHref || ""} : null,
+      logFile ? {label: "运行日志", value: logFile} : null,
+    ],
+    note: isTerminalFailure ? `这次 ${config.label} 任务没有跑完。当前结果只包含已写出的 ${formatInt(rows)} 行；排查请先看 run.log。` : "",
+    actions: [
+      config.adapterFormat === "hotpotqa"
+        ? {label: "查看任务", href: benchmarkNavigationHref("hotpotQaView", {benchmarkStage: "qa", hotpotQaSection: "hotpotQaCurrentSection"}), viewJump: "hotpotQaView", hotpotSection: "hotpotQaCurrentSection", hotpotStage: "qa", sameTab: true}
+        : {label: "查看任务", viewJump: "runsView"},
+      reportHtmlHref ? {label: "打开报告", href: reportHtmlHref} : null,
+      config.adapterFormat === "hotpotqa"
+        ? {label: "报告对比", href: benchmarkNavigationHref("hotpotQaView", {benchmarkStage: "report", hotpotQaSection: "hotpotQaResultSection"}), viewJump: "hotpotQaView", hotpotSection: "hotpotQaResultSection", hotpotStage: "report", sameTab: true}
+        : {label: "报告对比", viewJump: "runsView"},
+    ].filter(Boolean),
+    shellClass: "generic-final-result-summary",
   });
 }
 
@@ -8896,14 +14068,38 @@ async function loadFinalBenchmarkArtifactSummary(task = {}, format = "") {
     if (hotpotSummary.metric_scope != null) merged.official_metric_scope = hotpotSummary.metric_scope;
   }
   if (normalized === "longmemeval" && longmemSummary) {
+    if (longmemSummary.graded != null) merged.graded = longmemSummary.graded;
+    if (longmemSummary.correct != null) merged.correct = longmemSummary.correct;
+    if (longmemSummary.wrong != null) merged.wrong = longmemSummary.wrong;
+    if (longmemSummary.judge_total_tokens != null) merged.judge_total_tokens = longmemSummary.judge_total_tokens;
     if (longmemSummary.overall_accuracy != null) {
+      merged.overall_accuracy = longmemSummary.overall_accuracy;
       merged.official_metric = "overall_accuracy";
       merged.official_score = longmemSummary.overall_accuracy;
     }
-    if (longmemSummary.task_averaged_accuracy != null) merged.official_task_averaged_accuracy = longmemSummary.task_averaged_accuracy;
-    if (longmemSummary.abstention_accuracy != null) merged.official_abstention_accuracy = longmemSummary.abstention_accuracy;
+    if (longmemSummary.task_averaged_accuracy != null) {
+      merged.task_averaged_accuracy = longmemSummary.task_averaged_accuracy;
+      merged.official_task_averaged_accuracy = longmemSummary.task_averaged_accuracy;
+    }
+    if (longmemSummary.abstention_accuracy != null) {
+      merged.abstention_accuracy = longmemSummary.abstention_accuracy;
+      merged.official_abstention_accuracy = longmemSummary.abstention_accuracy;
+    }
   }
   return Object.keys(merged).length ? merged : null;
+}
+
+function benchmarkArtifactsSuggestCompletion(task = {}, artifactStatus = {}, format = "") {
+  const normalized = normalizeDatasetFormat(format || task.dataset_format || "");
+  const hasSummary = Boolean(artifactStatus.summary?.exists);
+  const hasJudge = Boolean(artifactStatus.judge_summary?.exists);
+  if (normalized === "hotpotqa") {
+    return hasSummary && Boolean(artifactStatus.hotpotqa_answer_summary?.exists);
+  }
+  if (normalized === "longmemeval") {
+    return hasSummary && (hasJudge || Boolean(artifactStatus.longmemeval_official_summary?.exists));
+  }
+  return hasSummary && hasJudge;
 }
 
 async function loadRunningBenchmarkSummary(task = {}, format = "") {
@@ -9053,11 +14249,21 @@ function renderGenericBenchmarkRunningSummary(task = {}, format = "", options = 
   const runDir = task.run_dir || dirname(output);
   const reportHtml = runDir ? `${runDir}/report.html` : "";
   const reportHtmlHref = artifactHref(reportHtml);
-  const stableLiveReportHref = "/generated-reports/hotpotqa_openviking_vs_echomemory_live_50_current.html";
+  const stableLiveReportHref = "/generated-reports/hotpotqa_echomemory_live_current.html";
   const artifactStatus = summary._artifact_status || {};
   const runningSummaryPath = output ? `${dirname(output)}/running_summary.json` : "";
   const runningSummaryHref = artifactHref(runningSummaryPath);
   const hasReportHtml = Boolean(artifactStatus.report_html?.exists);
+  if (benchmarkArtifactsSuggestCompletion(task, artifactStatus, format)) {
+    const terminalTask = {
+      ...task,
+      status: ["failed", "interrupted", "cancelled", "canceled"].includes(String(task.status || "").toLowerCase())
+        ? task.status
+        : "succeeded",
+    };
+    renderGenericBenchmarkResultSummary(terminalTask, format).catch(() => null);
+    return;
+  }
   const account = String(options.account || recordAccount(task) || "").trim();
   const execution = taskExecutionProgress(task, format || task.dataset_format || "");
   const currentQuestionLabel = benchmarkCurrentQuestionLabel(task);
@@ -9121,6 +14327,19 @@ function renderGenericBenchmarkRunningSummary(task = {}, format = "", options = 
       </div>
     `
     : "";
+  if (normalizeDatasetFormat(format || task.dataset_format || "") === "hotpotqa") {
+    renderHotpotQaResultPanel(target, {
+      record: task,
+      summary,
+      artifactStatus,
+      statusLabel: taskDisplayStatusLabel(task, format || task.dataset_format || "", artifactStatus),
+      mode: "running",
+      note: summaryUpdatedAt
+        ? `运行态时间统计更新于 ${freshness.label || summaryUpdatedAt}。最终报告生成后会自动切换到稳定入口。`
+        : "运行中请优先看当前进度和结果文件；最终报告会在任务结束后补齐。",
+    });
+    return;
+  }
   target.innerHTML = `
     ${partialStats}
     <article class="path-row">
@@ -9164,7 +14383,7 @@ function renderGenericBenchmarkRunningSummary(task = {}, format = "", options = 
         <a class="path-link" href="${escapeHtml(stableLiveReportHref)}" target="_blank" rel="noreferrer">浏览器打开</a>
       </article>
     ` : ""}
-    ${currentQuestionLabel ? `
+    ${currentQuestionLabel && normalizeDatasetFormat(format || task.dataset_format || "") !== "hotpotqa" ? `
       <article class="path-row">
         <span>当前题</span>
         <code>${escapeHtml(currentQuestionLabel)}</code>
@@ -9223,6 +14442,7 @@ function renderGenericBenchmarkRunningSummary(task = {}, format = "", options = 
       account,
       summary,
     });
+    renderHotpotQaStatusBand(task, summary);
   }
   bindCopyButtons(`#${config.result}`);
 }
@@ -9233,10 +14453,30 @@ function renderIdleBenchmarkProgress(format = "", run = null) {
   const bar = ui ? $(ui.progressBar) : null;
   if (!ui || !text || !bar) return;
   if (normalizeDatasetFormat(format) === "hotpotqa") {
+    if (run) {
+      const summary = run.summary || {};
+      const summaryJson = summary.summary_json || {};
+      const rows = Number(summary.rows ?? summaryJson.rows ?? summaryJson.count ?? 0);
+      const snapshot = hotpotQaCompletionSnapshot(run, summary, summary._artifact_status || {});
+      const metrics = [];
+      if (rows > 0) metrics.push(`${rows} 行`);
+      if (snapshot.answerEm != null || snapshot.answerF1 != null) {
+        metrics.push(`EM/F1 ${snapshot.answerEm == null ? "-" : percent(snapshot.answerEm)} / ${snapshot.answerF1 == null ? "-" : percent(snapshot.answerF1)}`);
+      }
+      if (snapshot.officialFailed) metrics.push("Answer eval 失败");
+      if (snapshot.importWarningCount > 0) metrics.push(`${formatInt(snapshot.importWarningCount)} 个导入告警`);
+      text.textContent = metrics.length
+        ? `${snapshot.statusLabel || "最近结果"} · ${metrics.join(" · ")}`
+        : (snapshot.statusLabel || "最近结果");
+      bar.style.width = "100%";
+      bar.style.animation = "none";
+      return;
+    }
     text.textContent = "当前没有运行中的 HotpotQA 任务";
     bar.style.width = "0%";
     bar.style.animation = "none";
     updateHotpotQaInlineLiveReport(null);
+    renderHotpotQaStatusBand(null, null);
     return;
   }
   if (!run) {
@@ -9269,20 +14509,46 @@ function renderIdleBenchmarkProgress(format = "", run = null) {
 async function restoreLatestBenchmarkRunForView(viewId = "", visibleTasks = []) {
   const format = datasetFormatForView(viewId);
   if (!format || format === "locomo") return;
-  if ((visibleTasks || []).some((task) => isTaskActive(task) && normalizeDatasetFormat(taskDatasetFormat(task, state.taskDatasetFormats[task.id] || "")) === format)) {
+  if (normalizeDatasetFormat(format) === "hotpotqa") {
+    const liveTask = resolveHotpotQaLiveTask();
+    if (liveTask && isTaskActive(liveTask)) return null;
+  }
+  if ((visibleTasks || []).some((task) => {
+    const taskFormat = normalizeDatasetFormat(taskDatasetFormat(task, state.taskDatasetFormats[task.id] || ""));
+    return taskFormat === format && shouldTreatBenchmarkTaskAsBlocking(task, taskFormat);
+  })) {
     return null;
+  }
+  if (format === "hotpotqa") {
+    const runs = await loadRecentHotpotQaRunsForTaskPanel().catch(() => []);
+    const latest = runs[0] || null;
+    if (!latest) {
+      renderIdleBenchmarkProgress(format, null);
+      return null;
+    }
+    rememberBenchmarkRecord(latest, format);
+    if (latest.output_file) markDatasetOutputFile(latest.output_file, format);
+    await renderGenericBenchmarkResultSummary(latest, format);
+    renderIdleBenchmarkProgress(format, latest);
+    return latest;
   }
   let runs = Array.isArray(state.recentRuns) ? state.recentRuns : [];
   const runsFresh = state.runsLoadedAt && (Date.now() - state.runsLoadedAt) < 30000 && runs.length;
   if (!runsFresh) {
     const data = await api("/api/runs?limit=80");
     runs = (data.runs || [])
+      .filter((run) => normalizeDatasetFormat(benchmarkFormatFromRecord(run)) !== "chenmo")
       .filter((run) => !currentAccountOnlyEnabled("runsCurrentAccountOnly") || matchesCurrentAccount(run))
       .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
     state.recentRuns = runs;
     state.runsLoadedAt = Date.now();
   }
-  const latest = runs.find((run) => normalizeDatasetFormat(benchmarkFormatFromRecord(run)) === format);
+  const matchesFormat = (run) => normalizeDatasetFormat(benchmarkFormatFromRecord(run)) === format;
+  const hasArtifact = (run) => Boolean(String(run.output_file || run.run_dir || "").trim());
+  const isSucceeded = (run) => String(run.status || "").toLowerCase() === "succeeded";
+  const latest = runs.find((run) => matchesFormat(run) && isSucceeded(run) && hasArtifact(run))
+    || runs.find((run) => matchesFormat(run) && hasArtifact(run))
+    || runs.find((run) => matchesFormat(run));
   if (!latest) {
     renderIdleBenchmarkProgress(format, null);
     return null;
@@ -9291,6 +14557,9 @@ async function restoreLatestBenchmarkRunForView(viewId = "", visibleTasks = []) 
   if (latest.output_file) markDatasetOutputFile(latest.output_file, format);
   await renderGenericBenchmarkResultSummary(latest, format);
   renderIdleBenchmarkProgress(format, latest);
+  if (format === "longmemeval") {
+    loadLatestLongMemResults().catch(() => null);
+  }
   return latest;
 }
 
@@ -9298,6 +14567,21 @@ async function loadDataset(silent = false) {
   const path = $("data").value.trim();
   if (!path) return;
   const data = await api(`/api/dataset?path=${encodeURIComponent(path)}`);
+  if (normalizeDatasetFormat(data.format) === "chenmo") {
+    $("questionPicker").innerHTML = "<p>该数据集入口已下线，不再提供独立工作台。</p>";
+    $("datasetRunnerNote").innerHTML = locomoImportDatasetNoteHtml({
+      title: "该数据集入口已下线",
+      detail: "当前页面不再提供该数据集的独立工作台。",
+      tone: "bad",
+    });
+    renderKpis("datasetKpis", [
+      ["数据集类型", "ChenMo"],
+      ["状态", "入口已下线"],
+      ["题目数", data.questions ?? "-"],
+    ]);
+    if (!silent) toast("该数据集入口已下线");
+    return;
+  }
   const isLocomo = (data.format || "") === "locomo";
   if (!isLocomo) {
     state.locomoDataset = null;
@@ -9326,13 +14610,14 @@ async function loadDataset(silent = false) {
       ["已选", "0/0"],
       ["运行模式", "等待 LoCoMo"],
     ]);
-    $("datasetCategoryPanel").innerHTML = "";
     const targetView = viewForDatasetFormat(data.format, "runsView");
     $("questionPicker").innerHTML = "<p>当前不是 LoCoMo 数据集。已为你切到对应评测入口；LoCoMo 页只处理 LoCoMo JSON。</p>";
-    $("datasetRunnerNote").innerHTML = `
-      <p class="bad-text"><strong>这不是 LoCoMo 数据集</strong> · 识别为 ${escapeHtml(datasetTypeLabel(data.format))}</p>
-      <p class="dataset-next-step">LoCoMo 评测页只负责 LoCoMo。已切到 ${escapeHtml(datasetTypeLabel(data.format))} 的对应评测入口。</p>
-    `;
+    $("datasetRunnerNote").innerHTML = locomoImportDatasetNoteHtml({
+      title: "这不是 LoCoMo 数据集",
+      summary: `识别为 ${datasetTypeLabel(data.format)}`,
+      detail: `LoCoMo 评测页只负责 LoCoMo。已切到 ${datasetTypeLabel(data.format)} 的对应评测入口。`,
+      tone: "bad",
+    });
     updateWorkflowGuide();
     const normalizedFormat = normalizeDatasetFormat(data.format);
     saveLastDataset({path: data.resolved_path || path, format: normalizedFormat});
@@ -9370,28 +14655,33 @@ async function loadDataset(silent = false) {
   $("sample").innerHTML = `<option value='all'>${LOCOMO_ALL_SESSIONS_LABEL}</option>`;
   $("importSample").innerHTML = `<option value='all'>${LOCOMO_ALL_SESSIONS_LABEL}</option>`;
   let defaultImportSampleValue = "all";
+  let defaultImportSampleLabel = "";
   for (const row of data.sample_rows || []) {
+    const rowIndex = String(row.index ?? "");
     const opt = document.createElement("option");
-    opt.value = row.index;
+    opt.value = rowIndex;
     opt.textContent = locomoQaSampleOptionLabel(row);
     $("sample").appendChild(opt);
 
     const importOpt = document.createElement("option");
-    importOpt.value = row.index;
+    importOpt.value = rowIndex;
     importOpt.textContent = locomoImportSampleOptionLabel(row);
     $("importSample").appendChild(importOpt);
     if (String(row.sample_id || "").trim() === "conv-30") {
-      defaultImportSampleValue = String(row.index);
+      defaultImportSampleValue = rowIndex;
+      defaultImportSampleLabel = "conv-30";
       const smokeOpt = document.createElement("option");
-      smokeOpt.value = `${row.index}${IMPORT_SINGLE_SESSION_SUFFIX}`;
-      smokeOpt.textContent = `${row.index} · conv-30 · 单 session 测试 · 1 段 session`;
+      smokeOpt.value = `${rowIndex}${IMPORT_SINGLE_SESSION_SUFFIX}`;
+      smokeOpt.textContent = `${rowIndex} · conv-30 · 单 session 测试 · 1 段 session`;
       $("importSample").appendChild(smokeOpt);
     }
   }
   if ($("importSample")) $("importSample").value = defaultImportSampleValue;
+  if ($("importSampleLabel")) {
+    $("importSampleLabel").textContent = "导入会话";
+  }
   refreshImportActionLabels();
   if ($("runTimeQuestions")) $("runTimeQuestions").disabled = !isLocomo;
-  renderDatasetCategories(data);
   if ($("datasetRunnerNote")) {
     const validationIssues = [];
     const validationWarnings = [];
@@ -9422,26 +14712,23 @@ async function loadDataset(silent = false) {
       }
     }
 
-    const summaryLine = validationIssues.length
-      ? `<p class="bad-text"><strong>LoCoMo 校验未通过</strong> · ${escapeHtml(data.samples ?? "-")} 个对话样本 · ${escapeHtml(data.questions ?? "-")} 题</p>`
-      : `<p><strong>LoCoMo 已读取</strong> · ${escapeHtml(data.samples ?? "-")} 个对话样本 · 共 ${escapeHtml(data.questions ?? "-")} 题</p>`;
-    const nextStepLine = validationIssues.length
-      ? `<p class="dataset-next-step bad-text">请先修复数据集问题，再继续导入或问答测试。</p>`
-      : `<p class="dataset-next-step">${escapeHtml(datasetRunnerNote(data.format, data.runner_note, "数据已读取；请选择要导入的会话，确认目录后点击“导入所选对话”。"))}</p>`;
-    const issuesHtml = validationIssues.length
-      ? `<div style="color: #e74c3c; margin-bottom: 8px;">${validationIssues.join("<br>")}</div>`
-      : "";
-    const warningsHtml = validationWarnings.length
-      ? `<div style="color: #f39c12; margin-bottom: 8px;">${validationWarnings.join("<br>")}</div>`
-      : "";
-    $("datasetRunnerNote").innerHTML = `${summaryLine}${nextStepLine}${issuesHtml}${warningsHtml}`;
+    $("datasetRunnerNote").innerHTML = locomoImportDatasetNoteHtml({
+      title: validationIssues.length ? "LoCoMo 校验未通过" : "LoCoMo 已读取",
+      summary: `${data.samples ?? "-"} 个对话样本 · ${data.questions ?? "-"} 题`,
+      detail: validationIssues.length
+        ? "请先修复数据集问题，再继续导入或问答测试。"
+        : datasetRunnerNote(data.format, data.runner_note, "数据已读取；选择导入会话后点击“导入对话”。"),
+      tone: validationIssues.length ? "bad" : "",
+      issues: validationIssues,
+      warnings: validationWarnings,
+    });
   }
   if (data.runner_status === "large_dataset_lazy") {
     state.questions = [];
     state.selectedQuestions.clear();
     state.filteredQuestions = [];
     if ($("largeDatasetActions")) $("largeDatasetActions").hidden = false;
-    $("questionPicker").innerHTML = "<p>这是较大的 LoCoMo 数据集，页面不会自动全量读取题目。请使用搜索或具体 conv / 对话缩小范围。</p>";
+    $("questionPicker").innerHTML = "<p>这是较大的 LoCoMo 数据集，页面不会自动全量读取题目。请先选择具体 conv / 对话范围，再加载题目预览。</p>";
     renderKpis("questionSelectionKpis", [
       ["题目范围", "-"],
       ["已选", "0/0"],
@@ -9467,22 +14754,21 @@ async function loadDataset(silent = false) {
 async function loadLargeQuestionPage(offset = 0) {
   const path = $("data").value.trim();
   if (!path) return toast("请先选择数据集");
-  const query = ($("questionSearch")?.value || "").trim();
   const sample = $("sample")?.value || "all";
   const data = sample === "all"
-    ? await api(`/api/questions-page?path=${encodeURIComponent(path)}&offset=${offset}&limit=100&q=${encodeURIComponent(query)}`)
+    ? await api(`/api/questions-page?path=${encodeURIComponent(path)}&offset=${offset}&limit=100&q=`)
     : await api(`/api/questions?path=${encodeURIComponent(path)}&sample=${encodeURIComponent(sample)}`);
   state.questions = data.questions || [];
   state.selectedQuestions = new Set([...state.selectedQuestions].filter((id) => state.questions.some((q) => q.question_id === id)));
   renderQuestions();
   const scope = currentLocomoSampleScope();
   const hasNext = data.next_offset != null;
-  $("quickTestStatus").innerHTML = `
-    <p><strong>${escapeHtml(scope.isAll ? `已加载 ${data.count} 题预览` : `${scope.label} · ${scope.questionCount} 题`)}</strong>${scope.isAll ? ` · offset ${escapeHtml(data.offset)}${query ? ` · query ${escapeHtml(query)}` : ""} · ${hasNext ? `下一页 ${escapeHtml(data.next_offset)}` : "没有下一页"}` : " · 当前 conv 全量"}</p>
-  `;
+  $("quickTestStatus").innerHTML = scope.isAll
+    ? `<p><strong>${escapeHtml(`已加载 ${data.count} 题预览`)}</strong><span>${escapeHtml(`offset ${data.offset}${hasNext ? ` · 下一页 ${data.next_offset}` : ""}`)}</span></p>`
+    : `<p><strong>${escapeHtml(`${scope.label} · ${scope.questionCount} 题`)}</strong><span>当前 conv 全量</span></p>`;
   if ($("largeDatasetActions")) {
     $("largeDatasetActions").innerHTML = `
-      <button class="secondary" id="loadLargeQuestionPage">${scope.isAll ? "按当前搜索加载前 100 题" : "重新加载当前 conv 题目"}</button>
+      <button class="secondary" id="loadLargeQuestionPage">${scope.isAll ? "加载前 100 题预览" : "重新加载当前 conv 题目"}</button>
       ${scope.isAll && hasNext ? `<button class="secondary" id="loadNextLargeQuestionPage" data-next-offset="${escapeHtml(data.next_offset)}">加载下一页</button>` : ""}
     `;
     $("loadLargeQuestionPage").addEventListener("click", () => loadLargeQuestionPage(0).catch((e) => toast(e.message)));
@@ -9492,13 +14778,24 @@ async function loadLargeQuestionPage(offset = 0) {
 }
 
 async function validateLongMemDataset() {
-  const path = $("longMemData")?.value.trim() || "";
+  const path = currentLongMemDatasetPath();
   if (!path) return toast("请先选择或填写 LongMemEval JSON");
+  const previousPath = String(state.longMemDataset?.path || state.longMemDataset?.resolved_path || "").trim();
   const data = await api(`/api/dataset?path=${encodeURIComponent(path)}`);
   state.longMemDataset = data;
-  document.querySelectorAll("#longMemDatasetCards .dataset-card").forEach((card) => {
+  rememberActiveDatasetView("longMemEvalView", "longmemeval", data.resolved_path || path);
+  renderLongMemStatusBand();
+  if (previousPath && !datasetPathMatches(previousPath, path)) {
+    state.longMemQuestions = [];
+    state.selectedLongMemQuestions.clear();
+    resetLongMemQuestionPreviewState();
+    renderLongMemQuestionToolbar();
+    renderLongMemQuestionSelection();
+  }
+  document.querySelectorAll("#longMemDatasetCards .longmem-dataset-option").forEach((card) => {
     card.classList.toggle("active", card.dataset.path === path);
   });
+  setLongMemDatasetMode(rowsMatchLongMemDataset(path) ? "preset" : "custom");
   renderKpis("longMemKpis", [
     ["数据集类型", datasetTypeLabel(data.format)],
     ["样本数", data.samples ?? "-"],
@@ -9509,11 +14806,53 @@ async function validateLongMemDataset() {
   const backendLabel = memoryBackendLabel(currentMemoryBackend());
   const size = datasetSizeLabel(data);
   $("longMemStatus").innerHTML = `
-    <p><strong>${escapeHtml(datasetTypeLabel(data.format))} 校验完成</strong>${size ? ` · ${escapeHtml(size)}` : ""}</p>
-    <p class="dataset-next-step">${escapeHtml(data.resolved_path || path)}</p>
-    <p class="dataset-next-step">${escapeHtml(sampleLike ? "当前是 sample，只适合小样本核验。" : `当前会通过 ${backendLabel} 运行；建议先用 Oracle 50 题做对比。`)}</p>
-    ${sampleLike ? `<p class="dataset-next-step bad-text">当前路径是内置 sample。它用于小样本核验，不作为正式 LongMemEval 分数。</p>` : ""}
+    <p><strong>${escapeHtml(data.name || datasetTypeLabel(data.format))}</strong>${size ? ` · ${escapeHtml(size)}` : ""} · ${escapeHtml(backendLabel)}</p>
+    <p class="dataset-next-step">${escapeHtml(sampleLike ? "当前是 sample，只适合链路核验，不作为正式分数。" : "建议先用 Oracle 50 题做对比，再决定是否跑正式全量。")}</p>
+    <div class="panel-actions">
+      <button class="secondary" type="button" data-view-jump="runsView">查看任务/报告</button>
+      <button class="secondary" type="button" data-view-jump="longMemEvalView" data-flow-key="qa">进入问答测试</button>
+    </div>
   `;
+  $("longMemStatus").querySelectorAll("[data-view-jump]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const options = button.dataset.flowKey ? {benchmarkStage: button.dataset.flowKey} : {};
+      showView(button.dataset.viewJump, options);
+    });
+  });
+  const record = datasetRecordForPath(path, "longmemeval");
+  if ($("longMemDetailAvailability")) {
+    $("longMemDetailAvailability").textContent = data.exists === false ? "缺失" : "可用";
+    $("longMemDetailAvailability").dataset.state = data.exists === false ? "缺失" : "可用";
+  }
+  if ($("longMemFileInfo")) {
+    const rows = [
+      ["数据文件", data.resolved_path || path, true],
+      ["数据规模", size || "-", false],
+      ["样本 / 题目", `${formatInt(data.samples)} 样本 · ${formatInt(data.questions)} 题`, false],
+      ["加载模式", data.runner_status === "large_dataset_lazy" ? "大文件懒加载" : "已读取", false],
+    ];
+    $("longMemFileInfo").innerHTML = rows.map(([label, value, copyable]) => (
+      longMemPathRowHtml(label, value, {copy: Boolean(copyable && value), open: Boolean(copyable && value)})
+    )).join("");
+    bindCopyButtons("#longMemFileInfo");
+    bindOpenButtons("#longMemFileInfo");
+  }
+  if ($("longMemDetailNotes")) {
+    const notes = [
+      sampleLike ? "当前路径是 sample，只适合链路核验。" : "当前数据集可用于正式 LongMemEval 运行。",
+      data.runner_status === "large_dataset_lazy" ? "服务端会按需分页加载题目，加载题目时可能稍慢。" : "题目已可直接加载预览。",
+      datasetRunnerNote("longmemeval", data.runner_note, record.description || "建议先跑 Oracle 50，再决定是否跑正式全量。"),
+    ];
+    $("longMemDetailNotes").innerHTML = longMemNoteBlockHtml(notes);
+  }
+  renderLongMemReadinessList([
+    {label: "Dataset readable", status: data.exists === false ? "失败" : "通过", tone: data.exists === false ? "bad" : "ok"},
+    {label: "Schema valid", status: data.questions > 0 ? "通过" : "待确认", tone: data.questions > 0 ? "ok" : "warn"},
+    {label: "Conversation field found", status: data.samples > 0 ? "通过" : "待确认", tone: data.samples > 0 ? "ok" : "warn"},
+    {label: "Question field found", status: data.questions > 0 ? "通过" : "待确认", tone: data.questions > 0 ? "ok" : "warn"},
+    {label: "Answer field found", status: data.questions > 0 ? "通过" : "待确认", tone: data.questions > 0 ? "ok" : "warn"},
+    {label: "Workspace writable", status: "待运行验证", tone: "warn"},
+  ]);
   const sample = $("longMemSample");
   if (sample) {
     sample.innerHTML = "<option value='all'>全部样本</option>";
@@ -9524,22 +14863,29 @@ async function validateLongMemDataset() {
       sample.appendChild(opt);
     }
   }
+  renderLongMemQaPreview(null);
   toast("LongMemEval 校验完成");
   return data;
 }
 
-async function loadLongMemQuestionPreview() {
+async function loadLongMemQuestionPreview(options = {}) {
   const path = $("longMemData")?.value.trim() || "";
   if (!path) return toast("请先选择 LongMemEval 数据集");
   const sample = $("longMemSample")?.value || "all";
-  const query = String($("longMemQuestionSearch")?.value || "").trim();
+  const query = currentLongMemSearchQuery();
+  const offset = sample === "all" ? Math.max(0, Number(options.offset || 0)) : 0;
   const endpoint = sample === "all"
-    ? `/api/questions-page?path=${encodeURIComponent(path)}&offset=0&limit=100&q=${encodeURIComponent(query)}`
+    ? `/api/questions-page?path=${encodeURIComponent(path)}&offset=${offset}&limit=100&q=${encodeURIComponent(query)}`
     : `/api/questions?path=${encodeURIComponent(path)}&sample=${encodeURIComponent(sample)}`;
   const data = await api(endpoint);
   const rows = data.questions || [];
   state.longMemQuestions = rows;
+  state.longMemQuestionOffset = sample === "all" ? Number(data.offset || offset || 0) : 0;
+  state.longMemQuestionNextOffset = sample === "all" ? (data.next_offset ?? null) : null;
+  state.longMemQuestionTotalLoaded = Number(data.count || rows.length || 0);
+  state.longMemQuestionQuery = query;
   state.selectedLongMemQuestions = new Set([...state.selectedLongMemQuestions].filter((id) => rows.some((q) => q.question_id === id)));
+  renderLongMemQuestionToolbar();
   renderLongMemQuestionSelection();
   toast(`已加载 ${rows.length} 题预览`);
 }
@@ -9561,27 +14907,71 @@ function filteredLongMemQuestions() {
 }
 
 function renderLongMemQuestionSelection() {
+  renderLongMemStatusBand();
   const rows = filteredLongMemQuestions();
-  const visibleRows = rows.slice(0, 100);
-  const hiddenHint = rows.length > visibleRows.length
-    ? `<p class="dataset-next-step">仅显示前 100 题；用搜索缩小范围。</p>`
-    : "";
+  const totalLoaded = Number(state.longMemQuestions.length || 0);
+  const selectedVisible = rows.filter((q) => state.selectedLongMemQuestions.has(q.question_id)).length;
+  const toggleId = "toggleLongMemVisibleQuestions";
   if ($("longMemSelectedText")) {
     $("longMemSelectedText").textContent = state.selectedLongMemQuestions.size
-      ? `已选 ${state.selectedLongMemQuestions.size} 题；开始测试只跑选中题。`
-      : `未勾选时按“题数”运行；当前可见 ${rows.length}/${state.longMemQuestions.length} 题。`;
+      ? `已选 ${state.selectedLongMemQuestions.size} 题；开始测试时只跑选中题。`
+      : `当前页可见 ${rows.length}/${totalLoaded} 题；未勾选时按“问答题数”运行。`;
   }
-  $("longMemQuestionPreview").innerHTML = hiddenHint + visibleRows.map((q) => `
-    <label class="question-row">
-      <input type="checkbox" data-question-id="${escapeHtml(q.question_id || "")}" ${state.selectedLongMemQuestions.has(q.question_id) ? "checked" : ""}>
-      <span>
-        <strong>${escapeHtml(q.question || "-")}</strong>
-        <small>${escapeHtml(q.sample_id || "-")} · ${escapeHtml(q.question_id || "-")} · ${escapeHtml(q.category || "-")}</small>
-        <em>标准答案：${escapeHtml(q.answer || "-")}</em>
-      </span>
-    </label>
-  `).join("") || "<p>没有加载到可选题目。</p>";
-  document.querySelectorAll("#longMemQuestionPreview input[type='checkbox']").forEach((box) => {
+  const target = $("longMemQuestionPreview");
+  if (!target) return;
+  if (!rows.length) {
+    target.innerHTML = `
+      <div class="empty-question-state">
+        <p>没有加载到可选题目。</p>
+        <p>先点“加载题目”，或者调整样本范围、搜索条件和数据集路径。</p>
+      </div>
+    `;
+    return;
+  }
+  target.innerHTML = `
+    <div class="question-picker-table">
+      <div class="question-table-note">
+        <div class="question-table-counts">
+          <strong>当前页 ${formatInt(rows.length)} 题</strong>
+          <span>已选 ${formatInt(state.selectedLongMemQuestions.size)} 题</span>
+          <span>${selectedVisible ? `当前页命中 ${formatInt(selectedVisible)} 题` : "当前页尚未勾选"}</span>
+        </div>
+      </div>
+      <div class="question-table-shell">
+        <table class="question-table benchmark-question-table longmem-question-table">
+          <thead>
+            <tr>
+              <th class="question-check-col">
+                <input type="checkbox" id="${toggleId}" aria-label="批量勾选当前可见题目" ${rows.every((q) => state.selectedLongMemQuestions.has(q.question_id)) ? "checked" : ""}>
+              </th>
+              <th>Question</th>
+              <th>Sample</th>
+              <th>Question ID</th>
+              <th>Category</th>
+              <th>Ground Truth</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((q) => `
+              <tr class="question-table-row ${state.selectedLongMemQuestions.has(q.question_id) ? "selected" : ""}">
+                <td class="question-check-col">
+                  <input type="checkbox" data-question-id="${escapeHtml(q.question_id || "")}" ${state.selectedLongMemQuestions.has(q.question_id) ? "checked" : ""}>
+                </td>
+                <td class="question-cell question-main-cell">
+                  <strong>${escapeHtml(q.question || "-")}</strong>
+                </td>
+                <td class="question-cell question-mono-cell">${escapeHtml(q.sample_id || "-")}</td>
+                <td class="question-cell question-mono-cell">${escapeHtml(q.question_id || "-")}</td>
+                <td class="question-cell question-tag-cell">${genericCategoryBadge("longmemeval", q.category)}</td>
+                <td class="question-cell question-answer-cell">${escapeHtml(q.answer || "-")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  target.querySelectorAll("input[type='checkbox'][data-question-id]").forEach((box) => {
     box.addEventListener("change", () => {
       const questionId = box.dataset.questionId || "";
       if (!questionId) return;
@@ -9590,10 +14980,22 @@ function renderLongMemQuestionSelection() {
       renderLongMemQuestionSelection();
     });
   });
+  const toggle = $(toggleId);
+  if (toggle) {
+    toggle.indeterminate = selectedVisible > 0 && selectedVisible < rows.length;
+    toggle.addEventListener("change", () => {
+      rows.forEach((row) => {
+        if (!row.question_id) return;
+        if (toggle.checked) state.selectedLongMemQuestions.add(row.question_id);
+        else state.selectedLongMemQuestions.delete(row.question_id);
+      });
+      renderLongMemQuestionSelection();
+    });
+  }
 }
 
 function selectVisibleLongMemQuestions() {
-  filteredLongMemQuestions().slice(0, 100).forEach((q) => {
+  filteredLongMemQuestions().forEach((q) => {
     if (q.question_id) state.selectedLongMemQuestions.add(q.question_id);
   });
   renderLongMemQuestionSelection();
@@ -9605,26 +15007,41 @@ function clearLongMemQuestionSelection() {
 }
 
 function useLongMemOracle50Preset() {
-  const oracleRecord = state.datasetRegistry.find((item) => item.id === "longmemeval-oracle-full" && item.exists)
+  const oracleRecord = canonicalLongMemDatasetRecord("longmemeval-oracle-full")
     || state.datasetRegistry.find((item) => String(item.path || "").includes("longmemeval_oracle.json"));
   if ($("longMemData") && oracleRecord?.path) $("longMemData").value = oracleRecord.path;
   if ($("longMemSample")) $("longMemSample").value = "all";
   if ($("longMemCount")) $("longMemCount").value = "50";
   if ($("longMemImportCount")) $("longMemImportCount").value = "50";
   state.selectedLongMemQuestions.clear();
+  resetLongMemQuestionPreviewState();
+  renderLongMemQuestionToolbar();
   renderLongMemQuestionSelection();
-  renderLongMemEntryStatus($("longMemData")?.value.trim() || "", datasetRecordForPath($("longMemData")?.value.trim() || "", "longmemeval"));
+  syncLongMemDatasetState(currentLongMemDatasetPath(), {skipMode: true});
   validateLongMemDataset().catch((e) => toast(e.message));
   toast("已切到 LongMemEval Oracle 50 题预设");
 }
 
 function useLongMemFormalPreset() {
+  const formalRecord = canonicalLongMemDatasetRecord("longmemeval-s-cleaned-full")
+    || state.datasetRegistry.find((item) => String(item.path || "").includes("longmemeval_s_cleaned.json"));
+  if ($("longMemData") && formalRecord?.path) $("longMemData").value = formalRecord.path;
   if ($("longMemSample")) $("longMemSample").value = "all";
   if ($("longMemCount")) $("longMemCount").value = "0";
   if ($("longMemImportCount")) $("longMemImportCount").value = "0";
   state.selectedLongMemQuestions.clear();
+  resetLongMemQuestionPreviewState();
+  renderLongMemQuestionToolbar();
   renderLongMemQuestionSelection();
+  syncLongMemDatasetState(currentLongMemDatasetPath(), {skipMode: true});
+  rememberActiveDatasetView("longMemEvalView", "longmemeval", $("longMemData")?.value.trim() || "");
+  validateLongMemDataset().catch((e) => toast(e.message));
   toast("已切到 LongMemEval 正式全量预设");
+}
+
+function rowsMatchLongMemDataset(path = "") {
+  if (!path) return false;
+  return Boolean((state.datasetRegistry || []).find((item) => datasetPathMatches(item.path, path) || datasetPathMatches(item.resolved_path, path)));
 }
 
 async function runLongMemDiagnostic() {
@@ -9663,26 +15080,21 @@ async function runLongMemDiagnostic() {
   });
   rememberBenchmarkRecord(task || {data: path}, "longmemeval");
   showView("longMemEvalView", {preserveScroll: true});
-  $("longMemRunResult").innerHTML = `
-    <article class="path-row">
-      <span>任务</span>
-      <code>${escapeHtml(task?.id || state.taskId || "")}</code>
-    </article>
-    <article class="path-row">
-      <span>结果文件</span>
-      <code>${escapeHtml(task?.output_file || "")}</code>
-      <button class="path-copy" type="button" data-copy="${escapeHtml(task?.output_file || "")}">复制</button>
-    </article>
-    <p>任务已启动：${escapeHtml(backendLabel)} MemoryBench 记忆问答会完成上下文写入、记忆检索、大模型回答、判分和 LongMemEval 官方式摘要。当前页会保留；右上角运行中入口显示进度，结果中心查看报告。</p>
-    <p class="dataset-next-step">选题：${escapeHtml(selectedQuestions ? `${state.selectedLongMemQuestions.size} 题` : benchmarkCountLabel(effectiveCount))}；样本范围：${escapeHtml(sample)}。</p>
-    ${formalWarnings.length ? `<p class="dataset-next-step bad-text">正式分数门禁：${escapeHtml(formalWarnings.join("；"))}。本次仍作为小样本核验运行。</p>` : ""}
-    <div class="panel-actions">
-      <button class="secondary" type="button" data-view-jump="runsView">查看任务/报告</button>
-    </div>
-  `;
-  bindCopyButtons("#longMemRunResult");
-  $("longMemRunResult").querySelectorAll("[data-view-jump]").forEach((button) => {
-    button.addEventListener("click", () => showView(button.dataset.viewJump));
+  renderSharedResultSummary($("longMemRunResult"), {
+    eyebrow: "实时结果摘要",
+    title: `${backendLabel} LongMemEval 任务已启动`,
+    description: `${backendLabel} MemoryBench 记忆问答会完成上下文写入、记忆检索、大模型回答、判分和 LongMemEval 官方式摘要。`,
+    paths: [
+      task?.id || state.taskId ? {label: "任务", value: task?.id || state.taskId || "", raw: true, open: false} : null,
+      task?.output_file ? {label: "结果文件", value: task.output_file} : null,
+      task?.run_dir ? {label: "任务目录", value: task.run_dir} : null,
+    ],
+    note: `${selectedQuestions ? `${state.selectedLongMemQuestions.size} 题` : benchmarkCountLabel(effectiveCount)}；样本范围：${sample}。${formalWarnings.length ? ` 正式分数门禁：${formalWarnings.join("；")}。本次仍作为小样本核验运行。` : ""}`,
+    actions: [
+      {label: "查看任务", viewJump: "runsView"},
+      {label: "报告对比", viewJump: "runsView"},
+    ],
+    ...longMemSharedResultSummaryOptions("longmem-result-summary-card is-running"),
   });
 }
 
@@ -9712,26 +15124,26 @@ async function injectLongMemMemory() {
     official_eval_after: false,
     read_openviking_content: false,
     commit_timeout_s: 300,
-    name: `LongMemEval memory import ${selectedQuestions ? `${state.selectedLongMemQuestions.size} selected` : benchmarkCountLabel(effectiveCount)}`,
+    name: `LongMemEval 记忆导入 ${selectedQuestions ? `${state.selectedLongMemQuestions.size} selected` : benchmarkCountLabel(effectiveCount)}`,
   });
   rememberBenchmarkRecord(task || {data: path}, "longmemeval");
   showView("longMemEvalView", {preserveScroll: true, benchmarkStage: "import"});
-    if ($("longMemImportResult")) {
-    $("longMemImportResult").innerHTML = `
-      <article class="path-row">
-        <span>任务</span>
-        <code>${escapeHtml(task?.id || state.taskId || "")}</code>
-      </article>
-      <p>已启动记忆注入：通过 ${escapeHtml(backendLabel)} 只写入 LongMemEval 原始文档并生成导入摘要，不调用答案模型或判分。</p>
-      <p class="dataset-next-step">注入范围：${escapeHtml(selectedQuestions ? `${state.selectedLongMemQuestions.size} 道选中题` : benchmarkCountLabel(effectiveCount))}；样本范围：${escapeHtml(sample)}。</p>
-      <div class="panel-actions">
-        <button class="secondary" type="button" data-view-jump="runsView">查看任务/报告</button>
-        <button class="secondary" type="button" data-copy="${escapeHtml(task?.run_dir || "")}">复制任务目录</button>
-      </div>
-    `;
-    bindCopyButtons("#longMemImportResult");
-    $("longMemImportResult").querySelectorAll("[data-view-jump]").forEach((button) => {
-      button.addEventListener("click", () => showView(button.dataset.viewJump, {benchmarkStage: "report"}));
+  if ($("longMemImportResult")) {
+    $("longMemImportResult").hidden = false;
+    renderSharedResultSummary($("longMemImportResult"), {
+      eyebrow: "记忆注入任务",
+      title: `${backendLabel} 注入已启动`,
+      description: "只写入 LongMemEval 原始文档并生成导入摘要，不调用答案模型或判分。",
+      paths: [
+        task?.id || state.taskId ? {label: "任务", value: task?.id || state.taskId || "", raw: true, open: false} : null,
+        task?.run_dir ? {label: "任务目录", value: task.run_dir} : null,
+      ],
+      note: `注入范围：${selectedQuestions ? `${state.selectedLongMemQuestions.size} 道选中题` : benchmarkCountLabel(effectiveCount)}；样本范围：${sample}。`,
+      actions: [
+        {label: "查看任务", viewJump: "runsView"},
+        task?.run_dir ? {label: "复制任务目录", copy: task.run_dir} : null,
+      ].filter(Boolean),
+      ...longMemSharedResultSummaryOptions("longmem-import-summary-card"),
     });
   }
 }
@@ -9796,45 +15208,46 @@ async function runSelectedMemoryQa() {
 }
 
 function filteredQuestions() {
-  const keyword = ($("questionSearch")?.value || "").trim().toLowerCase();
   const category = $("questionCategory")?.value || "all";
-  return state.questions.filter((q) => {
+  const query = String($("locomoQuestionSearch")?.value || "").trim().toLowerCase();
+  const filtered = state.questions.filter((q) => {
     const categoryOk = category === "all" || String(q.category || "") === category;
-    if (!categoryOk) return false;
-    if (!keyword) return true;
-    const haystack = [
-      q.question_id,
-      q.sample_id,
+    const searchText = [
       q.question,
+      q.sample_id,
+      q.question_id,
       q.answer,
-      q.question_time,
-      q.category ? `c${q.category}` : "",
-    ].join(" ").toLowerCase();
-    return haystack.includes(keyword);
+      datasetCategoryLabel("locomo", q.category || ""),
+    ].join("\n").toLowerCase();
+    const queryOk = !query || searchText.includes(query);
+    return categoryOk && queryOk;
   });
+  const deduped = dedupeQuestionRows(filtered);
+  state.locomoQuestionDuplicateCount = deduped.duplicates;
+  return deduped.rows;
 }
 
 function hasActiveLocomoQuestionFilters() {
-  return Boolean(($("questionSearch")?.value || "").trim() || ($("questionCategory")?.value || "all") !== "all");
+  return ($("questionCategory")?.value || "all") !== "all" || !!String($("locomoQuestionSearch")?.value || "").trim();
 }
 
 function activeLocomoQuestionFilterSummary() {
-  const keyword = ($("questionSearch")?.value || "").trim();
   const category = $("questionCategory")?.value || "all";
+  const query = String($("locomoQuestionSearch")?.value || "").trim();
   const parts = [];
-  if (keyword) parts.push(`搜索：${keyword}`);
   if (category !== "all") parts.push(`类别：${datasetCategoryLabel("locomo", category)}`);
+  if (query) parts.push(`搜索：${query}`);
   return parts.join("；");
 }
 
 function resetLocomoQuestionFilters(mode = "all") {
-  if (mode === "all" || mode === "search") {
-    const search = $("questionSearch");
-    if (search) search.value = "";
-  }
   if (mode === "all" || mode === "category") {
     const category = $("questionCategory");
     if (category) category.value = "all";
+  }
+  if (mode === "all" || mode === "search") {
+    const search = $("locomoQuestionSearch");
+    if (search) search.value = "";
   }
   renderQuestions();
 }
@@ -9866,37 +15279,103 @@ function renderLocomoQuestionEmptyState(rows = []) {
 function renderQuestions() {
   const rows = filteredQuestions();
   state.filteredQuestions = rows;
-  const keyword = ($("questionSearch")?.value || "").trim();
   const isAllSamples = ($("sample")?.value || "all") === "all";
-  const visibleLimit = isAllSamples && !keyword ? 200 : 600;
+  const visibleLimit = isAllSamples ? 200 : 600;
   const visibleRows = rows.slice(0, visibleLimit);
+  state.visibleQuestions = visibleRows;
+  const scope = currentLocomoSampleScope();
+  const selectedVisible = visibleRows.filter((q) => state.selectedQuestions.has(q.question_id)).length;
+  const allVisibleSelected = visibleRows.length > 0 && selectedVisible === visibleRows.length;
+  const someVisibleSelected = selectedVisible > 0 && !allVisibleSelected;
+  const duplicateCount = Number(state.locomoQuestionDuplicateCount || 0);
   renderKpis("questionSelectionKpis", locomoQuestionSelectionKpis(rows));
+  const scopeMeta = `
+    <div class="question-table-toolbar">
+      <div class="question-table-counts">
+        <strong>${escapeHtml(scope.label)}</strong>
+        <span>筛选后 ${escapeHtml(formatInt(rows.length))} 题</span>
+        <span>当前可见 ${escapeHtml(formatInt(visibleRows.length))} 题</span>
+        <span>已选可见 ${escapeHtml(formatInt(selectedVisible))} 题</span>
+        ${duplicateCount ? `<span>去重 ${escapeHtml(formatInt(duplicateCount))} 题</span>` : ""}
+      </div>
+      ${hasActiveLocomoQuestionFilters() ? `<div class="question-table-filter-note">${escapeHtml(activeLocomoQuestionFilterSummary())}</div>` : ""}
+    </div>
+  `;
   const limitHint = rows.length > visibleRows.length
-    ? `<p>当前显示 ${visibleRows.length} / ${rows.length} 题。请选择具体 conv 或输入关键词继续缩小范围。</p>`
+    ? `<p class="question-table-note">当前只显示前 ${visibleRows.length} / ${rows.length} 题。请选择具体 conv，或按类别继续缩小范围。</p>`
     : "";
-  $("questionPicker").innerHTML = limitHint + visibleRows.map((q) => `
-    <label class="question-row">
-      <input type="checkbox" data-question-id="${escapeHtml(q.question_id)}" ${state.selectedQuestions.has(q.question_id) ? "checked" : ""}>
-      <span>
-        <strong>${escapeHtml(q.question)}</strong>
-        <small>${escapeHtml(q.sample_id)} · ${escapeHtml(q.question_id)}${q.question_time ? ` · ${escapeHtml(q.question_time)}` : ""}</small>
-        ${locomoCategoryBadge(q.category)}
-        <em>标准答案：${escapeHtml(q.answer || "-")}</em>
-      </span>
-    </label>
-  `).join("") || renderLocomoQuestionEmptyState(rows);
+  const duplicateHint = duplicateCount
+    ? `<p class="question-table-note">已按 question_id 折叠 ${escapeHtml(formatInt(duplicateCount))} 条重复题目，避免同一 query 在列表里重复出现。</p>`
+    : "";
+  $("questionPicker").innerHTML = visibleRows.length ? `
+    ${scopeMeta}
+    ${limitHint}
+    ${duplicateHint}
+    <div class="question-table-shell">
+      <table class="question-table">
+        <thead>
+          <tr>
+            <th class="question-check-col">
+              <input type="checkbox" id="toggleVisibleQuestions" aria-label="批量勾选当前可见题目" ${allVisibleSelected ? "checked" : ""}>
+            </th>
+            <th>问题</th>
+            <th>Conv</th>
+            <th>题号</th>
+            <th>类别</th>
+            <th>标准答案</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${visibleRows.map((q) => `
+            <tr class="question-table-row ${state.selectedQuestions.has(q.question_id) ? "selected" : ""}">
+              <td class="question-check-col">
+                <input type="checkbox" data-question-id="${escapeHtml(q.question_id)}" ${state.selectedQuestions.has(q.question_id) ? "checked" : ""}>
+              </td>
+              <td class="question-cell question-main-cell">
+                <label class="question-row-label">
+                  <strong>${escapeHtml(q.question)}</strong>
+                </label>
+              </td>
+              <td class="question-cell question-mono-cell">${escapeHtml(q.sample_id || "-")}</td>
+              <td class="question-cell question-mono-cell">${escapeHtml(q.question_id || "-")}</td>
+                <td class="question-cell question-tag-cell">${genericCategoryBadge("longmemeval", q.category)}</td>
+                <td class="question-cell question-answer-cell">${escapeHtml(q.answer || "-")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+    </div>
+  ` : renderLocomoQuestionEmptyState(rows);
   document.querySelectorAll("#questionPicker input[type='checkbox']").forEach((box) => {
     box.addEventListener("change", () => {
+      if (box.id === "toggleVisibleQuestions") return;
       if (box.checked) state.selectedQuestions.add(box.dataset.questionId);
       else state.selectedQuestions.delete(box.dataset.questionId);
       updateQuestionKpis();
+      renderQuestions();
     });
   });
+  const toggleVisibleQuestions = $("toggleVisibleQuestions");
+  if (toggleVisibleQuestions) {
+    toggleVisibleQuestions.indeterminate = someVisibleSelected;
+    toggleVisibleQuestions.addEventListener("change", () => {
+      visibleRows.forEach((row) => {
+        if (toggleVisibleQuestions.checked) state.selectedQuestions.add(row.question_id);
+        else state.selectedQuestions.delete(row.question_id);
+      });
+      updateQuestionKpis();
+      renderQuestions();
+    });
+  }
   document.querySelectorAll("#questionPicker [data-reset-question-filters]").forEach((button) => {
     button.addEventListener("click", () => resetLocomoQuestionFilters(button.dataset.resetQuestionFilters || "all"));
   });
   refreshLocomoQaActionLabels();
   renderMemoryMismatchWarning();
+  renderEvalHeaderSummary(activeLocomoQaTask());
+  renderEvalProgressSummary(activeLocomoQaTask());
+  renderEvalRecentResultPanel();
+  renderEvalConsoleContext(activeLocomoQaTask());
 }
 
 function updateQuestionKpis() {
@@ -9905,6 +15384,10 @@ function updateQuestionKpis() {
   refreshLocomoQaActionLabels();
   renderQaReadinessPanel();
   renderMemoryMismatchWarning();
+  renderEvalHeaderSummary(activeLocomoQaTask());
+  renderEvalProgressSummary(activeLocomoQaTask());
+  renderEvalRecentResultPanel();
+  renderEvalConsoleContext(activeLocomoQaTask());
 }
 
 function qaSelectionReadiness() {
@@ -9957,8 +15440,11 @@ function qaImportReadiness(backend, account, workspace, lastImport = currentWork
   const importedSample = mismatchInfo.importedSample || (lastImport.sample_value === "all" ? LOCOMO_ALL_SESSIONS_LABEL : "");
   const importBackend = normalizeMemoryBackend(lastImport.backend || backend);
   const backendMatches = importBackend === backend;
-  const importWorkspace = currentConfiguredWorkspace(backend) || workspace || lastImport.workspace || imported.workspace || "";
+  const importWorkspace = activeImportWorkspaceForBackend(backend) || currentConfiguredWorkspace(backend) || workspace || lastImport.workspace || imported.workspace || "";
   const completeCount = Number(imported.complete_count || 0);
+  const sessionCompleteCount = Number(imported.session_complete_count || 0);
+  const sessionTotalCount = Number(imported.session_total_count || 0);
+  const convComplete = imported.conv_complete === true;
   const integrity = String(lastImport.integrity || "").trim().toLowerCase();
   const hasWorkspace = Boolean(importWorkspace);
   const hasImport = Boolean(importWorkspace || lastImport.output_file || completeCount);
@@ -10000,6 +15486,14 @@ function qaImportReadiness(backend, account, workspace, lastImport = currentWork
       detail: `当前目录 ${compactPath(workspaceDisplayPath(importWorkspace, account, backend), 42, 38)}；已经记录到目录，但还没有通过完整性检查。`,
       tone: "warn",
       blocking: false,
+    };
+  }
+  if (backend === "echomemory" && sessionTotalCount > 0 && !convComplete) {
+    return {
+      value: "导入未完成",
+      detail: `当前目录 ${compactPath(workspaceDisplayPath(importWorkspace, account, backend), 42, 38)}；session 完成 ${sessionCompleteCount}/${sessionTotalCount}，请等待全部 session 注入完成并生成 conv 完成标志。`,
+      tone: "bad",
+      blocking: true,
     };
   }
   return {
@@ -10068,37 +15562,40 @@ function renderQaReadinessPanel(task = null) {
   const modelReady = qaModelReadiness();
   const launchGate = locomoQaLaunchGate();
   const taskRunning = isMemoryQaKind(task?.kind || state.currentLocomoTask?.kind || "") && (task?.status || state.currentLocomoTask?.status) === "running";
-  const modeValue = "MemoryBench Agent（VikingBoat 对齐）";
   const repeatedGate = launchGate.value === importReady.value && launchGate.detail === importReady.detail;
   const cards = [
     {
-      label: "回答模型",
+      icon: "bot",
+      label: "模型可用",
       ...modelReady,
     },
     {
-      label: "记忆范围",
+      icon: "folder-check",
+      label: "记忆目录存在",
       ...importReady,
     },
     {
-      label: "启动门禁",
+      icon: "check-circle-2",
+      label: "配置完整",
       value: repeatedGate ? (launchGate.blocking ? "当前不可启动" : launchGate.value) : launchGate.value,
       detail: repeatedGate ? "先处理上方记忆范围问题，再启动测试。" : launchGate.detail,
       tone: launchGate.tone,
     },
   ];
-  const datasetNote = dataset ? `${dataset.samples ?? "-"} conv · ${dataset.questions ?? "-"} QA` : "数据集未校验";
-  const selectionNote = selection.value ? `题目 ${selection.value}` : "";
-  const agentNote = `${RETRIEVAL_COUNT_LABEL} ${VIKINGBOAT_LITE_TOP_K} · ${TOOL_SEARCH_LABEL} ${VIKINGBOAT_LITE_TOOL_SEARCH_LIMIT} · ${MAX_ITERATION_LABEL} ${VIKINGBOAT_LITE_MAX_ITERATIONS}`;
   target.innerHTML = `
     ${cards.map((card) => `
-      <article class="${escapeHtml(card.tone || "")}">
-        <span>${escapeHtml(card.label)}</span>
-        <strong>${escapeHtml(card.value || "-")}</strong>
-        <p>${escapeHtml(card.detail || "")}</p>
+      <article class="locomo-qa-readiness-card" data-tone="${escapeHtml(card.tone || "wait")}" title="${escapeHtml(card.detail || "")}">
+        <span class="qa-readiness-dot" aria-hidden="true"></span>
+        <span class="qa-readiness-icon ui-icon" data-ui-icon="${escapeHtml(card.icon || "check-circle-2")}" data-ui-icon-size="16" aria-hidden="true"></span>
+        <div class="qa-readiness-copy">
+          <strong>${escapeHtml(card.label)}</strong>
+          <p>${escapeHtml(card.value || "-")}</p>
+          ${card.detail ? `<small>${escapeHtml(card.detail)}</small>` : ""}
+        </div>
       </article>
     `).join("")}
-    <p class="qa-readiness-note">${escapeHtml([datasetNote, selectionNote, agentNote].filter(Boolean).join("；"))}</p>
   `;
+  renderEvalHeaderSummary(activeLocomoQaTask());
 }
 
 function selectedQuestionSamples() {
@@ -10246,6 +15743,38 @@ function taskPayload(kind, extra = {}) {
   const memoryUserId = $("memoryUserId")?.value.trim() || localCfg.memoryUserId || "default";
   const memoryAgentId = $("memoryAgentId")?.value.trim() || localCfg.memoryAgentId || "default";
   const echomemRoot = $("echomemRoot")?.value.trim() || localCfg.echomemRoot || "";
+  const echomemQaTopK = Math.max(1, Number($("echomemQaTopK")?.value || localCfg.echomemQaTopK || VIKINGBOAT_LITE_TOP_K));
+  const echomemQaScoreThreshold = Number($("echomemQaScoreThreshold")?.value || localCfg.echomemQaScoreThreshold || 0.1);
+  const echomemQaToolSearchLimit = Math.max(1, Number($("echomemQaToolSearchLimit")?.value || localCfg.echomemQaToolSearchLimit || VIKINGBOAT_LITE_TOOL_SEARCH_LIMIT));
+  const echomemQaToolMinScore = Number($("echomemQaToolMinScore")?.value || localCfg.echomemQaToolMinScore || 0.35);
+  const echomemQaMaxIterations = Math.max(1, Number($("echomemQaMaxIterations")?.value || localCfg.echomemQaMaxIterations || VIKINGBOAT_LITE_MAX_ITERATIONS));
+  const echomemQaMemoryBudgetChars = Math.max(0, Number($("echomemQaMemoryBudgetChars")?.value || localCfg.echomemQaMemoryBudgetChars || 6000));
+  const echomemQaUserMemoryBudgetChars = Math.max(0, Number($("echomemQaUserMemoryBudgetChars")?.value || localCfg.echomemQaUserMemoryBudgetChars || 4000));
+  const echomemQaAgentMemoryBudgetChars = Math.max(0, Number($("echomemQaAgentMemoryBudgetChars")?.value || localCfg.echomemQaAgentMemoryBudgetChars || 2000));
+  const echomemQaPrefetchReadCount = Math.max(0, Number($("echomemQaPrefetchReadCount")?.value || localCfg.echomemQaPrefetchReadCount || 4));
+  const echomemQaPrefetchContextChars = Math.max(0, Number($("echomemQaPrefetchContextChars")?.value || localCfg.echomemQaPrefetchContextChars || 5000));
+  const echomemQaToolLogChars = Math.max(200, Number($("echomemQaToolLogChars")?.value || localCfg.echomemQaToolLogChars || 1200));
+  const echomemQaQuestionTimeout = Math.max(30, Number($("echomemQaQuestionTimeout")?.value || localCfg.echomemQaQuestionTimeout || 600));
+  const echomemQaRetrievalMode = String($("echomemQaRetrievalMode")?.value || localCfg.echomemQaRetrievalMode || "search").trim() || "search";
+  const echomemQaPromptMode = String($("echomemQaPromptMode")?.value || localCfg.echomemQaPromptMode || "vikingboat_lite").trim() || "vikingboat_lite";
+  const echomemQaToolSet = String($("echomemQaToolSet")?.value.trim() || localCfg.echomemQaToolSet || "vikingbot_native_safe").trim() || "vikingbot_native_safe";
+  const locomoQaUseTools = $("locomoQaUseTools")?.checked ?? (localCfg.locomoQaUseTools !== false);
+  const echomemQaToolLoop = $("echomemQaToolLoop")?.checked ?? (localCfg.echomemQaToolLoop !== false);
+  const benchmarkQaUseTools = datasetFormat === "hotpotqa"
+    ? currentQaToolCallingEnabled("hotpotqa")
+    : locomoQaUseTools;
+  const benchmarkToolLoopEnabled = datasetFormat === "hotpotqa"
+    ? Boolean(benchmarkQaUseTools)
+    : Boolean(locomoQaUseTools && echomemQaToolLoop);
+  const echomemQaInitialToolPrefetch = $("echomemQaInitialToolPrefetch")?.checked ?? Boolean(localCfg.echomemQaInitialToolPrefetch);
+  const echomemQaFallbackToOneShot = $("echomemQaFallbackToOneShot")?.checked ?? (localCfg.echomemQaFallbackToOneShot !== false);
+  const echomemQaVikingboatCompat = $("echomemQaVikingboatCompat")?.checked ?? Boolean(localCfg.echomemQaVikingboatCompat);
+  const echomemQaLocalSessionSummaries = $("echomemQaLocalSessionSummaries")?.checked ?? (localCfg.echomemQaLocalSessionSummaries !== false);
+  const echomemQaLocalAtoms = $("echomemQaLocalAtoms")?.checked ?? (localCfg.echomemQaLocalAtoms !== false);
+  const echomemQaLocalMessages = $("echomemQaLocalMessages")?.checked ?? Boolean(localCfg.echomemQaLocalMessages);
+  const echomemQaLocalTimelineHints = $("echomemQaLocalTimelineHints")?.checked ?? (localCfg.echomemQaLocalTimelineHints !== false);
+  const echomemQaLocalMemoryArtifacts = $("echomemQaLocalMemoryArtifacts")?.checked ?? (localCfg.echomemQaLocalMemoryArtifacts !== false);
+  const isEchoMemoryQaTask = kind === "echomemory_qa" || kind === "echomemory_generic_qa";
   return {
     kind,
     runner: "local_agent",
@@ -10293,21 +15822,33 @@ function taskPayload(kind, extra = {}) {
       max_sessions: 1,
       name: `locomo ${memoryBackendLabel(currentMemoryBackend())} ${importSelection?.sampleId || importSample} 单 session 注入测试`,
     } : {}),
-    ...(kind === "echomemory_qa" ? {
-      prompt_mode: "vikingboat_lite",
-      retrieval_mode: "search",
-      top_k: VIKINGBOAT_LITE_TOP_K,
-      score_threshold: 0.1,
-      tool_set: "vikingbot_native_safe",
-      tool_search_limit: VIKINGBOAT_LITE_TOOL_SEARCH_LIMIT,
-      tool_min_score: 0.35,
-      max_iterations: VIKINGBOAT_LITE_MAX_ITERATIONS,
-      user_memory_budget_chars: 4000,
-      agent_memory_budget_chars: 2000,
-      vikingboat_compat: false,
-      vikingboat_tool_loop: true,
+    ...(isEchoMemoryQaTask ? {
+      prompt_mode: echomemQaPromptMode,
+      retrieval_mode: echomemQaRetrievalMode,
+      qa_memory_injection: true,
+      top_k: echomemQaTopK,
+      score_threshold: echomemQaScoreThreshold,
+      tool_set: echomemQaToolSet,
+      tool_search_limit: echomemQaToolSearchLimit,
+      tool_min_score: echomemQaToolMinScore,
+      max_iterations: echomemQaMaxIterations,
+      memory_budget_chars: echomemQaMemoryBudgetChars,
+      user_memory_budget_chars: echomemQaUserMemoryBudgetChars,
+      agent_memory_budget_chars: echomemQaAgentMemoryBudgetChars,
+      vikingboat_compat: echomemQaVikingboatCompat,
+      vikingboat_tool_loop: benchmarkToolLoopEnabled,
+      // Keep the QA console deterministic and avoid duplicate query/model chatter in the run trace.
       initial_tool_prefetch: false,
-      fallback_to_one_shot: true,
+      fallback_to_one_shot: echomemQaFallbackToOneShot,
+      prefetch_read_count: echomemQaPrefetchReadCount,
+      prefetch_context_chars: echomemQaPrefetchContextChars,
+      tool_log_chars: echomemQaToolLogChars,
+      question_timeout_s: echomemQaQuestionTimeout,
+      local_session_summaries: echomemQaLocalSessionSummaries,
+      local_atoms: echomemQaLocalAtoms,
+      local_messages: echomemQaLocalMessages,
+      local_timeline_hints: echomemQaLocalTimelineHints,
+      local_memory_artifacts: echomemQaLocalMemoryArtifacts,
     } : {}),
     ...(kind === "echomemory_generic_qa" ? {
       import_wait_mode: echoImportMode,
@@ -10321,7 +15862,7 @@ function taskPayload(kind, extra = {}) {
       runtime_recycle_every: 50,
       import_timeout_s: 900,
     } : {}),
-    ...(openvikingQaKind ? vikingbotAlignedQaPayload() : {}),
+    ...(openvikingQaKind ? vikingbotAlignedQaPayload(benchmarkQaUseTools) : {}),
     name: taskNameForKind(kind, datasetFormat),
     ...extra,
   };
@@ -10541,16 +16082,34 @@ function dirname(path) {
   return idx > 0 ? value.slice(0, idx) : value;
 }
 
+function basename(path = "") {
+  const value = String(path || "").trim();
+  if (!value) return "";
+  const idx = value.lastIndexOf("/");
+  return idx >= 0 ? value.slice(idx + 1) : value;
+}
+
 function renderArtifactList(items = []) {
   const rows = items.filter(([, value]) => value);
   const target = $("resultArtifactList");
   if (!target) return;
+  const labelHints = {
+    "结果文件": "结果文件",
+    "目录": "目录",
+    "判分摘要": "判分摘要",
+    "错题分析": "错题分析",
+  };
   target.innerHTML = rows.length ? rows.map(([label, value]) => `
-    <article class="path-row">
-      <span>${escapeHtml(label)}</span>
-      <code>${escapeHtml(value)}</code>
-      <button class="path-copy" type="button" data-copy="${escapeHtml(value)}">复制</button>
-      <button class="path-open" type="button" data-path="${escapeHtml(value)}">打开</button>
+    <article class="judge-artifact-row">
+      <span class="judge-artifact-kind">${escapeHtml(labelHints[label] || label)}</span>
+      <div class="judge-artifact-meta">
+        <strong class="judge-file-name" title="${escapeHtml(value)}">${escapeHtml(basename(value) || value)}</strong>
+        <code class="judge-path" title="${escapeHtml(value)}">${escapeHtml(compactPath(value, 26, 20))}</code>
+      </div>
+      <div class="judge-artifact-actions">
+        <button class="path-open judge-mini-button" type="button" data-path="${escapeHtml(value)}">打开</button>
+        <button class="path-copy judge-mini-button" type="button" data-copy="${escapeHtml(value)}">复制</button>
+      </div>
     </article>
   `).join("") : "";
   target.hidden = !rows.length;
@@ -10562,10 +16121,41 @@ function renderActiveTaskStrip(task = null) {
   const strip = $("activeTaskStrip");
   if (!strip) return;
   if (!task) {
-    strip.innerHTML = "";
+    strip.innerHTML = `
+      <div class="eval-run-card empty">
+        <div class="eval-run-overview">
+          <div>
+            <span class="eval-run-label">当前处理</span>
+            <strong>等待启动</strong>
+          </div>
+          <div class="eval-run-status-badge idle">未运行</div>
+        </div>
+        <div class="eval-run-meta-grid">
+          <article><span>Conv</span><strong>-</strong></article>
+          <article><span>Question ID</span><strong>-</strong></article>
+          <article><span>Category</span><strong>-</strong></article>
+        </div>
+        <article class="eval-run-block">
+          <span>当前问题</span>
+          <p>启动问答后，这里实时显示当前正在处理的问题。</p>
+        </article>
+        <article class="eval-run-block">
+          <span>当前答案</span>
+          <p>当前题答案生成后，这里会同步展示。</p>
+        </article>
+        <article class="eval-run-block">
+          <span>最近结果</span>
+          <p>刷新问答结果后，这里会显示最新结果文件。</p>
+        </article>
+      </div>
+    `;
     strip.removeAttribute("data-task-id");
     strip.removeAttribute("data-task-kind");
     strip.classList.remove("running", "succeeded", "failed");
+    renderEvalHeaderSummary(null);
+    renderEvalProgressSummary(null);
+    renderEvalRecentResultPanel();
+    renderEvalConsoleContext(null);
     return;
   }
   task = taskWithLiveProgress(task);
@@ -10582,11 +16172,13 @@ function renderActiveTaskStrip(task = null) {
   const displayTitle = taskDisplayTitle(task, format) || (task.name || task.id || "task");
   const summary = task.summary || {};
   const status = task.status || "-";
-  const progress = task.progress;
+  const progress = task.progress || {};
   const execution = taskExecutionProgress(task, format);
   const authoritativeProgressNote = taskAuthoritativeProgressNote(task, format);
   const pct = execution?.total_questions
-    ? Number(execution.pct || 0)
+    ? (Number(execution.total_questions || 0) > 0
+      ? (Math.max(0, Math.min(100, (Number(execution.answered_questions || 0) / Number(execution.total_questions || 1)) * 100)))
+      : 0)
     : (progress?.total ? Number(progress.pct || 0) : null);
   const pctText = pct == null ? "-" : `${pct.toFixed(1)}%`;
   const phase = String(progress?.phase || "").trim();
@@ -10614,13 +16206,27 @@ function renderActiveTaskStrip(task = null) {
   );
   const displayStatusLabel = progressComplete ? statusLabel : statusLabel;
   const questionMeta = parseActiveTaskQuestionDetail(detailText);
-  const previewKey = activeTaskQaPreviewCacheKey(task, questionMeta.questionId);
+  const effectiveQuestionId = questionMeta.questionId || execution?.qa_preview?.question_id || "";
+  const previewKey = activeTaskQaPreviewCacheKey(task, effectiveQuestionId);
   const progressQaPreview = normalizeActiveTaskProgressQaPreview(progress, task);
   const cachedQaPreview = previewKey ? state.activeTaskQaPreview[previewKey] || null : null;
   const qaPreview = cachedQaPreview || progressQaPreview;
-  const qaQuestion = qaPreview?.question || questionMeta.question || detailText || "-";
-  const qaAnswer = qaPreview?.answer || (isTaskActive(task) ? "等待当前题答案..." : "-");
+  const qaMeta = activeTaskQaMeta(task, questionMeta, qaPreview);
+  const answeredRows = activeTaskAnsweredRows(task);
+  const selectedPreviewQuestionId = activeTaskPreviewSelectionQuestionId(task, effectiveQuestionId || qaPreview?.questionId || "");
+  const selectedAnsweredRow = selectedPreviewQuestionId
+    ? answeredRows.find((row) => String(row?.questionId || "").trim() === selectedPreviewQuestionId)
+    : null;
+  const selectedPreviewKey = activeTaskQaPreviewCacheKey(task, selectedPreviewQuestionId);
+  const selectedCachedPreview = selectedPreviewKey ? state.activeTaskQaPreview[selectedPreviewKey] || null : null;
+  const displayPreview = selectedCachedPreview || selectedAnsweredRow || qaPreview || null;
+  const qaQuestion = displayPreview?.question || qaPreview?.question || questionMeta.question || detailText || "-";
+  const qaAnswer = displayPreview?.answer || qaPreview?.answer || (isTaskActive(task) ? "等待当前题答案..." : "-");
   const qaResultPath = qaPreview?.resultPath || task.output_file || "";
+  const qaResultLabel = qaResultPath ? compactPath(displayPath(qaResultPath), 20, 16) : "-";
+  const qaGoldAnswer = displayPreview?.goldAnswer || "";
+  const qaEvidenceItems = locomoQaEvidenceItems(displayPreview);
+  const answeredQuestionOptions = answeredRows.slice(0, 120);
   const progressWidth = `${Math.max(0, Math.min(100, pct || 0)).toFixed(1)}%`;
   const rows = execution?.total_questions
     ? ` · 已答 ${execution.answered_questions || 0}/${execution.total_questions}`
@@ -10629,7 +16235,7 @@ function renderActiveTaskStrip(task = null) {
     : (summary.rows != null ? ` · 结果行 ${summary.rows}` : "");
   const acc = summary.accuracy != null ? ` · 准确率 ${percent(summary.accuracy)}` : "";
   const progressText = execution?.total_questions
-    ? ` · 第 ${execution.current_question || execution.answered_questions || 0}/${execution.total_questions} 题 · ${Number(execution.pct || 0).toFixed(1)}%`
+    ? ` · 第 ${execution.current_question || execution.answered_questions || 0}/${execution.total_questions} 题 · 已答 ${execution.answered_questions || 0}/${execution.total_questions} · ${pct.toFixed(1)}%`
     : progress?.total
     ? ` · ${progress.current}/${progress.total} · ${Number(progress.pct || 0).toFixed(1)}%`
     : "";
@@ -10646,63 +16252,160 @@ function renderActiveTaskStrip(task = null) {
   strip.classList.toggle("running", isTaskRunningStatus(task) && !progressComplete);
   strip.classList.toggle("succeeded", status === "succeeded" || progressComplete);
   strip.classList.toggle("failed", status === "failed");
-  strip.innerHTML = `
-    <div class="task-progress-head">
-      <div>
-        <span class="task-status-pill">${escapeHtml(stageLabel)} · ${escapeHtml(displayStatusLabel)}</span>
-        <strong>${escapeHtml(displayTitle)}</strong>
-      </div>
-      <div class="task-progress-percent">${escapeHtml(pctText)}</div>
-    </div>
-    <div class="task-progress-meter" aria-label="任务进度">
-      <span style="width:${escapeHtml(progressWidth)}"></span>
-    </div>
-    <div class="task-progress-grid">
-      <article><span>当前进度</span><strong>${escapeHtml(countText)}</strong><small>${escapeHtml(unitLabel)}</small></article>
-      <article><span>已用</span><strong>${escapeHtml(elapsedValue)}</strong></article>
-      <article><span>剩余</span><strong>${escapeHtml(etaValue)}</strong></article>
-      <article><span>结果</span><strong>${escapeHtml(summary.accuracy != null ? percent(summary.accuracy) : "等待判分")}</strong></article>
-    </div>
-    ${isQaTask ? `
-      <div class="task-qa-summary">
-        <article>
-          <span>问题</span>
-          <p>${escapeHtml(qaQuestion)}</p>
-        </article>
-        <article>
-          <span>答案</span>
-          <p>${escapeHtml(qaAnswer)}</p>
-        </article>
-        <article>
-          <span>结果地址</span>
-          <div class="task-qa-summary-path">
-            <code>${escapeHtml(qaResultPath || "-")}</code>
-            ${qaResultPath ? copyButtonHtml(qaResultPath, "复制") : ""}
-          </div>
-        </article>
-      </div>
-    ` : `
-      <div class="task-strip-main">
-        <span>${escapeHtml(stageLabel)} · ${escapeHtml(displayStatusLabel)}${rows}${acc}${escapeHtml(progressText)}${authoritativeProgressNote ? ` · ${escapeHtml(authoritativeProgressNote)}` : ""}${escapeHtml(etaText)}</span>
-        ${modelIssueCount ? `<span class="log-alert">模型/检索异常 ${escapeHtml(modelIssueCount)} 条</span>` : ""}
-      </div>
-      ${detailText ? `<p class="task-progress-detail">${escapeHtml(detailText)}</p>` : ""}
-      ${renderCurrentImportPreview(task)}
-      ${modelIssueHits.length ? `
-        <div class="log-diagnostic">
-          <strong>模型或检索提醒</strong>
-          <p>${escapeHtml(modelIssueHits[modelIssueHits.length - 1])}</p>
+  strip.innerHTML = isQaTask ? `
+    <div class="eval-run-card">
+      <div class="eval-run-overview">
+        <div>
+          <span class="eval-run-label">当前处理</span>
+          <strong>${escapeHtml(`${qaMeta.sampleId} · ${effectiveQuestionId || qaPreview?.questionId || "-"}`)}</strong>
+          <small>${escapeHtml(stageLabel)} · ${escapeHtml(displayStatusLabel)}</small>
         </div>
-      ` : ""}
-      <div class="task-strip-meta">
-        <code>${escapeHtml(task.id || "")}</code>
-        <code>${escapeHtml(task.output_file || "")}</code>
+        <div class="eval-run-status-stack">
+          <div class="eval-run-status-badge ${escapeHtml(status)}">${escapeHtml(displayStatusLabel)}</div>
+          <div class="eval-run-progress-text">${escapeHtml(pctText)}</div>
+        </div>
       </div>
-    `}
+      <div class="eval-run-progress">
+        <div class="eval-run-progress-head">
+          <span>当前进度</span>
+          <strong>${escapeHtml(countText)}</strong>
+        </div>
+        <div class="eval-run-progress-meter" aria-label="当前进度">
+          <span style="width:${escapeHtml(progressWidth)}"></span>
+        </div>
+        <div class="eval-run-progress-subline">
+          <span>已用 ${escapeHtml(elapsedValue)}</span>
+          <span>剩余 ${escapeHtml(etaValue)}</span>
+          <span>结果 ${escapeHtml(summary.accuracy != null ? percent(summary.accuracy) : "等待判分")}</span>
+        </div>
+      </div>
+      <div class="eval-run-meta-grid">
+        <article><span>Conv</span><strong>${escapeHtml(qaMeta.sampleId)}</strong></article>
+        <article><span>Question ID</span><strong>${escapeHtml(effectiveQuestionId || qaPreview?.questionId || "-")}</strong></article>
+        <article><span>Category</span><strong>${qaMeta.categoryBadge}</strong></article>
+      </div>
+      <article class="eval-run-block">
+        <span>当前问题</span>
+        <p>${escapeHtml(qaQuestion)}</p>
+      </article>
+      <article class="eval-run-block">
+        <span>当前答案</span>
+        <div class="eval-run-answer-toolbar">
+          <label class="eval-run-answer-picker">
+            <span>查看已回答题</span>
+            <select id="activeTaskAnsweredQuestionSelect" ${answeredQuestionOptions.length ? "" : "disabled"}>
+              <option value="${escapeHtml(selectedPreviewQuestionId || effectiveQuestionId || "")}">
+                ${escapeHtml(answeredQuestionOptions.length ? "选择题目查看答案与召回记忆" : "等待结果写入")}
+              </option>
+              ${answeredQuestionOptions.map((row) => `
+                <option value="${escapeHtml(row.questionId || "")}" ${(row.questionId || "") === selectedPreviewQuestionId ? "selected" : ""}>
+                  ${escapeHtml(`${row.questionId || "-"} · ${compactText(row.question || "-", 60)}`)}
+                </option>
+              `).join("")}
+            </select>
+          </label>
+        </div>
+        <p>${escapeHtml(qaAnswer)}</p>
+        ${qaGoldAnswer ? `<small class="eval-run-answer-note">Gold: ${escapeHtml(compactText(qaGoldAnswer, 180))}</small>` : ""}
+      </article>
+      <article class="eval-run-block eval-run-evidence-block">
+        <span>召回记忆</span>
+        ${qaEvidenceItems.length ? `
+          <div class="eval-run-evidence-list">
+            ${qaEvidenceItems.slice(0, 6).map((item) => `
+              <article class="eval-run-evidence-item">
+                <strong>${escapeHtml(item.title || "-")}</strong>
+                ${item.meta ? `<small>${escapeHtml(item.meta)}</small>` : ""}
+                <p>${escapeHtml(item.body || "-")}</p>
+              </article>
+            `).join("")}
+          </div>
+        ` : `<p>${escapeHtml(answeredQuestionOptions.length ? "这道题当前还没有可展示的 recall memory。" : "等待已回答题落盘后，这里会显示 recall memory。")}</p>`}
+      </article>
+      <article class="eval-run-block">
+        <span>最近结果</span>
+        <div class="eval-run-result-path">
+          <code title="${escapeHtml(qaResultPath || "-")}">${escapeHtml(qaResultLabel)}</code>
+          ${qaResultPath ? copyButtonHtml(qaResultPath, "复制") : ""}
+        </div>
+      </article>
+    </div>
+  ` : `
+    <div class="eval-run-card generic">
+      <div class="eval-run-overview">
+        <div>
+          <span class="eval-run-label">当前处理</span>
+          <strong>${escapeHtml(displayTitle)}</strong>
+          <small>${escapeHtml(stageLabel)} · ${escapeHtml(displayStatusLabel)}</small>
+        </div>
+        <div class="eval-run-status-stack">
+          <div class="eval-run-status-badge ${escapeHtml(status)}">${escapeHtml(displayStatusLabel)}</div>
+          <div class="eval-run-progress-text">${escapeHtml(pctText)}</div>
+        </div>
+      </div>
+      <div class="eval-run-progress">
+        <div class="eval-run-progress-head">
+          <span>当前进度</span>
+          <strong>${escapeHtml(countText)}</strong>
+        </div>
+        <div class="eval-run-progress-meter" aria-label="当前进度">
+          <span style="width:${escapeHtml(progressWidth)}"></span>
+        </div>
+        <div class="eval-run-progress-subline">
+          <span>${escapeHtml(unitLabel)}</span>
+          <span>已用 ${escapeHtml(elapsedValue)}</span>
+          <span>剩余 ${escapeHtml(etaValue)}</span>
+        </div>
+      </div>
+      <article class="eval-run-block">
+        <span>详情</span>
+        <p>${escapeHtml(`${stageLabel} · ${displayStatusLabel}${rows}${acc}${progressText}${authoritativeProgressNote ? ` · ${authoritativeProgressNote}` : ""}${etaText}`)}</p>
+      </article>
+      ${detailText ? `
+        <article class="eval-run-block">
+          <span>最近结果</span>
+          <p title="${escapeHtml(detailText)}">${escapeHtml(compactPath(displayPath(detailText), 24, 18))}</p>
+        </article>
+      ` : ""}
+      ${modelIssueHits.length ? `
+        <article class="eval-run-block warning">
+          <span>模型或检索提醒</span>
+          <p>${escapeHtml(modelIssueHits[modelIssueHits.length - 1])}</p>
+        </article>
+      ` : ""}
+      ${renderCurrentImportPreview(task)}
+      ${modelIssueCount ? `<div class="log-alert">模型/检索异常 ${escapeHtml(modelIssueCount)} 条</div>` : ""}
+    </div>
   `;
   bindCopyButtons("#activeTaskStrip");
-  if (isQaTask && task.output_file && questionMeta.questionId && !cachedQaPreview && !state.activeTaskQaPreviewLoading[previewKey]) {
-    ensureActiveTaskQaPreview(task, questionMeta.questionId).then((preview) => {
+  const answeredSelect = $("activeTaskAnsweredQuestionSelect");
+  if (answeredSelect) {
+    answeredSelect.addEventListener("change", () => {
+      setActiveTaskPreviewSelection(task, answeredSelect.value || "");
+      renderActiveTaskStrip(task);
+      const nextQuestionId = String(answeredSelect.value || "").trim();
+      if (task.output_file && nextQuestionId) {
+        ensureActiveTaskQaPreview(task, nextQuestionId).then(() => {
+          const activeStrip = $("activeTaskStrip");
+          if (!activeStrip || activeStrip.dataset.taskId !== (task.id || "")) return;
+          renderActiveTaskStrip(task);
+        }).catch(() => {});
+      }
+    });
+  }
+  renderEvalHeaderSummary(task);
+  renderEvalProgressSummary(task);
+  renderEvalRecentResultPanel();
+  renderEvalConsoleContext(task);
+  if (isQaTask && task.output_file && !answeredRows.length) {
+    loadActiveTaskAnsweredRows(task).then(() => {
+      const activeStrip = $("activeTaskStrip");
+      if (!activeStrip || activeStrip.dataset.taskId !== (task.id || "")) return;
+      renderActiveTaskStrip(task);
+    }).catch(() => {});
+  }
+  if (isQaTask && task.output_file && selectedPreviewQuestionId && !selectedCachedPreview && !state.activeTaskQaPreviewLoading[selectedPreviewKey]) {
+    ensureActiveTaskQaPreview(task, selectedPreviewQuestionId).then((preview) => {
       if (!preview) return;
       const activeStrip = $("activeTaskStrip");
       if (!activeStrip || activeStrip.dataset.taskId !== (task.id || "")) return;
@@ -10790,6 +16493,7 @@ function renderGlobalTaskChip(task = null) {
     : [backendLabel, authoritativeProgressNote, benchmarkSummaryText, elapsedText, etaText].filter(Boolean).join(" · ");
   rememberBenchmarkRecord(task, format);
   const targetView = benchmarkViewForTask({...task, dataset_format: format}, "runsView");
+  const hotpotScoped = normalizeDatasetFormat(format || task.dataset_format || "") === "hotpotqa";
   const taskKind = task.kind || "";
   const scrollTarget = taskShouldUseLocomoTaskStrip(taskKind, task, format)
     ? "activeTaskStrip"
@@ -10797,7 +16501,9 @@ function renderGlobalTaskChip(task = null) {
   renderGlobalBenchmarkBanner({...task, dataset_format: format});
   chip.hidden = false;
   chip.dataset.taskId = task.id || "";
-  chip.href = `/?ui_refresh=${UI_REFRESH_VERSION}&view=${targetView}`;
+  chip.href = hotpotScoped
+    ? benchmarkNavigationHref("hotpotQaView", {benchmarkStage: "qa", hotpotQaSection: "hotpotQaCurrentSection"})
+    : benchmarkNavigationHref(targetView);
   chip.innerHTML = `
     <div class="workspace-task-chip-head">
       <span class="workspace-task-chip-eyebrow">运行任务</span>
@@ -10823,7 +16529,15 @@ function renderGlobalTaskChip(task = null) {
   chip.setAttribute("aria-label", [stageLabel || statusLabel || "运行任务", statusLabel, datasetLabel, progressLabel].filter(Boolean).join("，"));
   chip.onclick = (event) => {
     event.preventDefault();
-    showView(targetView);
+    if (hotpotScoped) {
+      showView("hotpotQaView", {
+        benchmarkStage: "qa",
+        hotpotQaSection: "hotpotQaCurrentSection",
+        userTriggered: true,
+      });
+    } else {
+      showView(targetView, {userTriggered: true});
+    }
     refreshTasks().catch((e) => toast(e.message));
     setTimeout(() => {
       $(scrollTarget)?.scrollIntoView({behavior: "smooth", block: "center"});
@@ -10835,20 +16549,36 @@ function renderGlobalTaskChip(task = null) {
 function shouldShowGlobalTaskChip(task = {}) {
   const kind = task.kind || "";
   const activeView = document.body?.dataset?.activeView || document.querySelector(".view-panel.active")?.id || "";
-  if (isMemoryImportKind(kind) && !["openvikingView", "runsView"].includes(activeView)) return false;
+  if (isMemoryImportKind(kind)) {
+    const format = enrichTaskDatasetFormat(task, state.taskDatasetFormats[task.id] || task.dataset_format || "");
+    if (activeView === "openvikingView") return isLocomoImportTask(task, format);
+    if (!["openvikingView", "runsView"].includes(activeView)) return false;
+  }
   return true;
 }
 
 function renderGlobalBenchmarkBanner(task = null) {
   const banner = $("globalBenchmarkBanner");
   if (!banner) return;
-  const activeView = document.body?.dataset?.activeView || "";
+  const activeView = document.querySelector(".view-panel.active")?.id || document.body?.dataset?.activeView || "";
   const clear = () => {
     delete banner.dataset.renderKey;
     banner.hidden = true;
     banner.innerHTML = "";
   };
+  if (!isStandaloneBenchmarkView(activeView)) {
+    clear();
+    return;
+  }
   if (activeView === "hotpotQaView") {
+    if (task?.id || state.currentRunningTask?.id) {
+      const liveTask = task ? taskWithLiveProgress(task) : taskWithLiveProgress(state.currentRunningTask || {});
+      const execution = taskExecutionProgress(liveTask, "hotpotqa");
+      renderHotpotQaStatusBand(liveTask || null, state.runningBenchmarkSummaries[liveTask?.id || ""] || null);
+      if (execution?.total_questions) {
+        renderHotpotQaQuestionSelection();
+      }
+    }
     clear();
     return;
   }
@@ -10898,7 +16628,7 @@ function renderGlobalBenchmarkBanner(task = null) {
     normalizedFailure,
   ].filter(Boolean).join(" · ");
   const targetView = benchmarkViewForTask({...task, dataset_format: normalized}, "runsView");
-  const liveHref = normalized === "hotpotqa" ? "/generated-reports/hotpotqa_openviking_vs_echomemory_live_50_current.html" : "";
+  const liveHref = normalized === "hotpotqa" ? "/generated-reports/hotpotqa_echomemory_live_current.html" : "";
   const renderKey = JSON.stringify({
     mode: "task",
     taskId: task.id || "",
@@ -10915,7 +16645,9 @@ function renderGlobalBenchmarkBanner(task = null) {
       ${warningText ? `<div class="benchmark-banner-detail bad-text">${escapeHtml(warningText)}</div>` : ""}
     </div>
     <div class="benchmark-banner-actions">
-      <a class="benchmark-banner-link" href="/?ui_refresh=${UI_REFRESH_VERSION}&view=${escapeHtml(targetView)}">查看进度</a>
+      <a class="benchmark-banner-link" href="${escapeHtml(normalized === "hotpotqa"
+        ? benchmarkNavigationHref("hotpotQaView", {benchmarkStage: "qa", hotpotQaSection: "hotpotQaCurrentSection"})
+        : benchmarkNavigationHref(targetView))}">查看进度</a>
       ${liveHref ? `<a class="benchmark-banner-link" href="${escapeHtml(liveHref)}" target="_blank" rel="noreferrer">Live 报告</a>` : ""}
     </div>
   `;
@@ -10928,26 +16660,29 @@ function renderGlobalBenchmarkBanner(task = null) {
 function renderGlobalBenchmarkBannerFromRun(run = null) {
   const banner = $("globalBenchmarkBanner");
   if (!banner) return;
-  const activeView = document.body?.dataset?.activeView || "";
-  if (!run?.id) {
+  const activeView = document.querySelector(".view-panel.active")?.id || document.body?.dataset?.activeView || "";
+  const clear = () => {
     delete banner.dataset.renderKey;
     banner.hidden = true;
     banner.innerHTML = "";
+  };
+  if (!isStandaloneBenchmarkView(activeView)) {
+    clear();
+    return;
+  }
+  if (!run?.id) {
+    clear();
     return;
   }
   if (activeView === "hotpotQaView") {
-    delete banner.dataset.renderKey;
-    banner.hidden = true;
-    banner.innerHTML = "";
+    clear();
     return;
   }
   const format = normalizeDatasetFormat(benchmarkFormatFromRecord(run));
   const key = genericBenchmarkKeyForFormat(format);
   const config = key ? benchmarkConfig(key) : null;
   if (!config) {
-    delete banner.dataset.renderKey;
-    banner.hidden = true;
-    banner.innerHTML = "";
+    clear();
     return;
   }
   const summary = run.summary || {};
@@ -10955,8 +16690,11 @@ function renderGlobalBenchmarkBannerFromRun(run = null) {
   const rows = Number(summary.rows ?? summaryJson.rows ?? summaryJson.count ?? 0);
   const answerEm = summary.official_answer_em ?? summaryJson.official_answer_em ?? summary.answer_em ?? summaryJson.answer_em;
   const answerF1 = summary.official_answer_f1 ?? summaryJson.official_answer_f1 ?? summary.answer_f1 ?? summaryJson.answer_f1;
+  const hotpotSnapshot = format === "hotpotqa"
+    ? hotpotQaCompletionSnapshot(run, summary, summary._artifact_status || {})
+    : null;
   const status = String(run.status || "").trim().toLowerCase();
-  const statusLabel = taskStatusLabel({status});
+  const statusLabel = hotpotSnapshot?.statusLabel || taskStatusLabel({status});
   const endedAt = formatDateTime(run.ended_at || run.updated_at || run.created_at || "");
   const detailParts = [
     statusLabel || "最近终态",
@@ -10964,14 +16702,16 @@ function renderGlobalBenchmarkBannerFromRun(run = null) {
     (answerEm != null || answerF1 != null) ? `EM/F1 ${answerEm == null ? "-" : percent(answerEm)} / ${answerF1 == null ? "-" : percent(answerF1)}` : "",
     endedAt ? `结束 ${endedAt}` : "",
   ].filter(Boolean);
-  const warningText = status === "failed"
+  const warningText = hotpotSnapshot?.detailText
+    ? hotpotSnapshot.detailText
+    : status === "failed"
     ? "最近一次任务已失败结束；这里保留最近终态，点进去可直接看固定报告和诊断。"
     : (status === "interrupted" || status === "cancelled" || status === "canceled")
     ? "最近一次任务已中断；这里保留最近终态，点进去可继续排查。"
     : "当前没有运行中的同类任务；这里显示最近一次终态。";
   const targetView = config.view || "runsView";
   const completedHref = format === "hotpotqa"
-    ? "/generated-reports/hotpotqa_openviking_vs_echomemory_live_50_current.html"
+    ? "/generated-reports/hotpotqa_echomemory_live_current.html"
     : "";
   const renderKey = JSON.stringify({
     mode: "run",
@@ -10989,7 +16729,9 @@ function renderGlobalBenchmarkBannerFromRun(run = null) {
       <div class="benchmark-banner-detail">${escapeHtml(warningText)}</div>
     </div>
     <div class="benchmark-banner-actions">
-      <a class="benchmark-banner-link" href="/?ui_refresh=${UI_REFRESH_VERSION}&view=${escapeHtml(targetView)}">查看页面</a>
+      <a class="benchmark-banner-link" href="${escapeHtml(format === "hotpotqa"
+        ? benchmarkNavigationHref("hotpotQaView", {benchmarkStage: "report", hotpotQaSection: "hotpotQaResultSection"})
+        : benchmarkNavigationHref(targetView))}">查看页面</a>
       ${completedHref ? `<a class="benchmark-banner-link" href="${escapeHtml(completedHref)}" target="_blank" rel="noreferrer">固定报告</a>` : ""}
     </div>
   `;
@@ -11013,6 +16755,9 @@ async function refreshTasks() {
   };
   const runningTasksForView = runningTasks.filter(visibleInCurrentPanel);
   const visibleTasksForPanel = scopedTasks.filter(visibleInCurrentPanel);
+  state.scopedTasks = scopedTasks;
+  state.runningTasksForView = runningTasksForView;
+  state.visibleTasksForPanel = visibleTasksForPanel;
   const runningVisibleIds = new Set(runningTasksForView.map((task) => task.id));
   const tasks = [];
   for (const task of visibleTasksForPanel) {
@@ -11049,48 +16794,88 @@ async function refreshTasks() {
   if (activeView === "evalView" && isMemoryImportKind(state.currentImportTask?.kind || "")) {
     state.currentImportTask = null;
   }
+  const trackedActiveImport = activeView === "evalView"
+    ? null
+    : (
+      trackedMemoryImportTask({allowCrossBackend: true})
+      || latestRunningMemoryImportTask(tasks)
+      || latestRunningMemoryImportTask(allTasks)
+    );
+  if (trackedActiveImport) syncImportBackendUi(trackedActiveImport);
+  const importBackend = trackedActiveImport
+    ? importRecordBackend(trackedActiveImport, currentMemoryBackend())
+    : currentMemoryBackend();
+  const retainedImportTask = activeView === "evalView"
+    ? null
+    : (
+      state.currentImportTask?.id
+      && isLocomoImportTask(state.currentImportTask)
+      && isImportTaskInBackground(state.currentImportTask)
+      && taskSnapshotAgeSeconds(state.currentImportTask) <= 20
+      ? state.currentImportTask
+      : null
+    );
   const importTask = activeView === "evalView"
     ? null
-    : (latestMemoryImportTask(tasks, {workspaceScoped: true}) || latestAnyMemoryImportTask(allTasks, {workspaceScoped: true}));
+    : (
+      trackedActiveImport
+      || retainedImportTask
+      || latestMemoryImportTask(tasks, {workspaceScoped: true, backend: importBackend})
+      || latestAnyMemoryImportTask(allTasks, {workspaceScoped: true, backend: importBackend})
+    );
   if (importTask) {
     state.currentImportTask = importTask;
+    syncImportBackendUi(importTask);
     if (isImportTaskInBackground(importTask)) syncImportTaskFields(importTask);
     if (isImportTaskInBackground(importTask)) ensureTaskPolling(importTask, importTask.kind || "");
-    renderImportPaths(importTask);
+    refreshImportPathsAndDiagnostics(importTask);
     if (taskShouldUseLocomoTaskStrip(importTask.kind || "", importTask, enrichTaskDatasetFormat(importTask, state.taskDatasetFormats[importTask.id] || ""))) {
       renderActiveTaskStrip(importTask);
     }
     updateProgress(importTask, importTask.kind || state.taskKind);
-    renderImportDiagnostics(importTask);
     const importLogBox = $("importLogBox");
     if (!isImportTaskInBackground(importTask) && importLogBox && /日志会显示在这里|这个任务还没有写出日志/.test(String(importLogBox.textContent || "").trim())) {
       loadTaskLogIntoBox(importTask, importTask.kind || "openviking_import").catch(() => {});
     }
   } else if (activeView !== "evalView") {
-    const trackedActiveImport = [state.currentImportTask, state.currentRunningTask, state.currentLocomoTask]
-      .find((task) => task?.id && isMemoryImportKind(task.kind || "") && isImportTaskInBackground(task));
     if (trackedActiveImport) {
       state.currentImportTask = trackedActiveImport;
-      renderImportPaths(trackedActiveImport);
-      renderImportDiagnostics(trackedActiveImport);
+      syncImportBackendUi(trackedActiveImport);
+      refreshImportPathsAndDiagnostics(trackedActiveImport);
       updateProgress(trackedActiveImport, trackedActiveImport.kind || locomoImportTaskKind());
+    } else if (retainedImportTask) {
+      state.currentImportTask = retainedImportTask;
+      syncImportBackendUi(retainedImportTask);
+      refreshImportPathsAndDiagnostics(retainedImportTask);
+      updateProgress(retainedImportTask, retainedImportTask.kind || locomoImportTaskKind());
     } else {
+      const trackedTerminalImport = trackedMemoryImportTask({allowTerminal: true});
       const fallbackImport = (
-        isMemoryImportKind(state.currentImportTask?.kind || "") && !isImportTaskInBackground(state.currentImportTask)
-          ? state.currentImportTask
+        trackedTerminalImport
+        && !isImportTaskInBackground(trackedTerminalImport)
+        && importRecordBackend(trackedTerminalImport, currentMemoryBackend()) === currentMemoryBackend()
+        && importRecordMatchesCurrentWorkspace(trackedTerminalImport, currentMemoryBackend())
+          ? trackedTerminalImport
           : null
       ) || await latestMemoryImportRecord().catch(() => null);
       if (fallbackImport) {
         state.currentImportTask = fallbackImport;
-        renderImportPaths(fallbackImport);
-        renderImportDiagnostics(fallbackImport);
+        refreshImportPathsAndDiagnostics(fallbackImport);
         updateProgress(fallbackImport, fallbackImport.kind || locomoImportTaskKind());
+      } else {
+        state.currentImportTask = null;
+        refreshImportPathsAndDiagnostics(null);
       }
     }
-    await loadLatestImportLogFallback().catch((error) => {
-      const box = $("importLogBox");
-      if (box) box.textContent = `历史导入日志加载失败：${error.message || error}`;
-    });
+    if (!retainedImportTask && !isImportTaskInBackground(state.currentImportTask || {})) {
+      await loadLatestImportLogFallback().catch((error) => {
+        const box = $("importLogBox");
+        if (box) {
+          box.textContent = `历史导入日志加载失败：${error.message || error}`;
+          markLogBoxEmptyState(box);
+        }
+      });
+    }
   }
   const runningLocomoTask = tasks.find((task) => {
     const format = enrichTaskDatasetFormat(task, state.taskDatasetFormats[task.id] || "");
@@ -11118,101 +16903,168 @@ async function refreshTasks() {
     const format = enrichTaskDatasetFormat(task, state.taskDatasetFormats[task.id] || "");
     return taskVisibleInCurrentTaskPanel(task, format, activeView);
   });
-  const recentTaskList = $("recentTaskList");
-  if (activeView === "evalView" && recentTaskList) {
+  const recentTasksByFormat = new Map();
+  recentTasks.forEach((task) => {
+    const format = enrichTaskDatasetFormat(task, state.taskDatasetFormats[task.id] || "");
+    const normalized = normalizeDatasetFormat(format);
+    if (!normalized) return;
+    if (!recentTasksByFormat.has(normalized)) recentTasksByFormat.set(normalized, []);
+    recentTasksByFormat.get(normalized).push(task);
+  });
+  const longMemRecentTaskList = $("longMemRecentTaskList");
+  if (activeView === "longMemEvalView" && longMemRecentTaskList) {
+    let recentLongMemRuns = [];
+    let recentLongMemRunsError = null;
+    let runningLongMemFallback = null;
+    const recentLongMemTasks = recentTasksByFormat.get("longmemeval") || [];
+    if (!recentLongMemTasks.length) {
+      try {
+        recentLongMemRuns = await loadRecentBenchmarkRunsForTaskPanel("longmemeval");
+        runningLongMemFallback = await loadRunningBenchmarkRunFallback("longmemeval");
+      } catch (error) {
+        recentLongMemRunsError = error;
+      }
+    }
+    const longMemRows = recentLongMemTasks.length
+      ? recentLongMemTasks.map((task) => {
+          const summary = state.runningBenchmarkSummaries[task.id] || task.summary || {};
+          return renderLongMemTaskRow(task, {
+            format: "longmemeval",
+            datasetLabel: "LongMemEval",
+            artifactStatus: summary._artifact_status || {},
+          });
+        })
+      : recentLongMemRuns.length
+      ? recentLongMemRuns.map((run) => renderLongMemTaskRow(run, {
+          format: "longmemeval",
+          datasetLabel: "LongMemEval",
+          isRun: true,
+        }))
+      : [];
+    longMemRecentTaskList.innerHTML = longMemRows.length
+      ? renderLongMemTaskTable(longMemRows)
+      : `<p class="muted-list-note${recentLongMemRunsError ? " bad-text" : ""}">${
+        state.tasksHydrating && !recentLongMemRuns.length
+          ? "正在恢复 LongMemEval 任务列表..."
+          : recentLongMemRunsError
+          ? `LongMemEval 任务列表读取失败：${escapeHtml(recentLongMemRunsError.message || recentLongMemRunsError)}`
+          : "当前账户暂无 LongMemEval 任务。"
+      }</p>`;
+    const recentLongMemRunMap = new Map(recentLongMemRuns.map((run) => [runCompareKey(run), run]));
+    document.querySelectorAll("#longMemRecentTaskList .task").forEach((card) => {
+      card.addEventListener("click", () => {
+        const run = recentLongMemRunMap.get(card.dataset.runKey || "");
+        if (run) {
+          state.selectedRunRecord = run;
+          if (run.output_file) markDatasetOutputFile(run.output_file, "longmemeval");
+          const runLog = runLogPathFromRecord(run);
+          if (runLog) loadLogPathIntoBox(runLog, "longMemLogBox").catch(() => {});
+          renderLongMemQaPreview(null);
+          renderGenericBenchmarkResultSummary(run, "longmemeval").catch((e) => toast(e.message));
+          return;
+        }
+        const task = recentLongMemTasks.find((item) => item.id === card.dataset.taskId);
+        const format = normalizeDatasetFormat(card.dataset.datasetFormat || taskDatasetFormat(task || {}, ""));
+        if (task) {
+          state.currentRunningTask = task;
+          state.selectedRunRecord = task;
+          rememberBenchmarkRecord(task, format || "longmemeval");
+          if (task.output_file) markDatasetOutputFile(task.output_file, format || "longmemeval");
+          renderLongMemStatusBand(task, state.runningBenchmarkSummaries[task.id] || null);
+          updateProgress({...task, dataset_format: format}, task.kind);
+          renderLongMemQaPreview(task);
+          loadTaskLogIntoBox(task, task.kind).catch((e) => toast(e.message));
+          renderGenericBenchmarkResultSummary(task, format || "longmemeval").catch(() => null);
+        }
+      });
+    });
+    if (!recentLongMemTasks.length && runningLongMemFallback) {
+      const runningSummary = await loadRunningBenchmarkSummary(runningLongMemFallback, "longmemeval").catch(() => null);
+      renderGenericBenchmarkRunningSummary(runningLongMemFallback, "longmemeval", {
+        account: recordAccount(runningLongMemFallback) || "default",
+        summary: runningSummary,
+      });
+      renderLongMemStatusBand(runningLongMemFallback, runningSummary);
+      updateProgress({...runningLongMemFallback, progress: runningLongMemFallback.progress || null}, runningLongMemFallback.kind || state.taskKind);
+      renderLongMemQaPreview(runningLongMemFallback);
+      const runLog = runLogPathFromRecord(runningLongMemFallback);
+      if (runLog) loadLogPathIntoBox(runLog, "longMemLogBox").catch(() => {});
+      state.currentRunningTask = runningLongMemFallback;
+    }
+    if (!recentLongMemTasks.length && !runningLongMemFallback && recentLongMemRuns.length) {
+      const latestLongMemRun = recentLongMemRuns[0];
+      const runLog = runLogPathFromRecord(latestLongMemRun);
+      if (runLog) loadLogPathIntoBox(runLog, "longMemLogBox").catch(() => {});
+      state.selectedRunRecord = latestLongMemRun;
+      renderLongMemQaPreview(null);
+      renderGenericBenchmarkResultSummary(latestLongMemRun, "longmemeval").catch(() => null);
+    }
+  }
+  if (activeView !== "longMemEvalView" && longMemRecentTaskList) {
+    longMemRecentTaskList.innerHTML = "";
+  }
+  const evalRecentTaskList = $("recentTaskList");
+  if (activeView === "evalView" && evalRecentTaskList) {
     let recentEvalRuns = [];
     let recentEvalRunsError = null;
-    if (!recentTasks.length && !state.tasksHydrating) {
+    const recentEvalTasks = recentTasksByFormat.get("locomo") || [];
+    if (!recentEvalTasks.length) {
       try {
         recentEvalRuns = await loadRecentEvalQaRunsForTaskPanel();
       } catch (error) {
         recentEvalRunsError = error;
       }
     }
-    recentTaskList.innerHTML = recentTasks.length ? recentTasks.map((task) => {
-      const summary = task.summary || {};
-      const acc = summary.accuracy == null ? "待判分" : percent(summary.accuracy);
-      const format = enrichTaskDatasetFormat(task, state.taskDatasetFormats[task.id] || "");
-      const execution = taskExecutionProgress(task, format);
-      const account = recordAccount(task) || "default";
-      const stage = taskStageLabel(task.kind || "", task);
-      const statusLabel = taskDisplayStatusLabel(task, format);
-      const displayTitle = taskDisplayTitle(task, format) || (task.name || task.id || "-");
-      const liveTask = taskWithLiveProgress(task);
-      const progress = liveTask.progress;
-      const rows = execution?.total_questions
-        ? `${execution.current_question || execution.answered_questions || 0}/${execution.total_questions} · 已答 ${execution.answered_questions || 0}`
-        : isTaskActive(task) && progress?.current != null
-        ? `≈${progress.current}`
-        : (summary.rows ?? "-");
-      const authoritativeProgressNote = taskAuthoritativeProgressNote(task, format);
-      const progressText = execution?.total_questions
-        ? ` · 第 ${execution.current_question || execution.answered_questions || 0}/${execution.total_questions} 题`
-        : progress?.total
-        ? ` · ${progress.current}/${progress.total} · ${Number(progress.pct || 0).toFixed(1)}%`
-        : "";
-      const etaText = progress?.eta_seconds != null ? ` · ETA ${formatDuration(progress.eta_seconds)}` : "";
-      const taskClass = isTaskRunningStatus(task) ? "task compact-task running-task" : "task compact-task";
-      return `
-        <article class="${taskClass}" data-task-id="${escapeHtml(task.id || "")}" data-output-file="${escapeHtml(task.output_file || "")}" data-dataset-format="${escapeHtml(format)}">
-          <div>
-            <strong>${escapeHtml(displayTitle)}</strong>
-            <small>${escapeHtml(stage)} · ${escapeHtml(statusLabel)} · ${escapeHtml(account)} · ${escapeHtml(displayDatasetFormatForTask(task, format))} · rows ${escapeHtml(rows)} · ${escapeHtml(acc)}${escapeHtml(progressText)}${authoritativeProgressNote ? ` · ${escapeHtml(authoritativeProgressNote)}` : ""}${escapeHtml(etaText)}</small>
-            ${task.log_diagnostics?.model_issue_count ? `<small class="bad-text">模型/检索异常 ${escapeHtml(task.log_diagnostics.model_issue_count)} 条</small>` : ""}
-          </div>
-          <code>${escapeHtml(task.output_file || task.run_dir || "")}</code>
-        </article>
-      `;
-    }).join("") : recentEvalRuns.length
-      ? recentEvalRuns.map(renderEvalQaRunFallbackCard).join("")
-      : `<p class="muted-list-note${recentEvalRunsError ? " bad-text" : ""}">${
-        state.tasksHydrating
-          ? "正在恢复问答任务列表..."
+    evalRecentTaskList.innerHTML = recentEvalTasks.length
+      ? recentEvalTasks.map((task) => {
+        const summary = state.runningBenchmarkSummaries[task.id] || task.summary || {};
+        return renderBenchmarkRecentTaskCard(task, "locomo", {
+          summary,
+          artifactStatus: summary._artifact_status || {},
+          datasetLabel: "LoCoMo",
+          fallbackLabel: "LoCoMo",
+        });
+      }).join("")
+      : recentEvalRuns.length
+      ? recentEvalRuns.map((run) => renderEvalQaRunFallbackCard(run)).join("")
+      : renderEvalTaskEmptyState(
+        state.tasksHydrating && !recentEvalRuns.length
+          ? "正在恢复任务列表"
+          : currentAccountOnlyEnabled("taskCurrentAccountOnly")
+          ? "当前空间暂无最近任务"
+          : "当前没有最近任务",
+        state.tasksHydrating && !recentEvalRuns.length
+          ? "正在读取最近的 LoCoMo QA 任务和结果，请稍候。"
           : recentEvalRunsError
-          ? `问答任务列表读取失败：${escapeHtml(recentEvalRunsError.message || recentEvalRunsError)}`
-          : "当前账户暂无问答任务。"
-      }</p>`;
-    const recentRunMap = new Map(recentEvalRuns.map((run) => [runCompareKey(run), run]));
+          ? `任务列表读取失败：${escapeHtml(recentEvalRunsError.message || recentEvalRunsError)}`
+          : currentAccountOnlyEnabled("taskCurrentAccountOnly")
+          ? "先运行问答测试，或者取消“只看当前空间”后再刷新。"
+          : "先运行问答测试，生成结果文件后再回来查看。"
+      );
+    const recentEvalRunMap = new Map(recentEvalRuns.map((run) => [runCompareKey(run), run]));
     document.querySelectorAll("#recentTaskList .task").forEach((card) => {
       card.addEventListener("click", () => {
-        const run = recentRunMap.get(card.dataset.runKey || "");
+        const run = recentEvalRunMap.get(card.dataset.runKey || "");
         if (run) {
-          if (run.output_file) {
-            rememberEvidenceScope(run, run.output_file);
-            markLocomoOutputFile(run.output_file);
-            state.selectedRunRecord = run;
-            refreshResult().catch((e) => toast(e.message));
-          }
+          if (run.output_file) markLocomoOutputFile(run.output_file);
+          const runLog = runLogPathFromRecord(run);
+          if (runLog) loadLogPathIntoBox(runLog, "evalLogBox").catch(() => {});
+          refreshResult().catch(() => null);
           return;
         }
-        const output = card.dataset.outputFile || "";
-        const task = recentTasks.find((item) => item.id === card.dataset.taskId);
+        const task = recentEvalTasks.find((item) => item.id === card.dataset.taskId);
         const format = normalizeDatasetFormat(card.dataset.datasetFormat || taskDatasetFormat(task || {}, ""));
-        if (output) {
-          if (isLocomoTaskOutput(task?.kind || "", task || {}, format)) {
-            markLocomoOutputFile(output);
-            refreshResult().catch((e) => toast(e.message));
-          } else if (format) {
-            markDatasetOutputFile(output, format);
-          } else {
-            toast("这个任务不是 LoCoMo 结果，已保持当前 LoCoMo 判分输入不变");
-          }
-        }
         if (task) {
-          enrichTaskDatasetFormat(task, format);
-          if (taskShouldUseLocomoTaskStrip(task.kind || "", task, format)) {
-            renderActiveTaskStrip(task);
-          } else {
-            updateProgress({...task, dataset_format: format}, task.kind);
-          }
+          state.currentRunningTask = task;
+          rememberBenchmarkRecord(task, format || "locomo");
+          if (task.output_file) markLocomoOutputFile(task.output_file);
+          updateProgress({...task, dataset_format: format}, task.kind);
           loadTaskLogIntoBox(task, task.kind).catch((e) => toast(e.message));
-          const targetView = benchmarkViewForTask({...task, dataset_format: format}, "");
-          if (targetView) showView(targetView, {preserveScroll: true});
+          renderEvalRecentResultPanel();
         }
       });
     });
-  } else if (recentTaskList) {
-    recentTaskList.innerHTML = "";
+    bindOpenButtons("#recentTaskList");
   }
   if (activeView === "openvikingView") {
     renderRecentLocomoRuns().catch(() => {});
@@ -11268,6 +17120,9 @@ async function refreshTasks() {
     });
     renderGlobalBenchmarkBannerFromRun(latestRun || null);
   }
+  if (activeView === "evalView") {
+    renderEvalRecentResultPanel(state.currentLocomoTask || null);
+  }
   updateWorkflowGuide();
 }
 
@@ -11275,13 +17130,13 @@ function currentImportNamespace() {
   const cfg = state.config || {};
   const workspace = ($("ovWorkspace")?.value.trim()) || cfg.openviking_workspace || cfg.workspace || "";
   const account = $("ovAccount")?.value.trim() || cfg.account || "default";
-  const user = $("memoryUserId")?.value.trim() || readAccountConfig(currentAccount()).memoryUserId || "default";
-  const agent = $("memoryAgentId")?.value.trim() || readAccountConfig(currentAccount()).memoryAgentId || "default";
+  const userId = $("memoryUserId")?.value.trim() || readAccountConfig(currentAccount()).memoryUserId || "default";
+  const agentId = $("memoryAgentId")?.value.trim() || readAccountConfig(currentAccount()).memoryAgentId || "default";
   const sampleValue = $("importSample")?.value || "all";
   const sampleText = $("importSample")?.selectedOptions?.[0]?.textContent || "";
   const sampleMatch = sampleText.match(/·\s*([^·]+?)\s*·/);
   const sampleId = sampleValue === "all" ? "" : (sampleMatch ? sampleMatch[1].trim() : "");
-  return {workspace, account, user, agent, sampleId, sampleValue};
+  return {workspace, account, userId, agentId, sampleId, sampleValue};
 }
 
 function renderImportReadinessPanel(task = null) {
@@ -11290,10 +17145,13 @@ function renderImportReadinessPanel(task = null) {
   const ns = currentImportNamespace();
   const taskConfig = task?.meta?.config || {};
   const taskScope = task ? importScopeFromTask(task, ns) : ns;
+  const sampleScope = task ? importSampleScopeFromTask(task, ns) : ns;
   const backend = normalizeMemoryBackend(taskConfig.backend || (task?.kind === "echomemory_import" ? "echomemory" : currentMemoryBackend()));
   const backendLabel = memoryBackendLabel(backend);
   const dataset = currentLocomoDataset();
-  const workspace = currentConfiguredWorkspace(backend)
+  const taskWorkspace = String(taskConfig.workspace || "").trim();
+  const workspace = taskWorkspace
+    || currentConfiguredWorkspace(backend)
     || taskConfig.workspace
     || (taskConfig.workspace_mode === "new_each_import" ? taskConfig.openviking_workspace : "")
     || ns.workspace;
@@ -11301,55 +17159,70 @@ function renderImportReadinessPanel(task = null) {
   const lastImport = currentWorkspaceScopedLastImport(backend);
   const imported = currentImportedMemoryStatus();
   const importDisplay = locomoImportDisplayState(lastImport, imported);
-  const importRunning = isImportTaskInBackground(task || state.currentImportTask || {});
-  const existingImportInWorkspace = !importRunning && Number(imported.summary_count || 0) > 0;
-  const importScope = currentImportSampleScope();
+  const liveTask = task ? taskWithLiveProgress(task) : null;
+  const activeImportTask = liveTask || state.currentImportTask || {};
+  const importRunning = isImportTaskInBackground(activeImportTask);
+  const importScope = task ? {
+    isAll: String(sampleScope.sampleValue || "").trim() === "all",
+    smoke: String(sampleScope.sampleValue || "").trim() !== "all" && /conv-\d+/.test(String(sampleScope.sampleText || "")),
+    label: String(sampleScope.sampleText || sampleScope.sampleValue || "全部对话").trim() || "全部对话",
+    questionCount: Number(dataset?.questions || 0),
+    optionText: String(sampleScope.sampleText || "").trim(),
+  } : currentImportSampleScope();
   const importScopeParts = String(importScope.optionText || "").split("·").map((part) => part.trim()).filter(Boolean);
   const importScopeStructure = importScopeParts.length >= 3 ? importScopeParts[2] : "";
-  const sampleLabel = importScope.isAll
-    ? "全部对话"
-    : (importScope.smoke
-      ? importScope.label
-      : `${importScope.label}${importScope.questionCount ? ` · ${formatInt(importScope.questionCount)} 题` : ""}`);
-  const sampleDetail = dataset
-    ? (
-      importScope.isAll
-        ? `全部对话样本；${formatInt(dataset.samples || 0)} 个样本 / ${formatInt(dataset.questions || 0)} 题。`
-        : (importScope.smoke
-          ? `仅验证 1 个 session 的注入链路。`
-          : `${importScopeStructure || "当前导入范围"}。`)
-    )
-    : "";
-  const activeRunDir = String(task?.run_dir || "").trim();
-  const cards = [
-    {
-      label: "导入范围",
-      value: sampleLabel,
-      detail: sampleDetail,
-      tone: dataset ? "ok" : "warn",
-    },
-    {
-      label: "导入任务目录",
-      value: compactPath(activeRunDir || "任务启动后显示", 42, 24),
-      detail: activeRunDir ? "这里是本次导入任务的运行目录，不是记忆目录。" : "",
-      tone: activeRunDir ? "ok" : "warn",
-    },
-  ];
-  if (existingImportInWorkspace) {
-    cards.push({
-      label: "目录状态",
-      value: importDisplay.importedComplete ? "目录已有历史导入" : "目录已有历史记录",
-      detail: "当前 workspace 已经有这个范围的旧结果。若要重新导入，请先点“自动生成目录”，不要继续写入这个目录。",
-      tone: "warn",
-    });
-  }
-  target.innerHTML = cards.map((card) => `
-    <article class="${escapeHtml(card.tone || "")}">
-      <span>${escapeHtml(card.label)}</span>
-      <strong>${escapeHtml(card.value || "-")}</strong>
-      ${card.detail ? `<p>${escapeHtml(card.detail)}</p>` : ""}
-    </article>
-  `).join("");
+  const progress = activeImportTask?.progress || {};
+  const currentImport = progress.current_import || {};
+  const importMessages = taskImportMessageCounts(progress);
+  const sessionLabel = shortSessionLabel(progress.session_label || currentImport.session || currentImport.session_id || "");
+  const elapsedValue = activeImportTask?.duration != null
+    ? formatDuration(activeImportTask.duration)
+    : (progress.elapsed_seconds != null ? formatDuration(progress.elapsed_seconds) : "-");
+  const progressPhase = String(progress.phase || "").trim();
+  const stageLabel = progressPhase
+    ? (progressPhase.startsWith("commit") ? "归档提交" : "数据导入")
+    : taskStageLabel(activeImportTask.kind || task?.kind || "", activeImportTask || task || {});
+  const currentStatus = importRunning
+    ? taskStatusLabel(activeImportTask)
+    : (importDisplay.currentRunComplete ? "已完成" : (activeImportTask?.status ? taskStatusLabel(activeImportTask) : "未开始"));
+  const progressDetail = importMessages.total
+    ? `${importMessages.index}/${importMessages.total} 条消息`
+    : (importScope.isAll
+      ? `${formatInt(dataset?.samples || 0)} sessions · ${formatInt(dataset?.questions || 0)} 题`
+      : `${importScope.label || "当前范围"}${importScope.questionCount ? ` · ${formatInt(importScope.questionCount)} 题` : ""}`);
+  const scopeValue = importScope.isAll
+    ? `${formatInt(dataset?.samples || 0)} · ${formatInt(dataset?.questions || 0)} 题`
+    : `${importScope.label || "当前范围"}${importScope.questionCount ? ` · ${formatInt(importScope.questionCount)} 题` : ""}`;
+  target.innerHTML = `
+    <div class="locomo-kv-grid">
+      <article class="locomo-kv-row">
+        <span class="locomo-kv-label">当前阶段</span>
+        <strong class="locomo-kv-value">${escapeHtml(stageLabel || "导入")}</strong>
+      </article>
+      <article class="locomo-kv-row">
+        <span class="locomo-kv-label">当前状态</span>
+        <strong class="locomo-kv-value">${escapeHtml(currentStatus || "-")}</strong>
+      </article>
+      <article class="locomo-kv-row">
+        <span class="locomo-kv-label">当前 Session</span>
+        <strong class="locomo-kv-value">${escapeHtml(sessionLabel || (importScope.isAll ? "全部对话" : (importScope.label || "-")))}</strong>
+      </article>
+      <article class="locomo-kv-row">
+        <span class="locomo-kv-label">范围</span>
+        <strong class="locomo-kv-value">${escapeHtml(scopeValue)}</strong>
+      </article>
+      <article class="locomo-kv-row">
+        <span class="locomo-kv-label">已用时间</span>
+        <strong class="locomo-kv-value">${escapeHtml(elapsedValue || "-")}</strong>
+      </article>
+      <article class="locomo-kv-row">
+        <span class="locomo-kv-label">Workspace</span>
+        <strong class="locomo-kv-value" title="${escapeHtml(workspace || "-")}">${escapeHtml(workspace ? compactPath(displayPath(workspace), 30, 18) : "等待生成 workspace")}</strong>
+      </article>
+    </div>
+  `;
+  renderWorkspaceStatusStrip();
+  refreshImportSummaryAndProgress(task || state.currentImportTask || null);
 }
 
 function importDiagnosticItems(task = null) {
@@ -11390,13 +17263,14 @@ function renderImportDiagnostics(task = state.currentImportTask || null) {
   const panel = $("importDiagnosticPanel");
   if (!panel) return;
   const items = importDiagnosticItems(task);
-  const tokenSummary = summarizeImportTokenUsage(task);
-  if (!task || (!items.length && !tokenSummary.length)) {
-    panel.innerHTML = `
-      <article class="log-diagnostic ok">
-        <strong>暂无异常</strong>
-      </article>
-    `;
+  if (!task || !items.length) {
+    const html = locomoEmptyNoteHtml(
+      task ? "未检测到导入异常" : "暂无异常",
+      task ? "当前任务没有发现需要人工介入的异常线索。" : "导入开始后，这里会显示限流、模型错误和重试线索。",
+      "",
+      {icon: "triangle-alert"}
+    );
+    setImportPanelHtmlIfChanged("diagnostics", panel, html);
     return;
   }
   const diagnostics = task.log_diagnostics || {};
@@ -11408,25 +17282,41 @@ function renderImportDiagnostics(task = state.currentImportTask || null) {
     ["熔断", diagnostics.embedding_circuit_breaker_count],
   ].filter(([, value]) => Number(value || 0) > 0);
   const summaryText = counts.map(([label, value]) => `${label} ${value}`).join(" · ")
-    || (items.length ? taskStatusLabel(task) : "未检测到导入异常");
-  panel.innerHTML = `
-    <div class="import-diagnostic-summary">
-      <strong>${escapeHtml(items.length ? `检测到 ${items.length} 条异常线索` : "暂无异常")}</strong>
-      <span>${escapeHtml(summaryText)}</span>
+    || taskStatusLabel(task);
+  const uniqueItems = [];
+  const seen = new Set();
+  for (const item of items.slice().reverse()) {
+    const key = `${item.severity || "warn"}::${item.label || ""}::${item.text || ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    uniqueItems.push(item);
+    if (uniqueItems.length >= 3) break;
+  }
+  const remainingCount = Math.max(0, items.length - uniqueItems.length);
+  const html = `
+    <div class="locomo-readiness-list">
+      ${locomoReadinessRowHtml("异常概览", summaryText, {
+        tone: remainingCount ? "warn" : "bad",
+        status: `${items.length} 条`,
+      })}
+      ${uniqueItems.map((item) => locomoReadinessRowHtml(
+        item.label,
+        item.text,
+        {
+          tone: item.severity || "warn",
+          status: locomoToneLabel(item.severity || "warn"),
+          title: item.text,
+        }
+      )).join("")}
+      ${remainingCount ? `
+        ${locomoReadinessRowHtml("其余异常", `还有 ${remainingCount} 条已折叠，保留当前可见条目用于快速定位。`, {
+          tone: "muted",
+          status: "折叠",
+        })}
+      ` : ""}
     </div>
-    ${tokenSummary.length ? `
-      <div class="import-diagnostic-summary">
-        <strong>关键记忆调用</strong>
-        <span>${escapeHtml(tokenSummary.join(" · "))}</span>
-      </div>
-    ` : ""}
-    ${items.slice(-8).reverse().map((item) => `
-      <article class="log-diagnostic ${escapeHtml(item.severity || "warn")}">
-        <strong>${escapeHtml(item.label)}</strong>
-        <p>${escapeHtml(item.text)}</p>
-      </article>
-    `).join("")}
   `;
+  setImportPanelHtmlIfChanged("diagnostics", panel, html);
 }
 
 function renderImportPaths(task = null) {
@@ -11447,45 +17337,38 @@ function renderImportPaths(task = null) {
     || (task ? (taskScope.workspace || "") : "")
     || (normalizeMemoryBackend(lastImport.backend || "") === backend ? String(lastImport.workspace || "").trim() : "")
     || ns.workspace;
-  const summaryPath = task?.output_file || lastImport.output_file || "";
-  const importFolder = summaryPath ? dirname(summaryPath) : "";
+  const liveTask = task && isLocomoImportTask(task) ? taskWithLiveProgress(task) : task;
+  const summaryPath = liveTask?.output_file || task?.output_file || lastImport.output_file || "";
   const account = taskScope.account || lastImport.account || ns.account;
   const userId = String(taskConfig.user_id || taskConfig.em_user_id || taskConfig.ov_user_id || ns.userId || "default").trim() || "default";
   const agentId = String(taskConfig.agent_id || taskConfig.em_agent_id || taskConfig.ov_agent_id || ns.agentId || "default").trim() || "default";
   const hasWorkspace = workspace && !workspace.includes("自动生成");
-  const samplePattern = ns.sampleId ? `*${ns.sampleId}*` : "*";
   const importKind = task?.kind && isMemoryImportKind(task.kind) ? task.kind : importTaskKindForBackend(backend);
-  const importScript = importScriptForBackend(backend);
   const importStageLabel = taskStageLabel(importKind);
   const backendRoot = hasWorkspace ? storageRootForBackend(workspace, account, backend) : "";
   const backendPathRows = hasWorkspace
     ? importPathRowsForBackend({workspace, account, backend, userId, agentId})
     : [];
-  const effectiveLogFile = task?.log_file || runLogPathFromRecord(lastImport) || "";
-  const runDir = String(task?.run_dir || dirname(effectiveLogFile) || (importFolder ? dirname(importFolder) : "")).trim();
+  const effectiveLogFile = liveTask?.log_file || task?.log_file || runLogPathFromRecord(liveTask || {}) || runLogPathFromRecord(task || {}) || runLogPathFromRecord(lastImport) || "";
   renderImportLogPath(effectiveLogFile);
   const rows = [
     {label: "当前进度", value: importStageLabel, copy: false, open: false},
     {label: "记忆目录", value: workspace, copy: true, open: true},
-    {label: "运行目录", value: runDir, copy: true, open: true},
     ...backendPathRows.filter((item) => item.value && item.value !== workspace && item.value !== backendRoot),
     {label: "摘要文件", value: summaryPath, copy: true, open: true},
     {label: "日志文件", value: effectiveLogFile, copy: true, open: true},
   ].filter((item) => item.value);
-  $("importPathList").innerHTML = rows.map((item) => `
-    <article class="path-row">
-      <span>${escapeHtml(item.label)}</span>
-      <code>${escapeHtml(displayPath(item.value))}</code>
-      ${item.copy || item.open ? `
-        <div class="path-row-actions">
-          ${item.copy ? `<button class="path-copy" type="button" data-copy="${escapeHtml(item.value)}">复制</button>` : ""}
-          ${item.open ? `<button class="path-open" type="button" data-path="${escapeHtml(item.value)}">打开</button>` : ""}
-        </div>
-      ` : ""}
-    </article>
-  `).join("") || "<p>导入后会显示记忆目录、导入脚本、日志文件和摘要文件。</p>";
-  bindCopyButtons("#importPathList");
-  bindOpenButtons("#importPathList");
+  const pathListHtml = rows.length
+    ? rows.map((item) => locomoArtifactRowHtml(item.label, item.value, {
+      copy: item.copy,
+      open: item.open,
+    })).join("")
+    : locomoEmptyNoteHtml("等待导入产物", "导入后会显示记忆目录、导入脚本、日志文件和摘要文件。", "", {density: "compact"});
+  const pathListChanged = setInnerHtmlIfChanged($("importPathList"), pathListHtml);
+  if (pathListChanged) {
+    bindCopyButtons("#importPathList");
+    bindOpenButtons("#importPathList");
+  }
   const displayTask = task || {
     kind: importKind,
     meta: {config: {workspace, account, backend}},
@@ -11501,43 +17384,67 @@ async function refreshImportedMemories() {
   const currentBackend = currentMemoryBackend();
   const activeTaskBackend = normalizeMemoryBackend(state.currentImportTask?.meta?.config?.backend || "");
   const lastImportBackend = normalizeMemoryBackend(lastImport.backend || "");
-  let workspace = configuredWorkspaceForBackend(currentBackend);
+  let workspace = activeImportWorkspaceForBackend(currentBackend) || configuredWorkspaceForBackend(currentBackend);
   if (!workspace && taskWorkspace && activeTaskBackend === currentBackend) {
     workspace = taskWorkspace;
   }
   if (!workspace && lastImport.workspace && lastImportBackend === currentBackend) {
     workspace = lastImport.workspace;
   }
+  if (!isImportTaskInBackground(state.currentImportTask || {})) {
+    const recentRuns = await ensureRecentRunsLoaded().catch(() => []);
+    const recentImport = latestMemoryImportRun(recentRuns, {backend: currentBackend, workspaceScoped: false});
+    if (recentImport?.workspace) workspace = String(recentImport.workspace || "").trim();
+  }
   const account = state.currentImportTask?.meta?.config?.account || $("ovAccount").value.trim() || lastImport.account || "default";
   const sampleId = currentImportNamespace().sampleId;
   if (!workspace) {
-    $("importedMemoryList").innerHTML = "<p>当前会在导入时自动生成新的目录。请先导入一次。</p>";
+    setInnerHtmlIfChanged($("importedMemoryList"), locomoEmptyNoteHtml("等待首次导入", "当前会在导入时自动生成新的目录。请先导入一次。"));
     state.importedMemoryStatus = null;
     updateWorkflowGuide();
     refreshLocomoFlowStatus(true).catch(() => {});
+    renderWorkspaceStatusStrip();
+    renderImportSidebarPanels();
     return;
   }
+  if (!isImportTaskInBackground(state.currentImportTask || {}) && recentImportWorkspaceShouldWin(lastImport, workspace, currentBackend)) {
+    saveLastImport({
+      workspace,
+      account,
+      backend: currentBackend,
+      run_dir: lastImport.run_dir || "",
+      log_file: lastImport.log_file || "",
+      output_file: lastImport.output_file || "",
+      sample_value: lastImport.sample_value || $("importSample")?.value || "all",
+      sample_label: lastImport.sample_label || $("importSample")?.selectedOptions?.[0]?.textContent || "",
+      integrity: lastImport.integrity || "",
+      session_id: lastImport.session_id || "",
+    });
+  }
+  if ($("ovWorkspace") && $("ovWorkspace").value !== workspace) $("ovWorkspace").value = workspace;
+  if ($("memoryWorkspace") && $("memoryWorkspace").value !== workspace) $("memoryWorkspace").value = workspace;
   if (isImportTaskInBackground(state.currentImportTask || {})) {
     const activeAccountRoot = storageRootForBackend(workspace, account, currentBackend);
-    $("importedMemoryList").innerHTML = `
-      <article class="path-row">
-        <span>记忆目录</span>
-        <code>${escapeHtml(displayPath(workspace))}</code>
-        <button class="path-copy" type="button" data-copy="${escapeHtml(workspace)}">复制</button>
-      </article>
-      ${activeAccountRoot ? `
-      <article class="path-row">
-        <span>${escapeHtml(currentBackend === "echomemory" ? "记忆写入目录" : "账户目录")}</span>
-        <code>${escapeHtml(displayPath(activeAccountRoot))}</code>
-        <button class="path-copy" type="button" data-copy="${escapeHtml(activeAccountRoot)}">复制</button>
-      </article>
-      ` : ""}
-      <p>导入还在进行中。这里只显示当前账户的结果。</p>
+    const runningHtml = `
+      <section>
+        <p data-locomo-caption>当前写入路径</p>
+        <div class="locomo-artifact-list">
+          ${locomoArtifactRowHtml("记忆目录", workspace, {copy: true, open: true})}
+          ${activeAccountRoot ? locomoArtifactRowHtml(currentBackend === "echomemory" ? "记忆写入目录" : "账户目录", activeAccountRoot, {copy: true, open: true}) : ""}
+        </div>
+      </section>
+      ${locomoEmptyNoteHtml("导入进行中", "这里只显示当前账户下已确认的路径与结果。", "", {density: "compact"})}
     `;
-    bindCopyButtons("#importedMemoryList");
+    const runningChanged = setInnerHtmlIfChanged($("importedMemoryList"), runningHtml);
+    if (runningChanged) {
+      bindCopyButtons("#importedMemoryList");
+      bindOpenButtons("#importedMemoryList");
+    }
     setImportedMemoryRunningStatus({workspace, account, sampleId});
     updateWorkflowGuide();
     refreshLocomoFlowStatus(true).catch(() => {});
+    renderWorkspaceStatusStrip();
+    refreshImportSummaryAndProgress(state.currentImportTask || null);
     return;
   }
   const backend = normalizeMemoryBackend(state.currentImportTask?.meta?.config?.backend || lastImport.backend || currentMemoryBackend());
@@ -11552,71 +17459,70 @@ async function refreshImportedMemories() {
     session_count: sessions.length,
     summary_count: summaries.length,
     complete_count: completeCount,
+    session_complete_count: Number(data.session_complete_count || 0),
+    session_total_count: Number(data.session_total_count || sessions.length || 0),
+    conv_complete: data.conv_complete === true,
     latest_summary_path: summaries[0]?.summary_path || "",
     latest_integrity: summaries[0]?.integrity || "",
   };
   updateWorkflowGuide();
   refreshLocomoFlowStatus(true).catch(() => {});
   const sessionRows = sessions.map((item) => `
-    <article class="memory-hit imported-memory-card">
-      <div class="imported-memory-head">
-        <strong>${escapeHtml(item.session_id)}</strong>
-        <span class="imported-memory-badge">历史文件 ${escapeHtml(item.history_files ?? 0)}</span>
-      </div>
-      <p class="imported-memory-meta">${escapeHtml(item.updated_at || "未记录更新时间")}</p>
-      <p class="imported-memory-path"><code>${escapeHtml(item.path || "")}</code></p>
-    </article>
+    ${locomoReadinessRowHtml(
+      item.session_id || "-",
+      displayPath(item.path || "-"),
+      {
+        tone: "muted",
+        status: `${item.history_files ?? 0} 文件`,
+        title: item.path || "",
+      }
+    )}
   `).join("");
   const summaryRows = summaries.map((item) => {
     const extracted = item.memories_extracted || {};
-    return `
-      <article class="memory-hit imported-memory-card imported-memory-card-summary">
-        <div class="imported-memory-head">
-          <strong>${escapeHtml(item.sample_id || "-")} · ${escapeHtml(item.session_id || "-")}</strong>
-          <span class="imported-memory-badge">${escapeHtml(item.integrity || "-")}</span>
-        </div>
-        <p class="imported-memory-meta">${escapeHtml(item.updated_at || "未记录更新时间")}</p>
-        <div class="imported-memory-stats">
-          <span>对话 ${escapeHtml(item.submitted_messages ?? "-")} / ${escapeHtml(item.expected_messages ?? "-")}</span>
-          <span>记忆 ${escapeHtml(extracted.total ?? "-")}</span>
-        </div>
-        <p class="imported-memory-path"><code>${escapeHtml(item.summary_path || "")}</code></p>
-      </article>
-    `;
+    return locomoReadinessRowHtml(
+      `${item.sample_id || "-"} · ${item.session_id || "-"}`,
+      `对话 ${item.submitted_messages ?? "-"} / ${item.expected_messages ?? "-"} · 记忆 ${extracted.total ?? "-"}`,
+      {
+        tone: String(item.integrity || "").toLowerCase() === "complete" ? "ok" : "warn",
+        status: item.integrity || "-",
+        title: item.summary_path || "",
+      }
+    );
   }).join("");
   const workspaceRoot = data.workspace || workspace;
   const accountRoot = data.account_path || storageRootForBackend(workspaceRoot, account, data.backend || backend);
   const memoryRoot = data.memory_root || (accountRoot ? `${accountRoot}/memory` : "");
-  $("importedMemoryList").innerHTML = `
-    <article class="path-row">
-      <span>记忆目录</span>
-      <code>${escapeHtml(displayPath(workspaceRoot || ""))}</code>
-      <button class="path-copy" type="button" data-copy="${escapeHtml(workspaceRoot || "")}">复制</button>
-    </article>
-    ${accountRoot ? `
-    <article class="path-row">
-      <span>${escapeHtml(data.backend === "echomemory" ? "记忆写入目录" : "账户目录")}</span>
-      <code>${escapeHtml(displayPath(accountRoot))}</code>
-      <button class="path-copy" type="button" data-copy="${escapeHtml(accountRoot)}">复制</button>
-    </article>
+  const importedHtml = `
+    <section>
+      <p data-locomo-caption>目录</p>
+      <div class="locomo-artifact-list">
+        ${locomoArtifactRowHtml("记忆目录", workspaceRoot || "", {copy: true, open: true})}
+        ${accountRoot ? locomoArtifactRowHtml(data.backend === "echomemory" ? "记忆写入目录" : "账户目录", accountRoot, {copy: true, open: true}) : ""}
+        ${memoryRoot ? locomoArtifactRowHtml("长期记忆目录", memoryRoot, {copy: true, open: true}) : ""}
+      </div>
+    </section>
+    <section>
+      <p data-locomo-caption>已导入会话</p>
+      <div class="locomo-readiness-list">
+        ${sessionRows || locomoEmptyNoteHtml("暂无已导入会话", "当前账户下没有已导入内容。")}
+      </div>
+    </section>
+    ${summaryRows ? `
+      <section>
+        <p data-locomo-caption>导入摘要</p>
+        <div class="locomo-readiness-list">${summaryRows}</div>
+      </section>
     ` : ""}
-    ${memoryRoot ? `
-    <article class="path-row">
-      <span>长期记忆目录</span>
-      <code>${escapeHtml(displayPath(memoryRoot))}</code>
-      <button class="path-copy" type="button" data-copy="${escapeHtml(memoryRoot)}">复制</button>
-    </article>
-    ` : ""}
-    ${sessionRows || "<p>当前账户下没有已导入内容。</p>"}
-    ${summaryRows ? `<div class="list-divider">导入摘要</div>${summaryRows}` : ""}
   `;
-  document.querySelectorAll("#importedMemoryList .path-copy").forEach((button) => {
-    button.addEventListener("click", async () => {
-      await navigator.clipboard.writeText(button.dataset.copy || "");
-      toast("路径已复制");
-    });
-  });
+  const importedChanged = setInnerHtmlIfChanged($("importedMemoryList"), importedHtml);
+  if (importedChanged) {
+    bindCopyButtons("#importedMemoryList");
+    bindOpenButtons("#importedMemoryList");
+  }
   refreshLocomoFlowStatus(true).catch(() => {});
+  renderWorkspaceStatusStrip();
+  renderImportSidebarPanels();
 }
 
 async function startTask(kind, extra = {}) {
@@ -11658,11 +17564,9 @@ async function startTask(kind, extra = {}) {
           currentAccount(),
           backend,
         ) || "当前目录";
-        renderImportReadinessPanel();
-        throw new Error(`当前目录已有历史导入：${compactPath(workspaceLabel, 42, 28)}。请先点“自动生成目录”，再启动导入。`);
+        throw new Error(`当前目录不可直接重复导入：${compactPath(workspaceLabel, 42, 28)}。请先点“自动生成目录”，再启动导入。`);
       }
       $("commitImport").disabled = true;
-      renderImportDiagnostics(null);
     }
     let task;
     try {
@@ -11699,8 +17603,7 @@ async function startTask(kind, extra = {}) {
     refreshTasks().catch(() => {});
     refreshLocomoFlowStatus(true).catch(() => {});
     if (isMemoryImportKind(kind)) {
-      renderImportPaths(task);
-      renderImportDiagnostics(task);
+      refreshImportPathsAndDiagnostics(task);
       const taskWorkspace = task.meta?.config?.workspace;
       if (taskWorkspace) {
         state.currentImportTask = task;
@@ -11725,7 +17628,7 @@ async function startTask(kind, extra = {}) {
         updateWorkflowGuide();
         refreshLocomoFlowStatus(true).catch(() => {});
       }
-      $("importMemoryPreview").innerHTML = "<p>导入进行中，完成后显示 session、message 数量和 token 估算。</p>";
+      $("importMemoryPreview").innerHTML = locomoEmptyNoteHtml("导入进行中", "完成后会显示 session、message 数量和导入摘要。", "", {density: "compact"});
     }
     const ui = taskUi(kind, {...task, dataset_format: task.dataset_format || datasetFormat});
     const logBox = openTaskLogBox(ui.logBox);
@@ -11784,7 +17687,9 @@ async function pollTask(taskId = state.taskId, kind = state.taskKind) {
     logBox.dataset.taskId = taskId;
     if (data.text && !staleFullReplay) {
       const filteredText = filterVisibleTaskLogText(data.text, task, ui.logBox);
-      logBox.textContent = switchedTaskLog ? filteredText : `${logBox.textContent}${filteredText}`;
+      const nextText = switchedTaskLog ? filteredText : `${logBox.textContent}${filteredText}`;
+      logBox.textContent = trimTaskLogDisplay(nextText, ui.logBox);
+      markLogBoxEmptyState(logBox);
       logBox.scrollTop = logBox.scrollHeight;
     }
   }
@@ -11801,8 +17706,8 @@ async function pollTask(taskId = state.taskId, kind = state.taskKind) {
     renderActiveTaskStrip(task);
   }
   if (shouldOwnImportUi) {
-    renderImportPaths(task);
-    renderImportDiagnostics(task);
+    syncImportBackendUi(task);
+    refreshImportPathsAndDiagnostics(task);
     const taskWorkspace = task.meta?.config?.workspace;
     if (taskWorkspace) {
       state.currentImportTask = task;
@@ -11880,33 +17785,13 @@ async function pollTask(taskId = state.taskId, kind = state.taskKind) {
   }
 }
 
-function formatDuration(seconds) {
-  const raw = Math.max(0, Number(seconds || 0));
-  if (raw > 0 && raw < 1) return `${raw.toFixed(1)}s`;
-  const value = Math.round(raw);
-  const mins = Math.floor(value / 60);
-  const secs = value % 60;
-  if (mins <= 0) return `${secs}s`;
-  const hours = Math.floor(mins / 60);
-  const remMins = mins % 60;
-  return hours ? `${hours}h ${remMins}m` : `${mins}m ${secs}s`;
-}
-
-function formatSecondsMetric(value) {
-  const raw = Number(value);
-  if (!Number.isFinite(raw)) return "-";
-  if (raw === 0) return "0.00s";
-  if (Math.abs(raw) >= 100) return `${raw.toFixed(1)}s`;
-  return `${raw.toFixed(2)}s`;
-}
-
 function updateProgress(task, kind = state.taskKind) {
   task = taskWithLiveProgress(task || {});
   const ui = taskUi(kind || task.kind || state.taskKind, task || {});
   const bar = $(ui.progressBar);
   const text = $(ui.progressText);
   if (!bar || !text) return;
-  const barWrap = bar.closest(".progress-bar");
+  const barWrap = bar.closest(".progress-bar, .locomo-progress-track");
   const progress = task && task.progress;
   const importConfig = task?.meta?.config || task?.config || {};
   const importSmoke = isMemoryImportKind(kind) || isMemoryImportKind(task?.kind)
@@ -11922,7 +17807,7 @@ function updateProgress(task, kind = state.taskKind) {
   const elapsedValue = task?.duration != null
     ? formatDuration(task.duration)
     : (progress?.elapsed_seconds != null ? formatDuration(progress.elapsed_seconds) : "");
-  const elapsed = elapsedValue ? ` · 已运行 ${elapsedValue}` : "";
+  const elapsed = elapsedValue ? ` · 总已运行 ${elapsedValue}` : "";
   const detailLabel = benchmarkProgressDetail(task, format);
   const progressDetail = detailLabel ? ` · ${detailLabel}` : "";
   if (isMemoryImportKind(kind) || isMemoryImportKind(task?.kind)) {
@@ -11940,13 +17825,14 @@ function updateProgress(task, kind = state.taskKind) {
     text.textContent = state.tasksHydrating
       ? "正在恢复任务状态"
       : (taskStatusLabel(task) || ui.waiting);
+    renderImportProgressStats(task);
     return;
   }
   if (isMemoryImportKind(kind) || isMemoryImportKind(task?.kind)) {
     const banner = $("importCompletionBanner");
     if (banner && isTaskActive(task)) {
       banner.hidden = true;
-      banner.className = "completion-banner";
+      banner.className = "";
     }
     const phase = String(progress.phase || "");
     const taskStatus = String(task?.status || "").toLowerCase();
@@ -11955,9 +17841,24 @@ function updateProgress(task, kind = state.taskKind) {
     const unit = progress.unit || "messages";
     const sessionProgressCurrent = String(unit) === "sessions" ? Math.max(0, Number(progress.current || 0)) : 0;
     const sessionProgressTotal = String(unit) === "sessions" ? Math.max(sessionProgressCurrent, Number(progress.total || 0)) : 0;
+    const completedSessions = String(unit) === "sessions"
+      ? Math.max(0, Number(progress.completed_sessions ?? sessionProgressCurrent))
+      : 0;
+    const submittedSessions = String(unit) === "sessions"
+      ? Math.max(completedSessions, Number(progress.submitted_sessions ?? 0))
+      : 0;
+    const finalizingDone = String(unit) === "sessions"
+      ? Math.max(completedSessions, Number(progress.finalizing_sessions_done ?? completedSessions))
+      : 0;
+    const finalizingTotal = String(unit) === "sessions"
+      ? Math.max(finalizingDone, Number(progress.finalizing_sessions_total ?? sessionProgressTotal))
+      : 0;
+    const isFinalizing = phase === "commit:finalizing";
     const importPct = sessionProgressTotal > 0
-      ? Math.max(0, Math.min(100, (sessionProgressCurrent / Math.max(sessionProgressTotal, 1)) * 100))
+      ? Math.max(0, Math.min(100, (completedSessions / Math.max(sessionProgressTotal, 1)) * 100))
       : pct;
+    const terminalSummarySessions = Number(task?.summary?.samples ?? 0);
+    const terminalRecordSessions = Array.isArray(task?.summary?.records) ? task.summary.records.length : 0;
     const totalSamples = Number(progress.total_samples || 0);
     const completedSamples = Number(progress.completed_samples || 0);
     const sessionLabel = shortSessionLabel(progress.session_label || progress.current_import?.session || "");
@@ -11966,39 +17867,78 @@ function updateProgress(task, kind = state.taskKind) {
       ? ` · 本 session 第 ${importMessage.index}/${importMessage.total} 条消息`
       : "";
     const sessionText = sessionLabel ? ` · 当前 session ${sessionLabel}` : "";
-    const sessionProgressText = sessionProgressTotal > 0
-      ? ` · 已完成 ${importSmoke ? Math.min(sessionProgressCurrent, 1) : sessionProgressCurrent}/${importSmoke ? 1 : sessionProgressTotal} 个 session`
+    const completedSessionText = sessionProgressTotal > 0
+      ? ` · 已完成 ${importSmoke ? Math.min(completedSessions, 1) : completedSessions}/${importSmoke ? 1 : sessionProgressTotal} 个 session`
+      : "";
+    const submittedSessionText = sessionProgressTotal > 0
+      ? ` · 已提交 ${importSmoke ? Math.min(submittedSessions, 1) : submittedSessions}/${importSmoke ? 1 : sessionProgressTotal} 个 session`
+      : "";
+    const finalizingSessionText = isFinalizing && finalizingTotal > 0
+      ? ` · 归档完成 ${importSmoke ? Math.min(finalizingDone, 1) : finalizingDone}/${importSmoke ? 1 : finalizingTotal}`
       : "";
     const scopeText = importSmoke
       ? ` · 模式 单 session 测试`
       : "";
+    const importStateText = importSmoke
+      ? (liveRunning ? "单 session 注入进行中" : (taskStatus === "succeeded" ? "单 session 注入完成" : "单 session 注入等待中"))
+      : (liveRunning ? (isCommit ? "记忆导入进行中" : "数据读取进行中") : (taskStatus === "succeeded" ? "记忆导入完成" : "记忆导入已提交"));
+    const compactSessionText = importSmoke ? "" : `${completedSessionText}${submittedSessions > completedSessions ? submittedSessionText : ""}`;
     bar.style.width = `${importPct}%`;
 
     if (!liveRunning) {
-      text.textContent = `${taskStatusLabel(task)}${sessionProgressText}${scopeText}${sessionText}${importMessageText}${elapsed}`;
+      const finalCompletedSessions = Math.max(
+        completedSessions,
+        terminalSummarySessions,
+        terminalRecordSessions,
+        totalSamples,
+        completedSamples,
+      );
+      const finalTotalSessions = Math.max(
+        sessionProgressTotal,
+        terminalSummarySessions,
+        terminalRecordSessions,
+        totalSamples,
+        finalCompletedSessions,
+      );
+      const finishedProgressText = finalTotalSessions > 0
+        ? `已完成 ${importSmoke ? Math.min(finalCompletedSessions, 1) : finalCompletedSessions}/${importSmoke ? 1 : finalTotalSessions} 个 session`
+        : (isFinalizing ? completedSessionText : (completedSessionText || submittedSessionText)).replace(/^ · /, "");
+      bar.style.width = `${finalTotalSessions > 0 ? 100 : importPct}%`;
+      const finishedStatusLabel = taskStatusLabel(task);
+      const finishedPrefix = taskStatus === "succeeded" && finishedProgressText
+        ? finishedProgressText
+        : (finishedProgressText ? `${finishedStatusLabel} · ${finishedProgressText}` : finishedStatusLabel);
+      const finishedAt = task?.ended_at || task?.updated_at || "";
+      const finishedClock = finishedAt ? formatDateTimeLocal(finishedAt) : "";
+      const finishedTime = finishedClock && finishedClock !== "-"
+        ? ` · ${finishedClock} 完成`
+        : elapsed;
+      text.textContent = `${importStateText}${scopeText}${sessionText}${importMessageText}${finishedTime}`;
       bar.style.animation = "none";
+      renderImportProgressStats(task);
       return;
     }
     if (isCommit) {
       if (phase === "commit:embedding_retry") {
         const issueCount = task?.log_diagnostics?.model_issue_count || 0;
         const issueText = issueCount ? ` · 检测到 ${issueCount} 条模型/检索异常日志` : "";
-        text.textContent = `归档阶段${sessionProgressText}${scopeText}${sessionText}${importMessageText}${elapsed}${issueText}`;
+        text.textContent = `${importStateText}${compactSessionText}${scopeText}${sessionText}${importMessageText}${elapsed}${issueText}`;
         bar.style.animation = "none";
       } else if (unit === "sessions" && progress.total > 0) {
-        text.textContent = `归档阶段${sessionProgressText}${scopeText}${sessionText}${importMessageText}${elapsed}`;
+        text.textContent = `${importStateText}${compactSessionText}${finalizingSessionText}${scopeText}${sessionText}${importMessageText}${elapsed}`;
         bar.style.animation = "none";
       } else if (progress.indeterminate && isTaskActive(task)) {
-        text.textContent = `归档阶段${sessionProgressText}${scopeText}${sessionText}${importMessageText}${elapsed}`;
+        text.textContent = `${importStateText}${compactSessionText}${finalizingSessionText}${scopeText}${sessionText}${importMessageText}${elapsed}`;
         bar.style.animation = "none";
       } else {
-        text.textContent = `归档阶段完成${sessionProgressText}${scopeText}${elapsed}`;
+        text.textContent = `${importStateText}${compactSessionText}${scopeText}${elapsed}`;
         bar.style.animation = "none";
       }
     } else {
-      text.textContent = `导入阶段${sessionProgressText}${scopeText}${sessionText}${importMessageText}${elapsed}`;
+      text.textContent = `${importStateText}${compactSessionText || submittedSessionText || completedSessionText}${scopeText}${sessionText}${importMessageText}${elapsed}`;
       bar.style.animation = "none";
     }
+    renderImportProgressStats(task);
     return;
   }
   bar.style.width = `${pct}%`;
@@ -12013,14 +17953,14 @@ function updateProgress(task, kind = state.taskKind) {
       ? ` · 日志权威 ${authoritativeScope}`
       : "";
     const benchmarkPct = totalQuestions > 0
-      ? Math.max(0, Math.min(100, (Math.max(currentQuestion, answeredQuestions) / totalQuestions) * 100))
+      ? Math.max(0, Math.min(100, (answeredQuestions / totalQuestions) * 100))
       : pct;
     const phaseName = progress?.phase?.startsWith("commit")
       ? "写入/索引"
       : (progress?.phase === "qa" ? "问答" : (progress?.phase === "import" ? "导入" : (progress?.phase || "运行中")));
     bar.style.width = `${benchmarkPct}%`;
     bar.style.animation = progress?.indeterminate && isTaskActive(task) ? "pulse 2s ease-in-out infinite" : "none";
-    text.textContent = `${phaseName} · 第 ${authoritativeScope} 题 · 已答 ${answeredQuestions}/${totalQuestions}${authoritativeNote}${elapsed}${eta}${progressDetail}`;
+    text.textContent = `${phaseName} · 第 ${authoritativeScope} 题 · 已答 ${answeredQuestions}/${totalQuestions} · ${benchmarkPct.toFixed(1)}%${authoritativeNote}${elapsed}${eta}${progressDetail}`;
     return;
   }
   const phaseName = task?.kind === "adapter"
@@ -12055,12 +17995,15 @@ function trackedActiveImportTask(excludeTaskId = "") {
   return [state.currentImportTask, state.currentRunningTask, state.currentLocomoTask]
     .find((task) => task?.id
       && task.id !== excluded
-      && isMemoryImportKind(task.kind || "")
+      && isLocomoImportTask(task, state.taskDatasetFormats[task.id] || task.dataset_format || "")
       && isTaskActive(task));
 }
 
 function refreshLiveTaskDisplays() {
   const activeView = activeViewId();
+  if (isStandaloneBenchmarkView(activeView)) {
+    warmBenchmarkLatestResultPanels().catch(() => null);
+  }
   const tasks = runningTaskCandidates().filter((task) => {
     const format = enrichTaskDatasetFormat(task, state.taskDatasetFormats[task.id] || "");
     return taskVisibleInCurrentTaskPanel(task, format, activeView);
@@ -12074,8 +18017,7 @@ function refreshLiveTaskDisplays() {
       ? state.currentImportTask
       : null;
     if (terminalImportTask) {
-      renderImportPaths(terminalImportTask);
-      renderImportDiagnostics(terminalImportTask);
+      refreshImportPathsAndDiagnostics(terminalImportTask);
       updateProgress(terminalImportTask, terminalImportTask.kind || locomoImportTaskKind());
     }
     const activeStrip = $("activeTaskStrip");
@@ -12083,6 +18025,13 @@ function refreshLiveTaskDisplays() {
     const trackedTask = [state.currentRunningTask, state.currentLocomoTask, state.currentImportTask]
       .find((task) => task?.id && task.id === currentTaskId);
     if (!trackedTask || !isTaskActive(trackedTask)) renderActiveTaskStrip(null);
+    if (activeView === "hotpotQaView") {
+      const hotpotRecord = state.hotpotQaActiveRecord || null;
+      renderIdleBenchmarkProgress("hotpotqa", hotpotRecord);
+    }
+    if (activeView === "longMemEvalView") {
+      renderLongMemQaPreview(null);
+    }
     return;
   }
   const primary = tasks[0];
@@ -12101,7 +18050,50 @@ function refreshLiveTaskDisplays() {
     if (taskShouldUseLocomoTaskStrip(kind, liveTask, format)) {
       renderActiveTaskStrip(liveTask);
     }
+    if (activeView === "longMemEvalView" && normalizeDatasetFormat(format) === "longmemeval" && !isImportTask) {
+      renderLongMemQaPreview(liveTask);
+    }
   }
+}
+
+function hotpotQaReportNeedsHydration() {
+  if (activeViewId() !== "hotpotQaView") return false;
+  const stage = normalizeBenchmarkFlowStage(state.activeBenchmarkFlowStage || $("hotpotQaView")?.dataset?.activeBenchmarkStage || "");
+  if (stage !== "report") return false;
+  if (resolveHotpotQaLiveTask()) return false;
+  const resultText = String($("hotpotQaRunResult")?.textContent || "").trim();
+  const rows = Number(state.hotpotQaQuestionRunsRows?.length || state.hotpotQaQuestionRunsReportedRows || 0);
+  const hasResultSummary = /最近结果摘要|结果状态|答案 EM|答案 F1|打开报告|报告对比/.test(resultText);
+  return !hasResultSummary || rows <= 0;
+}
+
+function hotpotQaQaStageNeedsHydration() {
+  if (activeViewId() !== "hotpotQaView") return false;
+  const stage = normalizeBenchmarkFlowStage(state.activeBenchmarkFlowStage || $("hotpotQaView")?.dataset?.activeBenchmarkStage || "");
+  if (stage !== "qa") return false;
+  if (resolveHotpotQaLiveTask()) return false;
+  const runRowsText = String($("hotpotQaQuestionRuns")?.textContent || "").trim();
+  const monitorText = String($("hotpotQaCurrentTask")?.textContent || "").trim();
+  const rows = Number(state.hotpotQaQuestionRunsRows?.length || state.hotpotQaQuestionRunsReportedRows || 0);
+  const monitorEmpty = /等待开始测试|任务启动后/.test(monitorText) || !monitorText;
+  const tableEmpty = /运行后展示逐题结果|正在读取 Question Runs|当前结果文件还没有写入逐题结果/.test(runRowsText) || !runRowsText;
+  return rows <= 0 || monitorEmpty || tableEmpty;
+}
+
+function queueHotpotQaReportHydration() {
+  if (!hotpotQaReportNeedsHydration()) return;
+  window.setTimeout(() => {
+    if (!hotpotQaReportNeedsHydration()) return;
+    forceRefreshStandaloneBenchmarkView("hotpotqa").catch(() => null);
+  }, 120);
+}
+
+function queueHotpotQaQaHydration() {
+  if (!hotpotQaQaStageNeedsHydration()) return;
+  window.setTimeout(() => {
+    if (!hotpotQaQaStageNeedsHydration()) return;
+    forceRefreshStandaloneBenchmarkView("hotpotqa").catch(() => null);
+  }, 120);
 }
 
 async function refreshStandaloneBenchmarkViewOnly() {
@@ -12116,7 +18108,24 @@ async function refreshStandaloneBenchmarkViewOnly() {
     const format = enrichTaskDatasetFormat(task, state.taskDatasetFormats[task.id] || "");
     return normalizeDatasetFormat(format) === activeFormat;
   });
-  if (!runningTask) return;
+  if (!runningTask) {
+    if (activeFormat === "hotpotqa") {
+      const recentHotpotRuns = await loadRecentHotpotQaRunsForTaskPanel().catch(() => []);
+      const latestHotpotRun = recentHotpotRuns[0] || null;
+      if (latestHotpotRun && (hotpotQaReportNeedsHydration() || hotpotQaQaStageNeedsHydration() || !state.hotpotQaActiveRecord || !state.hotpotQaQuestionRunsRows.length)) {
+        state.currentRunningTask = null;
+        const runLog = runLogPathFromRecord(latestHotpotRun);
+        if (runLog) loadLogPathIntoBox(runLog, "hotpotQaLogBox").catch(() => {});
+        if (hotpotQaQaStageNeedsHydration()) {
+          state.hotpotQaActiveRecord = latestHotpotRun;
+          renderHotpotQaStatusBand(latestHotpotRun, latestHotpotRun.summary || null);
+          refreshHotpotQaQuestionRuns(latestHotpotRun, {force: true}).catch(() => null);
+        }
+        renderGenericBenchmarkResultSummary(latestHotpotRun, "hotpotqa").catch(() => null);
+      }
+    }
+    return;
+  }
   const taskAccount = recordAccount(runningTask) || "default";
   await ensureGenericBenchmarkExecutionProgress(runningTask, activeFormat).catch(() => null);
   const runningSummary = await loadRunningBenchmarkSummary(runningTask, activeFormat).catch(() => null);
@@ -12127,6 +18136,10 @@ async function refreshStandaloneBenchmarkViewOnly() {
       ? `当前页面账户是 ${currentAccount()}，但运行中的 ${benchmarkConfig(genericBenchmarkKeyForFormat(activeFormat))?.label || datasetTypeLabel(activeFormat)} 任务属于账户 ${taskAccount}。这里直接显示只读进度。`
       : "",
   });
+  if (activeFormat === "hotpotqa") {
+    renderHotpotQaStatusBand(runningTask, runningSummary);
+    renderHotpotQaQuestionSelection();
+  }
   state.currentRunningTask = runningTask;
   renderGlobalTaskChip(runningTask);
   updateProgress(taskWithLiveProgress(runningTask), runningTask.kind || state.taskKind);
@@ -12142,7 +18155,25 @@ async function forceRefreshStandaloneBenchmarkView(format = "", options = {}) {
     const taskFormat = enrichTaskDatasetFormat(task, state.taskDatasetFormats[task.id] || "");
     return normalizeDatasetFormat(taskFormat) === normalized;
   });
-  if (!runningTask) return null;
+  if (!runningTask) {
+    if (normalized === "hotpotqa") {
+      const recentHotpotRuns = await loadRecentHotpotQaRunsForTaskPanel().catch(() => []);
+      const latestHotpotRun = recentHotpotRuns[0] || null;
+      if (latestHotpotRun && (hotpotQaReportNeedsHydration() || hotpotQaQaStageNeedsHydration() || !state.hotpotQaActiveRecord || !state.hotpotQaQuestionRunsRows.length)) {
+        state.currentRunningTask = null;
+        const runLog = runLogPathFromRecord(latestHotpotRun);
+        if (runLog) loadLogPathIntoBox(runLog, "hotpotQaLogBox").catch(() => {});
+        if (hotpotQaQaStageNeedsHydration()) {
+          state.hotpotQaActiveRecord = latestHotpotRun;
+          renderHotpotQaStatusBand(latestHotpotRun, latestHotpotRun.summary || null);
+          refreshHotpotQaQuestionRuns(latestHotpotRun, {force: true}).catch(() => null);
+        }
+        await renderGenericBenchmarkResultSummary(latestHotpotRun, "hotpotqa").catch(() => null);
+        return latestHotpotRun;
+      }
+    }
+    return null;
+  }
   const taskAccount = recordAccount(runningTask) || "default";
   await ensureGenericBenchmarkExecutionProgress(runningTask, normalized).catch(() => null);
   const runningSummary = await loadRunningBenchmarkSummary(runningTask, normalized).catch(() => null);
@@ -12156,6 +18187,10 @@ async function forceRefreshStandaloneBenchmarkView(format = "", options = {}) {
   const benchmarkKey = genericBenchmarkKeyForFormat(normalized);
   if (benchmarkKey) {
     renderGenericRunningStatus(benchmarkKey, runningTask, runningSummary);
+  }
+  if (normalized === "hotpotqa") {
+    renderHotpotQaStatusBand(runningTask, runningSummary);
+    renderHotpotQaQuestionSelection();
   }
   state.currentRunningTask = runningTask;
   renderGlobalTaskChip(runningTask);
@@ -12210,7 +18245,7 @@ async function refreshEchoMemoryImportSummary(path) {
   const banner = $("importCompletionBanner");
   if (banner) {
     banner.hidden = false;
-    banner.className = `completion-banner ${complete ? "ok" : "warn"}`;
+    banner.className = complete ? "ok" : "warn";
     banner.textContent = stopped
       ? `EchoMemory 导入已中断：${submitted || "-"} / ${expected || "-"} 条对话消息已提交，请检查日志和已写入内容。`
       : failed
@@ -12267,27 +18302,28 @@ async function refreshEchoMemoryImportSummary(path) {
     : asyncSettling
       ? "已提交，后台生成中"
       : "导入结束，需检查";
-  renderKpis("commitKpis", [
-    ["模式", smoke ? "单 session 测试" : "正式导入"],
-    ["完整性", complete ? "完整" : (asyncSettling ? "后台补齐中" : "未完成")],
-    ["样本数", summary.samples ?? records.length ?? "-"],
-    ["对话消息", `${submitted || "-"} / ${expected || "-"}`],
-    ["检索就绪", `${retrievalReady || 0} / ${summary.samples ?? records.length ?? "-"}`],
-    ["后端", "EchoMemory"],
-    ["工作空间", workspace || "-"],
-  ]);
   const importFolder = dirname(path);
-  $("importMemoryPreview").innerHTML = `
-    <article class="path-row">
-      <span>导入文件夹</span>
-      <code>${escapeHtml(importFolder)}</code>
-    </article>
-  ` + records.map((record) => `
-    <article class="memory-hit ${String(record.integrity || "").toLowerCase() === "complete" ? "ok" : ""}">
-      <strong>${escapeHtml(record.sample_id || "-")} · ${escapeHtml(record.session_id || "EchoMemory session")}</strong>
-      <p>对话消息 ${escapeHtml(record.submitted_messages ?? "-")} / ${escapeHtml(record.expected_messages ?? "-")} · 完整性 ${escapeHtml(record.integrity || (complete ? "complete" : "-"))}</p>
-    </article>
-  `).join("");
+  const summaryRows = [
+    {label: "模式", value: smoke ? "单 session 测试" : "正式导入"},
+    {label: "完整性", value: complete ? "完整" : (asyncSettling ? "后台补齐中" : "未完成")},
+    {label: "样本数", value: summary.samples ?? records.length ?? "-"},
+    {label: "对话消息", value: `${submitted || "-"} / ${expected || "-"}`},
+    {label: "题目数", value: currentImportSampleScope().questionCount || currentLocomoDataset()?.questions || "-"},
+    {label: "检索就绪", value: `${retrievalReady || 0} / ${summary.samples ?? records.length ?? "-"}`},
+    {label: "后端", value: "EchoMemory"},
+    {label: "工作空间", value: workspace || "-", title: workspace || "-"},
+  ];
+  const detailRows = records.map((record) => `
+    ${locomoReadinessRowHtml(
+      `${record.sample_id || "-"} · ${record.session_id || "EchoMemory session"}`,
+      `对话消息 ${record.submitted_messages ?? "-"} / ${record.expected_messages ?? "-"}`,
+      {
+        tone: String(record.integrity || "").toLowerCase() === "complete" ? "ok" : "warn",
+        status: record.integrity || (complete ? "complete" : "-"),
+      }
+    )}
+  `);
+  renderImportCommitPanels(summaryRows, detailRows, [locomoArtifactRowHtml("导入文件夹", importFolder, {copy: true, open: true})]);
   toast(
     stopped
       ? "EchoMemory 导入已中断，请检查已写入内容"
@@ -12324,6 +18360,10 @@ async function refreshResult() {
     renderJudgeHistoryList(input),
     renderWrongOnlyPreview(input),
   ]);
+  renderJudgeEstimate(summary);
+  renderPendingJudgePanel(input).catch(() => {});
+  renderJudgeReadinessPanel(summary);
+  renderEvalRecentResultPanel();
 }
 
 async function refreshLocomoResultAction(buttonId = "refreshResult") {
@@ -12372,6 +18412,7 @@ async function loadQaDiagnostics(input = currentLocomoResultCsv()) {
 function renderQaDiagnosticsSummary(data = {}) {
   const panel = $("qaDiagnosticsPanel");
   if (!panel) return;
+  const diag = data.diagnosis_summary || {};
   const missing = Number(data.missing_questions_count || 0);
   const failed = Number(data.retryable_failed_questions || 0);
   const duplicates = Number(data.duplicate_question_ids_count || 0);
@@ -12381,7 +18422,20 @@ function renderQaDiagnosticsSummary(data = {}) {
   const missingExamples = (data.missing_examples || []).slice(0, 3).map((item) => item.question_id).filter(Boolean).join(" · ");
   const failedExamples = (data.retryable_failed_examples || []).slice(0, 3).map((item) => item.question_id).filter(Boolean).join(" · ");
   const tone = missing || failed || duplicates ? "bad-text" : "ok-text";
-  if (!(missing || failed || duplicates || pending)) {
+  const metrics = [
+    ["Accuracy", diag.accuracy == null ? "待判分" : percent(diag.accuracy)],
+    ["Memory Coverage", diag.memory_coverage == null ? "-" : percent(diag.memory_coverage)],
+    ["Retrieval Hit Rate", diag.retrieval_hit_rate == null ? "-" : percent(diag.retrieval_hit_rate)],
+    ["Evidence Used Rate", diag.evidence_used_rate == null ? "-" : percent(diag.evidence_used_rate)],
+    ["Empty Retrieval", formatInt(diag.empty_retrieval_count || 0)],
+    ["Retrieval Miss", formatInt(diag.retrieval_miss_count || 0)],
+    ["Memory Missing", formatInt(diag.memory_missing_count || 0)],
+    ["Reasoning Failure", formatInt(diag.reasoning_failure_count || 0)],
+    ["Answer Format Error", formatInt(diag.answer_format_error_count || 0)],
+    ["Judge Ambiguous", formatInt(diag.judge_ambiguous_count || 0)],
+  ];
+  const breakdown = Array.isArray(diag.failure_breakdown) ? diag.failure_breakdown : [];
+  if (!(missing || failed || duplicates || pending || breakdown.length)) {
     panel.innerHTML = "";
     panel.hidden = true;
     updateJudgeAndReportActionButtons();
@@ -12389,11 +18443,199 @@ function renderQaDiagnosticsSummary(data = {}) {
   }
   panel.hidden = false;
   panel.innerHTML = `
+    <div class="diagnosis-strip-grid compact-grid">
+      ${metrics.map(([label, value]) => `
+        <article class="diagnosis-strip-item">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(value)}</strong>
+        </article>
+      `).join("")}
+    </div>
+    <div class="diagnosis-breakdown-table">
+      <div class="diagnosis-breakdown-head">
+        <span>Failure Type</span><span>Count</span><span>Percentage</span><span>Example Question</span>
+      </div>
+      ${breakdown.length ? breakdown.slice(0, 8).map((item) => `
+        <div class="diagnosis-breakdown-row">
+          <strong>${escapeHtml(item.label || item.mode || "-")}</strong>
+          <span>${escapeHtml(formatInt(item.count || 0))}</span>
+          <span>${escapeHtml((Number(item.percentage || 0)).toFixed(1))}%</span>
+          <span title="${escapeHtml(item.example_question || "")}">${escapeHtml(compactText(item.example_question || "-", 72))}</span>
+        </div>
+      `).join("") : `<div class="diagnosis-breakdown-empty">暂无可展示的失败分布。</div>`}
+    </div>
     <p class="${tone}"><strong>链路诊断</strong> · 期望 ${escapeHtml(expected)} 题 · 当前唯一题 ${escapeHtml(unique)} · 缺失 ${escapeHtml(missing)} · 可重跑失败 ${escapeHtml(failed)} · 重复 ${escapeHtml(duplicates)} · 待判 ${escapeHtml(pending)}</p>
     ${missingExamples ? `<p>缺失示例：${escapeHtml(missingExamples)}</p>` : ""}
     ${failedExamples ? `<p>失败示例：${escapeHtml(failedExamples)}</p>` : ""}
   `;
   updateJudgeAndReportActionButtons();
+}
+
+function renderImportCoveragePanel(data = {}) {
+  const panel = $("importCoveragePanel");
+  if (!panel) return;
+  const checks = Array.isArray(data.checks) ? data.checks : [];
+  const failed = checks.filter((item) => item.ok === false && item.level !== "warn").length;
+  const skipped = checks.filter((item) => item.ok === false && item.level === "warn").length;
+  const generated = Number(data.summary_extracted_memories?.total || data.atom_files || 0);
+  const indexed = Number(data.vector_files || data.memory_files || 0);
+  panel.innerHTML = `
+    <div class="locomo-readiness-list">
+      ${locomoReadinessRowHtml("Sessions", `${formatInt(data.session_complete_count || data.session_count || 0)} / ${formatInt(data.session_total_count || data.session_count || 0)}`, {tone: "muted"})}
+      ${locomoReadinessRowHtml("Messages", `${formatInt(data.submitted_messages || 0)} / ${formatInt(data.expected_messages || 0)}`, {tone: "muted"})}
+      ${locomoReadinessRowHtml("Memory Items", `${formatInt(generated)} / ${formatInt(generated)}`, {tone: "muted"})}
+      ${locomoReadinessRowHtml("Indexed", `${formatInt(indexed)} / ${formatInt(indexed)}`, {tone: indexed > 0 ? "ok" : "warn"})}
+      ${locomoReadinessRowHtml("Failed", formatInt(failed), {tone: failed > 0 ? "bad" : "ok"})}
+      ${locomoReadinessRowHtml("Skipped", formatInt(skipped), {tone: skipped > 0 ? "warn" : "muted"})}
+      ${locomoReadinessRowHtml("Backend", memoryBackendLabel(data.backend || currentMemoryBackend()), {tone: "muted"})}
+      ${locomoReadinessRowHtml("Account", data.account || currentAccount(), {tone: "muted"})}
+    </div>
+  `;
+}
+
+async function renderQaRetrievalTracePanel(input = currentLocomoResultCsv()) {
+  const panel = $("qaRetrievalTracePanel");
+  if (!panel) return;
+  if (!input) {
+    panel.innerHTML = `
+      <article class="workbench-idle-note">
+        <strong>等待问答结果</strong>
+        <p>刷新问答结果后，这里会显示当前结果的检索链路与命中情况。</p>
+      </article>
+    `;
+    return;
+  }
+  let rows = [];
+  try {
+    const diag = await loadQaDiagnostics(input);
+    rows = Array.isArray(diag.retrieval_trace_preview) ? diag.retrieval_trace_preview : [];
+  } catch {}
+  if (!rows.length) {
+    const preview = await api(`/api/csv-preview?path=${encodeURIComponent(input)}&limit=8`);
+    rows = Array.isArray(preview.rows) ? preview.rows : [];
+  }
+  if (!rows.length) {
+    panel.innerHTML = `<article class="workbench-idle-note"><strong>Empty Retrieval</strong><p>当前结果文件没有可预览行。</p></article>`;
+    return;
+  }
+  panel.innerHTML = rows.map((row, rowIndex) => {
+    const evidence = Array.isArray(row.top_k)
+      ? row.top_k
+      : parseEvidence(row.relevant_memory).slice(0, 5).map((item, index) => normalizeEvidenceItem(item, index));
+    const labels = Array.isArray(row.diagnosis) ? row.diagnosis : diagnosisFromRow(row, evidence);
+    const topK = evidence.length
+      ? `
+        <div class="diagnosis-trace-table">
+          <div class="diagnosis-trace-head">
+            <span>rank</span><span>score</span><span>memory</span><span>session</span><span>segment</span><span>hit</span>
+          </div>
+          ${evidence.map((item) => `
+            <article class="diagnosis-trace-row">
+              <span>${escapeHtml(String(item.rank))}</span>
+              <span>${escapeHtml(item.score == null || item.score === "" ? "-" : Number(item.score).toFixed(3))}</span>
+              <span title="${escapeHtml(String(item.memory_id))}">${escapeHtml(compactText(String(item.memory_id), 54))}</span>
+              <span>${escapeHtml(item.conversation_id || item.session || "-")}</span>
+              <span>${escapeHtml(item.segment_id || item.segment || "-")}</span>
+              <span>${diagnosisPillHtml(item.hit === "hit" ? "hit" : item.hit === "miss" ? "miss" : "partial")}</span>
+            </article>
+          `).join("")}
+        </div>
+      `
+      : `<p class="muted-list-note">Empty Retrieval</p>`;
+    return `
+      <details class="diagnosis-trace-card" ${rowIndex === 0 ? "open" : ""}>
+        <summary>
+          <div class="diagnosis-trace-summary">
+            <strong>${escapeHtml(row.question_id || `row-${rowIndex + 1}`)} · ${escapeHtml(row.sample_id || "-")} · C${escapeHtml(row.category || "-")}</strong>
+            <span>${labels.map((label) => diagnosisPillHtml(label)).join("")}</span>
+          </div>
+        </summary>
+        <div class="diagnosis-trace-body">
+          <p><strong>Question</strong> ${escapeHtml(row.question || "-")}</p>
+          <p><strong>Retrieval Query</strong> ${escapeHtml(compactText(String(row.retrieval_query || row.retrieval_query_plan || row.native_prompt || row.question || ""), 260))}</p>
+          ${topK}
+          <div class="diagnosis-answer-grid">
+            <section><span>Predicted</span><p>${escapeHtml(row.prediction || row.response || "-")}</p></section>
+            <section><span>Gold</span><p>${escapeHtml(row.gold_answer || row.answer || "-")}</p></section>
+          </div>
+        </div>
+      </details>
+    `;
+  }).join("");
+  bindCopyButtons("#qaRetrievalTracePanel");
+}
+
+function renderJudgeFailureDiagnosis(detail = {}, row = {}) {
+  const panel = $("judgeFailureDiagnosisPanel");
+  if (!panel) return;
+  const labels = Array.isArray(detail.diagnosis) && detail.diagnosis.length
+    ? detail.diagnosis
+    : diagnosisFromRow(row, detail.relevant_memory || [], detail);
+  panel.hidden = false;
+  panel.innerHTML = `
+    <div class="diagnosis-strip-header">
+      <strong>Failure Diagnosis</strong>
+      <span>${labels.map((label) => diagnosisPillHtml(label)).join("")}</span>
+    </div>
+    <p>${escapeHtml(detail.diagnostics?.diagnosis_reason || detail.judge?.reasoning || "根据检索、回答和 Judge 结果给出当前标签。")}</p>
+  `;
+}
+
+async function renderRunDiagnosisSummary(outputFile = "", summary = {}) {
+  const panel = $("runDiagnosisSummaryPanel");
+  if (!panel) return;
+  const path = String(outputFile || "").trim();
+  if (!path) {
+    panel.hidden = true;
+    panel.innerHTML = "";
+    return;
+  }
+  let rows = [];
+  try {
+    const file = await api(`/api/file?path=${encodeURIComponent(path)}`);
+    rows = parseCsvText(file.text || "");
+  } catch {
+    panel.hidden = true;
+    panel.innerHTML = "";
+    return;
+  }
+  if (!rows.length) {
+    panel.hidden = true;
+    panel.innerHTML = "";
+    return;
+  }
+  let diag = summary.diagnosis_summary || null;
+  if (!diag) {
+    try {
+      const data = await loadQaDiagnostics(path);
+      diag = data.diagnosis_summary || null;
+    } catch {}
+  }
+  const breakdown = Array.isArray(diag?.failure_breakdown) ? diag.failure_breakdown : [];
+  panel.hidden = false;
+  panel.innerHTML = `
+    <div class="diagnosis-strip-grid">
+      <article class="diagnosis-strip-item"><span>Accuracy</span><strong>${escapeHtml(diag?.accuracy == null ? (hasJudgeScore(summary) ? percent(summary.accuracy) : "待判分") : percent(diag.accuracy))}</strong></article>
+      <article class="diagnosis-strip-item"><span>Memory Coverage</span><strong>${escapeHtml(diag?.memory_coverage == null ? "-" : percent(diag.memory_coverage))}</strong></article>
+      <article class="diagnosis-strip-item"><span>Retrieval Hit Rate</span><strong>${escapeHtml(diag?.retrieval_hit_rate == null ? "-" : percent(diag.retrieval_hit_rate))}</strong></article>
+      <article class="diagnosis-strip-item"><span>Evidence Used Rate</span><strong>${escapeHtml(diag?.evidence_used_rate == null ? "-" : percent(diag.evidence_used_rate))}</strong></article>
+      <article class="diagnosis-strip-item"><span>Empty Retrieval</span><strong>${escapeHtml(formatInt(diag?.empty_retrieval_count || 0))}</strong></article>
+      <article class="diagnosis-strip-item"><span>Retrieval Miss</span><strong>${escapeHtml(formatInt(diag?.retrieval_miss_count || 0))}</strong></article>
+    </div>
+    <div class="diagnosis-breakdown-table">
+      <div class="diagnosis-breakdown-head">
+        <span>Failure Type</span><span>Count</span><span>Percentage</span><span>Example Question</span>
+      </div>
+      ${breakdown.length ? breakdown.map((item) => `
+        <div class="diagnosis-breakdown-row">
+          <strong>${escapeHtml(item.label || item.mode || "-")}</strong>
+          <span>${escapeHtml(formatInt(item.count || 0))}</span>
+          <span>${escapeHtml((Number(item.percentage || 0)).toFixed(1))}%</span>
+          <span title="${escapeHtml(item.example_question || "")}">${escapeHtml(compactText(item.example_question || "-", 72))}</span>
+        </div>
+      `).join("") : "<div class=\"diagnosis-breakdown-empty\">没有额外失败标签。</div>"}
+    </div>
+  `;
 }
 
 async function renderQaDiagnostics(input = currentLocomoResultCsv()) {
@@ -12430,7 +18672,7 @@ async function renderPendingJudgePanel(path) {
       <div class="panel-actions">
         <button class="secondary" id="refreshPendingPreview">刷新示例</button>
         <button class="secondary" id="exportPendingCsv">导出待判 CSV</button>
-        <button class="primary" id="pendingRunJudge">judge</button>
+        <button class="primary" id="pendingRunJudge">开始判分</button>
       </div>
     </div>
     <div class="form-grid four compact-form">
@@ -12526,7 +18768,7 @@ async function refreshCommitSummary(path) {
   const banner = $("importCompletionBanner");
   if (banner) {
     banner.hidden = false;
-    banner.className = `completion-banner ${complete ? "ok" : "warn"}`;
+    banner.className = complete ? "ok" : "warn";
     banner.textContent = stopped
       ? `导入已中断：${submitted}/${expected} 条对话消息已写入，请检查日志和已落盘内容。`
       : failed
@@ -12565,46 +18807,55 @@ async function refreshCommitSummary(path) {
           ? (smoke ? "单 session 注入测试完成，记忆已落盘" : "导入完成，记忆已落盘")
           : "导入结束，请检查完整性"
   );
-  renderKpis("commitKpis", [
-    ["模式", smoke ? "单 session 测试" : "正式导入"],
-    ["完整性", first.integrity === "complete" ? "完整" : (first.integrity === "incomplete" ? "未完成" : (summary.incomplete_samples ? "未完成" : "完整"))],
-    ["会话数", summary.samples ?? "-"],
-    ["对话消息", `${summary.submitted_messages ?? "-"} / ${summary.expected_messages ?? "-"}`],
-    ["待处理", first.pending_message_count_after_commit ?? "-"],
-    ["会话 ID", first.session_id || "-"],
-    ["Token 估算", summary.estimated_import_tokens ?? "-"],
-  ]);
   const importFolder = dirname(path);
-  $("importMemoryPreview").innerHTML = `
-    <article class="path-row">
-      <span>导入文件夹</span>
-      <code>${escapeHtml(importFolder)}</code>
-    </article>
-  ` + (summary.records || []).map((record) => `
-    <article class="memory-hit">
-      <strong>${escapeHtml(record.sample_id || "-")} · 会话 ${escapeHtml(record.session_id || "-")}</strong>
-      <p>对话消息 ${escapeHtml(record.submitted_messages ?? "-")} / ${escapeHtml(record.expected_messages ?? "-")} · 归档后待处理 ${escapeHtml(record.pending_message_count_after_commit ?? "-")} · 完整性 ${escapeHtml(record.integrity || "-")} · Token ${escapeHtml(record.estimated_import_tokens ?? "-")}</p>
-    </article>
-  `).join("");
+  const integrityLabel = first.integrity === "complete" ? "完整" : (first.integrity === "incomplete" ? "未完成" : (summary.incomplete_samples ? "未完成" : "完整"));
+  const summaryRows = [
+    {label: "会话数", value: summary.samples ?? "-"},
+    {label: "消息数", value: `${summary.submitted_messages ?? "-"} / ${summary.expected_messages ?? "-"}`},
+    {label: "题目数", value: currentImportSampleScope().questionCount || currentLocomoDataset()?.questions || "-"},
+    {label: "完整性", value: integrityLabel},
+  ];
+  const detailRows = (summary.records || []).map((record) => `
+    ${locomoReadinessRowHtml(
+      `${record.sample_id || "-"} · 会话 ${record.session_id || "-"}`,
+      `对话消息 ${record.submitted_messages ?? "-"} / ${record.expected_messages ?? "-"} · 归档后待处理 ${record.pending_message_count_after_commit ?? "-"} · Token ${record.estimated_import_tokens ?? "-"}`,
+      {
+        tone: String(record.integrity || "").toLowerCase() === "complete" ? "ok" : "warn",
+        status: record.integrity || "-",
+      }
+    )}
+  `);
+  renderImportCommitPanels(summaryRows, detailRows, [locomoArtifactRowHtml("导入文件夹", importFolder, {copy: true, open: true})]);
   await checkImportIntegrity(path).catch((e) => {
-    $("importIntegrityPanel").innerHTML = `<p class="bad-text">${escapeHtml(e.message)}</p>`;
+    $("importIntegrityPanel").innerHTML = locomoInlineMessageHtml("完整性检查失败", e.message || "检查失败", "bad");
   });
 }
 
 function renderIntegrity(data) {
   const statusClass = data.status === "complete" ? "ok" : (data.status === "warning" ? "warn" : "bad");
   const memoryLabel = data.memory_label || memoryBackendLabel(data.backend || currentMemoryBackend());
+  const importStatParts = [];
+  const atomFiles = Number(data.atom_files || 0);
+  if (atomFiles > 0) importStatParts.push(`${formatInt(atomFiles)} 条 atom`);
+  const extractedMemories = Number(data.summary_extracted_memories || 0);
+  if (extractedMemories > 0) importStatParts.push(`${formatInt(extractedMemories)} 条记忆`);
+  if (Number(data.memory_files || 0) > 0) importStatParts.push(`${formatInt(data.memory_files)} 个记忆文件`);
+  const importStatLine = importStatParts.length
+    ? `<p class="integrity-import-stat">导入记忆：${importStatParts.join(" · ")}</p>`
+    : "";
   const probe = data.evidence_probe || {};
   const probeRows = (probe.results || []).map((item) => {
     const missing = (item.memory_groups || [])
       .filter((group) => !group.ok)
       .map((group) => (group.terms || []).join(" / "))
       .join("；") || "-";
-    const cls = item.status === "pass" ? "ok" : (item.status === "missing" ? "bad" : "warn");
     const label = item.status === "pass" ? "PASS" : (item.status === "partial" ? "PARTIAL" : (item.status === "fact_only" ? "FACT ONLY" : (item.status === "archive_only" ? "ARCHIVE ONLY" : "MISSING")));
     return `
-      <article class="memory-hit ${cls}">
-        <strong>${escapeHtml(label)} · ${escapeHtml(item.question_id || "")}</strong>
+      <article class="locomo-probe-row">
+        <div class="locomo-probe-head">
+          <strong>${escapeHtml(label)} · ${escapeHtml(item.question_id || "")}</strong>
+          <span class="locomo-status-pill ${escapeHtml(item.status === "pass" ? "ok" : (item.status === "missing" ? "bad" : "warn"))}">${escapeHtml(label)}</span>
+        </div>
         <p>${escapeHtml(item.question || "")}</p>
         <small>标准答案：${escapeHtml(item.gold || "-")}</small>
         <small>memory exact ${escapeHtml(item.evidence_memory_hits ?? 0)}/${escapeHtml(item.evidence_total ?? 0)} · archive exact ${escapeHtml(item.evidence_archive_hits ?? 0)}/${escapeHtml(item.evidence_total ?? 0)} · missing facts: ${escapeHtml(missing)}</small>
@@ -12613,57 +18864,57 @@ function renderIntegrity(data) {
       </article>
     `;
   }).join("");
+  const checkRows = (data.checks || []).map((item) => (
+    locomoReadinessRowHtml(
+      item.name || "-",
+      item.message || "",
+      {
+        tone: item.ok ? "ok" : (item.level === "warn" ? "warn" : "bad"),
+        status: item.ok ? "通过" : (item.level === "warn" ? "警告" : "失败"),
+      }
+    )
+  )).join("");
+  const sessionRows = (data.sessions || []).map((item) => (
+    locomoArtifactRowHtml(
+      `${item.ok ? "通过" : "待查"} · ${item.session_key || ""}`,
+      item.session_path || item.session_id || "",
+      {copy: Boolean(item.session_path), open: Boolean(item.session_path)}
+    )
+  )).join("");
   $("importIntegrityPanel").innerHTML = `
-    <div class="integrity-head ${statusClass}">
-      <div>
+    <div class="locomo-readiness-row ${statusClass}">
+      <span class="locomo-readiness-dot ${statusClass}" aria-hidden="true"></span>
+      <div class="locomo-readiness-copy">
         <strong>${data.status === "complete" ? "记忆导入完整" : (data.status === "warning" ? "导入基本完成，有提醒" : "导入不完整")}</strong>
-        <p>${escapeHtml(memoryLabel)} · ${escapeHtml(data.submitted_messages ?? "-")} / ${escapeHtml(data.expected_messages ?? "-")} 条对话消息 · ${escapeHtml(data.session_count ?? 0)} 个 session · artifact files ${escapeHtml(data.memory_files ?? 0)}</p>
+        <span class="locomo-readiness-detail">${escapeHtml(memoryLabel)} · ${escapeHtml(data.submitted_messages ?? "-")} / ${escapeHtml(data.expected_messages ?? "-")} 条对话消息 · ${escapeHtml(data.session_count ?? 0)} 个 session · artifact files ${escapeHtml(data.memory_files ?? 0)}</span>
+        ${importStatLine}
       </div>
-      <span>${escapeHtml(data.status || "-")}</span>
+      <span class="locomo-status-pill ${escapeHtml(statusClass)}">${escapeHtml(data.status || "-")}</span>
     </div>
-    <div class="integrity-checks">
-      ${(data.checks || []).map((item) => `
-        <article class="${item.ok ? "ok" : (item.level === "warn" ? "warn" : "bad")}">
-          <strong>${escapeHtml(item.ok ? "通过" : (item.level === "warn" ? "警告" : "失败"))} · ${escapeHtml(item.name || "-")}</strong>
-          <p>${escapeHtml(item.message || "")}</p>
-        </article>
-      `).join("")}
+    <div class="locomo-readiness-list">
+      ${checkRows || locomoEmptyNoteHtml("没有完整性结果", "检查完成后会在这里显示每一项状态。", "", {icon: "shield-check", density: "compact"})}
     </div>
     ${probe.enabled ? `
-      <details class="integrity-sessions" open>
+      <details class="locomo-detail-block" open>
         <summary>LoCoMo 证据检查 · 通过 ${escapeHtml(probe.counts?.pass ?? 0)} · 部分 ${escapeHtml(probe.counts?.partial ?? 0)} · 仅事实 ${escapeHtml(probe.counts?.fact_only ?? 0)} · 仅原文 ${escapeHtml(probe.counts?.archive_only ?? 0)} · 缺失 ${escapeHtml(probe.counts?.missing ?? 0)}</summary>
         <p>这里检查标准证据是否进入长期记忆；“部分”表示只抽出部分原始证据；“仅事实”表示事实词进入记忆但原始证据不完整；“仅原文”表示原始会话里有，但长期记忆没抽出来。</p>
-        <div class="memory-list">${probeRows || "<p>没有 probe 结果。</p>"}</div>
+        <div class="locomo-probe-list">${probeRows || locomoEmptyNoteHtml("没有 probe 结果", "", "", {icon: "search-check", density: "compact"})}</div>
       </details>
     ` : ""}
-    <details class="integrity-sessions">
+    <details class="locomo-detail-block">
       <summary>会话明细</summary>
-      ${(data.sessions || []).map((item) => `
-        <article class="path-row">
-          <span>${escapeHtml(item.ok ? "通过" : "待查")} · ${escapeHtml(item.session_key || "")}</span>
-          <code>${escapeHtml(item.session_path || item.session_id || "")}</code>
-          <button class="path-copy" type="button" data-copy="${escapeHtml(item.session_path || "")}">复制</button>
-        </article>
-      `).join("") || "<p>没有会话明细。</p>"}
+      <div class="locomo-artifact-list">
+        ${sessionRows || locomoEmptyNoteHtml("没有会话明细", "", "", {icon: "folder-search-2", density: "compact"})}
+      </div>
     </details>
-    <div class="path-row">
-      <span>摘要</span>
-      <code>${escapeHtml(displayPath(data.summary_path || ""))}</code>
-      <button class="path-copy" type="button" data-copy="${escapeHtml(data.summary_path || "")}">复制</button>
-    </div>
-    <div class="path-row">
-      <span>${escapeHtml(data.backend === "echomemory" ? "记忆写入目录" : "账户目录")}</span>
-      <code>${escapeHtml(displayPath(data.account_path || ""))}</code>
-      <button class="path-copy" type="button" data-copy="${escapeHtml(data.account_path || "")}">复制</button>
-    </div>
-    <div class="path-row">
-      <span>${escapeHtml(data.backend === "echomemory" ? "长期记忆目录" : "记忆根目录")}</span>
-      <code>${escapeHtml(displayPath(data.memory_root || ""))}</code>
-      <button class="path-copy" type="button" data-copy="${escapeHtml(data.memory_root || "")}">复制</button>
+    <div class="locomo-artifact-list">
+      ${locomoArtifactRowHtml("摘要", data.summary_path || "", {copy: true, open: true})}
+      ${locomoArtifactRowHtml(data.backend === "echomemory" ? "记忆写入目录" : "账户目录", data.account_path || "", {copy: true, open: true})}
+      ${locomoArtifactRowHtml(data.backend === "echomemory" ? "长期记忆目录" : "记忆根目录", data.memory_root || "", {copy: true, open: true})}
     </div>
   `;
   bindCopyButtons("#importIntegrityPanel");
-  renderImportStageRail({complete: data.status === "complete", warn: data.status !== "complete"});
+  hydrateUiIcons($("importIntegrityPanel"));
   renderLocomoOverview();
   refreshLocomoFlowStatus(true).catch(() => {});
 }
@@ -12678,7 +18929,7 @@ async function checkImportIntegrity(summaryPath = "") {
   if (!workspace) return toast("请先选择或导入一个记忆目录");
   const qs = new URLSearchParams({backend, workspace, account, sample: sampleId});
   if (summary) qs.set("summary", summary);
-  $("importIntegrityPanel").innerHTML = `<p>正在检查 ${escapeHtml(memoryBackendLabel(backend))} summary、session 和记忆文件...</p>`;
+  $("importIntegrityPanel").innerHTML = locomoEmptyNoteHtml("正在检查完整性", `${memoryBackendLabel(backend)} summary、session 和记忆文件检查中。`, "", {density: "compact"});
   const data = await api(`/api/memory-import-integrity?${qs.toString()}`);
   renderIntegrity(data);
   toast(data.status === "complete" ? "完整性检查通过" : "完整性检查有问题，请看详情");
@@ -12746,14 +18997,29 @@ async function renderWrongOnlyPreview(path) {
   const data = await api(`/api/csv-preview?path=${encodeURIComponent(path)}&limit=240`);
   const rows = (data.rows || []).filter((row) => String(row.result || row.simple_grade || "").toUpperCase() === "WRONG");
   const target = $("sampleRows");
+  const diagnosisPanel = $("judgeFailureDiagnosisPanel");
   if (!target) return;
+  const summary = state.lastJudgeSummary || {};
+  const rowsTotal = Number(summary.rows ?? summary.summary_json?.count ?? 0);
+  const pending = rowsTotal ? pendingCount(summary) : 0;
+  const judged = hasJudgeScore(summary) || (rowsTotal > 0 && pending === 0);
+  const pendingMessage = "<p class=\"muted-list-note\">当前结果尚未完成正式判分，请先查看待判分示例或启动正式 judge。</p>";
   target.hidden = false;
   target.innerHTML = rows.map((row, index) => `
-    <article class="memory-hit wrong" data-question-id="${escapeHtml(row.question_id || "")}" data-row-index="${index}" data-csv-path="${escapeHtml(path)}">
-      <strong>${escapeHtml(row.question_id || `row-${index + 1}`)} · ${escapeHtml(row.sample_id || "-")} · C${escapeHtml(row.category || "")}</strong>
-      <p>${escapeHtml(row.question || "-")}</p>
+    <article class="memory-hit judge-question-row wrong" data-question-id="${escapeHtml(row.question_id || "")}" data-row-index="${index}" data-csv-path="${escapeHtml(path)}">
+      <div class="judge-row-main">
+        <div class="judge-row-head">
+          <strong class="judge-question-id">${escapeHtml(row.question_id || `row-${index + 1}`)}</strong>
+          <span class="judge-chip wrong">WRONG</span>
+        </div>
+        <div class="judge-row-submeta">
+          <span>${escapeHtml(row.sample_id || "-")}</span>
+          <span>${escapeHtml(locomoCategoryLabel(row.category))}</span>
+        </div>
+        <p class="judge-row-title">${escapeHtml(row.question || "-")}</p>
+      </div>
     </article>
-  `).join("") || "<p class=\"muted-list-note\">当前结果没有错题。</p>";
+  `).join("") || (judged ? "<p class=\"muted-list-note\">当前结果没有错题。</p>" : pendingMessage);
   document.querySelectorAll("#sampleRows .memory-hit").forEach((card) => {
     card.addEventListener("click", () => openQuestionDetail(
       card.dataset.csvPath || "",
@@ -12774,44 +19040,86 @@ async function renderWrongOnlyPreview(path) {
       toast(e.message);
     });
   } else if ($("judgeQuestionDetailPane")) {
-    $("judgeQuestionDetailPane").innerHTML = "<p class=\"muted-list-note\">当前结果没有错题可查看判分依据。</p>";
+    if (diagnosisPanel) {
+      diagnosisPanel.hidden = true;
+      diagnosisPanel.innerHTML = "";
+    }
+    $("judgeQuestionDetailPane").innerHTML = judged
+      ? "<p class=\"muted-list-note\">当前结果没有错题可查看判分依据。</p>"
+      : "<p class=\"muted-list-note\">当前结果还没有完成正式判分，完成 judge 后这里会显示单题判分依据。</p>";
   }
 }
 
 async function renderJudgeHistoryList(currentInput = "") {
   const target = $("judgeHistoryList");
   if (!target) return;
-  const data = await api("/api/runs?limit=80");
-  const runs = (data.runs || [])
-    .filter((run) => isRecentLocomoQaRun(run) && (run.output_file || ""))
-    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))
-    .slice(0, 12);
-  target.innerHTML = runs.map((run) => {
-    const selected = String(run.output_file || "") === String(currentInput || "");
-    const summary = run.summary || {};
-    const score = hasJudgeScore(summary) ? percent(summary.accuracy) : "待判分";
-    const inferredTitle = runDisplayTitle(run) || "";
-    const title = /^\d+$/.test(inferredTitle)
-      ? (run.name || run.id || inferredTitle)
-      : (inferredTitle || run.name || run.id || "LoCoMo 结果");
-    const rows = runDatasetMeta(run).rows ?? summary.rows;
-    const createdAt = formatDateTimeLocal(run.created_at || run.updated_at || run.ended_at || "");
-    const statusLabel = hasJudgeScore(summary) ? "已判分" : "等待判分";
-    const tone = hasJudgeScore(summary) ? "ok" : "pending";
-    return `
-      <article class="memory-hit judge-history-card ${tone} ${selected ? "selected ok" : ""}" data-output-file="${escapeHtml(run.output_file || "")}">
-        <div class="judge-history-head">
-          <strong>${escapeHtml(title)}</strong>
-          <span class="judge-history-status">${escapeHtml(statusLabel)}</span>
-        </div>
-        <div class="judge-history-meta">
-          <span><b>结果</b>${escapeHtml(score)}</span>
-          <span><b>题数</b>${escapeHtml(formatInt(rows))}</span>
-          <span class="judge-history-time" title="${escapeHtml(run.created_at || run.updated_at || run.ended_at || "-")}"><b>时间</b>${escapeHtml(createdAt)}</span>
-        </div>
-      </article>
-    `;
-  }).join("") || "<p class=\"muted-list-note\">还没有可用的 LoCoMo 历史判分结果。</p>";
+  const data = await api("/api/runs?include_history=1&limit=80");
+  const rawRuns = Array.isArray(data.runs) ? data.runs.filter(Boolean) : [];
+  const runs = [];
+  for (const run of rawRuns) {
+    try {
+      if (!(run.output_file || "")) continue;
+      if ((run.kind || "") === "judge") continue;
+      const format = benchmarkFormatFromRecord(run, fallbackDatasetFormatForRecord(run, ""));
+      if (normalizeDatasetFormat(format) !== "locomo") continue;
+      if (isQaRunWithOutputFile(run) || isLocomoTaskOutput(run.kind || "", run, format)) {
+        runs.push(run);
+      }
+    } catch (error) {
+      continue;
+    }
+  }
+  runs.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+  const visibleRuns = runs.slice(0, 12);
+  const preferredRun = preferredJudgeHistoryRun(visibleRuns, currentInput);
+  const effectiveInput = String(currentInput || "").trim() || String(preferredRun?.output_file || "").trim();
+  if (!String(currentInput || "").trim() && effectiveInput) {
+    markLocomoOutputFile(effectiveInput);
+  }
+  const historyHtml = [];
+  for (const run of visibleRuns) {
+    try {
+      const selected = String(run.output_file || "") === effectiveInput;
+      const summary = run.summary || {};
+      const meta = runDatasetMeta(run);
+      const scored = hasJudgeScore(summary);
+      const score = scored ? percent(summary.accuracy) : "待判分";
+      const inferredTitle = runDisplayTitle(run) || "";
+      const title = /^\d+$/.test(inferredTitle)
+        ? (run.name || run.id || inferredTitle)
+        : (inferredTitle || run.name || run.id || "LoCoMo 结果");
+      const rows = meta.rows ?? summary.rows;
+      const createdAt = formatDateTimeLocal(run.created_at || run.updated_at || run.ended_at || "");
+      const statusLabel = scored ? "已判分" : "等待判分";
+      const tone = scored ? "ok" : "pending";
+      const datasetName = meta.datasetName || "-";
+      const sessionRange = meta.sessionRange || meta.sample || inferSampleFromRun(run) || "-";
+      historyHtml.push(`
+        <article class="memory-hit judge-history-row ${tone} ${selected ? "selected ok" : ""}" data-output-file="${escapeHtml(run.output_file || "")}" title="点击切换到该历史结果">
+          <div class="judge-run-main">
+            <div class="judge-run-topline">
+              <span class="jh-time" title="${escapeHtml(run.created_at || run.updated_at || run.ended_at || "-")}">${escapeHtml(createdAt)}</span>
+              <span class="judge-history-status">${escapeHtml(statusLabel)}</span>
+            </div>
+            <strong class="judge-run-name" title="${escapeHtml(sessionRange || title)}">${escapeHtml(sessionRange || title)}</strong>
+            <div class="judge-run-meta">
+              <span class="jh-dataset" title="${escapeHtml(datasetName)}">${escapeHtml(datasetName)}</span>
+              <span class="judge-run-sep" aria-hidden="true"></span>
+              <span class="jh-rows">${escapeHtml(formatInt(rows))} rows</span>
+              ${title && title !== sessionRange ? `<span class="judge-run-sep" aria-hidden="true"></span><span class="jh-session" title="${escapeHtml(title)}">${escapeHtml(title)}</span>` : ""}
+            </div>
+          </div>
+          <div class="judge-run-side">
+            <strong class="jh-acc ${scored ? "scored" : ""}">${escapeHtml(score)}</strong>
+            <span class="jh-action">切换</span>
+          </div>
+        </article>
+      `);
+    } catch (error) {
+      continue;
+    }
+  }
+  target.innerHTML = historyHtml.join("") || "<p class=\"muted-list-note\">还没有可用的 LoCoMo 历史判分结果。</p>";
   document.querySelectorAll("#judgeHistoryList .memory-hit[data-output-file]").forEach((card) => {
     card.addEventListener("click", async () => {
       const output = card.dataset.outputFile || "";
@@ -12822,7 +19130,7 @@ async function renderJudgeHistoryList(currentInput = "") {
       toast("已切换到该历史结果");
     });
   });
-  renderJudgeIdleCards({input: currentInput, hasSummaryRows: Number((state.lastJudgeSummary || {}).rows || 0) > 0});
+  renderJudgeIdleCards({input: effectiveInput, hasSummaryRows: Number((state.lastJudgeSummary || {}).rows || 0) > 0});
 }
 
 function renderChat() {
@@ -12833,10 +19141,16 @@ function renderChat() {
       ${msg.archive ? renderArchiveChatDetails(msg.archive) : ""}
     </article>
   `).join("") || `
-    <article class="chat-bubble assistant">
-      <strong>MemoryBench Agent</strong>
-      <p>输入问题后会显示回答和召回记忆。</p>
-    </article>
+    <div class="chat-empty-state">
+      <strong>从一个问题开始调试记忆链路</strong>
+      <p>发送消息不写长期记忆，只有点击「手动 commit」才会归档。右侧调试区会显示召回的相关记忆、上下文组装与系统提示词。</p>
+      <div class="chat-empty-examples">
+        <span class="chat-empty-label">示例问题</span>
+        <button class="secondary" type="button" data-chat-template="我叫林澈，我正在评测长期记忆系统。请记住：我最关心的是证据可追溯、不要污染历史记忆，以及每次测试都要能复现。">写入一条长期记忆</button>
+        <button class="secondary" type="button" data-chat-template="你刚才从相关记忆里召回到了什么？请只根据召回证据回答，并列出证据来源。">查看召回证据</button>
+        <button class="secondary" type="button" data-chat-template="基于当前记忆空间，我应该如何验证刚才保存的记忆是否真的落盘？">验证记忆落盘</button>
+      </div>
+    </div>
   `;
   $("chatTranscript").scrollTop = $("chatTranscript").scrollHeight;
   renderArchiveStatus();
@@ -13219,48 +19533,10 @@ function ensureAgentWorkbenchSupported(actionLabel = "对话") {
 }
 
 function renderChatDebugStrip(record = null) {
-  const strip = $("chatDebugStrip");
   renderChatMemorySpace(record);
   renderChatPersona(state.lastChatContextData);
-  if (!strip) return;
-  const account = currentAccount();
-  const backend = currentMemoryBackend();
-  const backendLabel = memoryBackendLabel(backend);
-  const workbenchSupported = backendSupportsAgentWorkbench(backend);
-  const lastImport = readLastImport();
-  const workspace = ($("memoryWorkspace")?.value || $("ovWorkspace")?.value || lastImport.workspace || "").trim();
-  const storageRoot = storageRootForBackend(workspace, account, backend);
-  const stats = archiveStats();
-  const thresholds = archiveThresholds();
-  const newMessages = Math.max(0, archivableMessages().length - (state.lastArchivedMessageCount || 0));
-  const topK = $("chatTopK")?.value || readAccountConfig(account).chatTopK || "30";
-  const alignment = chatAlignmentStatus(backend, topK, workbenchSupported);
-  if (!record && state.lastArchiveRecord && newMessages === 0) {
-    record = state.lastArchiveRecord;
-  }
-  const lastSession = record?.session_id || lastImport.session_id || "";
-  const saveState = record
-    ? (record.committed ? "已保存" : "已提交")
-    : (newMessages > 0 ? "未保存" : "只读回答");
-  const saveDetail = record
-    ? `会话 ${lastSession || "-"}`
-    : (newMessages > 0 ? `${newMessages} 条新消息，点击“手动 commit”才写入` : "发送问题不会写入长期记忆");
-  const contextSourceValue = workbenchSupported ? "相关记忆" : "待接入";
-  const contextSourceDetail = workbenchSupported
-    ? (backend === "echomemory" ? "EchoMemory find/search 证据；可展开上下文追踪" : "OpenViking user/agent 记忆；可展开上下文追踪")
-    : `${backendLabel} 可跑 LoCoMo 批量评测；人工上下文追踪待接入`;
-  strip.innerHTML = `
-    ${chatDebugMetric("当前账户", account, backendLabel, "primary")}
-    ${chatDebugMetric("Agent", "MemoryBench Agent", "OpenViking / EchoMemory 后端；正式分数以 LoCoMo 评测页为准", "primary")}
-    ${chatDebugMetric("Agent 能力", workbenchSupported ? "可用" : "待接入", agentWorkbenchSupportText(backend), workbenchSupported ? "ok" : "warn")}
-    ${chatDebugMetric("LoCoMo 对齐", alignment.value, alignment.detail, alignment.tone)}
-    ${chatDebugMetric("上下文来源", contextSourceValue, contextSourceDetail, workbenchSupported ? "" : "warn")}
-    ${chatDebugMetric("读写边界", saveState, saveDetail, record?.committed ? "ok" : (newMessages > 0 ? "warn" : ""))}
-    ${chatDebugMetric("目录", compactPath(workspace || "未配置"), storageRoot ? `存储根：${compactPath(storageRoot, 24, 32)}` : "导入或系统配置后生成路径")}
-    ${chatDebugMetric("召回参数", `${RETRIEVAL_COUNT_LABEL} ${topK}`, "对话页只读检索使用该数量")}
-    ${chatDebugMetric("待保存上下文", `${stats.messages} 条 / ${stats.tokens} tokens`, `建议阈值 ${thresholds.messages} 条 / ${thresholds.tokens} tokens`)}
-  `;
-  updateAgentWorkbenchControls(workbenchSupported);
+  // #chatDebugStrip 已隐藏，旧的 8 张 metric 卡片不再渲染，避免无用计算与“顶部信息过载”回归
+  updateAgentWorkbenchControls(backendSupportsAgentWorkbench(currentMemoryBackend()));
 }
 
 function archivableMessages(messages = state.chatMessages) {
@@ -13381,6 +19657,72 @@ function memoryMeta(item, index) {
     if (item && item[key] != null && item[key] !== "") parts.push(`${key}: ${item[key]}`);
   }
   return parts.join(" · ");
+}
+
+// 记忆的人类可读正文（不含原始 JSON 兜底，避免“工程噪音”）。
+function memoryStatement(item) {
+  if (!item || typeof item !== "object") return String(item || "");
+  return item.statement || item.full_content || item.content || item.text
+    || item.abstract || item.overview || item.summary || "";
+}
+
+// 记忆来源（短标签）。
+function memorySourceLabel(item = {}) {
+  return item.source_uri || item.source || item.content_source || item.uri || item.path || "";
+}
+
+// 结构化字段摘要：type / subject / predicate / object / confidence / source。
+function memorySummaryFields(item = {}) {
+  const fields = [];
+  const type = item.atom_type || item.memory_type || item.context_type || item.kind || "";
+  if (type) fields.push({key: "type", label: "类型", value: type});
+  if (item.subject) fields.push({key: "subject", label: "subject", value: item.subject});
+  if (item.predicate) fields.push({key: "predicate", label: "predicate", value: item.predicate});
+  if (item.object) fields.push({key: "object", label: "object", value: item.object});
+  const conf = item.confidence ?? item.score;
+  if (conf != null && conf !== "") {
+    const num = Number(conf);
+    fields.push({key: "confidence", label: "confidence", value: Number.isFinite(num) ? num.toFixed(2) : String(conf)});
+  }
+  const source = memorySourceLabel(item);
+  if (source) fields.push({key: "source", label: "source", value: source});
+  return fields;
+}
+
+// 单条相关记忆：默认结构化摘要，原始 JSON 收进可展开区域。
+function memoryEvidenceCardHtml(item, index) {
+  const source = evidenceSource(item);
+  const statement = memoryStatement(item);
+  const fields = memorySummaryFields(item);
+  const fieldsHtml = fields.length ? `
+    <dl class="memory-fields">
+      ${fields.map((f) => `
+        <div class="memory-field memory-field-${f.key}">
+          <dt>${escapeHtml(f.label)}</dt>
+          <dd>${escapeHtml(String(f.value)).slice(0, 240)}</dd>
+        </div>
+      `).join("")}
+    </dl>` : "";
+  const statementHtml = statement
+    ? `<p class="memory-statement">${escapeHtml(statement).slice(0, 600)}</p>`
+    : "";
+  let raw = "";
+  try { raw = JSON.stringify(item, null, 2); } catch (e) { raw = String(item); }
+  return `
+    <article class="memory-hit memory-hit-structured source-${source.className}">
+      <div class="memory-hit-title">
+        <span class="memory-hit-index">#${index + 1}</span>
+        <span class="source-badge ${source.className}">${escapeHtml(source.label)}</span>
+      </div>
+      ${statementHtml}
+      ${fieldsHtml}
+      <details class="memory-raw">
+        <summary>展开原始数据</summary>
+        <pre>${escapeHtml(raw)}</pre>
+      </details>
+      ${memoryOpenActions(item)}
+    </article>
+  `;
 }
 
 function vikingUriToLocalPath(uri = "", scope = null) {
@@ -13522,6 +19864,37 @@ function renderEvidenceCard(item, index) {
   `;
 }
 
+function renderJudgeEvidenceRow(item, index) {
+  const source = evidenceSource(item);
+  const normalized = normalizeEvidenceItem(item, index);
+  const scoreText = normalized.score == null ? "-" : Number(normalized.score).toFixed(3);
+  const meta = [
+    normalized.session || normalized.conversation_id || "",
+    normalized.segment || "",
+    normalized.time || "",
+  ].filter(Boolean).join(" · ");
+  const snippet = memoryBody(item) || normalized.snippet || "";
+  const hitLabel = normalized.hit === "hit" ? "hit" : (normalized.hit === "miss" ? "miss" : "partial");
+  return `
+    <article class="judge-evidence-row source-${source.className}">
+      <div class="judge-evidence-rank">
+        <strong>#${escapeHtml(String(normalized.rank || index + 1))}</strong>
+        <span>${escapeHtml(scoreText)}</span>
+      </div>
+      <div class="judge-evidence-main">
+        <div class="judge-evidence-top">
+          <strong class="judge-evidence-memory" title="${escapeHtml(String(normalized.memory_id || memoryTitle(item, index)))}">${escapeHtml(compactText(String(normalized.memory_id || memoryTitle(item, index)), 56))}</strong>
+          <span class="judge-evidence-source ${escapeHtml(source.className)}">${escapeHtml(source.label)}</span>
+          ${diagnosisPillHtml(hitLabel)}
+        </div>
+        ${meta ? `<div class="judge-evidence-meta">${escapeHtml(meta)}</div>` : ""}
+        <p class="judge-evidence-snippet">${escapeHtml(compactText(snippet, 320))}</p>
+      </div>
+      <div class="judge-evidence-actions">${memoryOpenActions(item)}</div>
+    </article>
+  `;
+}
+
 function renderMemoryEvidence(items = [], error = "") {
   if (error) {
     $("memoryEvidence").innerHTML = `
@@ -13536,18 +19909,8 @@ function renderMemoryEvidence(items = [], error = "") {
   const visible = items.slice(0, 12);
   $("memoryEvidence").innerHTML = items.length ? `
     <p class="memory-note">本次回答召回 ${escapeHtml(items.length)} 条相关记忆，下面展示前 ${escapeHtml(visible.length)} 条。</p>
-    ${visible.map((item, index) => `
-      <article class="memory-hit">
-        <div class="memory-hit-title">
-          <strong>${escapeHtml(memoryTitle(item, index))}</strong>
-          <span class="source-badge">${escapeHtml(item.context_type || item.source || item.content_source || "memory")}</span>
-        </div>
-        <small>${escapeHtml(memoryMeta(item, index))}</small>
-        <p>${escapeHtml(memoryBody(item)).slice(0, 1200)}</p>
-        ${memoryOpenActions(item)}
-      </article>
-    `).join("")}
-  ` : "<p>本次问题没有召回相关记忆。</p>";
+    ${visible.map((item, index) => memoryEvidenceCardHtml(item, index)).join("")}
+  ` : `<p class="memory-empty">本次问题没有召回相关记忆。</p>`;
   bindCopyButtons("#memoryEvidence");
   bindOpenButtons("#memoryEvidence");
 }
@@ -13778,10 +20141,114 @@ function parseEvidence(raw) {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === "object") {
+      if (Array.isArray(parsed.user_memory) || Array.isArray(parsed.agent_memory)) {
+        const user = Array.isArray(parsed.user_memory) ? parsed.user_memory.map((item) => ({...item, _memory_scope: "user_memory"})) : [];
+        const agent = Array.isArray(parsed.agent_memory) ? parsed.agent_memory.map((item) => ({...item, _memory_scope: "agent_memory"})) : [];
+        return [...user, ...agent];
+      }
+      for (const key of ["memories", "items", "results", "relevant_memory"]) {
+        if (Array.isArray(parsed[key])) return parsed[key];
+      }
+      return [parsed];
+    }
+    return [];
   } catch {
     return [];
   }
+}
+
+function diagnosisPillTone(label = "") {
+  const text = String(label || "").toLowerCase();
+  if (text.includes("missing") || text.includes("miss") || text.includes("empty") || text.includes("mismatch")) return "warn";
+  if (text.includes("unused") || text.includes("reasoning") || text.includes("ambiguous") || text.includes("format")) return "bad";
+  return "ok";
+}
+
+function diagnosisPillHtml(label = "") {
+  if (!label) return "";
+  const tone = diagnosisPillTone(label);
+  return `<span class="diagnosis-pill ${escapeHtml(tone)}">${escapeHtml(label)}</span>`;
+}
+
+function normalizeEvidenceItem(item = {}, index = 0) {
+  const scoreRaw = item.score ?? item.confidence ?? "";
+  const scoreNumber = Number(scoreRaw);
+  const scope = item._memory_scope || item.scope || "";
+  return {
+    rank: Number(item.rank || index + 1),
+    score: Number.isFinite(scoreNumber) ? scoreNumber : null,
+    memory_id: item.memory_id || item.id || item.uri || item.path || `memory-${index + 1}`,
+    conversation_id: item.conversation_id || item.sample_id || item.session_id || item.vikingbot_session_id || "",
+    session: item.session_id || item.sample_id || item.conversation_id || "",
+    segment: item.segment_id || item.segment || item.kind || item.context_type || scope || "",
+    time: item.time || item.created_at || item.updated_at || "",
+    snippet: item.content || item.abstract || item.text || item.summary || item.overview || "",
+    hit: item.hit === true ? "hit" : (item.hit === false ? "miss" : "partial"),
+    raw: item,
+  };
+}
+
+function diagnosisFromRow(row = {}, evidence = [], detail = null) {
+  const result = String(row.result || row.simple_grade || "").toUpperCase();
+  if (detail?.diagnostics?.diagnosis?.length) return detail.diagnostics.diagnosis;
+  if (result === "CORRECT" || result === "MATCH") return ["Correct"];
+  const retrievalStatus = String(row.retrieval_status || detail?.diagnostics?.retrieval_status || "").toLowerCase();
+  const answerStatus = String(row.answer_status || detail?.diagnostics?.answer_status || "").toLowerCase();
+  const reasoning = String(row.reasoning || detail?.judge?.reasoning || "").toLowerCase();
+  const retrievalCount = Number(row.retrieval_count || detail?.diagnostics?.retrieval_count || evidence.length || 0);
+  const memoryCount = Number(row.memory_hit_count || detail?.diagnostics?.memory_hit_count || 0);
+  const response = String(row.response || "").trim().toLowerCase();
+  const gold = String(row.answer || "").trim().toLowerCase();
+  const labels = [];
+  if (!retrievalCount || !evidence.length) labels.push("Empty Retrieval");
+  else if (!memoryCount || retrievalStatus && retrievalStatus !== "ok") labels.push("Retrieval Miss");
+  if (labels.length === 0 && evidence.length && result === "WRONG") labels.push("Evidence Found But Unused");
+  if (reasoning.includes("format") || reasoning.includes("same date") || (response && gold && response.replace(/[*_`]/g, "") === gold.replace(/[*_`]/g, "") && result === "WRONG")) {
+    labels.push("Answer Format Error");
+  }
+  if (answerStatus === "failed") labels.push("Reasoning Failure");
+  if (reasoning.includes("considered correct") && result === "WRONG") labels.push("Judge Ambiguous");
+  return [...new Set(labels.length ? labels : ["Judge Ambiguous"])];
+}
+
+function parseCsvLine(line = "") {
+  const row = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === "\"") {
+      if (inQuotes && line[i + 1] === "\"") {
+        current += "\"";
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === "," && !inQuotes) {
+      row.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  row.push(current);
+  return row;
+}
+
+function parseCsvText(text = "") {
+  const lines = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter((line) => line.length);
+  if (!lines.length) return [];
+  const headers = parseCsvLine(lines[0]);
+  return lines.slice(1).map((line) => {
+    const values = parseCsvLine(line);
+    const row = {};
+    headers.forEach((header, index) => {
+      row[header] = values[index] ?? "";
+    });
+    return row;
+  });
 }
 
 function resultClass(row) {
@@ -14302,7 +20769,7 @@ function runDatasetMeta(run = {}) {
     summaryJson.input,
   );
   const datasetPath = explicitDatasetPath || (format === "locomo" ? activeDatasetPathForFormat(format) : "");
-  const sample = firstValue(
+  const rawSample = firstValue(
     run.sample,
     summary.sample,
     summaryJson.sample,
@@ -14310,6 +20777,16 @@ function runDatasetMeta(run = {}) {
     summaryJson.subset,
     inferSampleFromRun(run),
   );
+  const sampleKeys = summary.samples && typeof summary.samples === "object"
+    ? Object.keys(summary.samples).filter(Boolean)
+    : [];
+  const summarySample = sampleKeys.length === 1 ? sampleKeys[0] : "";
+  const sample = (() => {
+    const normalizedRaw = String(rawSample || "").trim();
+    if (!normalizedRaw) return summarySample || "";
+    if (summarySample && (/^\d+$/.test(normalizedRaw) || normalizedRaw.toLowerCase() === "all")) return summarySample;
+    return normalizedRaw;
+  })();
   const sessionStart = firstValue(run.session_start, summary.session_start, summaryJson.session_start);
   const sessionEnd = firstValue(run.session_end, summary.session_end, summaryJson.session_end);
   const sessionRange = sessionStart || sessionEnd
@@ -14474,18 +20951,52 @@ function runHasFormalScore(run = {}) {
 
 function renderRunCard(run = {}) {
   const datasetFormat = benchmarkFormatFromRecord(run);
-  const pathLabel = runPathLabel(run);
-  const pathDisplay = runPathDisplayLabel(run);
+  const meta = runDatasetMeta(run);
+  const title = runDisplayTitle(run, meta);
+  const scopeLabel = firstValue(meta.sample, inferRunModeLabel(run), meta.sessionRange, "all");
+  const variantLabel = inferRunVariantLabel(run) || "search";
+  const accuracy = runHasFormalScore(run) ? percent(runFormalScore(run)) : "待判分";
+  const pending = Number(meta.pending || 0);
+  const rawStatus = String(run.status || "").toLowerCase();
+  const failed = ["failed", "error", "interrupted"].includes(rawStatus);
+  const statusTone = failed ? "bad" : (runHasFormalScore(run) ? "ok" : "pending");
+  const statusLabel = failed
+    ? taskStatusLabel(run)
+    : (runHasFormalScore(run) ? "已判分" : "待判分");
+  const itemCount = meta.rows || "-";
+  const timeLabel = compactTimestamp(run.created_at || "");
+  const reportAction = run.run_dir
+    ? `
+        <button class="secondary compact-button run-report-action" type="button" data-run-action="report" title="打开或生成该结果的 HTML 报告">
+            <span class="ui-icon" data-ui-icon="folder-open" data-ui-icon-size="14" aria-hidden="true"></span>
+            <span>打开</span>
+        </button>
+      `
+    : "";
   return `
-    <article class="memory-hit run-card" data-run-key="${escapeHtml(runCompareKey(run))}" data-run-dir="${escapeHtml(run.run_dir || "")}" data-output-file="${escapeHtml(run.output_file || "")}" data-dataset-format="${escapeHtml(datasetFormat)}">
-      <div class="run-card-primary">
-        <div>
-          ${renderRunDatasetMeta(run)}
+    <article class="memory-hit run-card report-run-item ${statusTone}" data-run-key="${escapeHtml(runCompareKey(run))}" data-run-dir="${escapeHtml(run.run_dir || "")}" data-output-file="${escapeHtml(run.output_file || "")}" data-dataset-format="${escapeHtml(datasetFormat)}">
+      <div class="run-row-main report-run-main">
+        <div class="run-row-top report-run-top">
+          <div class="report-run-titleline run-title-stack">
+            <strong class="report-run-id" title="${escapeHtml(title)}">${escapeHtml(title)}</strong>
+            <span class="report-run-scope" title="${escapeHtml(scopeLabel)}">${escapeHtml(scopeLabel)}</span>
+          </div>
+          <span class="run-state-pill ${statusTone}">${escapeHtml(statusLabel)}</span>
         </div>
-        ${renderRunCompareToggle(run)}
+        <div class="run-row-name report-run-meta">
+          <small title="${escapeHtml(`${timeLabel || "-"} · ${meta.label} · ${firstValue(meta.sample, meta.sessionRange, "-")}`)}">${escapeHtml(`${timeLabel || "-"} · ${meta.label} · ${firstValue(meta.sample, meta.sessionRange, "-")}`)}</small>
+        </div>
+        <div class="run-row-metrics report-run-metrics run-metric-strip">
+          <span><b>题数</b><em>${escapeHtml(String(itemCount))}</em></span>
+          <span><b>Accuracy</b><em>${escapeHtml(accuracy)}</em></span>
+          <span><b>模式</b><em>${escapeHtml(variantLabel)}</em></span>
+          ${pending > 0 ? `<span><b>待判</b><em>${escapeHtml(String(pending))}</em></span>` : ""}
+        </div>
+        <div class="run-row-actions report-run-actions">
+          ${renderRunCompareToggle(run)}
+          ${reportAction}
+        </div>
       </div>
-      ${renderRunOperationalMeta(run)}
-      ${pathLabel ? `<p class="run-path" title="${escapeHtml(pathLabel)}">${escapeHtml(pathDisplay)}</p>` : ""}
     </article>
   `;
 }
@@ -14495,14 +21006,10 @@ function renderRunGroup(title, runs = []) {
   return `
     <div class="run-group-heading">
       <strong>${escapeHtml(title)}</strong>
-      <span>${escapeHtml(runs.length)} 条 · 按测试时间倒序</span>
+      <span>${escapeHtml(runs.length)} 条</span>
     </div>
     ${runs.map(renderRunCard).join("")}
   `;
-}
-
-function runCompareKey(run = {}) {
-  return String(run.run_dir || run.id || run.name || run.output_file || "");
 }
 
 function commandHas(command, option) {
@@ -14563,6 +21070,7 @@ function previewEvidenceHints(row = {}) {
 }
 
 function summarizeRunForCompare(detail, fallbackRun = {}) {
+  fallbackRun = fallbackRun || {};
   const record = detail?.record || fallbackRun || {};
   const manifest = detail?.manifest || {};
   const snapshot = detail?.config_snapshot || {};
@@ -14720,27 +21228,153 @@ function reportPathRow(label, path, options = {}) {
   const href = typeof options.href === "string"
     ? options.href
     : (options.href === false ? "" : artifactHref(value));
+  const compactActions = Boolean(options.compactActions);
   const openLabel = options.openLabel || "打开";
   const browserLabel = options.browserLabel || "浏览器打开";
+  const displayValue = options.raw ? value : displayPath(value);
+  const actions = compactActions
+    ? [
+      options.copy === false ? "" : `<button class="path-copy path-icon-button" type="button" data-copy="${escapeHtml(value)}" title="复制" aria-label="复制"><span class="ui-icon" data-ui-icon="copy" data-ui-icon-size="14" aria-hidden="true"></span></button>`,
+      href ? `<a class="path-link path-icon-button" href="${escapeHtml(href)}" target="_blank" rel="noreferrer" title="${escapeHtml(browserLabel)}" aria-label="${escapeHtml(browserLabel)}"><span class="ui-icon" data-ui-icon="external-link" data-ui-icon-size="14" aria-hidden="true"></span></a>` : "",
+      options.open === false ? "" : `<button class="path-open path-icon-button" type="button" data-path="${escapeHtml(value)}" title="${escapeHtml(openLabel)}" aria-label="${escapeHtml(openLabel)}"><span class="ui-icon" data-ui-icon="folder-open" data-ui-icon-size="14" aria-hidden="true"></span></button>`,
+    ].filter(Boolean).join("")
+    : [
+      options.copy === false ? "" : `<button class="path-copy" type="button" data-copy="${escapeHtml(value)}">复制</button>`,
+      href ? `<a class="path-link" href="${escapeHtml(href)}" target="_blank" rel="noreferrer">${escapeHtml(browserLabel)}</a>` : "",
+      options.open === false ? "" : `<button class="path-open" type="button" data-path="${escapeHtml(value)}">${escapeHtml(openLabel)}</button>`,
+    ].filter(Boolean).join("");
   return `
-    <article class="path-row">
-      <span>${escapeHtml(label)}</span>
-      <code>${escapeHtml(displayPath(value))}</code>
-      <button class="path-copy" type="button" data-copy="${escapeHtml(value)}">复制</button>
-      ${href ? `<a class="path-link" href="${escapeHtml(href)}" target="_blank" rel="noreferrer">${escapeHtml(browserLabel)}</a>` : ""}
-      <button class="path-open" type="button" data-path="${escapeHtml(value)}">${escapeHtml(openLabel)}</button>
+    <article class="path-row report-artifact-row">
+      <span class="report-artifact-type">${escapeHtml(label)}</span>
+      <code class="report-artifact-path">${escapeHtml(displayValue)}</code>
+      ${actions ? `<div class="path-row-actions">${actions}</div>` : ""}
     </article>
   `;
 }
 
+function reportKvRow(label, value, extraClass = "") {
+  const text = value === undefined || value === null || value === "" ? "-" : String(value);
+  return `
+    <div class="report-kv-row ${escapeHtml(extraClass)}">
+      <span class="report-kv-label">${escapeHtml(label)}</span>
+      <span class="report-kv-value" title="${escapeHtml(text)}">${escapeHtml(text)}</span>
+    </div>
+  `;
+}
+
+function resultSummaryActionHtml(action = {}) {
+  const label = String(action.label || "").trim();
+  if (!label) return "";
+  const className = String(action.className || "secondary").trim();
+  const viewJumpAttr = action.viewJump ? ` data-view-jump="${escapeHtml(String(action.viewJump))}"` : "";
+  const flowKey = String(action.flowKey || action.benchmarkStage || action.hotpotStage || "").trim();
+  const flowKeyAttr = flowKey ? ` data-flow-key="${escapeHtml(flowKey)}"` : "";
+  const hotpotSectionAttr = action.hotpotSection ? ` data-hotpot-section="${escapeHtml(String(action.hotpotSection))}"` : "";
+  const hotpotStageAttr = action.hotpotStage ? ` data-hotpot-stage="${escapeHtml(String(action.hotpotStage))}"` : "";
+  if (action.href) {
+    if (action.sameTab === true && action.viewJump) {
+      return `<button class="${escapeHtml(className)}" type="button" data-internal-href="${escapeHtml(String(action.href))}" data-view-jump="${escapeHtml(String(action.viewJump))}"${flowKeyAttr}${hotpotSectionAttr}${hotpotStageAttr}>${escapeHtml(label)}</button>`;
+    }
+    const sameTab = action.sameTab === true;
+    const targetAttr = sameTab ? "" : ` target="_blank" rel="noreferrer"`;
+    return `<a class="${escapeHtml(className)} button-link" href="${escapeHtml(String(action.href))}"${viewJumpAttr}${flowKeyAttr}${hotpotSectionAttr}${hotpotStageAttr}${targetAttr}>${escapeHtml(label)}</a>`;
+  }
+  if (action.viewJump) {
+    return `<button class="${escapeHtml(className)}" type="button"${viewJumpAttr}${flowKeyAttr}${hotpotSectionAttr}${hotpotStageAttr}>${escapeHtml(label)}</button>`;
+  }
+  if (action.path) {
+    return `<button class="${escapeHtml(className)} path-open" type="button" data-path="${escapeHtml(String(action.path))}">${escapeHtml(label)}</button>`;
+  }
+  if (action.copy) {
+    return `<button class="${escapeHtml(className)} path-copy" type="button" data-copy="${escapeHtml(String(action.copy))}">${escapeHtml(label)}</button>`;
+  }
+  return `<button class="${escapeHtml(className)}" type="button">${escapeHtml(label)}</button>`;
+}
+
+function benchmarkNavigationHref(viewId = "", options = {}) {
+  const targetView = String(viewId || "").trim();
+  if (!targetView) return "";
+  const url = new URL(`/?ui_refresh=${encodeURIComponent(UI_REFRESH_VERSION)}`, window.location.origin);
+  url.searchParams.set("view", targetView);
+  if (targetView === "hotpotQaView") {
+    const stage = normalizeBenchmarkFlowStage(options.benchmarkStage || options.flowStage || "");
+    const section = String(options.hotpotQaSection || "").trim();
+    if (stage) url.searchParams.set("benchmark_stage", stage);
+    if (section) url.searchParams.set("hotpot_section", section);
+  }
+  return `${url.pathname}${url.search}`;
+}
+
+function renderSharedResultSummary(target, {
+  eyebrow = "最近结果摘要",
+  title = "最近结果",
+  description = "",
+  metricsHtml = "",
+  paths = [],
+  note = "",
+  actions = [],
+  shellClass = "",
+  rootClass = "benchmark-result-summary",
+  headClass = "result-summary-head",
+  copyClass = "result-summary-copy",
+  bodyClass = "result-summary-body",
+  pathRowHtml = reportPathRow,
+  actionsClass = "panel-actions result-summary-actions",
+  emptyClass = "empty-state result-summary-empty",
+  pathListClass = "artifact-list result-summary-paths",
+  noteClass = "dataset-next-step",
+} = {}) {
+  if (!target) return;
+  const pathHtml = (Array.isArray(paths) ? paths : [])
+    .map((item) => {
+      if (!item) return "";
+      if (typeof item === "string") return item;
+      return pathRowHtml(item.label || "", item.value || "", item.options || item);
+    })
+    .filter(Boolean)
+    .join("");
+  const actionsHtml = (Array.isArray(actions) ? actions : [])
+    .map((action) => resultSummaryActionHtml(action))
+    .filter(Boolean)
+    .join("");
+  target.innerHTML = `
+    <div class="${escapeHtml(rootClass)} ${escapeHtml(shellClass)}">
+      <div class="${escapeHtml(headClass)}">
+        <div class="${escapeHtml(copyClass)}">
+          <small>${escapeHtml(eyebrow)}</small>
+          <strong>${escapeHtml(title)}</strong>
+          ${description ? `<p>${escapeHtml(description)}</p>` : ""}
+        </div>
+        ${actionsHtml ? `<div class="${escapeHtml(actionsClass)}">${actionsHtml}</div>` : ""}
+      </div>
+      ${metricsHtml || pathHtml ? `
+        <div class="${escapeHtml(bodyClass)}">
+          ${metricsHtml || ""}
+          ${pathHtml ? `<div class="${escapeHtml(pathListClass)}">${pathHtml}</div>` : ""}
+        </div>
+      ` : `<div class="${escapeHtml(emptyClass)}"><p>当前没有可显示的结果产物。</p></div>`}
+      ${note ? `<p class="${escapeHtml(noteClass)}">${escapeHtml(note)}</p>` : ""}
+    </div>
+  `;
+  bindCopyButtons(`#${target.id}`);
+  bindOpenButtons(`#${target.id}`);
+  bindViewJumpButtons(`#${target.id}`);
+  bindInternalNavigationButtons(`#${target.id}`);
+}
+
 function renderRunCompareSummary(rows = [], options = {}) {
   const target = $("runCompareResult");
+  const placeholder = $("runComparePlaceholder");
   if (!target) return;
   if (!rows.length) {
     target.innerHTML = "";
+    target.hidden = true;
+    if (placeholder) placeholder.hidden = false;
     return;
   }
   revealReportAnalysisPanel("runCompareResult");
+  target.hidden = false;
+  if (placeholder) placeholder.hidden = true;
   const normalized = rows.map((row) => ({
     id: row.id || row.name || "-",
     name: row.name || row.id || "-",
@@ -14828,6 +21462,7 @@ function renderRunCompareSummary(rows = [], options = {}) {
   `;
   bindCopyButtons("#runCompareResult");
   bindOpenButtons("#runCompareResult");
+  hydrateUiIcons(target);
 }
 
 async function compareSelectedRuns() {
@@ -14892,29 +21527,33 @@ function clearSelectedRuns() {
   if (target) {
     target.dataset.touched = "";
     target.innerHTML = "";
+    target.hidden = true;
   }
+  if ($("runComparePlaceholder")) $("runComparePlaceholder").hidden = false;
   toast("已清空报告对比选择");
 }
 
 async function refreshRuns() {
   const runsList = $("runsList");
   state.runsLoading = true;
+  state.activeBenchmarkView = "runsView";
+  state.activeDatasetFormat = "locomo";
   renderRunsSelectionState();
   if (runsList && !runsList.querySelector(".run-card")) {
-    runsList.innerHTML = `
+      runsList.innerHTML = `
       <article class="workbench-idle-note run-list-idle-note">
         <strong>正在同步结果</strong>
-        <p>读取近 24 小时内已经产出 QA 结果文件的记录，请稍候。</p>
+        <p>读取当前平台可见的 LoCoMo QA 历史结果，请稍候。</p>
       </article>
     `;
   }
   try {
     await refreshNativeOpenVikingBaseline();
-    const data = await api("/api/runs?limit=80");
+    const data = await api("/api/runs?include_history=1&limit=240");
     const allRuns = data.runs || [];
     const runs = allRuns
+      .filter((run) => normalizeDatasetFormat(benchmarkFormatFromRecord(run)) !== "chenmo")
       .filter((run) => !currentAccountOnlyEnabled("runsCurrentAccountOnly") || matchesCurrentAccount(run))
-      .filter((run) => isRecentWithinHours(run, 24))
       .filter((run) => isQaRunWithOutputFile(run))
       .sort(recentLocomoRunSort);
     state.recentRuns = runs;
@@ -14927,16 +21566,30 @@ async function refreshRuns() {
     const pendingRuns = runs.filter((run) => !runHasFormalScore(run));
     if (runsList) {
       runsList.innerHTML = runs.length
-      ? `${renderRunGroup("近 24 小时已判分", scoredRuns)}${renderRunGroup("近 24 小时待判分", pendingRuns)}`
+      ? `${renderRunGroup("LoCoMo 已判分历史", scoredRuns)}${renderRunGroup("LoCoMo 待判分 / 待补报告", pendingRuns)}`
       : `
-        <article class="workbench-idle-note run-list-idle-note">
-          <strong>${currentAccountOnlyEnabled("runsCurrentAccountOnly") ? "当前空间近 24 小时暂无 QA 结果" : "近 24 小时暂无 QA 结果"}</strong>
+        <article class="workbench-idle-note run-list-idle-note task-empty-state">
+          <strong>${currentAccountOnlyEnabled("runsCurrentAccountOnly") ? "当前空间暂无最近任务" : "当前没有最近任务"}</strong>
           <p>${currentAccountOnlyEnabled("runsCurrentAccountOnly") ? "先运行问答测试，或者取消“只看当前空间”后再刷新。" : "先运行问答测试，生成结果文件后再回来查看报告。"}</p>
         </article>
       `;
+      hydrateUiIcons(runsList);
     }
     document.querySelectorAll("#runsList .memory-hit").forEach((card) => {
       card.addEventListener("click", () => loadRunDetail(card.dataset.runDir || "", card.dataset.outputFile || "", card.dataset.datasetFormat || "").catch((e) => toast(e.message)));
+    });
+    document.querySelectorAll("#runsList [data-run-action]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const card = event.currentTarget.closest(".run-card");
+        if (!card) return;
+        handleRunCardAction(
+          card.dataset.runDir || "",
+          card.dataset.outputFile || "",
+          event.currentTarget.dataset.runAction || "",
+          card.dataset.datasetFormat || ""
+        ).catch((e) => toast(e.message));
+      });
     });
     document.querySelectorAll("#runsList .run-compare-toggle").forEach((label) => {
       label.addEventListener("click", (event) => event.stopPropagation());
@@ -14964,9 +21617,12 @@ async function refreshRuns() {
     const selected = state.selectedRunDir
       ? runs.find((run) => run.run_dir === state.selectedRunDir)
       : null;
+    const preferred = selected || preferredReportRun(runs);
     if (selected) {
       await loadRunDetail(selected.run_dir || "", selected.output_file || "", benchmarkFormatFromRecord(selected));
-    } else if (!state.selectedRunDir) {
+    } else if (preferred) {
+      await loadRunDetail(preferred.run_dir || "", preferred.output_file || "", benchmarkFormatFromRecord(preferred));
+    } else {
       resetRunsDetailPanels();
     }
   } finally {
@@ -15447,22 +22103,23 @@ function renderRunAudit(detail = {}, candidateRecord = {}, summary = {}, runDir 
   if (pendingRows > 0) warnings.splice(2, 0, runAuditChip(`未判分 ${pendingRows}`, "warn", "存在 UNSCORED 行"));
   const questionText = row.questions && row.questions !== "-" ? String(row.questions).split(",").length : "-";
   target.innerHTML = `
-    <section class="run-audit-card primary">
-      <div class="run-audit-head">
+    <section class="run-audit-card primary report-summary-card">
+      <div class="run-audit-head report-summary-head">
         <div>
           <span class="label">运行审计</span>
-          <h4>${escapeHtml(row.id || candidateRecord.id || "当前结果")}</h4>
+          <h4 class="report-run-id" title="${escapeHtml(row.id || candidateRecord.id || "当前结果")}">${escapeHtml(row.id || candidateRecord.id || "当前结果")}</h4>
         </div>
         <div class="run-audit-chips">${warnings.join("")}</div>
       </div>
-      <div class="run-audit-grid">
-        ${runAuditMetric("回答模型", row.answer_model)}
-        ${runAuditMetric("判分模型", row.judge_model)}
-        ${runAuditMetric("向量模型", row.embedding_model)}
-        ${runAuditMetric(RETRIEVAL_COUNT_LABEL, row.top_k)}
-        ${runAuditMetric("提示词", row.prompt_mode)}
-        ${runAuditMetric("官方指标", row.official_metric || "-")}
-        ${runAuditMetric("配置来源", row.config_source)}
+      <div class="report-kv-grid">
+        ${reportKvRow("Run ID", row.id || candidateRecord.id || "-")}
+        ${reportKvRow("QA 模型", row.answer_model, "report-model-name")}
+        ${reportKvRow("Judge 模型", row.judge_model, "report-model-name")}
+        ${reportKvRow("向量模型", row.embedding_model, "report-model-name")}
+        ${reportKvRow("召回条数", row.top_k)}
+        ${reportKvRow("提示词", row.prompt_mode)}
+        ${reportKvRow("官方指标", row.official_metric || "-")}
+        ${reportKvRow("配置来源", row.config_source)}
       </div>
     </section>
     <details class="run-audit-fold ${alignment.tone}">
@@ -15563,6 +22220,17 @@ async function loadRunDetail(runDir, outputFile, datasetFormat = "") {
     const candidateRecord = {...record, run_dir: record.run_dir || runDir, output_file: record.output_file || outputFile, summary};
     state.selectedRunDir = runDir || state.selectedRunDir || "";
     state.selectedRunDatasetFormat = fallbackDatasetFormatForRecord(candidateRecord, formatHint);
+    if (state.selectedRunDatasetFormat === "chenmo") {
+      state.selectedRunRecord = null;
+      state.selectedRunDir = "";
+      state.selectedRunDatasetFormat = "";
+      resetRunsDetailPanels();
+      syncSelectedRunCards();
+      renderRunsSelectionState();
+      updateJudgeAndReportActionButtons();
+      toast("ChenMo 入口已下线");
+      return;
+    }
     state.selectedRunRecord = candidateRecord;
     rememberBenchmarkRecord(candidateRecord, state.selectedRunDatasetFormat);
     if (state.selectedRunDatasetFormat !== "locomo") {
@@ -15575,6 +22243,17 @@ async function loadRunDetail(runDir, outputFile, datasetFormat = "") {
     if (run) {
       state.selectedRunRecord = run;
       state.selectedRunDatasetFormat = fallbackDatasetFormatForRecord(run, formatHint);
+      if (state.selectedRunDatasetFormat === "chenmo") {
+        state.selectedRunRecord = null;
+        state.selectedRunDir = "";
+        state.selectedRunDatasetFormat = "";
+        resetRunsDetailPanels();
+        syncSelectedRunCards();
+        renderRunsSelectionState();
+        updateJudgeAndReportActionButtons();
+        toast("ChenMo 入口已下线");
+        return;
+      }
       rememberBenchmarkRecord(run, state.selectedRunDatasetFormat);
       if (state.selectedRunDatasetFormat !== "locomo") {
         markDatasetOutputFile(outputFile || run.output_file || "", state.selectedRunDatasetFormat);
@@ -15818,55 +22497,181 @@ async function loadLongMemBaselineComparison() {
   bindCopyButtons("#longMemBaselineResult");
 }
 
+function longMemLatestResultTargets() {
+  return ["longMemLatestResultPanel", "longMemBaselineResult"]
+    .map((id) => $(id))
+    .filter(Boolean);
+}
+
+function renderLongMemLatestResultHtml(html = "") {
+  const targets = longMemLatestResultTargets();
+  if (!targets.length) return;
+  targets.forEach((target) => {
+    target.innerHTML = html;
+  });
+  bindCopyButtons("#longMemLatestResultPanel");
+  bindCopyButtons("#longMemBaselineResult");
+  bindCopyButtons("#longMemRunResult");
+  bindOpenButtons("#longMemLatestResultPanel");
+  bindOpenButtons("#longMemBaselineResult");
+  bindOpenButtons("#longMemRunResult");
+}
+
+async function loadLongMemRunSnapshot(run = {}) {
+  const artifactSummary = await loadFinalBenchmarkArtifactSummary(run, "longmemeval").catch(() => null);
+  const summary = artifactSummary ? {...(run.summary || {}), ...artifactSummary} : {...(run.summary || {})};
+  return {
+    ...run,
+    summary,
+    import_summary: summary.import_summary || run.import_summary || {},
+  };
+}
+
+function formatLongMemTokenFact(label, value, callCount = null) {
+  if (value == null) return "";
+  if (Number(value) <= 0 && !(Number(callCount) > 0)) return `${label} 未打点`;
+  return `${label} ${formatInt(value)}`;
+}
+
+function summarizeLongMemEvidenceFacts(summary = {}) {
+  const llmCalls = summary.llm_call_count ?? summary.import_summary?.llm_call_count ?? summary.import_summary?.llm_log_rows ?? null;
+  return [
+    summary?.overall_accuracy != null ? `acc ${percent(summary.overall_accuracy)}` : "",
+    summary?.task_averaged_accuracy != null ? `task ${percent(summary.task_averaged_accuracy)}` : "",
+    formatLongMemTokenFact("judge", summary?.judge_total_tokens, summary?.graded),
+    formatLongMemTokenFact("llm", summary?.llm_total_tokens, llmCalls),
+    formatLongMemTokenFact("import", summary?.import_total_tokens, llmCalls),
+    summary?.complete_samples != null ? `complete ${formatInt(summary.complete_samples)}` : "",
+    summary?.pending_async_samples != null ? `pending ${formatInt(summary.pending_async_samples)}` : "",
+  ].filter(Boolean).join(" · ") || "-";
+}
+
 async function loadLatestLongMemResults() {
-  const runs = [
-    {
-      label: "100 题 subset aggregate",
-      runDir: runPath("manual_longmemeval_subset_100"),
-      csv: runPath("manual_longmemeval_subset_100", "local_agent", "local_agent_results.csv"),
-      summary: "92/100 exact reference · 正式判分待全量",
-    },
-    {
-      label: "50 题判分小样本核验",
-      runDir: runPath("manual_longmemeval_acronym_judge_smoke_50"),
-      csv: runPath("manual_longmemeval_acronym_judge_smoke_50", "local_agent", "local_agent_results.csv"),
-      summary: "50/50 正式判分 · 100.0%",
-    },
-    {
-      label: "20 题判分小样本核验",
-      runDir: runPath("manual_longmemeval_numericalias_judge_smoke_20"),
-      csv: runPath("manual_longmemeval_numericalias_judge_smoke_20", "local_agent", "local_agent_results.csv"),
-      summary: "20/20 正式判分 · 100.0%",
-    },
-  ];
-  $("longMemBaselineResult").innerHTML = `
-    <div class="report-digest">
-      <div class="report-digest-head">
-        <strong>最新 LongMemEval 结果</strong>
-        <span>100 题 + 独立判分抽样</span>
+  const data = await api("/api/runs?limit=240&include_history=1");
+  const allRuns = (data.runs || [])
+    .filter((run) => normalizeDatasetFormat(benchmarkFormatFromRecord(run)) === "longmemeval")
+    .filter((run) => run.output_file || run.run_dir)
+    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+  const recentRuns = allRuns.slice(0, 6);
+  if (!allRuns.length) {
+    if ($("longMemLatestResultPanel")) $("longMemLatestResultPanel").hidden = false;
+    renderLongMemLatestResultHtml(`
+      <div class="analysis-box-note">
+        <strong>还没有 LongMemEval 运行结果</strong>
+        <p>先完成一次 LongMemEval 导入或 QA，这里才会显示真实历史记录。</p>
       </div>
-      <div class="latest-run-grid">
-        ${runs.map((run) => `
-          <article class="latest-run-card" data-run-dir="${escapeHtml(run.runDir)}" data-output-file="${escapeHtml(run.csv)}">
-            <span>${escapeHtml(run.label)}</span>
-            <strong>${escapeHtml(run.summary)}</strong>
-            <code>${escapeHtml(run.csv)}</code>
-            <div class="panel-actions">
-              <button class="secondary latest-run-open" type="button">打开任务</button>
-              <button class="secondary path-copy" type="button" data-copy="${escapeHtml(run.csv)}">复制结果文件</button>
-            </div>
-          </article>
-        `).join("")}
+    `);
+    return toast("还没有 LongMemEval 结果");
+  }
+  const recentLoadedRuns = await Promise.all(recentRuns.map((run) => loadLongMemRunSnapshot(run).catch(() => run)));
+  const baselineCandidates = allRuns
+    .filter((item) => ["echomemory_longmem_oracle50_fix2_20260624", "echomemory_longmem_smokefix_20260624_1q", "formal_longmemeval_s_full_openviking_20260606_1530"].includes(String(item.id || "")))
+    .filter((item) => !recentRuns.some((recent) => recent.id === item.id));
+  const baselineLoadedRuns = baselineCandidates.length
+    ? await Promise.all(baselineCandidates.map((run) => loadLongMemRunSnapshot(run).catch(() => run)))
+    : [];
+  const loadedRuns = [...recentLoadedRuns, ...baselineLoadedRuns];
+  const latest = recentLoadedRuns[0] || loadedRuns[0] || {};
+  const oracle50Run = loadedRuns.find((item) => item.id === "echomemory_longmem_oracle50_fix2_20260624") || null;
+  const smokeRun = loadedRuns.find((item) => item.id === "echomemory_longmem_smokefix_20260624_1q") || null;
+  const openVikingRun = loadedRuns.find((item) => item.id === "formal_longmemeval_s_full_openviking_20260606_1530")
+    || loadedRuns.find((item) => item.summary?.overall_accuracy != null && String(item.id || "").includes("openviking"))
+    || null;
+  const latestSummary = latest.summary || {};
+  const latestSignal = longMemIssueSignals(latest, latest.data || latest.dataset || latest.dataset_path || "");
+  const latestEvidenceLines = latestSignal.evidenceLines.length
+    ? latestSignal.evidenceLines
+    : ["当前没有显式导入阻塞信号，或摘要尚未展开完整字段。"];
+  const oracle50Evidence = oracle50Run?.summary?.import_summary?.records?.[0]
+    ? `Oracle50 导入：pending_async_memory=${String(oracle50Run.summary.import_summary.records[0].pending_async_memory_after_commit)}，retrieval_ready=${String(oracle50Run.summary.import_summary.records[0].retrieval_ready_after_commit)}，qa_ready=${String(oracle50Run.summary.import_summary.records[0].qa_ready_after_commit)}`
+    : "Oracle50 的导入结果应直接展示 pending_async_memory、retrieval_ready、qa_ready 和 complete_samples。";
+  const smokeEvidence = smokeRun?.summary?.import_summary?.records?.[0]
+    ? `1q smoke: settle ${formatSecondsMetric(smokeRun.summary.import_summary.records[0].memory_settle_wait_elapsed_s ?? 0)}，inject ${formatSecondsMetric(smokeRun.summary.import_summary.records[0].memory_injection_time_s ?? 0)}，accuracy ${smokeRun.summary.accuracy != null ? percent(smokeRun.summary.accuracy) : "-"}`
+    : "1q smoke 的关键不是准确率本身，而是完整就绪前的长等待时间。";
+  const openVikingAccuracy = openVikingRun?.summary?.overall_accuracy ?? openVikingRun?.summary?.official_score ?? null;
+  const openVikingEvidence = openVikingAccuracy != null
+    ? `OpenViking baseline: ${percent(openVikingAccuracy)} · judge ${formatInt(openVikingRun.summary.judge_total_tokens)}`
+    : "OpenViking 基线应显示正式 LongMemEval 官方摘要，方便和 EchoMemory 对齐比较。";
+  const latestEchoRun = loadedRuns.find((item) => /echomemory/i.test(`${item.id || ""} ${item.name || ""}`)) || latest;
+  const latestAccuracyValue = latestSummary.overall_accuracy ?? latestSummary.official_score ?? latestSummary.accuracy;
+  const latestRowsText = latestSummary.rows != null
+    ? `${formatInt(latestSummary.rows)} 题`
+    : (latest.sample === "all" || latest.sample === "" || latest.sample == null ? "全量范围" : `sample ${latest.sample}`);
+  const latestUpdatedText = formatDateTimeLocal(latest.created_at || latest.updated_at || latest.ended_at || "") || "-";
+  const latestDurationText = latest.duration_s == null ? "-" : formatDuration(latest.duration_s);
+  if ($("longMemLatestResultPanel")) $("longMemLatestResultPanel").hidden = false;
+  renderSharedResultSummary($("longMemLatestResultPanel"), {
+    eyebrow: "最新结果",
+    title: "LongMemEval 最新结果",
+    description: `${latest.name || latest.id || "-"} · ${latestSignal.importStatus || "-"}`,
+    metricsHtml: renderLongMemCompactMetrics({
+      ...latestSummary,
+      overall_accuracy: latestAccuracyValue,
+      avg_time: latest.duration_s,
+    }),
+    paths: [
+      latest.output_file ? {label: "Result JSON", value: latest.output_file} : null,
+      latest.run_dir ? {label: "Run Directory", value: latest.run_dir} : null,
+      latest.run_dir ? {label: "Report HTML", value: `${latest.run_dir}/report.html`} : null,
+      latestSummary.summary_path ? {label: "Summary", value: latestSummary.summary_path} : null,
+    ].filter(Boolean),
+    note: `${latestRowsText} · ${latestDurationText} · 最近更新 ${latestUpdatedText} · ${latestEvidenceLines[0] || "暂无显式阻塞信号。"}`
+      + `${summarizeLongMemEvidenceFacts(latestSummary) ? ` · ${summarizeLongMemEvidenceFacts(latestSummary)}` : ""}`,
+    actions: [
+      latest.run_dir ? {label: "打开任务", open: latest.run_dir} : null,
+      latest.output_file ? {label: "复制结果路径", copy: latest.output_file} : null,
+    ].filter(Boolean),
+    ...longMemSharedResultSummaryOptions("lme-result-shell"),
+  });
+  if ($("longMemBaselineResult")) {
+    $("longMemBaselineResult").hidden = false;
+    $("longMemBaselineResult").innerHTML = `
+      <div class="benchmark-workbench-result-summary lme-result-shell lme-history-shell">
+        <div class="report-digest-head">
+          <strong>近期运行对照</strong>
+          <span>${escapeHtml(recentLoadedRuns.length ? `${recentLoadedRuns.length} 条` : "无历史")}</span>
+        </div>
+        <div class="benchmark-workbench-artifact-rows lme-history-list">
+          ${recentLoadedRuns.map((run) => {
+            const summary = run.summary || {};
+            const accuracy = summary.overall_accuracy ?? summary.official_score ?? summary.accuracy;
+            const scoreText = accuracy == null ? "待判分" : percent(accuracy);
+            const countText = summary.rows != null ? `${formatInt(summary.rows)} 题` : (run.sample === "all" || run.sample === "" ? "全量" : `${run.sample}`);
+            const durationText = run.duration_s == null ? "-" : formatDuration(run.duration_s);
+            const title = run.name || run.id || "LongMemEval";
+            const outputFile = run.output_file || "";
+            const runDir = run.run_dir || "";
+            const createdText = formatDateTimeLocal(run.created_at || run.updated_at || run.ended_at || "") || "-";
+            return `
+              <article class="benchmark-workbench-preview-card lme-history-row latest-run-card" data-run-dir="${escapeHtml(runDir)}" data-output-file="${escapeHtml(outputFile)}">
+                <div class="lme-history-main">
+                  <strong>${escapeHtml(title)}</strong>
+                  <p>${escapeHtml(createdText)} · ${escapeHtml(countText)} · ${escapeHtml(durationText)} · ${escapeHtml(scoreText)}</p>
+                </div>
+                <code title="${escapeHtml(outputFile || runDir)}">${escapeHtml(compactPath(displayPath(outputFile || runDir), 28, 24))}</code>
+                <div class="panel-actions">
+                  <button class="secondary latest-run-open" type="button">打开任务</button>
+                  <button class="secondary path-copy" type="button" data-copy="${escapeHtml(outputFile || runDir || "")}">复制路径</button>
+                </div>
+              </article>
+            `;
+          }).join("")}
+        </div>
+        ${longMemNoteBlockHtml([oracle50Evidence, smokeEvidence, openVikingEvidence])}
       </div>
-    </div>
-  `;
+    `;
+  }
   document.querySelectorAll("#longMemBaselineResult .latest-run-open").forEach((button) => {
     button.addEventListener("click", (event) => {
       const card = event.currentTarget.closest(".latest-run-card");
       loadRunDetail(card.dataset.runDir || "", card.dataset.outputFile || "", "longmemeval").catch((e) => toast(e.message));
     });
   });
+  renderLongMemIssueBrief(latestEchoRun);
+  bindCopyButtons("#longMemLatestResultPanel");
   bindCopyButtons("#longMemBaselineResult");
+  bindOpenButtons("#longMemLatestResultPanel");
+  bindOpenButtons("#longMemBaselineResult");
   toast("已加载最新 LongMemEval 结果");
 }
 
@@ -15903,15 +22708,27 @@ async function loadRunQuestions(csvPath) {
   const rows = data.rows || [];
   $("runQuestionList").innerHTML = rows.map((row, index) => `
     <article class="memory-hit" data-question-id="${escapeHtml(row.question_id || "")}" data-row-index="${index}" data-csv-path="${escapeHtml(csvPath)}">
-      <strong>${escapeHtml(row.result || row.simple_grade || "待判分")} · ${escapeHtml(row.sample_id || "-")} · ${escapeHtml(row.question_id || `row-${index + 1}`)} · C${escapeHtml(row.category || "")}</strong>
-      <p>${escapeHtml(row.question || "-")}</p>
+      <div class="run-question-row-head">
+        <strong>${escapeHtml(row.result || row.simple_grade || "待判分")}</strong>
+        <span>${escapeHtml(row.category ? `C${row.category}` : "-")}</span>
+      </div>
+      <p title="${escapeHtml(row.question || "-")}">${escapeHtml(row.question || "-")}</p>
+      <div class="run-question-row-meta">
+        <span>${escapeHtml(row.sample_id || "-")}</span>
+        <span>${escapeHtml(row.question_id || `row-${index + 1}`)}</span>
+      </div>
     </article>
   `).join("") || "<p>这个结果没有可显示的问题。</p>";
   document.querySelectorAll("#runQuestionList .memory-hit").forEach((card) => {
-    card.addEventListener("click", () => openQuestionDetail(card.dataset.csvPath || "", card.dataset.questionId || "", card.dataset.rowIndex || "").catch((e) => toast(e.message)));
+    card.addEventListener("click", () => {
+      document.querySelectorAll("#runQuestionList .memory-hit.selected").forEach((item) => item.classList.remove("selected"));
+      card.classList.add("selected");
+      openQuestionDetail(card.dataset.csvPath || "", card.dataset.questionId || "", card.dataset.rowIndex || "").catch((e) => toast(e.message));
+    });
   });
   if (rows.length) {
     const first = rows[0] || {};
+    document.querySelector("#runQuestionList .memory-hit")?.classList.add("selected");
     await openQuestionDetail(csvPath, first.question_id || "", "0");
   } else {
     $("questionDetailPane").innerHTML = "<p class=\"muted-list-note\">这个结果没有可显示的问题详情。</p>";
@@ -15919,37 +22736,83 @@ async function loadRunQuestions(csvPath) {
 }
 
 async function openQuestionDetail(csvPath, questionId, rowIndex, targetId = "questionDetailPane") {
+  if (targetId === "judgeQuestionDetailPane") {
+    document.querySelectorAll("#sampleRows .memory-hit.selected").forEach((item) => item.classList.remove("selected"));
+    const activeJudgeCard = Array.from(document.querySelectorAll("#sampleRows .memory-hit")).find((card) =>
+      (questionId && (card.dataset.questionId || "") === String(questionId))
+      || (!questionId && (card.dataset.rowIndex || "") === String(rowIndex))
+    );
+    activeJudgeCard?.classList.add("selected");
+  }
   const qs = new URLSearchParams({path: csvPath});
   if (questionId) qs.set("question_id", questionId);
   else qs.set("index", rowIndex);
   const data = await api(`/api/question-detail?${qs.toString()}`);
   const row = data.row || {};
   const memories = data.relevant_memory || [];
+  const diagnosisLabels = diagnosisFromRow(row, memories, data);
   const judgeResult = data.judge?.result || "待判分";
   const judgeClass = String(judgeResult).toUpperCase() === "CORRECT" ? "correct" : (String(judgeResult).toUpperCase() === "WRONG" ? "wrong" : "pending");
   const target = $(targetId);
   if (!target) return;
   if (targetId === "judgeQuestionDetailPane") {
     target.innerHTML = `
-      <div class="question-report">
-        <header class="question-report-head">
-          <div>
-            <span>${escapeHtml(row.question_id || `row-${data.index + 1}`)}</span>
+      <div class="question-report judge-question-report">
+        <header class="question-report-head judge-detail-head">
+          <div class="question-report-copy">
+            <div class="judge-detail-kicker-row">
+              <span class="judge-question-id">${escapeHtml(row.question_id || `row-${data.index + 1}`)}</span>
+              ${locomoCategoryBadge(row.category)}
+            </div>
             <h4>${escapeHtml(row.question || "-")}</h4>
-            ${locomoCategoryBadge(row.category)}
+            <div class="judge-detail-meta-row">
+              <span>${escapeHtml(row.sample_id || "-")}</span>
+              <span>${escapeHtml(formatInt(memories.length))} evidence</span>
+              <span>${escapeHtml(row.injection_tokens_est || "-")} tokens</span>
+            </div>
           </div>
-          <strong class="judge-chip ${judgeClass}">${escapeHtml(judgeResult)}</strong>
+          <div class="judge-detail-status-stack">
+            <strong class="judge-chip ${judgeClass}">${escapeHtml(judgeResult)}</strong>
+            <small>${escapeHtml(evidenceModeLabel(row, data))}</small>
+          </div>
         </header>
-        <div class="answer-grid detail-answer-grid">
-          <section><span>标准答案</span><p>${escapeHtml(row.answer || "-")}</p></section>
-          <section><span>模型回答</span><p>${escapeHtml(row.response || "-")}</p></section>
+        <section class="judge-question-strip">
+          <span>Question</span>
+          <p class="judge-question-text">${escapeHtml(row.question || "-")}</p>
+        </section>
+        <div class="answer-grid detail-answer-grid judge-answer-compare">
+          <section class="judge-answer-block"><span>Gold Answer</span><p>${escapeHtml(row.answer || "-")}</p></section>
+          <section class="judge-answer-block"><span>Model Answer</span><p>${escapeHtml(row.response || "-")}</p></section>
         </div>
-        <section class="judge-detail ${judgeClass}">
-          <span>判分依据</span>
+        <section class="judge-detail judge-reason-block ${judgeClass}">
+          <div class="judge-section-head">
+            <span>Judge Reason</span>
+            <small>${diagnosisLabels.map((label) => escapeHtml(label)).join(" · ") || "Not available"}</small>
+          </div>
           <p>${escapeHtml(data.judge?.reasoning || "尚未判分。")}</p>
         </section>
+        <section class="judge-evidence-review">
+          <div class="judge-section-head">
+            <span>Evidence Trace</span>
+            <small>${escapeHtml(formatInt(memories.length))} retrieved</small>
+          </div>
+          <div class="judge-evidence-list">
+            ${memories.length ? memories.map((item, index) => renderJudgeEvidenceRow(item, index)).join("") : "<p class=\"judge-empty-copy\">没有证据字段或没有召回记忆。</p>"}
+          </div>
+        </section>
+        <div class="judge-detail-meta judge-detail-footer-grid">
+          <article><span>会话范围</span><strong>${escapeHtml(row.sample_id || "-")}</strong></article>
+          <article><span>题目分类</span><strong>${escapeHtml(row.category || "-")}</strong></article>
+          <article><span>召回证据</span><strong>${escapeHtml(memories.length)}</strong></article>
+          <article><span>Token 估算</span><strong>${escapeHtml(row.injection_tokens_est || "-")}</strong></article>
+        </div>
+        <details class="context-details">
+          <summary>上下文预览</summary>
+          <pre>${escapeHtml(data.context || row.context_preview || "-")}</pre>
+        </details>
       </div>
     `;
+    renderJudgeFailureDiagnosis(data, row);
     bindCopyButtons(`#${targetId}`);
     bindOpenButtons(`#${targetId}`);
     return;
@@ -16175,10 +23038,9 @@ async function runFullMemoryQa() {
     const scope = currentLocomoSampleScope();
     const scopeLabel = scope.isAll ? "全部 LoCoMo" : `${scope.label} 当前 conv 全量`;
     const questionCount = scope.isAll ? Number(dataset.questions || 0) : Number(scope.questionCount || state.questions.length || 0);
-    $("quickTestStatus").innerHTML = `
-      <p><strong>本次运行：${escapeHtml(scopeLabel)}</strong></p>
-      <p>预计题数：${escapeHtml(questionCount ? `${formatInt(questionCount)} 题` : "未知")} · 使用当前账户的 ${escapeHtml(memoryBackendLabel(currentMemoryBackend()))} 记忆空间。</p>
-    `;
+  $("quickTestStatus").innerHTML = `
+    <p><strong>${escapeHtml(scopeLabel)}</strong><span>${escapeHtml(questionCount ? `${formatInt(questionCount)} 题` : "未知题数")}</span></p>
+  `;
     showView("evalView");
     const agentCfg = agentModelConfig();
     return await startTask(qaKind, {
@@ -16200,6 +23062,17 @@ async function runFullMemoryQa() {
 async function runJudgeForCurrentResult(options = {}) {
   const input = currentLocomoResultCsv();
   if (!input) return toast("请先运行或选择 LoCoMo 结果文件");
+  const activeLocomo = state.currentLocomoTask;
+  if (isTaskActive(activeLocomo) && (activeLocomo.output_file || "") === input) {
+    return toast("当前问答还在写结果文件，完成后再判分");
+  }
+  const activeTasks = await api("/api/tasks").catch(() => null);
+  const activeWriter = (activeTasks?.tasks || []).find((task) =>
+    isTaskActive(task) && (task.output_file || "") === input && (task.kind || "") !== "judge"
+  );
+  if (activeWriter) {
+    return toast("当前问答还在写结果文件，完成后再判分");
+  }
   const validation = await preflightJudge();
   if (!validation?.ok) return toast("判分预检未通过，请先看检查结果");
   const result = await api(`/api/results?path=${encodeURIComponent(input)}`).catch(() => null);
@@ -16266,8 +23139,7 @@ async function retryMissingOpenVikingQa() {
   const workspace = effectiveOpenVikingWorkspace("openviking_qa");
   if (!workspace) return toast("请先填写 OpenViking 记忆目录");
   $("quickTestStatus").innerHTML = `
-    <p><strong>补跑缺失题</strong> · ${escapeHtml(missingIds.length)} 题</p>
-    <p>${escapeHtml(missingIds.slice(0, 8).join(" / "))}${missingIds.length > 8 ? " ..." : ""}</p>
+    <p><strong>补跑缺失题</strong><span>${escapeHtml(missingIds.length)} 题</span></p>
   `;
   showView("evalView");
   const agentCfg = agentModelConfig();
@@ -16353,45 +23225,162 @@ function bindNavButtons() {
     if (button.dataset.bound === "1") return;
     button.dataset.bound = "1";
     button.addEventListener("click", () => {
-      const targetView = button.dataset.view || "";
+      const rawTargetView = button.dataset.view || "";
+      const targetView = retiredViewFallback(rawTargetView) || rawTargetView;
       const options = isStandaloneBenchmarkView(targetView) ? {benchmarkStage: "import"} : {};
       options.userTriggered = true;
+      options.fromSidebar = true;
+      const removedToast = removedViewToast(rawTargetView);
+      if (removedToast) toast(removedToast);
       showView(targetView, options);
     });
   });
 }
 
+function updateAppTopbarBrand(viewId = "") {
+  const brand = document.querySelector(".app-topbar-brand");
+  if (!brand) return;
+  const activeView = String(viewId || document.body?.dataset?.activeView || "");
+  const meta = TOPBAR_VIEW_META[activeView]
+    || TOPBAR_VIEW_META[VIEW_NAV_PARENT[activeView] || ""]
+    || TOPBAR_VIEW_META.openvikingView;
+  const mark = brand.querySelector(".app-topbar-mark");
+  const title = brand.querySelector(".app-topbar-copy strong");
+  const subtitle = brand.querySelector(".app-topbar-copy span");
+  if (mark && meta.icon) {
+    mark.dataset.uiIcon = meta.icon;
+  }
+  if (title) title.textContent = meta.label || "MemoryBench";
+  if (subtitle) subtitle.textContent = meta.subtitle || "";
+  hydrateUiIcons(brand);
+}
+
+function syncStandaloneBenchmarkChrome(viewId = "") {
+  const activeView = String(viewId || document.body?.dataset?.activeView || "");
+  const benchmarkContext = benchmarkFlowContext(activeView);
+  const isStandaloneBenchmarkContext = Boolean(
+    (benchmarkContext && normalizeDatasetFormat(benchmarkContext.format || "") !== "locomo")
+    || isStandaloneBenchmarkView(activeView)
+  );
+  const isHotpotQaView = activeView === "hotpotQaView";
+  const shell = document.querySelector(".app-shell");
+  const sidebar = document.querySelector(".app-sidebar");
+  const appContent = document.querySelector(".app-content");
+  const appHeader = document.querySelector(".locomo-app-header");
+  const topbarBrand = document.querySelector(".app-topbar-brand");
+  const flowNav = $("locomoFlowNav");
+  const overviewPanel = $("locomoOverviewPanel");
+  const statusAction = document.querySelector(".workspace-action-status");
+
+  if (shell) shell.style.gridTemplateColumns = isHotpotQaView ? "minmax(0,1fr)" : "";
+  if (sidebar) {
+    sidebar.hidden = false;
+    sidebar.style.display = "";
+  }
+  if (appContent) appContent.style.width = isHotpotQaView ? "100%" : "";
+  if (appHeader) appHeader.hidden = isHotpotQaView;
+  if (topbarBrand) {
+    topbarBrand.hidden = isHotpotQaView;
+    topbarBrand.style.pointerEvents = isHotpotQaView ? "none" : "";
+  }
+  if (flowNav) flowNav.hidden = isStandaloneBenchmarkContext;
+  if (overviewPanel) overviewPanel.hidden = isStandaloneBenchmarkContext;
+  if (statusAction) statusAction.hidden = isHotpotQaView;
+  if (isHotpotQaView) syncHotpotQaHeaderMeta();
+  if (activeView === "proAgentBenchView") syncGenericWorkbenchHeaderMeta("proagentbench");
+  if (activeView === "tauBenchView") syncGenericWorkbenchHeaderMeta("tau2bench");
+}
+
+const SIDEBAR_GROUP_ORDER = [
+  {key: "workspace", label: "工作台"},
+  {key: "datasets", label: "评测数据集"},
+  {key: "system", label: "系统管理"},
+];
+
+const SIDEBAR_VIEW_META = {
+  chatView: {group: "workspace", label: "对话", icon: "message-circle"},
+  openvikingView: {group: "datasets", label: "LoCoMo", icon: "database"},
+  longMemEvalView: {group: "datasets", label: "LongMemEval", icon: "book-open"},
+  evolvingEventsView: {group: "datasets", label: "EvolvingEvents", icon: "calendar-clock"},
+  hotpotQaView: {group: "datasets", label: "HotpotQA", icon: "brain"},
+  proAgentBenchView: {group: "datasets", label: "ProAgentBench", icon: "bot"},
+  tauBenchView: {group: "datasets", label: "Tau2-bench", icon: "boxes"},
+  systemConfigView: {group: "system", label: "系统配置", icon: "settings"},
+};
+
+function sidebarViewMeta(view = "", item = {}) {
+  const base = SIDEBAR_VIEW_META[String(view || "")] || {};
+  return {
+    group: base.group || "datasets",
+    label: String(base.label || view || "").trim(),
+    icon: String(item.icon || base.icon || "panel-left"),
+    title: String(item.purpose || base.label || item.label || view || "").trim(),
+  };
+}
+
+function shouldHideSidebarEntry(item = {}) {
+  const view = String(item?.view || "").trim().toLowerCase();
+  const label = String(item?.label || "").trim().toLowerCase();
+  const purpose = String(item?.purpose || "").trim().toLowerCase();
+  const haystack = `${view} ${label} ${purpose}`;
+  return /chenmo|陈默/.test(haystack);
+}
+
+function renderSidebarNavigation(entries = null) {
+  const nav = document.querySelector(".side-nav");
+  if (!nav) return;
+  const sourceEntries = Array.isArray(entries) && entries.length
+    ? entries
+    : Object.keys(SIDEBAR_VIEW_META).map((view) => ({view, label: SIDEBAR_VIEW_META[view].label}));
+  const activeView = VIEW_NAV_PARENT[document.body.dataset.activeView] || document.body.dataset.activeView || "openvikingView";
+  const grouped = new Map(SIDEBAR_GROUP_ORDER.map((group) => [group.key, []]));
+  sourceEntries.forEach((item) => {
+    if (!item?.view) return;
+    if (shouldHideSidebarEntry(item)) return;
+    const resolvedView = String(item.view || "").trim();
+    if (!SIDEBAR_VIEW_META[resolvedView]) return;
+    const meta = sidebarViewMeta(resolvedView, item);
+    if (!grouped.has(meta.group)) grouped.set(meta.group, []);
+    grouped.get(meta.group).push({
+      view: resolvedView,
+      label: meta.label,
+      icon: meta.icon,
+      title: meta.title,
+    });
+  });
+  nav.innerHTML = SIDEBAR_GROUP_ORDER.map((group) => {
+    const items = grouped.get(group.key) || [];
+    if (!items.length) return "";
+    return `
+      <div class="nav-group" data-nav-group="${escapeHtml(group.key)}">
+        <span>${escapeHtml(group.label)}</span>
+        ${items.map((item) => `
+          <button class="nav-item ${item.view === activeView ? "active" : ""}" data-view="${escapeHtml(item.view)}" title="${escapeHtml(item.title)}">
+            <span class="nav-icon ui-icon" data-ui-icon="${escapeHtml(item.icon)}" data-ui-icon-size="18" aria-hidden="true"></span>
+            <span class="nav-label">${escapeHtml(item.label)}</span>
+          </button>
+        `).join("")}
+      </div>
+    `;
+  }).join("");
+  bindNavButtons();
+  hydrateUiIcons(nav);
+}
+
 function sidebarContractEntries(contract = state.uiContract || state.config?.ui_contract || {}) {
-  return Array.isArray(contract.sidebar) ? contract.sidebar.filter((item) => item && item.view && item.label) : [];
+  return Array.isArray(contract.sidebar)
+    ? contract.sidebar.filter((item) => {
+      const view = String(item?.view || "").trim();
+      return item && SIDEBAR_VIEW_META[view] && !RETIRED_VIEW_FALLBACKS[view] && !shouldHideSidebarEntry(item);
+    })
+    : [];
 }
 
 function applyUiContract(contract = {}) {
   state.uiContract = contract && typeof contract === "object" ? contract : {};
   document.documentElement.dataset.uiContractVersion = String(state.uiContract.version || "");
   const entries = sidebarContractEntries(state.uiContract);
-  if (!entries.length) return;
-  const group = document.querySelector(".side-nav .nav-group");
-  if (!group) return;
-  const existing = [...group.querySelectorAll(".nav-item[data-view]")].map((button) => [button.dataset.view, button.textContent.trim()]);
-  const expected = entries.map((item) => [String(item.view), String(item.label)]);
-  if (JSON.stringify(existing) !== JSON.stringify(expected)) {
-    const activeView = VIEW_NAV_PARENT[document.body.dataset.activeView] || document.body.dataset.activeView || "openvikingView";
-    group.innerHTML = `
-      <span>评测入口</span>
-      ${entries.map((item) => `
-        <button class="nav-item ${item.view === activeView ? "active" : ""}" data-view="${escapeHtml(item.view)}" title="${escapeHtml(item.purpose || "")}">${escapeHtml(item.label)}</button>
-      `).join("")}
-    `;
-  } else {
-    const buttons = [...group.querySelectorAll(".nav-item[data-view]")];
-    entries.forEach((item) => {
-      const button = buttons.find((candidate) => candidate.dataset.view === String(item.view));
-      if (!button) return;
-      button.textContent = String(item.label);
-      if (item.purpose) button.title = String(item.purpose);
-    });
-  }
-  bindNavButtons();
+  renderSidebarNavigation(entries.length ? entries : null);
 }
 
 function bind() {
@@ -16408,11 +23397,24 @@ function bind() {
     });
   });
   document.querySelectorAll("[data-view-jump]").forEach((button) => {
-    button.addEventListener("click", () => {
+    if (button.closest("#locomoFlowNav")) return;
+    if (button.dataset.viewJumpBound === "1") return;
+    button.dataset.viewJumpBound = "1";
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
       const options = button.dataset.flowKey ? {benchmarkStage: button.dataset.flowKey} : {};
       options.userTriggered = true;
-      showView(button.dataset.viewJump, options);
+      handleContextualViewJump(button, options);
     });
+  });
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest?.("[data-view-jump]");
+    if (!button || button.closest("#locomoFlowNav")) return;
+    if (button.dataset.viewJumpBound === "1") return;
+    event.preventDefault();
+    const options = button.dataset.flowKey ? {benchmarkStage: button.dataset.flowKey} : {};
+    options.userTriggered = true;
+    handleContextualViewJump(button, options);
   });
   document.querySelectorAll("[data-external-href]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -16421,20 +23423,25 @@ function bind() {
       window.open(href, "_blank", "noopener,noreferrer");
     });
   });
-  document.querySelectorAll("[data-chat-template]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const input = $("chatInput");
-      if (!input) return;
-      input.value = button.dataset.chatTemplate || "";
-      input.focus();
-      renderChatDebugStrip();
-    });
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-chat-template]");
+    if (!button) return;
+    const input = $("chatInput");
+    if (!input) return;
+    input.value = button.dataset.chatTemplate || "";
+    input.focus();
+    renderChatDebugStrip();
   });
   $("accountSelect")?.addEventListener("change", () => {
     const account = $("accountSelect").value || "default";
     state.lastArchiveRecord = null;
     state.lastChatContextData = null;
     state.chatContextPreviewKey = "";
+    // Apply the cached account immediately so the topbar/workspace fields do not
+    // stay on the previous account while the backend config request resolves.
+    applyAccountConfig(account);
+    renderImportPaths();
+    refreshImportActionLabels();
     loadAccountConfigFromBackend(account)
       .catch(() => null)
       .then(() => {
@@ -16453,6 +23460,17 @@ function bind() {
   });
   $("createAccount")?.addEventListener("click", handleCreateAccountClick);
   $("deleteAccount")?.addEventListener("click", () => deleteCurrentAccount().catch((e) => toast(e.message)));
+  $("refreshWorkspaceShell")?.addEventListener("click", async () => {
+    await Promise.allSettled([
+      refreshTasks().catch(() => {}),
+      refreshImportedMemories().catch(() => {}),
+      refreshLocomoFlowStatus(true).catch(() => {}),
+      renderRecentLocomoRuns({force: true}).catch(() => {}),
+    ]);
+    renderWorkspaceStatusStrip();
+    renderImportSidebarPanels();
+    toast("页面状态已刷新");
+  });
   $("accountNameInput")?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") createAccount().catch((e) => toast(e.message));
     if (event.key === "Escape") setAccountCreateExpanded(false);
@@ -16462,20 +23480,120 @@ function bind() {
   });
   $("loadDataset")?.addEventListener("click", () => loadDataset().catch((e) => toast(e.message)));
   $("sample")?.addEventListener("change", () => loadQuestions().catch((e) => toast(e.message)));
-  $("questionSearch")?.addEventListener("input", renderQuestions);
+  $("locomoQaUseTools")?.addEventListener("change", () => {
+    syncQaToolCallingInputs($("locomoQaUseTools")?.checked, "locomoQaUseTools");
+    persistCurrentAccountConfig();
+    refreshLocomoQaActionLabels();
+    renderQaReadinessPanel();
+    renderHotpotQaStatusBand(state.currentRunningTask && normalizeDatasetFormat(taskDatasetFormat(state.currentRunningTask, state.taskDatasetFormats[state.currentRunningTask.id] || "")) === "hotpotqa" ? state.currentRunningTask : null, state.currentRunningTask?.id ? (state.runningBenchmarkSummaries[state.currentRunningTask.id] || null) : null);
+  });
+  $("saveLocomoQaConfig")?.addEventListener("click", () => syncLocomoQaRuntimeInputsToAccountConfig());
+  $("hotpotQaUseTools")?.addEventListener("change", () => {
+    syncQaToolCallingInputs($("hotpotQaUseTools")?.checked, "hotpotQaUseTools");
+    persistCurrentAccountConfig();
+    renderQaReadinessPanel();
+    renderHotpotQaStatusBand(state.currentRunningTask && normalizeDatasetFormat(taskDatasetFormat(state.currentRunningTask, state.taskDatasetFormats[state.currentRunningTask.id] || "")) === "hotpotqa" ? state.currentRunningTask : null, state.currentRunningTask?.id ? (state.runningBenchmarkSummaries[state.currentRunningTask.id] || null) : null);
+  });
+  $("hotpotQaData")?.addEventListener("input", () => {
+    resetHotpotQaDatasetOverview();
+  });
+  $("hotpotQaData")?.addEventListener("change", () => {
+    const path = $("hotpotQaData")?.value.trim() || "";
+    rememberActiveDatasetView("hotpotQaView", "hotpotqa", path);
+    if (path) saveLastBenchmarkDataset({path, format: "hotpotqa", view: "hotpotQaView"});
+  });
+  $("hotpotQaCount")?.addEventListener("change", () => {
+    persistCurrentAccountConfig();
+    renderHotpotQaStatusBand(
+      state.currentRunningTask && normalizeDatasetFormat(taskDatasetFormat(state.currentRunningTask, state.taskDatasetFormats[state.currentRunningTask.id] || "")) === "hotpotqa"
+        ? state.currentRunningTask
+        : null,
+      state.currentRunningTask?.id ? (state.runningBenchmarkSummaries[state.currentRunningTask.id] || null) : null,
+    );
+  });
+  $("hotpotQaPickDataFile")?.addEventListener("click", () => {
+    $("hotpotQaDataFilePicker")?.click();
+  });
+  $("hotpotQaDataFilePicker")?.addEventListener("change", (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const path = relativeDatasetPath(file.name);
+    if ($("hotpotQaData")) $("hotpotQaData").value = path;
+    rememberActiveDatasetView("hotpotQaView", "hotpotqa", path);
+    if (path) saveLastBenchmarkDataset({path, format: "hotpotqa", view: "hotpotQaView"});
+    resetHotpotQaDatasetOverview();
+    validateGenericBenchmark("hotpotqa").catch((e) => toast(e.message));
+    event.target.value = "";
+  });
+  $("hotpotQaStopRun")?.addEventListener("click", () => stopAllTasks().catch((e) => toast(e.message)));
+  $("hotpotQaResetConfig")?.addEventListener("click", () => {
+    restoreHotpotQaDefaults();
+    toast("HotpotQA 配置已重置");
+  });
+  $("hotpotQaHeaderRefresh")?.addEventListener("click", async () => {
+    await Promise.allSettled([
+      refreshTasks().catch(() => null),
+      warmBenchmarkLatestResultPanels().catch(() => null),
+      forceRefreshStandaloneBenchmarkView("hotpotqa").catch(() => null),
+      ensureHotpotQaDatasetOverview(true).catch(() => null),
+    ]);
+    syncHotpotQaHeaderMeta();
+    toast("HotpotQA 页面已刷新");
+  });
+  $("hotpotQaHeaderCreateAccount")?.addEventListener("click", handleCreateAccountClick);
+  $("hotpotQaAccountProxy")?.addEventListener("change", () => {
+    const account = $("hotpotQaAccountProxy")?.value || "default";
+    if ($("accountSelect")) {
+      $("accountSelect").value = account;
+      $("accountSelect").dispatchEvent(new Event("change", {bubbles: true}));
+    }
+  });
+  $("locomoQuestionSearch")?.addEventListener("input", renderQuestions);
   $("questionCategory")?.addEventListener("change", renderQuestions);
+  $("refreshHotpotQaQuestionRuns")?.addEventListener("click", () => refreshHotpotQaQuestionRuns(state.hotpotQaActiveRecord || state.currentRunningTask || null, {force: true}).catch((e) => toast(e.message)));
+  $("copyHotpotQaLog")?.addEventListener("click", async () => {
+    const text = $("hotpotQaLogBox")?.textContent || "";
+    try {
+      await navigator.clipboard.writeText(text);
+      toast("HotpotQA 日志已复制");
+    } catch (error) {
+      toast(error.message || "日志复制失败");
+    }
+  });
+  $("clearHotpotQaLog")?.addEventListener("click", () => {
+    const box = $("hotpotQaLogBox");
+    if (box) box.textContent = "运行日志会显示在这里。";
+    markLogBoxEmptyState(box);
+    toast("已清空当前 HotpotQA 日志视图");
+  });
   $("selectAllQuestions")?.addEventListener("click", () => {
-    (state.filteredQuestions.length ? state.filteredQuestions : filteredQuestions()).forEach((q) => state.selectedQuestions.add(q.question_id));
+    (state.visibleQuestions.length ? state.visibleQuestions : (state.filteredQuestions.length ? state.filteredQuestions : filteredQuestions())).forEach((q) => state.selectedQuestions.add(q.question_id));
     renderQuestions();
   });
   $("clearQuestions")?.addEventListener("click", () => {
     state.selectedQuestions.clear();
     renderQuestions();
   });
+  $("copyEvalLog")?.addEventListener("click", async () => {
+    const text = $("evalLogBox")?.textContent || "";
+    try {
+      await navigator.clipboard.writeText(text);
+      toast("运行日志已复制");
+    } catch (error) {
+      toast(error.message || "日志复制失败");
+    }
+  });
+  $("clearEvalLog")?.addEventListener("click", () => {
+    const box = $("evalLogBox");
+    if (box) {
+      box.textContent = "[waiting] 运行日志会显示在这里。\n[hint] 开始任务后将输出数据加载、QA、Judge 和报告生成记录。";
+      markLogBoxEmptyState(box);
+    }
+    toast("已清空当前日志视图");
+  });
   $("probeOpenViking")?.addEventListener("click", () => probeOpenViking().catch((e) => toast(e.message)));
   $("importSample")?.addEventListener("change", () => {
     renderImportPaths();
-    renderImportReadinessPanel();
     updateBackendUi();
     mirrorImportSampleToQa({allowAll: true}).catch((e) => toast(e.message));
     refreshImportedMemories().catch(() => {});
@@ -16499,6 +23617,18 @@ function bind() {
   $("generateImportWorkspace")?.addEventListener("click", () => {
     generateWorkspaceForCurrentAccount();
   });
+  $("pickDataFile")?.addEventListener("click", () => {
+    $("dataFilePicker")?.click();
+  });
+  $("dataFilePicker")?.addEventListener("change", (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if ($("data")) {
+      $("data").value = relativeDatasetPath(file.name);
+      loadDataset().catch((e) => toast(e.message));
+    }
+    event.target.value = "";
+  });
   $("ovAccount")?.addEventListener("input", () => {
     const account = $("ovAccount").value.trim() || "default";
     saveAccountList([...readAccountList(), account]);
@@ -16508,7 +23638,7 @@ function bind() {
     persistCurrentAccountConfig();
     refreshImportedMemories().catch(() => {});
   });
-  ["ovHost", "ovPort", "judgeBaseUrl", "judgeModel", "chatTopK", "systemAgentBaseUrl", "systemAgentModel", "systemJudgeBaseUrl", "systemJudgeModel", "systemMemoryBaseUrl", "systemMemoryModel", "echomemRoot", "memoryUserId", "memoryAgentId"].forEach((id) => {
+  ["ovHost", "ovPort", "judgeBaseUrl", "judgeModel", "chatTopK", "systemAgentBaseUrl", "systemAgentModel", "systemJudgeBaseUrl", "systemJudgeModel", "systemMemoryBaseUrl", "systemMemoryModel", "echomemRoot", "memoryUserId", "memoryAgentId", "echomemQaTopK", "echomemQaScoreThreshold", "locomoQaToolSearchLimit", "locomoQaToolMinScore", "locomoQaMaxIterations", "echomemQaMemoryBudgetChars", "echomemQaUserMemoryBudgetChars", "echomemQaAgentMemoryBudgetChars", "echomemQaPrefetchReadCount", "echomemQaPrefetchContextChars", "echomemQaToolLogChars", "locomoQaQuestionTimeout", "locomoQaRetrievalMode", "locomoQaPromptMode", "locomoQaToolSet"].forEach((id) => {
     $(id)?.addEventListener("change", persistCurrentAccountConfig);
     $(id)?.addEventListener("input", () => {
       if (["judgeBaseUrl", "judgeModel", "systemAgentBaseUrl", "systemAgentModel", "systemJudgeBaseUrl", "systemJudgeModel"].includes(id)) {
@@ -16519,8 +23649,13 @@ function bind() {
       updateSystemConfigSummary();
       renderQaReadinessPanel();
       renderJudgeReadinessPanel();
-      renderImportReadinessPanel();
       if (id === "chatTopK") renderChatDebugStrip();
+    });
+  });
+  ["locomoQaToolLoop", "echomemQaInitialToolPrefetch", "echomemQaFallbackToOneShot", "echomemQaVikingboatCompat", "echomemQaLocalSessionSummaries", "echomemQaLocalAtoms", "echomemQaLocalMessages", "echomemQaLocalTimelineHints", "echomemQaLocalMemoryArtifacts", "locomoQaPromptMode", "locomoQaRetrievalMode", "locomoQaToolSet"].forEach((id) => {
+    $(id)?.addEventListener("change", () => {
+      persistCurrentAccountConfig();
+      renderQaReadinessPanel();
     });
   });
   ["judgeToken", "systemAgentToken", "systemJudgeToken", "systemMemoryToken"].forEach((id) => {
@@ -16531,7 +23666,6 @@ function bind() {
       updateSystemConfigSummary();
       renderQaReadinessPanel();
       renderJudgeReadinessPanel();
-      renderImportReadinessPanel();
     });
     $(id)?.addEventListener("change", () => {
       invalidateHotpotQaModelReadiness();
@@ -16539,19 +23673,16 @@ function bind() {
       persistCurrentAccountConfig();
       renderQaReadinessPanel();
       renderJudgeReadinessPanel();
-      renderImportReadinessPanel();
     });
   });
   $("ovApiKey")?.addEventListener("input", () => {
     saveAccountConfig(currentAccount(), currentAccountConfigPatch());
     updateSystemConfigSummary();
     renderQaReadinessPanel();
-    renderImportReadinessPanel();
   });
   $("ovApiKey")?.addEventListener("change", () => {
     persistCurrentAccountConfig();
     renderQaReadinessPanel();
-    renderImportReadinessPanel();
   });
   $("judgeToken")?.addEventListener("change", renderJudgeReadinessPanel);
   $("judgeInput")?.addEventListener("input", () => {
@@ -16563,6 +23694,33 @@ function bind() {
     state.lastJudgeSummary = null;
     state.lastJudgeValidation = null;
     renderJudgeReadinessPanel();
+  });
+  $("openJudgeResultInput")?.addEventListener("click", async () => {
+    const input = ($("judgeInput")?.value || "").trim();
+    const targetPath = input ? dirname(input) : "";
+    if (!targetPath) return toast("当前没有可打开的结果目录");
+    try {
+      await api("/api/open-path", {
+        method: "POST",
+        body: JSON.stringify({path: targetPath}),
+      });
+    } catch (error) {
+      toast(error.message || "打开目录失败");
+    }
+  });
+  $("copyJudgeLog")?.addEventListener("click", async () => {
+    const text = $("judgeLogBox")?.textContent || "";
+    try {
+      await navigator.clipboard.writeText(text);
+      toast("判分日志已复制");
+    } catch (error) {
+      toast(error.message || "日志复制失败");
+    }
+  });
+  $("clearJudgeLog")?.addEventListener("click", () => {
+    const box = $("judgeLogBox");
+    if (box) box.textContent = "判分日志会显示在这里。";
+    toast("已清空当前判分日志视图");
   });
   $("memoryBackendSelect")?.addEventListener("change", () => {
     maybeRegenerateWorkspaceForBackend(currentAccount(), currentMemoryBackend());
@@ -16660,13 +23818,47 @@ function bind() {
   $("loadLargeQuestionPage")?.addEventListener("click", () => loadLargeQuestionPage(0).catch((e) => toast(e.message)));
   $("longMemRefreshDatasets")?.addEventListener("click", () => loadDatasetRegistry().catch((e) => toast(e.message)));
   $("longMemValidate")?.addEventListener("click", () => validateLongMemDataset().catch((e) => toast(e.message)));
-  $("longMemInjectMemory")?.addEventListener("click", () => injectLongMemMemory().catch((e) => toast(e.message)));
+  $("longMemPickDataFile")?.addEventListener("click", () => {
+    $("longMemDataFilePicker")?.click();
+  });
+  $("longMemDataFilePicker")?.addEventListener("change", (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if ($("longMemData")) {
+      $("longMemData").value = relativeDatasetPath(file.name);
+      validateLongMemDataset().catch((e) => toast(e.message));
+    }
+    event.target.value = "";
+  });
+  $("longMemDatasetSearch")?.addEventListener("input", renderLongMemDatasetCards);
+  $("longMemDatasetModePreset")?.addEventListener("click", () => setLongMemDatasetMode("preset"));
+  $("longMemDatasetModeCustom")?.addEventListener("click", () => setLongMemDatasetMode("custom"));
+  $("longMemData")?.addEventListener("input", () => {
+    if (!rowsMatchLongMemDataset($("longMemData")?.value.trim() || "")) setLongMemDatasetMode("custom");
+    renderLongMemDatasetCards();
+  });
+  $("longMemInjectMemory")?.addEventListener("click", () => runWithUiActionLock(
+    "longMemImportLaunch",
+    ["longMemInjectMemory", "longMemValidate"],
+    () => injectLongMemMemory().catch((e) => toast(e.message)),
+    "LongMemEval 导入任务正在启动，请勿重复点击",
+  ));
   $("longMemLoadPreview")?.addEventListener("click", () => loadLongMemQuestionPreview().catch((e) => toast(e.message)));
-  $("longMemQuestionSearch")?.addEventListener("input", renderLongMemQuestionSelection);
+  $("longMemQuestionSearch")?.addEventListener("input", () => {
+    const sample = $("longMemSample")?.value || "all";
+    if (sample === "all") {
+      loadLongMemQuestionPreview({offset: 0}).catch(() => renderLongMemQuestionSelection());
+      return;
+    }
+    state.longMemQuestionQuery = currentLongMemSearchQuery();
+    renderLongMemQuestionToolbar();
+    renderLongMemQuestionSelection();
+  });
   $("longMemSelectVisible")?.addEventListener("click", selectVisibleLongMemQuestions);
   $("longMemClearQuestions")?.addEventListener("click", clearLongMemQuestionSelection);
   $("longMemSample")?.addEventListener("change", () => {
     state.selectedLongMemQuestions.clear();
+    resetLongMemQuestionPreviewState();
     loadLongMemQuestionPreview().catch(() => renderLongMemQuestionSelection());
   });
   $("longMemRunSmoke")?.addEventListener("click", () => runWithUiActionLock(
@@ -16678,15 +23870,68 @@ function bind() {
   $("longMemUseOracle50")?.addEventListener("click", useLongMemOracle50Preset);
   $("longMemUseFullFormal")?.addEventListener("click", useLongMemFormalPreset);
   $("longMemLatestResults")?.addEventListener("click", () => {
-    showView("runsView");
+    showView("longMemEvalView", {benchmarkStage: "judge"});
     loadLatestLongMemResults().catch((e) => toast(e.message));
   });
   $("longMemLatestResultsJudge")?.addEventListener("click", () => {
-    showView("runsView", {benchmarkStage: "report"});
+    showView("longMemEvalView", {benchmarkStage: "judge"});
     loadLatestLongMemResults().catch((e) => toast(e.message));
   });
+  $("longMemGenerateReportAction")?.addEventListener("click", () => exportRunReport().catch((e) => toast(e.message)));
+  $("longMemViewReportAction")?.addEventListener("click", () => openSelectedLongMemReport());
+  $("longMemOpenRunDirAction")?.addEventListener("click", () => openSelectedLongMemRunDir());
+  $("longMemValidateAction")?.addEventListener("click", () => $("longMemValidate")?.click());
+  $("longMemRunSmokeAction")?.addEventListener("click", () => $("longMemRunSmoke")?.click());
+  $("longMemStopAllAction")?.addEventListener("click", () => stopAllTasks().catch((e) => toast(e.message)));
+  $("longMemStopImportAction")?.addEventListener("click", () => stopAllTasks().catch((e) => toast(e.message)));
+  $("longMemStopQaAction")?.addEventListener("click", () => stopAllTasks().catch((e) => toast(e.message)));
+  $("copyLongMemLog")?.addEventListener("click", async () => {
+    const text = $("longMemLogBox")?.textContent || "";
+    try {
+      await navigator.clipboard.writeText(text);
+      toast("LongMemEval 日志已复制");
+    } catch (error) {
+      toast(error.message || "日志复制失败");
+    }
+  });
+  $("clearLongMemLog")?.addEventListener("click", () => {
+    const box = $("longMemLogBox");
+    if (box) {
+      box.textContent = "运行日志会显示在这里。";
+      markLogBoxEmptyState(box);
+    }
+    renderLongMemLogPath("");
+    toast("已清空当前 LongMemEval 日志视图");
+  });
+  $("longMemLogAutoScroll")?.addEventListener("change", () => {
+    const box = $("longMemLogBox");
+    if (box && longMemLogAutoScrollEnabled()) {
+      box.scrollTop = box.scrollHeight;
+    }
+  });
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest?.("#longMemEvalView .longmem-step");
+    if (!button) return;
+    const stage = normalizeLongMemStage(button.dataset.stageGroup || "");
+    if (!stage) return;
+    event.preventDefault();
+    setLongMemStage(stage);
+    stabilizeViewScroll("longMemEvalView");
+  });
+  syncLongMemHeaderSummary();
+  syncGenericWorkbenchHeaderMeta("proagentbench");
+  syncGenericWorkbenchHeaderMeta("tau2bench");
   document.querySelectorAll(".generic-load-example").forEach((button) => {
     button.addEventListener("click", () => loadGenericExample(button.dataset.benchmark).catch((e) => toast(e.message)));
+  });
+  document.querySelectorAll(".generic-refresh-view").forEach((button) => {
+    button.addEventListener("click", () => {
+      refreshTasks().catch(() => null);
+      warmBenchmarkLatestResultPanels()
+        .catch(() => null)
+        .then(() => forceRefreshStandaloneBenchmarkView(button.dataset.benchmark))
+        .catch((e) => toast(e.message));
+    });
   });
   document.querySelectorAll(".generic-validate").forEach((button) => {
     button.addEventListener("click", () => validateGenericBenchmark(button.dataset.benchmark).catch((e) => toast(e.message)));
@@ -16710,6 +23955,9 @@ function bind() {
   });
   document.querySelectorAll(".generic-question-search").forEach((input) => {
     input.addEventListener("input", () => renderBenchmarkQuestionSelection(input.dataset.benchmark));
+  });
+  document.querySelectorAll(".generic-question-range").forEach((input) => {
+    input.addEventListener("change", () => renderBenchmarkQuestionSelection(input.dataset.benchmark));
   });
   document.querySelectorAll(".generic-run-adapter").forEach((button) => {
     button.addEventListener("click", () => runGenericBenchmark(button.dataset.benchmark).catch((e) => toast(e.message)));
@@ -16739,6 +23987,8 @@ function bind() {
   });
   $("refreshRuns")?.addEventListener("click", () => refreshRuns().catch((e) => toast(e.message)));
   $("refreshRunsMini")?.addEventListener("click", () => refreshRuns().catch((e) => toast(e.message)));
+  $("refreshRunsEmpty")?.addEventListener("click", () => refreshRuns().catch((e) => toast(e.message)));
+  $("refreshTasksLongMem")?.addEventListener("click", () => refreshTasks().catch((e) => toast(e.message)));
   $("taskCurrentAccountOnly")?.addEventListener("change", () => refreshTasks().catch((e) => toast(e.message)));
   $("refreshRecentLocomoRuns")?.addEventListener("click", () => renderRecentLocomoRuns({force: true, loading: true}).catch((e) => toast(e.message)));
   $("runsCurrentAccountOnly")?.addEventListener("change", () => refreshRuns().catch((e) => toast(e.message)));
@@ -16756,8 +24006,15 @@ function bind() {
   $("loadLongMemLatest")?.addEventListener("click", () => loadLatestLongMemResults().catch((e) => toast(e.message)));
   $("loadWrongClusters")?.addEventListener("click", () => loadWrongClusters().catch((e) => toast(e.message)));
   $("exportRunReport")?.addEventListener("click", () => exportRunReport().catch((e) => toast(e.message)));
+  $("exportRunReportHeader")?.addEventListener("click", () => exportRunReport().catch((e) => toast(e.message)));
   $("compareSelectedRuns")?.addEventListener("click", () => compareSelectedRuns().catch((e) => toast(e.message)));
+  $("compareSelectedRunsHeader")?.addEventListener("click", () => compareSelectedRuns().catch((e) => toast(e.message)));
   $("clearSelectedRuns")?.addEventListener("click", clearSelectedRuns);
+  $("clearSelectedRunsHeader")?.addEventListener("click", clearSelectedRuns);
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest?.("#refreshRunsEmptyInline");
+    if (button) refreshRuns().catch((e) => toast(e.message));
+  });
   $("preflightJudge")?.addEventListener("click", () => preflightJudge().catch((e) => toast(e.message)));
   $("retryMissingQa")?.addEventListener("click", () => runWithUiActionLock(
     "locomoQaLaunch",
@@ -16785,10 +24042,89 @@ function bind() {
   $("stopAllTasksJudge")?.addEventListener("click", () => stopAllTasks().catch((e) => toast(e.message)));
 }
 
+const UI_ICON_PATHS = {
+  "panel-left": '<rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16"></path>',
+  "message-circle": '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"></path>',
+  play: '<polygon points="8 5 19 12 8 19 8 5"></polygon>',
+  square: '<rect x="7" y="7" width="10" height="10" rx="2"></rect>',
+  database: '<ellipse cx="12" cy="5" rx="7" ry="3"></ellipse><path d="M5 5v6c0 1.7 3.1 3 7 3s7-1.3 7-3V5"></path><path d="M5 11v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"></path>',
+  "book-open": '<path d="M12 7v14"></path><path d="M3 18c0-1.7 1.3-3 3-3h6"></path><path d="M21 18c0-1.7-1.3-3-3-3h-6"></path><path d="M6 4h6v11H6a3 3 0 0 0-3 3V7a3 3 0 0 1 3-3z"></path><path d="M18 4h-6v11h6a3 3 0 0 1 3 3V7a3 3 0 0 0-3-3z"></path>',
+  "calendar-clock": '<path d="M8 2v4"></path><path d="M16 2v4"></path><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M3 10h18"></path><circle cx="16" cy="16" r="3.5"></circle><path d="M16 14.5v2l1.2.8"></path>',
+  brain: '<path d="M9.5 3.5A3.5 3.5 0 0 0 6 7v1"></path><path d="M14.5 3.5A3.5 3.5 0 0 1 18 7v1"></path><path d="M6 8a3 3 0 0 0-3 3 3 3 0 0 0 3 3"></path><path d="M18 8a3 3 0 0 1 3 3 3 3 0 0 1-3 3"></path><path d="M9 11a3 3 0 0 0 6 0"></path><path d="M12 14v7"></path><path d="M8 18h8"></path>',
+  bot: '<rect x="5" y="8" width="14" height="11" rx="2"></rect><path d="M12 4v4"></path><path d="M8 12h.01"></path><path d="M16 12h.01"></path><path d="M9 16h6"></path>',
+  boxes: '<path d="M3 7.5 8 5l5 2.5-5 2.5Z"></path><path d="M13 7.5 18 5l5 2.5-5 2.5Z"></path><path d="M8 10v5l-5 2.5V12.5Z"></path><path d="M18 10v5l-5 2.5V12.5Z"></path><path d="M13 10v5l-5 2.5V12.5Z"></path>',
+  settings: '<circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9A1.7 1.7 0 0 0 10 3.2V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.5h.1a1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.2a1.7 1.7 0 0 0-1.4 1Z"></path>',
+  "list-filter": '<path d="M4 6h16"></path><path d="M7 12h10"></path><path d="M10 18h4"></path>',
+  "folder-root": '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"></path>',
+  "upload-cloud": '<path d="M16 16.5 12 12l-4 4.5"></path><path d="M12 12v9"></path><path d="M20.39 18.39A5.5 5.5 0 0 0 18 8h-1.26A8 8 0 1 0 4 16.3"></path>',
+  "message-circle-question": '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"></path><path d="M9.1 9a3 3 0 1 1 5.8 1c-.3.7-.8 1.1-1.4 1.5-.6.4-1 .8-1 1.5"></path><path d="M12 17h.01"></path>',
+  target: '<circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="2"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="M2 12h2"></path><path d="M20 12h2"></path>',
+  "circle-play": '<circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon>',
+  "git-compare": '<circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M13 6h3a2 2 0 0 1 2 2v7"></path><path d="M11 18H8a2 2 0 0 1-2-2V9"></path>',
+  "file-bar-chart-2": '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><path d="M14 2v6h6"></path><path d="M8 18v-1"></path><path d="M12 18v-6"></path><path d="M16 18v-3"></path>',
+  "circle-check-big": '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><path d="m9 11 3 3L22 4"></path>',
+  "loader-circle": '<path d="M21 12a9 9 0 1 1-6.219-8.56"></path>',
+  "clock-3": '<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5h4"></path>',
+  gauge: '<path d="m12 14 4-4"></path><path d="M3.34 19a10 10 0 1 1 17.32 0"></path>',
+  wrench: '<path d="M14.7 6.3a4 4 0 0 0 5 5l-8.4 8.4a2 2 0 0 1-2.8-2.8l8.4-8.4a4 4 0 0 0-5-5"></path>',
+  activity: '<path d="M22 12h-4l-3 8-4-16-3 8H2"></path>',
+  timer: '<path d="M10 2h4"></path><path d="M12 14 16 10"></path><circle cx="12" cy="14" r="8"></circle>',
+  "sliders-horizontal": '<line x1="21" x2="14" y1="4" y2="4"></line><line x1="10" x2="3" y1="4" y2="4"></line><line x1="21" x2="12" y1="12" y2="12"></line><line x1="8" x2="3" y1="12" y2="12"></line><line x1="21" x2="16" y1="20" y2="20"></line><line x1="12" x2="3" y1="20" y2="20"></line><line x1="14" x2="14" y1="2" y2="6"></line><line x1="8" x2="8" y1="10" y2="14"></line><line x1="16" x2="16" y1="18" y2="22"></line>',
+  "folder-open": '<path d="m6 14 2-7h11a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3l2 2"></path>',
+  sparkles: '<path d="M12 3l1.9 4.1L18 9l-4.1 1.9L12 15l-1.9-4.1L6 9l4.1-1.9L12 3z"></path><path d="M19 15l1 2 2 .9-2 .9-1 2-.9-2-2-.9 2-.9 1-2z"></path>',
+  activity: '<path d="M22 12h-4l-3 8-4-16-3 8H2"></path>',
+  "terminal-square": '<path d="M7 11l2 2-2 2"></path><path d="M11 15h4"></path><rect x="3" y="3" width="18" height="18" rx="2"></rect>',
+  "triangle-alert": '<path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path>',
+  "shield-check": '<path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V6l8-3 8 3z"></path><path d="m9 12 2 2 4-4"></path>',
+  "scan-search": '<path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><circle cx="12" cy="12" r="3"></circle><path d="m16 16 2.5 2.5"></path>',
+  "refresh-cw": '<path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>',
+  history: '<path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path>',
+  inspect: '<circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.35-4.35"></path>',
+  "circle-x": '<circle cx="12" cy="12" r="10"></circle><path d="m15 9-6 6"></path><path d="m9 9 6 6"></path>',
+  scale: '<path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"></path><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"></path><path d="M7 21h10"></path><path d="M12 3v18"></path><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"></path>',
+  "file-text": '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M16 13H8"></path><path d="M16 17H8"></path><path d="M10 9H8"></path>',
+  "file-spreadsheet": '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M8 13h2"></path><path d="M14 13h2"></path><path d="M8 17h2"></path><path d="M14 17h2"></path>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>',
+  "clipboard-list": '<rect width="8" height="4" x="8" y="2" rx="1" ry="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><path d="M12 11h4"></path><path d="M12 16h4"></path><path d="M8 11h.01"></path><path d="M8 16h.01"></path>',
+  "list-x": '<path d="M11 12H3"></path><path d="M16 6H3"></path><path d="M16 18H3"></path><path d="m19 10-4 4"></path><path d="m15 10 4 4"></path>',
+  "search-check": '<path d="m8 11 2 2 4-4"></path><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path>',
+  "badge-check": '<path d="M16.2 4.8 12 3 7.8 4.8 6 9v4.5L12 21l6-7.5V9Z"></path><path d="m9.5 12 1.8 1.8 3.7-3.8"></path>',
+  network: '<rect x="9" y="2" width="6" height="6" rx="1"></rect><rect x="2" y="16" width="6" height="6" rx="1"></rect><rect x="16" y="16" width="6" height="6" rx="1"></rect><path d="M12 8v4"></path><path d="M5 16v-2h14v2"></path>',
+  "bar-chart-3": '<path d="M3 3v18h18"></path><path d="M8 16V9"></path><path d="M13 16V5"></path><path d="M18 16v-7"></path>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" x2="12" y1="15" y2="3"></line>',
+  "external-link": '<path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>',
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>',
+  gauge: '<path d="m12 14 4-4"></path><path d="M3.34 19a10 10 0 1 1 17.32 0"></path>',
+  timer: '<line x1="10" x2="14" y1="2" y2="2"></line><line x1="12" x2="15" y1="14" y2="11"></line><circle cx="12" cy="14" r="8"></circle>',
+};
+
+function renderUiIcon(name = "", size = 16) {
+  const body = UI_ICON_PATHS[name] || UI_ICON_PATHS.inspect;
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+}
+
+function hydrateUiIcons(root = document) {
+  const scope = root && root.querySelectorAll ? root : document;
+  scope.querySelectorAll?.("[data-ui-icon]").forEach((node) => {
+    const size = Number(node.dataset.uiIconSize || node.getAttribute("data-size") || 16);
+    node.innerHTML = renderUiIcon(node.dataset.uiIcon || "", size);
+  });
+}
+
+renderSidebarNavigation();
 bind();
+hydrateUiIcons();
 normalizeLegacyLabels();
 const bootView = initialViewFromUrl();
-if (bootView) showView(bootView, {preserveScroll: true});
+if (!window.MemoryBenchAppBootRequested) {
+  window.MemoryBenchAppBootRequested = true;
+  showView(bootView || "openvikingView", {
+    preserveScroll: true,
+    benchmarkStage: initialBenchmarkStageFromUrl(),
+    hotpotQaSection: initialHotpotQaSectionFromUrl(),
+    taskLog: initialTaskLogFromUrl(),
+  });
+}
 updateWorkspaceMode();
 renderArchiveStatus();
 syncContextPanelDefaultForViewport();

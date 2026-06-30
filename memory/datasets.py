@@ -57,6 +57,16 @@ def _candidate_record(path: Path, candidates: list[dict[str, Any]] | None = None
     return None
 
 
+def _candidate_metadata(path: Path, candidates: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    record = _candidate_record(path, candidates) or {}
+    metadata: dict[str, Any] = {}
+    for key in ("samples", "questions", "name", "id", "description"):
+        value = record.get(key)
+        if value not in (None, ""):
+            metadata[key] = value
+    return metadata
+
+
 def dataset_scope(path: Path, candidates: list[dict[str, Any]] | None = None) -> str:
     record = _candidate_record(path, candidates)
     text = " ".join(
@@ -209,6 +219,12 @@ def locomo_overview_from_stream(path: Path) -> dict[str, Any]:
 def _generic_items_overview(items: list[Any], fmt: str) -> dict[str, Any]:
     rows = []
     categories: dict[str, int] = {}
+    hotpot_type_distribution: dict[str, int] = {}
+    hotpot_level_distribution: dict[str, int] = {}
+    hotpot_context_present_count = 0
+    hotpot_supporting_facts_present_count = 0
+    hotpot_answer_present_count = 0
+    hotpot_supporting_facts_total = 0
     for index, raw in enumerate(items):
         item = raw if isinstance(raw, dict) else {"input": raw}
         if fmt == "longmemeval":
@@ -218,9 +234,35 @@ def _generic_items_overview(items: list[Any], fmt: str) -> dict[str, Any]:
             questions = 1 if (item.get("question") or item.get("query")) else 0
         elif fmt == "hotpotqa":
             sample_id = str(benchmark_adapter.pick(item, benchmark_adapter.ID_KEYS) or f"hotpotqa_{index}")
-            category = "/".join(str(value) for value in [item.get("type") or item.get("category") or "hotpotqa", item.get("level") or ""] if value)
+            type_value = str(item.get("type") or item.get("category") or "hotpotqa")
+            level_value = str(item.get("level") or "").strip()
+            category = "/".join(str(value) for value in [type_value, level_value] if value)
             events = benchmark_adapter.collect_hotpotqa_events(item)
             questions = 1 if item.get("question") else 0
+            hotpot_type_distribution[type_value] = hotpot_type_distribution.get(type_value, 0) + 1
+            if level_value:
+                hotpot_level_distribution[level_value] = hotpot_level_distribution.get(level_value, 0) + 1
+            context = item.get("context") or []
+            if isinstance(context, list):
+                if any(
+                    isinstance(entry, (list, tuple)) and any(str(part or "").strip() for part in entry)
+                    or isinstance(entry, dict) and any(str(part or "").strip() for part in entry.values())
+                    or str(entry or "").strip()
+                    for entry in context
+                ):
+                    hotpot_context_present_count += 1
+            elif context:
+                hotpot_context_present_count += 1
+            supporting_facts = item.get("supporting_facts") or []
+            if isinstance(supporting_facts, list):
+                hotpot_supporting_facts_total += len(supporting_facts)
+                if supporting_facts:
+                    hotpot_supporting_facts_present_count += 1
+            elif supporting_facts:
+                hotpot_supporting_facts_present_count += 1
+                hotpot_supporting_facts_total += 1
+            if str(item.get("answer") or item.get("gold_answer") or "").strip():
+                hotpot_answer_present_count += 1
         else:
             sample_id = str(benchmark_adapter.pick(item, benchmark_adapter.ID_KEYS) or f"{fmt}_{index}")
             category = str(item.get("category") or item.get("type") or fmt)
@@ -229,7 +271,7 @@ def _generic_items_overview(items: list[Any], fmt: str) -> dict[str, Any]:
         if category:
             categories[category] = categories.get(category, 0) + 1
         rows.append({"index": index, "sample_id": sample_id, "questions": questions, "events": len(events), "sessions": len(events)})
-    return {
+    overview = {
         "samples": len(items),
         "questions": sum(row["questions"] for row in rows),
         "categories": categories,
@@ -237,6 +279,18 @@ def _generic_items_overview(items: list[Any], fmt: str) -> dict[str, Any]:
         "memory_events_total": sum(int(row.get("events") or 0) for row in rows),
         "preview_events_per_sample": 20,
     }
+    if fmt == "hotpotqa":
+        overview.update(
+            {
+                "hotpotqa_type_distribution": hotpot_type_distribution,
+                "hotpotqa_level_distribution": hotpot_level_distribution,
+                "hotpotqa_context_present_count": hotpot_context_present_count,
+                "hotpotqa_supporting_facts_present_count": hotpot_supporting_facts_present_count,
+                "hotpotqa_answer_present_count": hotpot_answer_present_count,
+                "hotpotqa_supporting_facts_total": hotpot_supporting_facts_total,
+            }
+        )
+    return overview
 
 
 def generic_data_overview(path: Path, loaded: Any | None = None, candidates: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -273,6 +327,7 @@ def dataset_overview(
             return dict(cached["data"])
         if stat.st_size > scan_limit_bytes:
             fmt = infer_dataset_format(path, None, candidates)
+            manifest_meta = _candidate_metadata(path, candidates)
             if fmt == "locomo" and path.suffix.lower() == ".json":
                 try:
                     overview = locomo_overview_from_stream(path)
@@ -287,8 +342,8 @@ def dataset_overview(
             else:
                 overview = {
                     "path": str(path),
-                    "samples": "?",
-                    "questions": "?",
+                    "samples": manifest_meta.get("samples", "?"),
+                    "questions": manifest_meta.get("questions", "?"),
                     "categories": {},
                     "sample_rows": [],
                 }
@@ -410,14 +465,28 @@ def benchmark_questions(path: Path, sample_filter: str = "all", limit: int = 200
         fmt = infer_dataset_format(path, data, candidates)
     if fmt == "locomo" and looks_like_locomo_data(data):
         return locomo_questions(path, sample_filter)
+    extra_rows: list[dict[str, Any]] = []
     if fmt == "longmemeval":
         jobs, _plans = benchmark_adapter.longmemeval_jobs(data, limit, sample_filter)
     elif fmt == "hotpotqa":
-        jobs, _plans = benchmark_adapter.hotpotqa_jobs(data, limit, sample_filter)
+        jobs, plans = benchmark_adapter.hotpotqa_jobs(data, limit, sample_filter)
+        extra_rows = [
+            {
+                "type": str((plan or {}).get("type") or "hotpotqa"),
+                "level": str((plan or {}).get("level") or "").strip(),
+                "supporting_facts_count": len((plan or {}).get("supporting_facts") or [])
+                if isinstance((plan or {}).get("supporting_facts"), list)
+                else (1 if (plan or {}).get("supporting_facts") else 0),
+                "has_answer": bool((plan or {}).get("has_answer")),
+                "document_count": len((plan or {}).get("memory_documents") or []),
+            }
+            for plan in plans[: len(jobs)]
+        ]
     else:
         jobs, _plans = benchmark_adapter.generic_jobs(fmt, data, limit, sample_filter)
     rows = []
     for index, job in enumerate(jobs):
+        extra = extra_rows[index] if index < len(extra_rows) else {}
         rows.append(
             {
                 "sample_index": index,
@@ -429,6 +498,7 @@ def benchmark_questions(path: Path, sample_filter: str = "all", limit: int = 200
                 "category": job.category,
                 "question_time": job.query_time,
                 "evidence": [],
+                **extra,
             }
         )
     return {"path": str(path), "sample": sample_filter, "format": fmt, "count": len(rows), "questions": rows}
@@ -532,7 +602,12 @@ def benchmark_questions_page(
             "questions": rows,
         }
 
-    data = benchmark_questions(path, "all", offset + limit, candidates)
+    search_limit = offset + limit
+    if query_text:
+        overview = dataset_overview(path, candidates)
+        question_total = int(overview.get("questions") or 0)
+        search_limit = max(search_limit, question_total or 10000)
+    data = benchmark_questions(path, "all", search_limit, candidates)
     all_rows = data.get("questions") or []
     if query_text:
         all_rows = [

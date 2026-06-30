@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MemoryBench Product Roadmap</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f5f0;
+      --surface: #ffffff;
+      --border: #e5ded2;
+      --text: #111827;
+      --muted: #6b7280;
+      --blue: #2563eb;
+      --green: #16a34a;
+      --orange: #d97706;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+    }
+
+    main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }
+
+    section {
+      margin-bottom: 16px;
+      padding: 20px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+
+    h1, h2, p, ul { margin: 0; }
+    h1 { font-size: 28px; line-height: 1.2; margin-bottom: 8px; }
+    h2 { font-size: 16px; line-height: 1.3; margin-bottom: 10px; }
+    p, li { color: var(--muted); }
+    ul { padding-left: 18px; display: grid; gap: 6px; }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      background: #eff6ff;
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: #faf9f7;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .ok { color: var(--green); }
+    .warn { color: var(--orange); }
+  </style>
+</head>
+<body>
+  <main>
+    <section>
+      <span class="eyebrow">Public UI Contract</span>
+      <h1>MemoryBench Product Roadmap</h1>
+      <p>当前公开入口遵循 <code>web/ui_contract.json</code>。本页保留为交付边界中的公开静态页面，用于说明当前发布口径和后续前端收敛方向。</p>
+      <div class="pill-row">
+        <span class="pill">OpenViking + EchoMemory</span>
+        <span class="pill">Split Frontend Assets</span>
+        <span class="pill">Legacy Mirror Required</span>
+      </div>
+    </section>
+
+    <section>
+      <h2>当前口径</h2>
+      <ul>
+        <li>公开 UI 入口以 <code>index.html</code> + <code>app-state.js</code> + <code>app-core.js</code> + <code>app-format.js</code> + <code>app.js</code> + <code>styles.css</code> 为准。</li>
+        <li><code>web/static</code> 与顶层 <code>static</code> 必须保持镜像一致，避免运行时与交付边界漂移。</li>
+        <li>LoCoMo 记忆导入页的后续优化应继续以减少耦合、减少重复刷新和减少镜像漂移为优先目标。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>后续收敛方向</h2>
+      <ul>
+        <li class="ok">继续把 LoCoMo 导入页 helper 从 <code>app.js</code> 中抽离，避免导入页逻辑与其他评测页互相污染。</li>
+        <li class="ok">把双份前端镜像的一致性纳入测试和预检，避免“改一份、另一份反作用”。</li>
+        <li class="warn">历史实验 HTML 仍然保留在 <code>web/static/generated-reports/</code>，但不属于公开入口。</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

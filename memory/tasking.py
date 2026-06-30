@@ -466,18 +466,11 @@ def _locomo_session_progress_display_current(
     current_label: str,
     locomo_totals: dict[str, Any],
 ) -> int:
-    """Return a conservative visible progress count for LoCoMo imports.
-
-    Progress bars should track completed sessions only. The current in-flight
-    session is described in text, not counted as finished.
-    """
+    """Return the visible completed-session count for LoCoMo imports."""
     total = max(int(total_count or 0), 0)
     completed = max(int(completed_count or 0), 0)
-    current_index = _locomo_session_progress_index(current_label, locomo_totals)
     if total <= 0:
         return completed
-    if current_index > 0:
-        return min(max(completed, min(current_index - 1, total)), total)
     return min(completed, total)
 
 
@@ -529,7 +522,8 @@ def _stabilize_session_progress(
         total_value = max(total_value, cached_total)
 
     stable_current = current_value
-    if current_value < cached_current:
+    authoritative_phase = phase_text in {"commit:finalizing", "commit:done"}
+    if current_value < cached_current and not authoritative_phase:
         same_or_newer_session = not session_text or not cached_session or session_text >= cached_session
         same_commit_phase = phase_text.startswith("commit") or str(cache.get("phase") or "").startswith("commit")
         if same_or_newer_session and same_commit_phase:
@@ -559,10 +553,6 @@ def _echomemory_import_summary_progress(task: Any) -> dict[str, Any]:
     if not isinstance(record, dict):
         return {}
     try:
-        done = int(record.get("progress_sessions_done") or record.get("session_count") or 0)
-    except Exception:
-        done = 0
-    try:
         total = int(record.get("progress_sessions_total") or record.get("original_session_count") or 0)
     except Exception:
         total = 0
@@ -591,8 +581,10 @@ def _echomemory_import_summary_progress(task: Any) -> dict[str, Any]:
             total = total
         current_session = str(summary.get("current_finalizing_session") or last_session or sample_id)
         return {
-            "current": max(done, 0),
+            "current": 0,
             "total": max(total, 0),
+            "completed_current": max(done, 0),
+            "completed_total": max(total, 0),
             "session_label": current_session,
             "sample": sample_id,
             "expected_messages": expected_messages,
@@ -600,8 +592,21 @@ def _echomemory_import_summary_progress(task: Any) -> dict[str, Any]:
             "status": status,
             "phase": "commit:finalizing",
         }
+    if status == "ECHOMEMORY_IMPORT_DONE":
+        return {
+            "current": max(total, 0),
+            "total": max(total, 0),
+            "completed_current": max(total, 0),
+            "completed_total": max(total, 0),
+            "session_label": f"{sample_id}/{last_session}" if sample_id and last_session and "/" not in last_session else (last_session or sample_id),
+            "sample": sample_id,
+            "expected_messages": expected_messages,
+            "submitted_messages": submitted_messages,
+            "status": status,
+            "phase": "commit:done",
+        }
     return {
-        "current": max(done, 0),
+        "current": 0,
         "total": max(total, 0),
         "session_label": f"{sample_id}/{last_session}" if sample_id and last_session and "/" not in last_session else (last_session or sample_id),
         "sample": sample_id,
@@ -676,6 +681,10 @@ def task_progress(task: Any) -> dict[str, Any] | None:
     generic_answered_rows = 0
     awaiting_echomem_commit = False
     warnings: list[str] = []
+    submitted_session_count = 0
+    completed_session_count = 0
+    finalizing_session_count = 0
+    finalizing_session_total = 0
     is_memory_import = kind in {"openviking_import", "echomemory_import"}
     is_generic_memory_qa = kind in {"openviking_generic_qa", "echomemory_generic_qa"}
     is_generic_question_benchmark = is_generic_memory_qa and dataset_format != "locomo"
@@ -981,8 +990,10 @@ def task_progress(task: Any) -> dict[str, Any] | None:
             if kind == "echomemory_import" and echomem_commit_match:
                 complete = echomem_commit_match.group(2).lower() == "true"
                 commit_total_count += 1
+                submitted_session_count = max(submitted_session_count, commit_total_count)
                 if complete:
                     commit_completed_count += 1
+                completed_session_count = max(completed_session_count, commit_completed_count)
                 awaiting_echomem_commit = False
                 phase = "commit:done" if complete else "commit:incomplete"
                 total = int(locomo_totals.get("session_count") or max(commit_expected_count, current_sample_sessions, commit_total_count))
@@ -1014,14 +1025,27 @@ def task_progress(task: Any) -> dict[str, Any] | None:
 
     if kind == "echomemory_import" and summary_progress:
         summary_phase = str(summary_progress.get("phase") or "")
-        if summary_phase == "commit:finalizing":
-            total = int(summary_progress.get("total") or 0)
-            current = int(summary_progress.get("current") or 0)
+        summary_total = int(summary_progress.get("total") or 0)
+        submitted_session_count = max(
+            submitted_session_count,
+            summary_total if summary_phase in {"commit:finalizing", "commit:done"} else 0,
+        )
+        if summary_phase == "commit:done":
+            total = summary_total
+            current = summary_total
+            completed_session_count = max(completed_session_count, current)
+            phase = summary_phase
+            indeterminate = False
+        elif summary_phase == "commit:finalizing":
+            total = summary_total
+            current = int(summary_progress.get("completed_current") or 0)
+            completed_session_count = max(completed_session_count, current)
+            finalizing_session_count = current
+            finalizing_session_total = int(summary_progress.get("completed_total") or total or 0)
             phase = summary_phase
             indeterminate = False
         else:
-            total = max(int(total or 0), int(summary_progress.get("total") or 0))
-            current = max(int(current or 0), int(summary_progress.get("current") or 0))
+            total = max(int(total or 0), summary_total)
         if not current_session_label:
             current_session_label = str(summary_progress.get("session_label") or "")
         if not current_sample:
@@ -1031,7 +1055,7 @@ def task_progress(task: Any) -> dict[str, Any] | None:
         if summary_phase == "commit:finalizing":
             detail = (
                 f"{current_session_label or current_sample or 'current sample'}: "
-                f"正在 finalizing 完整性 {current}/{total}"
+                f"已完成归档 {current}/{total}"
             )
         elif not phase or phase == "import":
             phase = "commit:indexing" if getattr(task, "status", "") == "running" else (phase or "commit")
@@ -1151,6 +1175,10 @@ def task_progress(task: Any) -> dict[str, Any] | None:
             session_label=current_session_label,
             current_import=current_import,
         )
+        completed_session_count = max(completed_session_count, current)
+        if phase == "commit:finalizing":
+            finalizing_session_count = max(finalizing_session_count, current)
+            finalizing_session_total = max(finalizing_session_total, total)
 
     if kind in {
         "openviking_qa",
@@ -1203,6 +1231,10 @@ def task_progress(task: Any) -> dict[str, Any] | None:
         "warnings": warnings,
         "sample": current_sample,
         "session_label": current_session_label,
+        "submitted_sessions": min(max(submitted_session_count, 0), total) if total > 0 else max(submitted_session_count, 0),
+        "completed_sessions": min(max(completed_session_count, 0), total) if total > 0 else max(completed_session_count, 0),
+        "finalizing_sessions_done": min(max(finalizing_session_count, 0), total) if total > 0 else max(finalizing_session_count, 0),
+        "finalizing_sessions_total": max(finalizing_session_total, total, 0),
         "current_import": current_import,
         "qa_preview": qa_preview,
         "completed_samples": len(completed_samples),

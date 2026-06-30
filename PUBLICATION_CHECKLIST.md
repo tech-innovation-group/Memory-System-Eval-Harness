@@ -33,7 +33,7 @@ All required failures must be zero.
 - `env.echomem.example`
 - `.github/ISSUE_TEMPLATE/`
 - `web/ui_contract.json`
-- core static UI files under `web/static` and `static`: `index.html`, `app.js`, `styles.css`, and `product-roadmap.html`
+- core static UI files under `web/static` and `static`: `index.html`, `app-state.js`, `app-core.js`, `app-format.js`, `app.js`, `styles.css`, and `product-roadmap.html`
 - `dataset/locomo10.json`
 - bundled sample benchmark files such as `dataset/longmemeval.sample.json` and `dataset/evolvingevents.sample.json` when they are part of the intended public package
 

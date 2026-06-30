@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EchoMemory 检索记忆日志打印逻辑整理</title>
+  <style>
+    :root {
+      --bg: #f7f5f0;
+      --surface: #ffffff;
+      --surface-muted: #faf9f7;
+      --border: #e5ded2;
+      --border-strong: #d8ccb9;
+      --text: #111827;
+      --muted: #6b7280;
+      --faint: #9ca3af;
+      --blue: #2563eb;
+      --blue-soft: #eff6ff;
+      --green: #16a34a;
+      --green-soft: #ecfdf5;
+      --orange: #d97706;
+      --orange-soft: #fff7ed;
+      --red: #dc2626;
+      --red-soft: #fef2f2;
+      --radius: 8px;
+      --gap: 16px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.6;
+    }
+
+    .page {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 32px 24px 56px;
+    }
+
+    .header {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .eyebrow {
+      color: var(--blue);
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .02em;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.2;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .panel {
+      margin-top: var(--gap);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 52px;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 750;
+    }
+
+    .panel-body {
+      padding: 18px;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .summary-item {
+      min-width: 0;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-muted);
+    }
+
+    .summary-label {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .summary-value {
+      display: block;
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .steps {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    .steps li + li {
+      margin-top: 8px;
+    }
+
+    .steps li {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .steps strong {
+      color: var(--text);
+    }
+
+    .code {
+      overflow: auto;
+      margin: 0;
+      padding: 14px;
+      border-radius: var(--radius);
+      background: #111827;
+      color: #d1d5db;
+      font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      white-space: pre-wrap;
+    }
+
+    .kv {
+      display: grid;
+      grid-template-columns: 180px minmax(0, 1fr);
+      gap: 8px 14px;
+      margin: 0;
+    }
+
+    .kv dt {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .kv dd {
+      margin: 0;
+      min-width: 0;
+      font-size: 13px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      overflow-wrap: anywhere;
+    }
+
+    .note {
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--blue-soft);
+      color: #1f2937;
+      font-size: 14px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      height: 24px;
+      padding: 0 10px;
+      border-radius: 999px;
+      background: var(--green-soft);
+      color: var(--green);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    @media (max-width: 760px) {
+      .page { padding: 24px 14px 40px; }
+      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .kv { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <div class="eyebrow">EchoMemory QA</div>
+      <h1>打印检索到的记忆：逻辑整理与参考代码</h1>
+      <p class="subtitle">这份文档只整理 EchoMemory 评测中“把检索到的记忆打印到实时日志”这条逻辑链，重点是触发点、辅助函数、输出格式和参考代码。</p>
+    </header>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">核心结论</h2>
+        <span class="pill">已实现</span>
+      </div>
+      <div class="panel-body">
+        <div class="summary-grid">
+          <div class="summary-item">
+            <span class="summary-label">实现文件</span>
+            <span class="summary-value">scripts/echomemory_memory_qa.py</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">触发时机</span>
+            <span class="summary-value">每题检索完成后</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">输出内容</span>
+            <span class="summary-value">候选记忆 top 5 摘要</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">影响面</span>
+            <span class="summary-value">只增 stdout 日志</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">逻辑链路</h2>
+      </div>
+      <div class="panel-body">
+        <ol class="steps">
+          <li><strong>入口函数：</strong><code>answer_question()</code> 是 EchoMemory QA 每题处理的主入口。</li>
+          <li><strong>检索阶段：</strong>在 <code>qa_memory_injection</code> 开启时，调用 <code>echomemory_retrieve(args, sdk, query)</code> 拉取候选记忆。</li>
+          <li><strong>后处理阶段：</strong>检索结果会继续经过 <code>inject_segment_raw_readback()</code>，把需要的 segment raw readback 注入进来。</li>
+          <li><strong>日志阶段：</strong>在缓存、prompt 构造、模型回答之前，调用 <code>log_retrieved_memory_preview()</code> 把当前题命中的候选记忆打印到 stdout。</li>
+          <li><strong>artifact 保持原样：</strong>完整检索结果仍然通过 <code>write_recall_log()</code> 写入 <code>qNNN.recall.json</code>，并写入 CSV 的 <code>relevant_memory</code> 字段。</li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">参考代码 1：日志辅助函数</h2>
+      </div>
+      <div class="panel-body">
+<pre class="code">def log_retrieved_memory_preview(
+    job: benchmark_adapter.Job,
+    hits: list[dict[str, Any]],
+    *,
+    question_no: int | None = None,
+    max_items: int = 5,
+    preview_chars: int = 220,
+) -&gt; None:
+    prefix = f"[memory] q{question_no}" if question_no else "[memory]"
+    print(
+        f"{prefix} {job.question_id} retrieved={len(hits)} "
+        f"sample={job.sample_id}",
+        flush=True,
+    )
+    for index, item in enumerate(sorted(hits, key=hit_score, reverse=True)[:max_items], 1):
+        uri = compact(memory_uri(item), 180)
+        memory_type = memory_type_of(item)
+        score = hit_score(item)
+        preview = compact(memory_content(item), preview_chars)
+        print(
+            f"[memory]   #{index} score={score:.3f} type={memory_type} uri={uri}",
+            flush=True,
+        )
+        if preview:
+            print(f"[memory]      {preview}", flush=True)</pre>
+        <div class="note">
+          这段函数只负责把检索命中的候选记忆转成短日志。它不改排序、不改检索结果、不改模型输入，只是读取已有 <code>hits</code> 并输出摘要。
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">参考代码 2：插入点</h2>
+      </div>
+      <div class="panel-body">
+<pre class="code">async def answer_question(
+    args: argparse.Namespace,
+    sdk: Any,
+    job: benchmark_adapter.Job,
+    out_dir: Path | None = None,
+    question_no: int | None = None,
+) -&gt; dict[str, str]:
+    started = time.time()
+    retrieval_error = ""
+    query = build_vikingbot_question_prompt(job)
+    retrieval_timing = default_retrieval_timing()
+    if bool(getattr(args, "qa_memory_injection", True)):
+        try:
+            hits, retrieval_error, retrieval_timing = await echomemory_retrieve(args, sdk, query)
+        except Exception as exc:
+            hits = []
+            retrieval_error = str(exc)
+    else:
+        hits = []
+
+    retrieval_completed_ms = ms_since(started)
+    segment_raw_started = time.time()
+    hits = inject_segment_raw_readback(args, hits)
+    segment_raw_readback_ms = ms_since(segment_raw_started)
+
+    log_retrieved_memory_preview(job, hits, question_no=question_no)
+
+    tool_cache: dict[str, dict[str, Any]] = {}
+    cache_started = time.time()
+    cache_memory_items(tool_cache, hits)</pre>
+        <div class="note">
+          插入点放在 <code>inject_segment_raw_readback()</code> 之后，意味着实时日志里看到的是“最终进入后续处理链的 hits”，比直接打印原始检索结果更接近实际用到的候选记忆。
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">参考代码 3：完整 artifact 仍然保留</h2>
+      </div>
+      <div class="panel-body">
+<pre class="code">write_recall_log(
+    out_dir,
+    job,
+    "echomemory",
+    query,
+    query_plan,
+    sorted(hits, key=hit_score, reverse=True),
+    user_hits=user_hits,
+    agent_hits=agent_hits,
+    retrieval_error=retrieval_error,
+    question_no=question_no,
+    extra={
+        "answer": answer,
+        "retrieval_status": "ok" if retrieval_ok else "empty",
+        "tool_call_count": len(tools_used),
+        "retrieval_layers_used": retrieval_layers_used,
+    },
+)</pre>
+        <p class="subtitle" style="margin-top:12px;">
+          也就是说，实时日志只是为了“观察当下召回了什么”；真正完整的检索证据仍然保存在 recall JSON 和 CSV 里，方便后续分析。
+        </p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">依赖的辅助函数</h2>
+      </div>
+      <div class="panel-body">
+        <dl class="kv">
+          <dt>memory_uri(item)</dt>
+          <dd>抽取 URI，用于日志里定位具体 memory item。</dd>
+          <dt>memory_content(item)</dt>
+          <dd>抽取 content/text/abstract/overview/summary，作为日志里的 preview 来源。</dd>
+          <dt>hit_score(item)</dt>
+          <dd>读取检索分数，决定候选记忆排序和日志展示顺序。</dd>
+          <dt>memory_type_of(item)</dt>
+          <dd>判断是 atom、segment_memory、episode_memory 等，方便在日志里看召回层级。</dd>
+          <dt>compact(text, limit)</dt>
+          <dd>截断 URI 和内容，避免日志被长路径或长记忆刷爆。</dd>
+        </dl>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">为什么这样放</h2>
+      </div>
+      <div class="panel-body">
+        <ol class="steps">
+          <li><strong>不改业务逻辑：</strong>只是读取现有 <code>hits</code>，不影响检索、prompt、Tool Calling、判分。</li>
+          <li><strong>不改接口：</strong>没有新增 API、没有新增 payload 字段、没有新增任务状态结构。</li>
+          <li><strong>对实时调试最有用：</strong>可以第一时间看出是“没召回到答案附近”，还是“召回了但模型没用上”。</li>
+          <li><strong>对通用 EchoMemory QA 自动生效：</strong><code>echomemory_generic_qa.py</code> 复用同一个 <code>answer_question()</code>。</li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">日志样例</h2>
+      </div>
+      <div class="panel-body">
+<pre class="code">[qa] 1/81 conv-30_q1 Where did ...
+[memory] q1 conv-30_q1 retrieved=12 sample=conv-30
+[memory]   #1 score=0.812 type=segment_memory uri=echo://workspace/.../segment/42
+[memory]      Joanna mentioned that the dog playdate was moved to 3:00 pm on Saturday...
+[memory]   #2 score=0.774 type=atom uri=atom://workspace/.../fact/19
+[memory]      Nate and Joanna planned a dog playdate for Saturday afternoon...</pre>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">边界说明</h2>
+      </div>
+      <div class="panel-body">
+        <ol class="steps">
+          <li><strong>打印的是候选记忆，不是答案。</strong>top 5 只是检索命中的候选 evidence，不保证就是最终答案依据。</li>
+          <li><strong>Tool Calling 可能继续查别的证据。</strong>如果启用了工具循环，模型后续还可能通过 <code>memory_search</code> / <code>memory_read_many</code> 拉取额外 memory。</li>
+          <li><strong>完整数据仍看 artifact。</strong>实时日志适合快速判断召回质量，精确分析仍以 <code>relevant_memory</code> 和 <code>qNNN.recall.json</code> 为准。</li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">文件与验证</h2>
+      </div>
+      <div class="panel-body">
+        <dl class="kv">
+          <dt>实现文件</dt>
+          <dd>/Users/chx/locomo-eval-web/scripts/echomemory_memory_qa.py</dd>
+          <dt>文档文件</dt>
+          <dd>/Users/chx/locomo-eval-web/docs/echomemory_retrieved_memory_log_plan_20260629.html</dd>
+          <dt>验证命令</dt>
+          <dd>python3 -m py_compile scripts/echomemory_memory_qa.py scripts/echomemory_generic_qa.py</dd>
+        </dl>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

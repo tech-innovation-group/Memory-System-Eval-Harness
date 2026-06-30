@@ -627,8 +627,8 @@ def build_context_preview(payload: dict[str, Any], defaults: dict[str, Any]) -> 
 
 def build_tool_loop_args(payload: dict[str, Any], defaults: dict[str, Any], settings: dict[str, Any]) -> SimpleNamespace:
     return SimpleNamespace(
-        answer_model=payload.get("model") or payload.get("answer_model") or defaults.get("answer_model") or defaults.get("judge_model") or "gpt-5.5",
-        answer_base_url=payload.get("agent_base_url") or payload.get("answer_base_url") or payload.get("judge_base_url") or defaults.get("judge_base_url") or "",
+        answer_model=payload.get("model") or payload.get("answer_model") or defaults.get("answer_model") or defaults.get("judge_model") or "deepseek-v4-flash",
+        answer_base_url=payload.get("agent_base_url") or payload.get("answer_base_url") or payload.get("judge_base_url") or defaults.get("judge_base_url") or "https://dashscope.aliyuncs.com/compatible-mode/v1",
         answer_token=payload.get("api_key") or payload.get("answer_token") or payload.get("judge_token") or defaults.get("answer_token") or defaults.get("judge_token") or defaults.get("api_key") or "",
         timeout_s=settings["timeout_s"],
         model_retries=settings["model_retries"],
@@ -644,7 +644,7 @@ def build_tool_loop_args(payload: dict[str, Any], defaults: dict[str, Any], sett
 
 
 async def chat_async(payload: dict[str, Any], defaults: dict[str, Any], config_path: Path) -> dict[str, Any]:
-    model = payload.get("model") or payload.get("answer_model") or defaults.get("answer_model") or defaults.get("judge_model") or "gpt-5.5"
+    model = payload.get("model") or payload.get("answer_model") or defaults.get("answer_model") or defaults.get("judge_model") or "deepseek-v4-flash"
     temperature = float(payload.get("temperature", 0.2))
     settings = resolve_settings(payload, defaults)
     preview = await build_context_preview_async(payload, defaults)

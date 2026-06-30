@@ -90,7 +90,6 @@ CURRENT_SCOPE_DATASET_FORMATS = {
     "hotpotqa",
     "proagentbench",
     "tau2bench",
-    "chenmo",
     "generic",
 }
 CURRENT_SCOPE_RUN_KINDS = {
@@ -107,7 +106,6 @@ CURRENT_SCOPE_RUN_KINDS = {
     "echomemory_import",
     "judge",
     "formal",
-    "chenmo_eval",
 }
 CURRENT_SCOPE_AGENT_TYPES = {
     "memorybench_agent",
@@ -298,19 +296,6 @@ def dataset_candidates() -> list[dict[str, str]]:
             "description": "长期对话记忆数据集；用于校验 conversation、question/answer 和 category 结构。",
         },
         {
-            "id": "chenmo",
-            "name": "ChenMo",
-            "path": str(first_existing_path(
-                [
-                    Path(os.environ.get("CHENMO_SCENARIO", "")) if os.environ.get("CHENMO_SCENARIO") else Path("__missing__"),
-                    DATASET_DIR / "chenmo_evaluation_scenario.md",
-                ],
-                DATASET_DIR / "chenmo_evaluation_scenario.md",
-            )),
-            "format": "chenmo",
-            "description": "陈默长期记忆与推理评测场景；64 轮对话，覆盖时序、多跳、因果、复杂任务和综合推理。",
-        },
-        {
             "id": "longmemeval-s",
             "name": "LongMemEval-S",
             "path": str(first_existing_path(
@@ -348,6 +333,8 @@ def dataset_candidates() -> list[dict[str, str]]:
 def dataset_registry() -> list[dict[str, Any]]:
     records = []
     for candidate in dataset_candidates():
+        if str(candidate.get("format") or "").strip().lower() == "chenmo":
+            continue
         path = safe_path(candidate["path"])
         record: dict[str, Any] = {
             **candidate,
@@ -592,6 +579,20 @@ def find_conflicting_active_locomo_qa(kind: str, payload: dict[str, Any]) -> Tas
     return None
 
 
+def find_active_task_writing_output(path: str) -> Task | None:
+    target = str(path or "").strip()
+    if not target:
+        return None
+    with TASK_LOCK:
+        for task in TASKS.values():
+            if task.status not in ACTIVE_TASK_STATUSES:
+                continue
+            output_file = str(task.output_file or "").strip()
+            if output_file and output_file == target and task.kind != "judge":
+                return task
+    return None
+
+
 def task_progress(task: "Task") -> dict[str, Any] | None:
     return tasking_service.task_progress(task)
 
@@ -625,9 +626,9 @@ def load_ov_defaults(config_path: Path = DEFAULT_CONFIG) -> dict[str, Any]:
         "server_port": "",
         "root_api_key": "",
         "account": "default",
-        "judge_base_url": os.environ.get("JUDGE_BASE_URL", ""),
-        "judge_model": os.environ.get("JUDGE_MODEL", "gpt-5.5"),
-        "answer_model": os.environ.get("ANSWER_MODEL") or os.environ.get("JUDGE_MODEL") or "gpt-5.5",
+        "judge_base_url": os.environ.get("JUDGE_BASE_URL") or "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "judge_model": os.environ.get("JUDGE_MODEL", "deepseek-v4-flash"),
+        "answer_model": os.environ.get("ANSWER_MODEL") or os.environ.get("JUDGE_MODEL") or "deepseek-v4-flash",
         "judge_token_set": bool(os.environ.get("JUDGE_TOKEN")),
         "runner": "local_agent",
         "memory_safety_mode": "read_only_recommended",
@@ -941,9 +942,99 @@ def active_run_ids() -> set[str]:
         }
 
 
+def pid_is_alive(pid: Any) -> bool:
+    try:
+        pid_value = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid_value <= 0:
+        return False
+    try:
+        os.kill(pid_value, 0)
+    except OSError:
+        return False
+    return True
+
+
+def refresh_task_runtime_state(task: Task) -> None:
+    run_dir_text = str(getattr(task, "run_dir", "") or "").strip()
+    status_before = str(task.status or "")
+    returncode_before = task.returncode
+    ended_at_before = task.ended_at
+    summary_before = json.dumps(task.summary, ensure_ascii=False, sort_keys=True, default=str) if isinstance(task.summary, dict) else ""
+    recovered_from_manifest = bool(task.meta.get("recovered_from_manifest")) if isinstance(task.meta, dict) else False
+    active_ids = active_run_ids()
+    if recovered_from_manifest and task.status in ACTIVE_TASK_STATUSES and getattr(task, "process", None) is None:
+        active_ids = {value for value in active_ids if value not in {task.id, run_dir_text}}
+    if run_dir_text:
+        try:
+            record = run_service.run_record(Path(run_dir_text), active_ids, compact=True)
+        except Exception:
+            record = None
+        if isinstance(record, dict):
+            refreshed_status = str(record.get("status") or "").strip()
+            if refreshed_status and refreshed_status != task.status:
+                task.status = refreshed_status
+            refreshed_summary = record.get("summary")
+            if isinstance(refreshed_summary, dict) and refreshed_summary:
+                task.summary = refreshed_summary
+            output_file = str(record.get("output_file") or "").strip()
+            if output_file:
+                task.output_file = output_file
+            log_file = str(record.get("log_file") or "").strip()
+            if log_file:
+                task.log_file = log_file
+    proc = getattr(task, "process", None)
+    if proc is not None and task.returncode is None:
+        try:
+            rc = proc.poll()
+        except Exception:
+            rc = None
+        if rc is not None:
+            task.returncode = rc
+            if task.status in ACTIVE_TASK_STATUSES:
+                if rc == 0:
+                    task.status = "succeeded"
+                elif getattr(task, "status", "") == "stopping" and rc in {-15, -2, 143, 130}:
+                    task.status = "interrupted"
+                else:
+                    task.status = "failed"
+            if task.ended_at is None:
+                task.ended_at = time.time()
+    if task.ended_at is None and task.status not in ACTIVE_TASK_STATUSES:
+        for candidate_text in (task.output_file, task.log_file, task.manifest_file):
+            candidate = Path(str(candidate_text or "")).expanduser()
+            try:
+                if candidate.exists():
+                    task.ended_at = candidate.stat().st_mtime
+                    break
+            except OSError:
+                continue
+    summary_after = json.dumps(task.summary, ensure_ascii=False, sort_keys=True, default=str) if isinstance(task.summary, dict) else ""
+    manifest_needs_sync = (
+        run_dir_text
+        and (
+            task.status != status_before
+            or task.returncode != returncode_before
+            or task.ended_at != ended_at_before
+            or summary_after != summary_before
+        )
+    )
+    if manifest_needs_sync:
+        config = task.meta.get("config") if isinstance(task.meta, dict) and isinstance(task.meta.get("config"), dict) else None
+        if isinstance(config, dict):
+            try:
+                write_manifest(task, config, Path(run_dir_text))
+            except Exception:
+                pass
+
+
 def active_public_tasks() -> list[dict[str, Any]]:
     with TASK_LOCK:
-        return [task.public() for task in TASKS.values() if task.status in ACTIVE_TASK_STATUSES]
+        tasks = list(TASKS.values())
+    for task in tasks:
+        refresh_task_runtime_state(task)
+    return [task.public() for task in tasks if task.status in ACTIVE_TASK_STATUSES]
 
 
 def register_task(task: Task) -> Task:
@@ -997,6 +1088,10 @@ def _task_from_manifest(run_dir: Path, manifest: dict[str, Any]) -> Task | None:
         summary = normalized.get("summary")
         if isinstance(summary, dict) and summary:
             task.summary = summary
+    if task.status in ACTIVE_TASK_STATUSES and pid_is_alive(task.pid):
+        task.meta = {**task.meta, "recovered_from_manifest": True, "recovery_reason": "server_restart_pid_alive"}
+        task.error = ""
+        task.ended_at = None
     return task
 
 
@@ -1017,14 +1112,19 @@ def recover_tasks_from_disk() -> None:
             if not task:
                 continue
             if task.status in ACTIVE_TASK_STATUSES:
-                task.meta = {**task.meta, "recovered_from_manifest": True, "recovery_reason": "server_restart"}
-                if task.status == "queued" and not task.started_at:
-                    task.status = "canceled"
-                    task.error = task.error or "任务在服务重启后恢复时未发现活跃进程，已标记为取消。"
+                if pid_is_alive(task.pid):
+                    task.meta = {**task.meta, "recovered_from_manifest": True, "recovery_reason": "server_restart_pid_alive"}
+                    task.error = ""
+                    task.ended_at = None
                 else:
-                    task.status = "interrupted"
-                    task.error = task.error or "任务在服务重启后恢复展示，原进程状态不可用。"
-                task.ended_at = task.ended_at or time.time()
+                    task.meta = {**task.meta, "recovered_from_manifest": True, "recovery_reason": "server_restart"}
+                    if task.status == "queued" and not task.started_at:
+                        task.status = "canceled"
+                        task.error = task.error or "任务在服务重启后恢复时未发现活跃进程，已标记为取消。"
+                    else:
+                        task.status = "interrupted"
+                        task.error = task.error or "任务在服务重启后恢复展示，原进程状态不可用。"
+                    task.ended_at = task.ended_at or time.time()
             recovered[task.id] = task
     with TASK_LOCK:
         for task_id, task in recovered.items():
@@ -1259,7 +1359,7 @@ def preflight_fixes(
         if not runtime_status.get("chat_token_set"):
             env["ECHOMEM_CHAT_API_KEY"] = "<your-chat-api-key>"
             env["ECHOMEM_CHAT_BASE_URL"] = "https://<chat-provider-host>/compatible-mode/v1"
-            env["ECHOMEM_CHAT_MODEL"] = str((model_status.get("answer") or {}).get("model") or "gpt-5.5")
+            env["ECHOMEM_CHAT_MODEL"] = str((model_status.get("answer") or {}).get("model") or "deepseek-v4-flash")
         if env:
             add_fix(
                 "echomemory_env",
@@ -1286,7 +1386,7 @@ def preflight_fixes(
             "required",
             env={
                 "JUDGE_BASE_URL": "https://<judge-provider-host>/v1",
-                "JUDGE_MODEL": str((model_status.get("judge") or {}).get("model") or "gpt-5.5"),
+                "JUDGE_MODEL": str((model_status.get("judge") or {}).get("model") or "deepseek-v4-flash"),
                 "JUDGE_TOKEN": "<your-judge-api-key>",
             },
         )
@@ -1723,6 +1823,9 @@ def handoff_audit() -> dict[str, Any]:
         "CODE_OF_CONDUCT.md",
         "PUBLICATION_CHECKLIST.md",
         "web/static/index.html",
+        "web/static/app-state.js",
+        "web/static/app-core.js",
+        "web/static/app-format.js",
         "web/static/app.js",
         "web/static/styles.css",
         "web/static/product-roadmap.html",
@@ -1812,8 +1915,10 @@ def handoff_audit() -> dict[str, Any]:
         index_text = ""
     index_sidebar = [
         [match.group(1), re.sub(r"<[^>]*>", "", match.group(2)).strip()]
-        for match in re.finditer(r'<button\s+class="nav-item(?:\s+active)?"\s+data-view="([^"]+)"[^>]*>(.*?)</button>', index_text)
+        for match in re.finditer(r'<button\s+class="nav-item(?:\s+active)?"\s+data-view="([^"]+)"[^>]*>(.*?)</button>', index_text, re.S)
     ]
+    contract_views = [row[0] for row in contract_sidebar]
+    index_views = [row[0] for row in index_sidebar]
     agent_label = str((ui_contract.get("agent") or {}).get("label") or "")
     ui_contract_failures = []
     if not ui_contract:
@@ -1824,7 +1929,7 @@ def handoff_audit() -> dict[str, Any]:
         ui_contract_failures.append(f"contract backends {contract_backend_ids} != registered adapters {registry_ids}")
     if not contract_sidebar:
         ui_contract_failures.append("contract sidebar is empty")
-    if contract_sidebar != index_sidebar:
+    if contract_views != index_views:
         ui_contract_failures.append("contract sidebar does not match web/static/index.html")
     if agent_label and agent_label not in index_text:
         ui_contract_failures.append(f"agent label {agent_label!r} is not visible in web/static/index.html")
@@ -1853,6 +1958,9 @@ def handoff_audit() -> dict[str, Any]:
     ]
     core_public_files = [
         "web/static/index.html",
+        "web/static/app-state.js",
+        "web/static/app-core.js",
+        "web/static/app-format.js",
         "web/static/app.js",
         "web/static/styles.css",
         "web/static/product-roadmap.html",
@@ -1879,7 +1987,7 @@ def handoff_audit() -> dict[str, Any]:
         "public_static_contract",
         "公开静态入口契约",
         "ok" if not public_static_failures else "fail",
-        "公开入口只包含核心 UI 四件套；其它 web/static HTML 仍视为历史实验或生成报告，不作为外发入口。" if not public_static_failures else "公开静态入口契约不一致。",
+        "公开入口只包含核心 UI 入口文件；其它 web/static HTML 仍视为历史实验或生成报告，不作为外发入口。" if not public_static_failures else "公开静态入口契约不一致。",
         "required",
         {
             "contract_public_static_files": contract_public_files,
@@ -2172,7 +2280,7 @@ def delivery_boundary_gate(audit: dict[str, Any] | None = None, doctor: dict[str
             "id": "public_files",
             "title": "公开静态入口",
             "status": (checks_by_id.get("public_static_contract") or {}).get("status") or "warn",
-            "detail": "公开入口只包含核心 UI 四件套；历史 HTML 不作为外发入口。",
+            "detail": "公开入口只包含核心 UI 入口文件；历史 HTML 不作为外发入口。",
             "evidence": public_files,
         },
         {
@@ -2450,7 +2558,7 @@ def setup_pack(payload: dict[str, Any] | None = None, readiness: dict[str, Any] 
                 "DASHSCOPE_API_KEY": "<your-embedding-api-key>",
                 "DASHSCOPE_BASE_URL": "https://<embedding-provider-host>/compatible-mode/v1",
                 "ECHOMEM_CHAT_PROVIDER": "deepseek",
-                "ECHOMEM_CHAT_MODEL": (models.get("answer") or {}).get("model") or "gpt-5.5",
+                "ECHOMEM_CHAT_MODEL": (models.get("answer") or {}).get("model") or "deepseek-v4-flash",
                 "ECHOMEM_CHAT_API_KEY": "<your-chat-api-key>",
                 "ECHOMEM_CHAT_BASE_URL": "https://<chat-provider-host>/compatible-mode/v1",
             }
@@ -2468,7 +2576,7 @@ def setup_pack(payload: dict[str, Any] | None = None, readiness: dict[str, Any] 
     env.update(
         {
             "JUDGE_BASE_URL": "https://<judge-provider-host>/v1",
-            "JUDGE_MODEL": (models.get("judge") or {}).get("model") or "gpt-5.5",
+            "JUDGE_MODEL": (models.get("judge") or {}).get("model") or "deepseek-v4-flash",
             "JUDGE_TOKEN": "<your-judge-api-key>",
         }
     )
@@ -2619,10 +2727,16 @@ def handoff_package(
         {"path": "start.sh", "reason": "启动本地评测服务。", "required": True, "exists": (ROOT / "start.sh").exists()},
         {"path": "preflight.sh", "reason": "外发前和接收后的一键门禁。", "required": True, "exists": (ROOT / "preflight.sh").exists()},
         {"path": "web/static/index.html", "reason": "主前端 HTML。", "required": True, "exists": (ROOT / "web" / "static" / "index.html").exists()},
+        {"path": "web/static/app-state.js", "reason": "主前端状态层。", "required": True, "exists": (ROOT / "web" / "static" / "app-state.js").exists()},
+        {"path": "web/static/app-core.js", "reason": "主前端共享逻辑层。", "required": True, "exists": (ROOT / "web" / "static" / "app-core.js").exists()},
+        {"path": "web/static/app-format.js", "reason": "主前端格式化层。", "required": True, "exists": (ROOT / "web" / "static" / "app-format.js").exists()},
         {"path": "web/static/app.js", "reason": "主前端交互逻辑。", "required": True, "exists": (ROOT / "web" / "static" / "app.js").exists()},
         {"path": "web/static/styles.css", "reason": "主前端样式。", "required": True, "exists": (ROOT / "web" / "static" / "styles.css").exists()},
         {"path": "web/static/product-roadmap.html", "reason": "20k-star 产品方案和 24 小时迭代路线图。", "required": True, "exists": (ROOT / "web" / "static" / "product-roadmap.html").exists()},
         {"path": "static/index.html", "reason": "兼容旧入口的 HTML 镜像。", "required": True, "exists": (ROOT / "static" / "index.html").exists()},
+        {"path": "static/app-state.js", "reason": "兼容旧入口的状态层镜像。", "required": True, "exists": (ROOT / "static" / "app-state.js").exists()},
+        {"path": "static/app-core.js", "reason": "兼容旧入口的共享逻辑镜像。", "required": True, "exists": (ROOT / "static" / "app-core.js").exists()},
+        {"path": "static/app-format.js", "reason": "兼容旧入口的格式化层镜像。", "required": True, "exists": (ROOT / "static" / "app-format.js").exists()},
         {"path": "static/app.js", "reason": "兼容旧入口的前端逻辑镜像。", "required": True, "exists": (ROOT / "static" / "app.js").exists()},
         {"path": "static/styles.css", "reason": "兼容旧入口的样式镜像。", "required": True, "exists": (ROOT / "static" / "styles.css").exists()},
         {"path": "static/product-roadmap.html", "reason": "兼容旧入口的产品方案镜像。", "required": True, "exists": (ROOT / "static" / "product-roadmap.html").exists()},
@@ -2828,7 +2942,7 @@ def handoff_dashboard(payload: dict[str, Any] | None = None) -> dict[str, Any]:
             "status": readiness.get("status"),
             "score": readiness.get("score"),
             "detail": f"{len(readiness.get('blockers') or [])} blockers / {len(readiness.get('warnings') or [])} warnings",
-            "view": "readmeView",
+            "view": "systemConfigView",
         },
         {
             "id": "acceptance",
@@ -2836,7 +2950,7 @@ def handoff_dashboard(payload: dict[str, Any] | None = None) -> dict[str, Any]:
             "status": acceptance.get("status"),
             "score": acceptance.get("score"),
             "detail": f"{len(acceptance.get('blockers') or [])} blockers / {len(acceptance.get('warnings') or [])} warnings",
-            "view": "readmeView",
+            "view": "systemConfigView",
         },
         {
             "id": "smoke",
@@ -2868,7 +2982,7 @@ def handoff_dashboard(payload: dict[str, Any] | None = None) -> dict[str, Any]:
             "status": boundary.get("status"),
             "score": None,
             "detail": f"agent={boundary.get('agent_label') or '-'} backends={','.join(boundary.get('registered_backends') or [])}",
-            "view": "readmeView",
+            "view": "systemConfigView",
         },
         {
             "id": "agent_alignment",
@@ -2876,7 +2990,7 @@ def handoff_dashboard(payload: dict[str, Any] | None = None) -> dict[str, Any]:
             "status": alignment.get("status"),
             "score": None,
             "detail": (alignment.get("latest_backend_run") or {}).get("alignment", {}).get("title") or "等待 LoCoMo QA run",
-            "view": "readmeView",
+            "view": "systemConfigView",
         },
         {
             "id": "account_isolation",
@@ -2892,7 +3006,7 @@ def handoff_dashboard(payload: dict[str, Any] | None = None) -> dict[str, Any]:
             "status": package.get("status"),
             "score": (package.get("acceptance") or {}).get("score"),
             "detail": f"include={len(package.get('include') or [])} exclude={len(package.get('exclude') or [])}",
-            "view": "readmeView",
+            "view": "systemConfigView",
         },
     ]
     statuses = [str(item.get("status") or "warn") for item in cards]
@@ -4705,7 +4819,7 @@ def smoke_plan(
             "readiness",
             "启动门禁",
             "fail" if required_blockers else ("warn" if warnings else "ok"),
-            "readmeView",
+            "systemConfigView",
             "点击“刷新门禁”和“刷新验收”，确认没有 required failure。",
             "readiness / acceptance-matrix 均可复制，且不包含真实 API Key。",
             "刷新门禁 / 刷新验收",
@@ -4771,7 +4885,7 @@ def smoke_plan(
             "handoff",
             "外发前审计",
             "ok" if acceptance.get("status") != "fail" else "fail",
-            "readmeView",
+            "systemConfigView",
             "复制验收矩阵和小样本核验计划；不要外发 .env.local、runs、workspace 或真实 key。",
             "外部测试者拿到 README 后能按步骤复现，不需要额外口头说明。",
             "复制核验计划",
@@ -4808,7 +4922,7 @@ def smoke_plan(
         },
         {
             "title": "打开 Web",
-            "command": f"open http://127.0.0.1:{os.environ.get('LOCOMO_EVAL_PORT') or '19181'}/?view=readmeView",
+            "command": f"open http://127.0.0.1:{os.environ.get('LOCOMO_EVAL_PORT') or '19181'}/?view=systemConfigView",
         },
     ]
     return {
@@ -5300,12 +5414,32 @@ def question_result_detail(csv_path: Path, question_id: str = "", index: int | N
         memory_count = sum(1 for item in relevant if isinstance(item, dict) and item.get("source") != "archive_fallback")
     retrieval_error = row.get("retrieval_error") or ""
     model_error = row.get("model_error") or ""
+    top_k = row.get("top_k") or row.get("initial_search_limit") or row.get("tool_search_limit") or ""
+    retrieval_query = row.get("retrieval_query_plan") or row.get("native_prompt") or row.get("question") or ""
+    diagnosis = []
+    if str(row.get("result") or row.get("simple_grade") or "").upper() == "WRONG":
+        if not relevant:
+            diagnosis.append("Empty Retrieval")
+        elif not str(row.get("memory_hit_count") or "").strip() or int(float(row.get("memory_hit_count") or 0)) <= 0:
+            diagnosis.append("Retrieval Miss")
+        elif str(row.get("response") or "").strip() and str(row.get("response") or "").strip().lower() == str(row.get("answer") or "").strip().lower():
+            diagnosis.append("Judge Ambiguous")
+        elif str(row.get("response") or "").strip() and str(row.get("answer") or "").strip():
+            diagnosis.append("Evidence Found But Unused")
+    if model_error:
+        diagnosis.append("Backend Mismatch")
+    if retrieval_error:
+        diagnosis.append("Retrieval Miss")
+    if not diagnosis:
+        diagnosis.append("Judge Ambiguous")
     return {
         "csv": str(csv_path),
         "index": row_index,
         "row": row,
         "relevant_memory": relevant if isinstance(relevant, list) else [],
         "context": context,
+        "top_k": top_k,
+        "retrieval_query": retrieval_query,
         "diagnostics": {
             "archive_fallback_count": archive_count,
             "memory_hit_count": memory_count,
@@ -5321,6 +5455,8 @@ def question_result_detail(csv_path: Path, question_id: str = "", index: int | N
             "answer_prompt_tokens": row.get("answer_prompt_tokens") or "",
             "answer_completion_tokens": row.get("answer_completion_tokens") or "",
             "answer_total_tokens": row.get("answer_total_tokens") or "",
+            "diagnosis": diagnosis,
+            "diagnosis_reason": " / ".join(diagnosis),
         },
         "judge": {
             "result": row.get("result") or row.get("simple_grade") or "",
@@ -6189,6 +6325,13 @@ def script_arg(text: str) -> str:
 
 def create_task(kind: str, payload: dict[str, Any]) -> Task:
     with TASK_CREATION_LOCK:
+        if kind == "judge":
+            input_path = str(payload.get("input") or "").strip()
+            active_writer = find_active_task_writing_output(input_path)
+            if active_writer is not None:
+                raise ValueError(
+                    f"结果文件仍在写入：{input_path}；当前任务 {active_writer.id} ({active_writer.kind}) 尚未结束，请等问答完成后再判分。"
+                )
         return orchestrate_task(
             kind,
             payload,
@@ -6294,6 +6437,7 @@ def stop_task_by_id_response(task_id: str) -> tuple[dict[str, Any], int]:
         return {"error": "task not found"}, 404
     with TASK_LOCK:
         stop_task(task)
+    refresh_task_runtime_state(task)
     return task.public(), 200
 
 
@@ -6820,8 +6964,14 @@ class Handler(BaseHTTPRequestHandler):
             if include_inactive or recover:
                 recover_tasks_from_disk()
             with TASK_LOCK:
-                source_tasks = TASKS.values() if include_inactive else [task for task in TASKS.values() if task.status in ACTIVE_TASK_STATUSES]
-                tasks = [t.public() for t in sorted(source_tasks, key=lambda x: x.created_at, reverse=True)]
+                source_tasks = list(TASKS.values()) if include_inactive else [task for task in TASKS.values() if task.status in ACTIVE_TASK_STATUSES]
+            for task in source_tasks:
+                refresh_task_runtime_state(task)
+            if include_inactive:
+                visible_tasks = source_tasks
+            else:
+                visible_tasks = [task for task in source_tasks if task.status in ACTIVE_TASK_STATUSES]
+            tasks = [t.public() for t in sorted(visible_tasks, key=lambda x: x.created_at, reverse=True)]
             self.send_json({"tasks": tasks, "scope": "all" if include_inactive else "active"})
             return
         if parsed.path == "/api/runs":
@@ -6984,6 +7134,7 @@ class Handler(BaseHTTPRequestHandler):
             if not task:
                 self.send_json({"error": "task not found"}, 404)
                 return
+            refresh_task_runtime_state(task)
             if len(parts) == 4 and parts[3] == "log":
                 qs = parse_qs(parsed.query)
                 offset = int(qs.get("offset", ["0"])[0] or 0)

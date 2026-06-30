@@ -41,6 +41,9 @@ class WebPackageLayout:
         ]
         canonical = configured or [
             "web/static/index.html",
+            "web/static/app-state.js",
+            "web/static/app-core.js",
+            "web/static/app-format.js",
             "web/static/app.js",
             "web/static/styles.css",
             "web/static/product-roadmap.html",

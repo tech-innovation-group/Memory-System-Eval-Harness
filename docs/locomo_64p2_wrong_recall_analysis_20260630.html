@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LoCoMo 64.20% 错题召回分析</title>
+  <style>
+    :root {
+      --bg: #f7f5f0;
+      --surface: #ffffff;
+      --border: #e5ded2;
+      --text: #111827;
+      --muted: #6b7280;
+      --blue: #2563eb;
+      --blue-soft: #eff6ff;
+      --green: #16a34a;
+      --green-soft: #ecfdf5;
+      --orange: #d97706;
+      --orange-soft: #fff7ed;
+      --red: #dc2626;
+      --red-soft: #fef2f2;
+      --radius: 8px;
+      --shadow: 0 1px 2px rgba(17, 24, 39, 0.04);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+    }
+
+    .page {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }
+
+    .header,
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .header {
+      padding: 24px;
+      margin-bottom: 16px;
+    }
+
+    h1, h2, h3, p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 24px;
+      margin-bottom: 8px;
+    }
+
+    .sub {
+      color: var(--muted);
+      font-size: 14px;
+      margin-bottom: 18px;
+    }
+
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .meta-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      background: #fcfbf8;
+    }
+
+    .label {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .value {
+      font-size: 15px;
+      font-weight: 600;
+      word-break: break-all;
+    }
+
+    .panel {
+      padding: 22px 24px;
+      margin-bottom: 16px;
+    }
+
+    .panel h2 {
+      font-size: 18px;
+      margin-bottom: 14px;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      height: 26px;
+      padding: 0 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid transparent;
+    }
+
+    .pill.blue {
+      color: var(--blue);
+      background: var(--blue-soft);
+      border-color: #bfdbfe;
+    }
+
+    .pill.red {
+      color: var(--red);
+      background: var(--red-soft);
+      border-color: #fecaca;
+    }
+
+    .pill.green {
+      color: var(--green);
+      background: var(--green-soft);
+      border-color: #bbf7d0;
+    }
+
+    .pill.orange {
+      color: var(--orange);
+      background: var(--orange-soft);
+      border-color: #fed7aa;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .block {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      background: #fcfbf8;
+    }
+
+    .block h3 {
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+
+    .kv {
+      display: grid;
+      gap: 10px;
+    }
+
+    .kv-item {
+      display: grid;
+      gap: 4px;
+    }
+
+    .kv-item .k {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .kv-item .v {
+      font-size: 14px;
+    }
+
+    .codepath {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      color: #374151;
+      background: #f9fafb;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      overflow-wrap: anywhere;
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    li + li {
+      margin-top: 8px;
+    }
+
+    .memory-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .memory-item {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      background: #fff;
+    }
+
+    .memory-head {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .memory-uri {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      color: #374151;
+      word-break: break-all;
+    }
+
+    .memory-preview {
+      font-size: 13px;
+      color: #1f2937;
+    }
+
+    .summary-box {
+      border-left: 3px solid var(--blue);
+      background: #fbfdff;
+      padding: 12px 14px;
+      border-radius: 0 8px 8px 0;
+      font-size: 14px;
+    }
+
+    @media (max-width: 900px) {
+      .meta,
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="header">
+      <h1>LoCoMo 64.20% 错题召回分析</h1>
+      <p class="sub">分析对象为 2026-06-29 最新一轮已判分的 EchoMemory LoCoMo QA 全量 81 题结果。这里只挑两道典型错题：一题是召回偏题，一题是召回很多但关键证据没进来。</p>
+      <div class="meta">
+        <div class="meta-card">
+          <div class="label">判分结果</div>
+          <div class="value">52 / 81 正确 · 64.20%</div>
+        </div>
+        <div class="meta-card">
+          <div class="label">QA 结果目录</div>
+          <div class="value">/Users/chx/locomo-eval-web/runs/echomemory_qa_20260629_220223_default-20260629-214003_9fc2ac/echomemory_qa</div>
+        </div>
+        <div class="meta-card">
+          <div class="label">判分日志</div>
+          <div class="value">/Users/chx/locomo-eval-web/runs/judge_20260629_231525_b5213e/run.log</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>结论先看</h2>
+      <div class="summary-box">
+        这轮错题里，比较典型的不是“完全没检索”，而是“检索到了很多主题相关的记忆，但没有把最关键的答案证据排进来”。结果就是模型拿泛化语义去补答案，或者直接说没找到。
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>错题 1：conv-30_qa43</h2>
+      <div class="badge-row">
+        <span class="pill red">结果：WRONG</span>
+        <span class="pill blue">召回 20 条</span>
+        <span class="pill orange">类型：召回相关，但证据不精确</span>
+      </div>
+      <div class="grid">
+        <div class="block">
+          <h3>题目信息</h3>
+          <div class="kv">
+            <div class="kv-item">
+              <div class="k">题目</div>
+              <div class="v">What do the dancers in the photo represent?</div>
+            </div>
+            <div class="kv-item">
+              <div class="k">金标答案</div>
+              <div class="v">They are performing at the festival</div>
+            </div>
+            <div class="kv-item">
+              <div class="k">模型答案</div>
+              <div class="v">The dancers represent Jon's motivation and inspiration.</div>
+            </div>
+            <div class="kv-item">
+              <div class="k">召回文件</div>
+              <div class="codepath">/Users/chx/locomo-eval-web/runs/echomemory_qa_20260629_220223_default-20260629-214003_9fc2ac/echomemory_qa/q044.recall.json</div>
+            </div>
+          </div>
+        </div>
+        <div class="block">
+          <h3>问题判断</h3>
+          <ul>
+            <li>这题不是没召回，而是召回到了“舞蹈 / 照片 / 鼓励 / inspiration”这一类相关语义。</li>
+            <li>但没有把“照片里的舞者是在 festival 表演”这个精确事实顶上来。</li>
+            <li>模型最后就把“舞者”解释成了象征意义，答成 motivation / inspiration。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="block" style="margin-bottom: 16px;">
+        <h3>召回到的代表性记忆</h3>
+        <div class="memory-list">
+          <div class="memory-item">
+            <div class="memory-head"><span class="pill green">atom</span><span>score = 1.0</span></div>
+            <div class="memory-uri">atom://atom-07fcc05e43724c59</div>
+            <div class="memory-preview">Gina shared a photo of her trophy from a dance contest on 2023-04-09.</div>
+          </div>
+          <div class="memory-item">
+            <div class="memory-head"><span class="pill green">atom</span><span>score = 1.0</span></div>
+            <div class="memory-uri">atom://atom-2b0985f38bff41d4</div>
+            <div class="memory-preview">Jon expressed excitement to guide and mentor aspiring dancers on 9 July 2023.</div>
+          </div>
+          <div class="memory-item">
+            <div class="memory-head"><span class="pill blue">session_summary</span><span>score = 0.84</span></div>
+            <div class="memory-uri">echo://default/sessions/echomem-locomo-conv-30-s9-1d1b669e/overview.md</div>
+            <div class="memory-preview">Jon and Gina exchange encouragement and share photos of their dance experiences.</div>
+          </div>
+        </div>
+      </div>
+      <div class="block">
+        <h3>为什么会错</h3>
+        <ul>
+          <li>召回结果主题上是相关的，但都偏“舞蹈背景”和“鼓励语义”。</li>
+          <li>缺少直接支持金标答案的 phrase-level evidence。</li>
+          <li>这属于“相关召回很多，但答案锚点不够精确”的典型错题。</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>错题 2：conv-30_qa46</h2>
+      <div class="badge-row">
+        <span class="pill red">结果：WRONG</span>
+        <span class="pill blue">召回 24 条</span>
+        <span class="pill orange">类型：召回很多，但关键细节缺失</span>
+      </div>
+      <div class="grid">
+        <div class="block">
+          <h3>题目信息</h3>
+          <div class="kv">
+            <div class="kv-item">
+              <div class="k">题目</div>
+              <div class="v">What kind of flooring is Jon looking for in his dance studio?</div>
+            </div>
+            <div class="kv-item">
+              <div class="k">金标答案</div>
+              <div class="v">Marley flooring</div>
+            </div>
+            <div class="kv-item">
+              <div class="k">模型答案</div>
+              <div class="v">No information found about the flooring.</div>
+            </div>
+            <div class="kv-item">
+              <div class="k">召回文件</div>
+              <div class="codepath">/Users/chx/locomo-eval-web/runs/echomemory_qa_20260629_220223_default-20260629-214003_9fc2ac/echomemory_qa/q047.recall.json</div>
+            </div>
+          </div>
+        </div>
+        <div class="block">
+          <h3>问题判断</h3>
+          <ul>
+            <li>这题明显不是“检索数量不够”，而是“检索质量不对”。</li>
+            <li>24 条召回里大部分都是 studio 经营、社媒、导师、鼓励、创业进度。</li>
+            <li>真正需要的细节是 studio physical setup：flooring / natural light / by the water 这一类。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="block" style="margin-bottom: 16px;">
+        <h3>召回到的代表性记忆</h3>
+        <div class="memory-list">
+          <div class="memory-item">
+            <div class="memory-head"><span class="pill green">atom</span><span>score = 1.0</span></div>
+            <div class="memory-uri">atom://atom-a03ec88050a7467f</div>
+            <div class="memory-preview">Jon has opened his own dance studio and is teaching others by 11 May 2023.</div>
+          </div>
+          <div class="memory-item">
+            <div class="memory-head"><span class="pill green">atom</span><span>score = 1.0</span></div>
+            <div class="memory-uri">atom://atom-5a8657b45f144048</div>
+            <div class="memory-preview">Jon is expanding his dance studio's social media presence in April 2023.</div>
+          </div>
+          <div class="memory-item">
+            <div class="memory-head"><span class="pill blue">session_summary</span><span>score = 0.92</span></div>
+            <div class="memory-uri">echo://default/sessions/echomem-locomo-conv-30-s12-1d9be64b/overview.md</div>
+            <div class="memory-preview">Jon shared his entrepreneurial efforts: reading The Lean Startup, tracking milestones, finishing a business plan.</div>
+          </div>
+        </div>
+      </div>
+      <div class="block">
+        <h3>为什么会错</h3>
+        <ul>
+          <li>检索器抓住了 “dance studio” 这个大主题，但没有抓住 “flooring” 这个具体属性。</li>
+          <li>因此进入 prompt 的证据基本都是泛化经营信息，模型只能得出“没找到”的结论。</li>
+          <li>这更像是 recall/ranking 问题，不是回答模型本身不会答。</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>这两道题说明了什么</h2>
+      <ul>
+        <li>当前系统已经有检索和召回，不是完全没有记忆链路。</li>
+        <li>但错题里经常出现“主题相关记忆很多，答案级证据不够精确”。</li>
+        <li>如果后面要继续提准确率，优先应该查两块：一是记忆抽取时有没有丢掉精细事实；二是 ranker 有没有把精细事实排到 selected 前面。</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

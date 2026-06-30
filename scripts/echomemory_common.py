@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
@@ -585,6 +586,8 @@ def _write_develop_echomem_config(
         recall_routers if recall_routers is not None else os.environ.get("ECHOMEM_DEVELOP_RECALL_ROUTERS"),
         default=("template-2", "llm"),
     )
+    text_scan_max_files = int(os.environ.get("ECHOMEM_TEXT_SCAN_MAX_FILES") or 5000)
+    text_scan_timeout_seconds = float(os.environ.get("ECHOMEM_TEXT_SCAN_TIMEOUT_SECONDS") or 10)
     payload = {
         "workspace_version": 1,
         "runtime": {
@@ -652,6 +655,10 @@ def _write_develop_echomem_config(
                         "dim": int(os.environ.get("ECHOMEM_EMBEDDING_DIM") or 1024),
                     },
                     "search": {
+                        "text_scan": {
+                            "max_files": text_scan_max_files,
+                            "timeout_seconds": text_scan_timeout_seconds,
+                        },
                         "intent": {
                             "backend": str(os.environ.get("ECHOMEM_SEARCH_INTENT_BACKEND") or "rule"),
                             "llm_first": _env_bool("ECHOMEM_SEARCH_INTENT_LLM_FIRST", False),
@@ -799,6 +806,19 @@ class EchoMemDevelopCompatSDK:
         self._client_core = client_core
         self._compat_layout = "develop-src"
 
+    def _tenant_context(self, ctx: dict[str, Any] | None = None) -> Any | None:
+        runtime = self._runtime
+        if runtime is None:
+            return None
+        account_id = self._ctx_value(ctx, "account_id", self._account)
+        user_id = self._ctx_value(ctx, "user_id", self._user_id)
+        try:
+            from echomem.req_coordinator.interfaces.entities.tenant import TenantContext
+
+            return TenantContext(tenant_id=account_id, user_id=user_id)
+        except Exception:
+            return None
+
     def _ctx(self, **kwargs: Any) -> dict[str, Any]:
         return dict(kwargs)
 
@@ -944,14 +964,33 @@ class EchoMemDevelopCompatSDK:
                 limit = max(1, int(budget.get("max_results") or limit))
             except Exception:
                 limit = 8
-        items = await self._client.search(
-            query,
-            agent_id=self._ctx_value(ctx, "agent_id", self._agent_id),
-            session_id=self._ctx_value(ctx, "session_id", "") or None,
-            limit=limit,
-            include_explain=False,
-            include_debug=False,
-        )
+        tenant = self._tenant_context(ctx)
+        if tenant is not None and self._client_core is not None:
+            def _search_with_tenant() -> Any:
+                return self._client_core._retrieval_service.retrieve(
+                    __import__("echomem.memrouter.recall.interfaces.entities", fromlist=["RetrievalReq"]).RetrievalReq(
+                        query=query,
+                        user_id=self._ctx_value(ctx, "user_id", self._user_id),
+                        agent_id=self._ctx_value(ctx, "agent_id", self._agent_id),
+                        session_id=self._ctx_value(ctx, "session_id", "") or None,
+                        limit=limit,
+                        include_explain=False,
+                        include_debug=False,
+                    ),
+                    tenant=tenant,
+                )
+
+            result = await asyncio.to_thread(_search_with_tenant)
+            items = list(getattr(result, "items", []) or [])
+        else:
+            items = await self._client.search(
+                query,
+                agent_id=self._ctx_value(ctx, "agent_id", self._agent_id),
+                session_id=self._ctx_value(ctx, "session_id", "") or None,
+                limit=limit,
+                include_explain=False,
+                include_debug=False,
+            )
         return SimpleNamespace(items=items)
 
     async def fs_read(self, uri: str, *, ctx: dict[str, Any] | None = None) -> dict[str, Any]:

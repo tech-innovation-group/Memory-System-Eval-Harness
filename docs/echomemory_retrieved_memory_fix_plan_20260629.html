@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EchoMemory 检索记忆修复方案 2026-06-29</title>
+  <style>
+    :root {
+      --bg: #f7f5f0;
+      --surface: #ffffff;
+      --border: #e5ded2;
+      --border-strong: #d8ccb9;
+      --text: #111827;
+      --muted: #6b7280;
+      --blue: #2563eb;
+      --blue-soft: #eff6ff;
+      --green: #16a34a;
+      --green-soft: #ecfdf5;
+      --orange: #d97706;
+      --orange-soft: #fff7ed;
+      --red: #dc2626;
+      --red-soft: #fef2f2;
+      --radius: 8px;
+      --shadow: 0 1px 2px rgba(17, 24, 39, 0.04);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.6 var(--sans);
+    }
+    .page {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 32px 24px 64px;
+    }
+    .hero,
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .hero {
+      padding: 24px;
+      margin-bottom: 16px;
+    }
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+      line-height: 1.2;
+    }
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: #faf9f7;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .pill.ok {
+      color: var(--green);
+      background: var(--green-soft);
+      border-color: #bbf7d0;
+    }
+    .pill.warn {
+      color: var(--orange);
+      background: var(--orange-soft);
+      border-color: #fed7aa;
+    }
+    .pill.bad {
+      color: var(--red);
+      background: var(--red-soft);
+      border-color: #fecaca;
+    }
+    .panel {
+      padding: 20px 22px;
+      margin-bottom: 16px;
+    }
+    h2 {
+      margin: 0 0 12px;
+      font-size: 18px;
+      line-height: 1.3;
+    }
+    h3 {
+      margin: 18px 0 8px;
+      font-size: 15px;
+      line-height: 1.4;
+    }
+    p, li { color: var(--text); }
+    ul, ol {
+      margin: 8px 0 0 20px;
+      padding: 0;
+    }
+    li + li { margin-top: 6px; }
+    .note {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: #faf9f7;
+      color: var(--muted);
+    }
+    .danger {
+      border-color: #fecaca;
+      background: var(--red-soft);
+      color: #991b1b;
+    }
+    .code,
+    pre {
+      font-family: var(--mono);
+      font-size: 12.5px;
+    }
+    code {
+      font-family: var(--mono);
+      background: #f3f4f6;
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    pre {
+      overflow: auto;
+      margin: 10px 0 0;
+      padding: 14px;
+      background: #0f172a;
+      color: #e5e7eb;
+      border-radius: var(--radius);
+      line-height: 1.55;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 13px;
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 10px 12px;
+      border-top: 1px solid var(--border);
+    }
+    th {
+      color: var(--muted);
+      font-weight: 600;
+      background: #faf9f7;
+    }
+    .path {
+      font-family: var(--mono);
+      word-break: break-all;
+      color: #1f2937;
+    }
+    .subtle {
+      color: var(--muted);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    @media (max-width: 860px) {
+      .grid { grid-template-columns: 1fr; }
+      .page { padding: 20px 14px 48px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <h1>EchoMemory 检索记忆修复方案</h1>
+      <p>面向 <a href="https://github.com/tech-innovation-group/Memory-System-Eval-Harness">tech-innovation-group/Memory-System-Eval-Harness</a> 使用者的 LoCoMo QA 修复说明。目标不是只补日志，而是确保正式 QA 运行时真的检索并写入记忆。</p>
+      <div class="meta">
+        <span class="pill ok">日期 2026-06-29</span>
+        <span class="pill warn">范围 EchoMemory + LoCoMo QA</span>
+        <span class="pill bad">问题类型 recall 文件存在但 selected 为空</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>1. 现象与根因</h2>
+      <p>当前问题不是“没有生成 recall 文件”，而是“生成了 <code>qNNN.recall.json</code>，但里面没有实际检索到的记忆”。典型表现如下：</p>
+      <pre>qa_memory_injection_enabled = false
+prompt_mode = one_shot
+uses_retrieved_memory = false
+retrieval_ok_count = 0
+retrieval_empty_count &gt; 0
+selected_count = 0
+selected = []</pre>
+      <p>这类 run 会给人一种“系统有 recall 日志”的错觉，但实际上只是写出了空的 artifact。根因主要在于 QA 默认参数和任务构造入口不一致，导致部分入口仍然会回落到不适合正式 LoCoMo 评测的模式。</p>
+    </section>
+
+    <section class="panel">
+      <h2>2. 目标状态</h2>
+      <p>正式的 EchoMemory LoCoMo QA 至少应满足下面这组条件：</p>
+      <pre>qa_memory_injection_enabled = true
+prompt_mode = vikingboat_lite
+memory_tool_loop_enabled = true
+retrieval_ok_count &gt; 0
+qNNN.recall.json.selected_count &gt; 0
+qNNN.recall.json.selected[*] 包含 uri / score / memory_type / preview
+judge_summary.json.uses_retrieved_memory = true</pre>
+      <div class="note">
+        <strong>一句话：</strong>要修的是“正式 QA 的默认运行链路”，不是单独补一个日志打印函数。
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>3. 必改文件</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>文件</th>
+            <th>必须修改的点</th>
+            <th>原因</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="path">memory/services/task_orchestrator.py</td>
+            <td>
+              <ul>
+                <li>对 <code>echomemory_qa + locomo</code> 做 payload 归一化</li>
+                <li>空值或 <code>one_shot</code> 的 <code>prompt_mode</code> 强制改为 <code>vikingboat_lite</code></li>
+                <li><code>qa_memory_injection</code> 默认强制为 <code>true</code></li>
+                <li><code>vikingboat_tool_loop</code> 在 LoCoMo 正式 QA 下默认开启</li>
+              </ul>
+            </td>
+            <td>统一入口默认值，避免 UI payload、旧配置或空配置把任务带回空检索模式。</td>
+          </tr>
+          <tr>
+            <td class="path">memory/plugins/echomemory/tasks.py</td>
+            <td>
+              <ul>
+                <li>把 QA 命令构造层默认 <code>prompt_mode</code> 从 <code>one_shot</code> 改成 <code>vikingboat_lite</code></li>
+                <li>非法值 fallback 也不要回落到 <code>one_shot</code></li>
+                <li><code>qa_memory_injection</code> 默认值保持 <code>true</code></li>
+              </ul>
+            </td>
+            <td>这是最终生成命令的地方。只改 UI 或 orchestrator 不够，其他入口仍可能绕过前置归一化。</td>
+          </tr>
+          <tr>
+            <td class="path">memory/task_specs.py</td>
+            <td>
+              <ul>
+                <li>Retry failed EchoMemory QA 的默认 <code>prompt_mode</code> 不要使用 <code>one_shot</code></li>
+                <li><code>--qa-memory-injection</code> 默认开启</li>
+              </ul>
+            </td>
+            <td>否则正式任务修好了，重跑失败题时又会重新产出空 recall。</td>
+          </tr>
+          <tr>
+            <td class="path">scripts/retry_failed_echomemory_qa.py</td>
+            <td>
+              <ul>
+                <li>CLI 默认 <code>--prompt-mode</code> 改成 <code>vikingboat_lite</code></li>
+                <li>若收到 <code>one_shot</code>，在构造命令时归一到 <code>vikingboat_lite</code></li>
+              </ul>
+            </td>
+            <td>脚本级 retry 入口与平台级入口保持一致，避免“主流程有 recall，retry 没 recall”。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h2>4. 建议一起补的保护</h2>
+      <div class="grid">
+        <div>
+          <h3>4.1 QA 前导入完整性 gate</h3>
+          <p>在 <span class="path">memory/services/task_orchestrator.py</span> 的 QA 启动前检查里增加正式 gate：</p>
+          <ul>
+            <li><code>status == "complete"</code></li>
+            <li><code>session_complete_count == session_total_count</code></li>
+            <li><code>conv_complete == true</code></li>
+          </ul>
+          <p class="subtle">不满足时直接拒绝启动正式 QA，并提示先完成完整记忆导入。</p>
+        </div>
+        <div>
+          <h3>4.2 平台级完整性标志</h3>
+          <p>在 <span class="path">memory/plugins/echomemory/inspector.py</span> 中补充并输出：</p>
+          <ul>
+            <li><code>session_complete</code></li>
+            <li><code>session_complete_count</code></li>
+            <li><code>session_total_count</code></li>
+            <li><code>conv_complete</code></li>
+          </ul>
+          <p class="subtle">这样平台才能分辨“目录存在”与“该 conv 的导入已经可用于正式 QA”。</p>
+        </div>
+      </div>
+      <div class="note danger">
+        <strong>为什么这个保护重要：</strong>如果记忆还没完整导入就开始 QA，即使任务能跑完，也很容易生成大量 <code>selected_count = 0</code> 的假 recall 结果。
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>5. 可选增强：实时打印检索到的记忆</h2>
+      <p>在 <span class="path">scripts/echomemory_memory_qa.py</span> 中增加 <code>log_retrieved_memory_preview()</code>，把每题的 top hits 打到 stdout，是有帮助的，但它只是调试增强：</p>
+      <ul>
+        <li>适合快速观察“这题到底召回了什么”</li>
+        <li>不改检索逻辑，不改模型输入，不改后端接口</li>
+        <li>不能替代前面那组默认值修复</li>
+      </ul>
+      <p>换句话说，<strong>日志打印解决的是“可见性”，不是“有效 recall 为空”的根因</strong>。</p>
+    </section>
+
+    <section class="panel">
+      <h2>6. 推荐修改顺序</h2>
+      <ol>
+        <li>先改 <code>task_orchestrator.py</code>，统一入口默认值。</li>
+        <li>再改 <code>memory/plugins/echomemory/tasks.py</code>，堵住命令构造层的默认值回落。</li>
+        <li>同步改 <code>memory/task_specs.py</code> 和 <code>scripts/retry_failed_echomemory_qa.py</code>，让 retry 路径与主路径一致。</li>
+        <li>补导入完整性 gate 和 inspector 标志，防止导入不完整时误跑正式 QA。</li>
+        <li>最后再补实时日志打印，作为调试和排查增强。</li>
+      </ol>
+    </section>
+
+    <section class="panel">
+      <h2>7. 验收标准</h2>
+      <p>修复完成后，至少要检查以下 artifact 和指标：</p>
+      <table>
+        <thead>
+          <tr>
+            <th>检查项</th>
+            <th>预期</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>summary.json</code></td>
+            <td><code>qa_memory_injection_enabled = true</code>，<code>prompt_mode = vikingboat_lite</code>，<code>retrieval_ok_count &gt; 0</code></td>
+          </tr>
+          <tr>
+            <td><code>judge_summary.json</code></td>
+            <td><code>uses_retrieved_memory = true</code></td>
+          </tr>
+          <tr>
+            <td><code>q001.recall.json</code> 等</td>
+            <td><code>selected_count &gt; 0</code>，并且 <code>selected</code> 内有 <code>uri / score / memory_type / preview</code></td>
+          </tr>
+          <tr>
+            <td>导入完整性</td>
+            <td><code>session_complete_count == session_total_count</code> 且 <code>conv_complete = true</code></td>
+          </tr>
+        </tbody>
+      </table>
+      <pre>{
+  "selected_count": 14,
+  "selected": [
+    {
+      "uri": "echo://.../overview.md",
+      "score": 0.812,
+      "memory_type": "session_summary",
+      "preview": "..."
+    }
+  ]
+}</pre>
+    </section>
+
+    <section class="panel">
+      <h2>8. 给他人的一句话说明</h2>
+      <div class="note">
+        不要只补 “打印检索记忆到日志” 的代码。真正要修的是 EchoMemory LoCoMo QA 的默认运行链路：<code>qa_memory_injection=true</code>、<code>prompt_mode=vikingboat_lite</code>、tool loop 默认开启、导入完整性未达标时禁止正式 QA。否则仍然会继续产出“有 recall 文件但 selected 为空”的假 recall 结果。
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>9. 文档路径</h2>
+      <p class="path">/Users/chx/locomo-eval-web/docs/echomemory_retrieved_memory_fix_plan_20260629.html</p>
+    </section>
+  </main>
+</body>
+</html>

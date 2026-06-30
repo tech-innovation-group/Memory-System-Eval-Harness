@@ -86,6 +86,39 @@ def row_grade(row: dict[str, str]) -> str:
     return "UNSCORED"
 
 
+def _merge_judge_summary(summary: dict[str, Any], judge_path: Path, rows_total: int) -> dict[str, Any]:
+    if not judge_path.exists():
+        return summary
+    try:
+        judge = read_json(judge_path)
+    except Exception:
+        return summary
+    if not isinstance(judge, dict):
+        return summary
+    merged = dict(summary)
+    for key in (
+        "graded",
+        "correct",
+        "wrong",
+        "accuracy",
+        "simple_graded",
+        "simple_correct",
+        "simple_wrong",
+        "simple_accuracy",
+        "result_counts",
+    ):
+        if judge.get(key) is not None:
+            merged[key] = judge.get(key)
+    counts = dict(merged.get("result_counts") or {})
+    graded = merged.get("graded")
+    if isinstance(graded, (int, float)):
+        counts["UNSCORED"] = max(0, int(rows_total) - int(graded))
+        merged["result_counts"] = counts
+    merged["judge_summary_path"] = str(judge_path)
+    merged["judge_model"] = judge.get("judge_model") or merged.get("judge_model")
+    return merged
+
+
 def parse_csv_summary(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -279,7 +312,7 @@ def parse_csv_summary(path: Path) -> dict[str, Any]:
     simple_graded = simple_correct + simple_wrong
     summary_path = path.with_name("summary.json")
     summary_json = read_json(summary_path) if summary_path.exists() else None
-    return {
+    summary = {
         "rows": total,
         "graded": graded,
         "correct": correct,
@@ -351,6 +384,7 @@ def parse_csv_summary(path: Path) -> dict[str, Any]:
         "samples": samples,
         "summary_json": summary_json,
     }
+    return _merge_judge_summary(summary, path.with_name("judge_summary.json"), total)
 
 
 def parse_json_run_summary(path: Path) -> dict[str, Any]:
@@ -700,6 +734,14 @@ def failure_attribution(row: dict[str, str]) -> dict[str, Any]:
     model_error_kind = str(row.get("model_error_kind") or "").strip().lower()
     health_status = str(row.get("health_status") or "").strip().lower()
     is_unknown = _response_is_unknown(response)
+    backend = str(row.get("backend") or row.get("memory_backend") or row.get("eval_backend") or "").strip().lower()
+    import_backend = str(row.get("import_backend") or row.get("memory_import_backend") or "").strip().lower()
+    account = str(row.get("account") or row.get("memory_account") or "").strip()
+    import_account = str(row.get("import_account") or row.get("memory_import_account") or "").strip()
+    backend_mismatch = bool(
+        (import_backend and backend and import_backend != backend)
+        or (import_account and account and import_account != account)
+    )
 
     base = {
         "grade": grade,
@@ -718,6 +760,23 @@ def failure_attribution(row: dict[str, str]) -> dict[str, Any]:
             "severity": "ok",
             "owner": "none",
             "reason": "Judge 或精确匹配已判定正确。",
+        }
+    if backend_mismatch:
+        return {
+            **base,
+            "mode": "backend_mismatch",
+            "label": "Backend 不一致",
+            "owner": "retrieval",
+            "reason": "QA 运行使用的 backend/account 与导入阶段不一致。",
+        }
+    if not has_evidence:
+        return {
+            **base,
+            "mode": "empty_retrieval",
+            "label": "空召回",
+            "owner": "retrieval",
+            "retryable": True,
+            "reason": "检索阶段没有返回可用 evidence。",
         }
     if model_status == "failed" or answer_status == "failed" or model_error_kind or health_status in {"api_error", "timeout", "rate_limited"}:
         return {
@@ -742,19 +801,10 @@ def failure_attribution(row: dict[str, str]) -> dict[str, Any]:
     if is_unknown and has_evidence:
         return {
             **base,
-            "mode": "unknown_with_evidence",
-            "label": "有证据但回答 Unknown",
+            "mode": "evidence_unused",
+            "label": "证据未使用",
             "owner": "agent_prompt",
             "reason": "Relevant memory 非空，但回答仍然回避或 unknown，优先检查回答 prompt、证据排序和证据使用规则。",
-        }
-    if is_unknown or not has_evidence:
-        return {
-            **base,
-            "mode": "no_relevant_memory",
-            "label": "未召回可用记忆",
-            "owner": "retrieval",
-            "retryable": True,
-            "reason": "没有可用 relevant memory，或回答明确表示未找到信息。",
         }
     if grade == "UNSCORED":
         return {
@@ -788,6 +838,14 @@ def failure_attribution(row: dict[str, str]) -> dict[str, Any]:
             "owner": "retrieval",
             "reason": "Judge 认为回答与标准答案存在事实差异或遗漏，需要检查证据是否命中正确事实。",
         }
+    if is_unknown or response_lower == "unknown":
+        return {
+            **base,
+            "mode": "reasoning_failure",
+            "label": "推理失败",
+            "owner": "agent",
+            "reason": "回答为空、unknown 或明显未使用召回证据。",
+        }
     if response_lower.startswith("[") or "[api error]" in reasoning or "[parse error]" in reasoning:
         return {
             **base,
@@ -800,8 +858,8 @@ def failure_attribution(row: dict[str, str]) -> dict[str, Any]:
         }
     return {
         **base,
-        "mode": "semantic_mismatch",
-        "label": "语义错配或幻觉",
+        "mode": "reasoning_failure",
+        "label": "推理失败",
         "owner": "agent",
         "reason": "已召回证据但最终回答与标准答案不一致。",
     }
@@ -867,9 +925,9 @@ def attribution_summary(rows: list[dict[str, str]]) -> dict[str, Any]:
     mode_counts = {item["mode"]: item["count"] for item in ordered}
     if mode_counts.get("model_api_error"):
         action_items.append("先重跑模型/API 异常题，限流或超时不应计入真实准确率。")
-    if mode_counts.get("retrieval_error") or mode_counts.get("no_relevant_memory"):
+    if mode_counts.get("retrieval_error") or mode_counts.get("empty_retrieval") or mode_counts.get("backend_mismatch"):
         action_items.append("检查导入完整性、workspace/account 是否一致，再看 top-k 与检索 query。")
-    if mode_counts.get("unknown_with_evidence"):
+    if mode_counts.get("evidence_unused") or mode_counts.get("reasoning_failure"):
         action_items.append("有证据但 Unknown 通常是 agent prompt 或上下文排序问题，优先查看题目详情里的 evidence。")
     if mode_counts.get("pending_judge"):
         action_items.append("运行 Judge 或单独重跑 Judge，避免把待判分当成 0% 准确率。")
@@ -920,6 +978,79 @@ def cluster_failures(rows: list[dict[str, str]]) -> dict[str, Any]:
     for cluster in ordered:
         cluster["top_samples"] = sorted(cluster.pop("sample_ids").items(), key=lambda item: item[1], reverse=True)[:5]
     return {"clusters": ordered, "cluster_count": len(ordered)}
+
+
+def diagnosis_summary(rows: list[dict[str, str]]) -> dict[str, Any]:
+    summary = attribution_summary(rows)
+    total = int(summary.get("total") or len(rows) or 0)
+    correct_rows = int(summary.get("correct_rows") or 0)
+    problem_rows = int(summary.get("problem_rows") or 0)
+    mode_counts = summary.get("mode_counts") if isinstance(summary.get("mode_counts"), dict) else {}
+    retrieval_hit_rows = 0
+    evidence_used_rows = 0
+    memory_missing_rows = 0
+    empty_retrieval_rows = 0
+    retrieval_miss_rows = 0
+    reasoning_failure_rows = 0
+    answer_format_error_rows = 0
+    judge_ambiguous_rows = 0
+    for row in rows:
+        item = failure_attribution(row)
+        label = str(item.get("label") or "")
+        if item.get("has_evidence"):
+            retrieval_hit_rows += 1
+        if item.get("mode") == "correct":
+            evidence_used_rows += 1
+            continue
+        if item.get("mode") == "empty_retrieval":
+            empty_retrieval_rows += 1
+            retrieval_miss_rows += 1
+        elif item.get("mode") == "backend_mismatch":
+            retrieval_miss_rows += 1
+        elif item.get("mode") == "retrieval_error":
+            retrieval_miss_rows += 1
+        elif item.get("mode") == "reasoning_failure":
+            reasoning_failure_rows += 1
+            evidence_used_rows += 1 if item.get("has_evidence") else 0
+        elif item.get("mode") == "evidence_mismatch":
+            evidence_used_rows += 1
+            reasoning_failure_rows += 1
+        elif item.get("mode") == "model_api_error":
+            judge_ambiguous_rows += 0
+        if label == "答案格式错误":
+            answer_format_error_rows += 1
+        if label == "Judge Ambiguous":
+            judge_ambiguous_rows += 1
+        if label == "Memory Missing":
+            memory_missing_rows += 1
+    failure_rows = max(0, total - correct_rows)
+    coverage_rows = retrieval_hit_rows
+    evidence_used_rate = evidence_used_rows / failure_rows if failure_rows else None
+    retrieval_hit_rate = coverage_rows / total if total else None
+    return {
+        "total": total,
+        "accuracy": correct_rows / total if total else None,
+        "memory_coverage": retrieval_hit_rate,
+        "retrieval_hit_rate": retrieval_hit_rate,
+        "evidence_used_rate": evidence_used_rate,
+        "empty_retrieval_count": empty_retrieval_rows,
+        "retrieval_miss_count": retrieval_miss_rows,
+        "memory_missing_count": memory_missing_rows,
+        "reasoning_failure_count": reasoning_failure_rows,
+        "answer_format_error_count": answer_format_error_rows,
+        "judge_ambiguous_count": judge_ambiguous_rows,
+        "failure_breakdown": [
+            {
+                "label": label,
+                "count": count,
+                "percentage": (count / failure_rows * 100) if failure_rows else 0.0,
+                "example_question": next((row.get("question") for row in rows if failure_attribution(row).get("label") == label), ""),
+            }
+            for label, count in sorted(mode_counts.items(), key=lambda item: (-int(item[1]), item[0]))
+            if label != "correct" and count
+        ],
+        "summary": summary,
+    }
 
 
 def analyze_wrong_answers(csv_path: Path, out_path: Path | None = None) -> dict[str, Any]:

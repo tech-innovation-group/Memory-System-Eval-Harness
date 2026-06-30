@@ -161,12 +161,13 @@ def attribution_mode_label(value: Any) -> str:
         "pending_judge": "待 Judge",
         "model_api_error": "模型/API 异常",
         "retrieval_error": "检索异常",
-        "unknown_with_evidence": "有证据但 Unknown",
-        "no_relevant_memory": "未召回可用记忆",
+        "evidence_unused": "证据未使用",
+        "empty_retrieval": "空召回",
+        "backend_mismatch": "Backend 不一致",
         "time_reasoning_error": "时间题推理错误",
         "list_aggregation_error": "列表/聚合遗漏",
         "evidence_mismatch": "证据与答案不一致",
-        "semantic_mismatch": "语义错配或幻觉",
+        "reasoning_failure": "推理失败",
     }
     key = str(value or "-")
     return labels.get(key, key)
@@ -889,6 +890,10 @@ def export_report(run_dir: Path, active_run_ids: set[str] | None = None) -> dict
                 analysis = report_service.analyze_wrong_answers(output_path, analysis_path)
         else:
             analysis = report_service.analyze_wrong_answers(output_path, analysis_path)
+    diagnosis = {}
+    if output_path and output_path.exists() and output_path.suffix.lower() == ".csv":
+        rows_for_diagnosis = csv_rows_limited(output_path, 50000)
+        diagnosis = report_service.diagnosis_summary(rows_for_diagnosis)
 
     log_info = run_service.tail_file(Path(record.get("log_file") or "")) if record.get("log_file") else {}
     rate_hits = log_info.get("rate_limit_hits", [])
@@ -1038,6 +1043,7 @@ def export_report(run_dir: Path, active_run_ids: set[str] | None = None) -> dict
         ("Model status counts", counts_text(summary.get("model_status_counts") or summary_json.get("model_status_counts"))),
         ("Answer health counts", counts_text(summary.get("health_counts") or summary_json.get("health_counts"))),
     ]
+    diagnosis_breakdown = diagnosis.get("failure_breakdown") if isinstance(diagnosis.get("failure_breakdown"), list) else []
     current_profile = backend_profile(current_backend)
     import_label = str(import_integrity.get("memory_label") or current_profile.display_name)
     import_checks = import_integrity.get("checks") if isinstance(import_integrity.get("checks"), list) else []
@@ -1345,12 +1351,13 @@ def export_report(run_dir: Path, active_run_ids: set[str] | None = None) -> dict
     pending_attribution_rows = mode_count("pending_judge")
     model_api_error_rows = mode_count("model_api_error")
     retrieval_error_attr_rows = mode_count("retrieval_error")
-    no_relevant_memory_rows = mode_count("no_relevant_memory")
-    unknown_with_evidence_rows = mode_count("unknown_with_evidence")
+    empty_retrieval_rows = mode_count("empty_retrieval")
+    backend_mismatch_rows = mode_count("backend_mismatch")
+    evidence_unused_rows = mode_count("evidence_unused")
     time_reasoning_rows = mode_count("time_reasoning_error")
     list_aggregation_rows = mode_count("list_aggregation_error")
     evidence_mismatch_rows = mode_count("evidence_mismatch")
-    semantic_mismatch_rows = mode_count("semantic_mismatch")
+    reasoning_failure_rows = mode_count("reasoning_failure")
 
     diagnostic_actions: list[tuple[str, str, str, str]] = []
 
@@ -1371,19 +1378,19 @@ def export_report(run_dir: Path, active_run_ids: set[str] | None = None) -> dict
             "限流、超时、空响应或 answer failed 属于执行链路问题，建议先重跑这些题再讨论准确率。",
             f"model/API={model_api_error_rows} · retryable={attribution_retryable_rows}",
         )
-    if retrieval_error_attr_rows or no_relevant_memory_rows:
+    if retrieval_error_attr_rows or empty_retrieval_rows or backend_mismatch_rows:
         add_diagnostic(
             "bad" if retrieval_error_attr_rows else "warn",
             "检查检索与 workspace/account",
             "检索异常或未召回可用记忆通常和导入空间、account 隔离、top-k、query 或后端索引状态有关。",
-            f"retrieval_error={retrieval_error_attr_rows} · no_memory={no_relevant_memory_rows}",
+            f"retrieval_error={retrieval_error_attr_rows} · empty={empty_retrieval_rows} · backend_mismatch={backend_mismatch_rows}",
         )
-    if unknown_with_evidence_rows:
+    if evidence_unused_rows or reasoning_failure_rows:
         add_diagnostic(
             "warn",
-            "有证据但回答 Unknown",
-            "Relevant memory 已经返回，但模型仍回避回答，优先看 prompt、证据排序、回答约束和上下文截断。",
-            f"unknown_with_evidence={unknown_with_evidence_rows}",
+            "有证据但没有用对",
+            "Relevant memory 已经返回，但模型仍未正确作答，优先看 prompt、证据排序、回答约束和上下文截断。",
+            f"evidence_unused={evidence_unused_rows} · reasoning_failure={reasoning_failure_rows}",
         )
     if pending_judge_rows or pending_attribution_rows:
         add_diagnostic(
@@ -1418,7 +1425,7 @@ def export_report(run_dir: Path, active_run_ids: set[str] | None = None) -> dict
             "ok",
             "当前优先看真实错题",
             "执行链路、Judge 和导入门禁没有突出阻断，下一步可直接分析语义错配、证据错配和具体题型。",
-            f"wrong_like={evidence_mismatch_rows + semantic_mismatch_rows}",
+            f"wrong_like={evidence_mismatch_rows + reasoning_failure_rows}",
         )
     elif not diagnostic_actions:
         add_diagnostic("warn", "等待结果 CSV", "当前报告缺少可分析行，先确认 QA 是否完成并生成结果 CSV。", "rows=0")
@@ -1437,8 +1444,8 @@ def export_report(run_dir: Path, active_run_ids: set[str] | None = None) -> dict
         f"- Top failure bucket: `{top_bucket_text}`",
         f"- Retryable rows: `{attribution_retryable_rows}` · {percent_text(attribution_retryable_rows, attribution_total)}",
         f"- Pending Judge rows: `{pending_judge_rows}` · {percent_text(pending_judge_rows, rows_total)}",
-        f"- Unknown with evidence: `{unknown_with_evidence_rows}`",
-        f"- Retrieval/no-memory rows: `{retrieval_error_attr_rows + no_relevant_memory_rows}`",
+        f"- Evidence unused: `{evidence_unused_rows}`",
+        f"- Retrieval/empty/backend rows: `{retrieval_error_attr_rows + empty_retrieval_rows + backend_mismatch_rows}`",
         f"- Time reasoning rows: `{time_reasoning_rows}`",
     ]
     gate_lines = [

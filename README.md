@@ -133,6 +133,92 @@ Recommended first run:
 - run judge on the current CSV
 - export the HTML report
 
+## LoCoMo Default QA Path
+
+The current platform default path can directly run `LoCoMo` on `EchoMemory`
+after import is complete.
+
+Verified local smoke run on `2026-06-30`:
+
+- run dir:
+  `/Users/chx/locomo-eval-web/runs/echomemory_qa_20260630_145811_default-20260629-214003_be7b37`
+- sample: `conv-30`
+- question filter: `conv-30_qa0`
+- workspace:
+  `/Users/chx/echomem_workspace_default_20260629-214003`
+- result csv:
+  `/Users/chx/locomo-eval-web/runs/echomemory_qa_20260630_145811_default-20260629-214003_be7b37/echomemory_qa/echomemory_memory_qa_results.csv`
+- recall log:
+  `/Users/chx/locomo-eval-web/runs/echomemory_qa_20260630_145811_default-20260629-214003_be7b37/echomemory_qa/q001.recall.json`
+
+The verified effective QA settings for that run were:
+
+- `prompt_mode=vikingboat_lite`
+- `retrieval_mode=search`
+- `qa_memory_injection=true`
+- `tool_set=vikingbot_native_safe` at payload level
+- normalized execution tool set: `vikingboat_default`
+- `tool_search_limit=20`
+- `tool_min_score=0.35`
+- `max_iterations=50`
+- `top_k=30`
+- `score_threshold=0.1`
+
+Session-summary retrieval was also enabled in the verified run:
+
+- `search_overview_enrichment_enabled=true`
+- `exclude_session_summaries=false`
+
+That means `overview.md` retrieval is included by default unless the caller
+explicitly disables it.
+
+In the verified smoke run, the runtime log showed these top hits:
+
+- `echo://default/sessions/echomem-locomo-conv-30-s11-1bd479b7/overview.md`
+- `echo://default/sessions/echomem-locomo-conv-30-s6-c428bc68/overview.md`
+- `echo://default/sessions/echomem-locomo-conv-30-s17-8b4c4bdf/overview.md`
+
+So if another tester wants to confirm that overview retrieval is active, the
+fastest check is:
+
+1. finish LoCoMo import
+2. launch a LoCoMo QA run from the UI with the default EchoMemory QA settings
+3. open the newest run under `runs/echomemory_qa_*`
+4. inspect `echomemory_qa/qNNN.recall.json`
+5. search for `overview.md`
+
+Example:
+
+```bash
+cd /path/to/locomo-eval-web
+rg -n 'overview\\.md' runs/echomemory_qa_*/echomemory_qa/q*.recall.json
+```
+
+If the tester wants a minimal smoke check instead of a full run, a single
+question is enough as long as LoCoMo memory has already been imported:
+
+```bash
+python3 scripts/echomemory_memory_qa.py \
+  --dataset dataset/locomo10.json \
+  --out-dir runs/qa_smoke_default/echomemory_qa \
+  --sample conv-30 \
+  --questions conv-30_qa0 \
+  --workspace /absolute/path/to/echomemory_workspace \
+  --account default \
+  --user-id default \
+  --agent-id default
+```
+
+The current script defaults already keep these enabled unless explicitly
+overridden:
+
+- `--search-overview-enrichment`
+- `--qa-memory-injection`
+
+And `overview.md` / `abstract.md` stay available unless the caller adds:
+
+- `--exclude-session-summaries`
+
 Detailed Chinese handoff notes live in:
 
 - `README_ECHOMEM_LOCOMO_HANDOFF.md`

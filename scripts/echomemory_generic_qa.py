@@ -35,6 +35,7 @@ from echomemory_memory_qa import (
     VIKINGBOT_ALIGNED_PROMPT_MODES,
     answer_question,
     csv_fieldnames,
+    hotpotqa_disable_answer_tooling,
     normalize_echomemory_tool_set,
     normalize_retrieval_mode,
     token_usage_json,
@@ -1104,10 +1105,12 @@ async def run(args: argparse.Namespace) -> None:
     )
     summary.update(official_metric_summary(args.dataset_format, official_eval_result))
     write_json(out_dir / "summary.json", summary)
-    final_status = "failed" if judge_result.get("enabled") and int(judge_result.get("returncode") or 0) != 0 else "succeeded"
+    judge_failed = judge_result.get("enabled") and int(judge_result.get("returncode") or 0) != 0
+    official_failed = official_eval_result.get("enabled") and int(official_eval_result.get("returncode") or 0) != 0
+    final_status = "failed" if (judge_failed or official_failed) else "succeeded"
     write_running_summary(running_summary_path, rows, status=final_status, csv_path=csv_path)
     print(json.dumps(summary, ensure_ascii=False, indent=2), flush=True)
-    if judge_result.get("enabled") and int(judge_result.get("returncode") or 0) != 0:
+    if judge_failed or official_failed:
         raise SystemExit(2)
 
 
@@ -1165,8 +1168,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prefetch-context-chars", type=int, default=5000)
     parser.add_argument("--initial-tool-prefetch", dest="initial_tool_prefetch", action="store_true")
     parser.add_argument("--no-initial-tool-prefetch", dest="initial_tool_prefetch", action="store_false")
-    parser.add_argument("--answer-base-url", default=os.environ.get("JUDGE_BASE_URL", ""))
-    parser.add_argument("--answer-model", default=os.environ.get("JUDGE_MODEL", "gpt-5.5"))
+    parser.add_argument("--answer-base-url", default=os.environ.get("JUDGE_BASE_URL") or "https://dashscope.aliyuncs.com/compatible-mode/v1")
+    parser.add_argument("--answer-model", default=os.environ.get("JUDGE_MODEL", "deepseek-v4-flash"))
     parser.add_argument("--answer-token", default=os.environ.get("LOCOMO_JUDGE_TOKEN") or os.environ.get("JUDGE_TOKEN") or os.environ.get("OPENAI_API_KEY") or "")
     parser.add_argument("--judge-base-url", default="")
     parser.add_argument("--judge-model", default="")
@@ -1177,6 +1180,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-retries", type=int, default=5)
     parser.add_argument("--timeout-s", type=int, default=120)
     parser.add_argument("--question-timeout-s", type=int, default=600)
+    parser.add_argument("--answer-refinement", dest="answer_refinement", action="store_true")
+    parser.add_argument("--no-answer-refinement", dest="answer_refinement", action="store_false")
     parser.add_argument("--max-iterations", type=int, default=8)
     parser.add_argument("--import-only", action="store_true")
     parser.add_argument("--resume", dest="resume", action="store_true", default=True)
@@ -1216,12 +1221,12 @@ def parse_args() -> argparse.Namespace:
         vikingboat_tool_loop=False,
         initial_tool_prefetch=False,
         fallback_to_one_shot=True,
+        answer_refinement=False,
     )
     return parser.parse_args()
 
 
 STRICT_READY_DATASET_FORMATS = {"longmemeval", "evolvingevents", "proagentbench", "tau2bench"}
-DOCUMENT_READY_DATASET_FORMATS = {"hotpotqa"}
 
 
 def main() -> None:
@@ -1230,9 +1235,6 @@ def main() -> None:
     if dataset_format in STRICT_READY_DATASET_FORMATS:
         args.import_wait_mode = "full"
         args.defer_artifact_wait = False
-    elif dataset_format in DOCUMENT_READY_DATASET_FORMATS:
-        args.import_wait_mode = "fast"
-        args.defer_artifact_wait = True
     answer_base_url = str(args.answer_base_url or "").strip()
     answer_model = str(args.answer_model or "").strip()
     answer_token = str(args.answer_token or "").strip()
@@ -1257,11 +1259,9 @@ def main() -> None:
     if args.dataset_format in STRICT_READY_DATASET_FORMATS:
         args.import_wait_mode = "full"
         args.defer_artifact_wait = False
-    elif args.dataset_format in DOCUMENT_READY_DATASET_FORMATS:
-        args.import_wait_mode = "fast"
-        args.defer_artifact_wait = True
     args.retrieval_mode = normalize_retrieval_mode(args.retrieval_mode)
     args.tool_set = normalize_echomemory_tool_set(args.tool_set, vikingboat_compat=bool(args.vikingboat_compat))
+    hotpotqa_disable_answer_tooling(args)
     if not args.namespace:
         args.namespace = f"{args.dataset_format}-{int(time.time())}-{uuid.uuid4().hex[:6]}"
     if args.random_count:

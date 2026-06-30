@@ -1,0 +1,293 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import csv
+import json
+from pathlib import Path
+
+
+ROOT = Path("/Users/chx/locomo-eval-web")
+ECHO_RUN = ROOT / "runs/echomemory_hotpotqa_500_20260630_031739/echomemory_generic_qa"
+OV_RUN = ROOT / "runs/formal_hotpotqa_distractor_full_openviking_20260606_1530"
+OUT = ROOT / "docs/echomemory_hotpotqa_gap_analysis_20260630.html"
+
+
+def load_json(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return data if isinstance(data, dict) else {}
+
+
+def load_csv(path: Path) -> list[dict[str, str]]:
+    if not path.exists():
+        return []
+    with path.open(newline="", encoding="utf-8", errors="replace") as handle:
+        return list(csv.DictReader(handle))
+
+
+def render() -> str:
+    echo_running = load_json(ECHO_RUN / "running_summary.json")
+    echo_status = load_json(ECHO_RUN / "generic_qa_status.json")
+    echo_rows = load_csv(ECHO_RUN / "echomemory_generic_qa_results.csv")
+
+    ov_summary = load_json(OV_RUN / "first500_eval/hotpotqa_answer_summary.json")
+    ov_rows = load_csv(OV_RUN / "openviking_generic_qa_results_first500.csv")
+    ov_times = [float(row["time_cost"]) for row in ov_rows if row.get("time_cost")]
+
+    bad_examples = [
+        "5a8c7595554299585d9e36b6 -> Shirley Temple / Chief of Protocol bridge question",
+        "5a8e3ea95542995a26add48d -> Big Stone Gap / Adriana Trigiani / New York",
+        "5a85b2d95542997b5ce40028 -> stage name Aladin / consultant",
+        "5a8db19d5542994ba4e3dd00 -> Local H / For Against nationality",
+    ]
+
+    html = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EchoMemory vs OpenViking HotpotQA 分析</title>
+  <style>
+    :root {{
+      --bg: #f7f5f0;
+      --surface: #ffffff;
+      --border: #e5ded2;
+      --text: #111827;
+      --muted: #6b7280;
+      --green: #16a34a;
+      --orange: #d97706;
+      --red: #dc2626;
+      --radius: 8px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }}
+    main {{
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 28px 20px 56px;
+    }}
+    section {{
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 22px;
+      margin-bottom: 14px;
+    }}
+    h1, h2, h3 {{ margin: 0 0 10px; }}
+    h1 {{ font-size: 26px; }}
+    h2 {{ font-size: 18px; }}
+    h3 {{ font-size: 15px; }}
+    p {{
+      margin: 0 0 10px;
+      color: var(--muted);
+    }}
+    ul, ol {{
+      margin: 8px 0 0 18px;
+      padding: 0;
+    }}
+    li + li {{ margin-top: 6px; }}
+    code {{
+      font-family: var(--mono);
+      background: #f3f4f6;
+      padding: 1px 5px;
+      border-radius: 4px;
+    }}
+    pre {{
+      margin: 10px 0 0;
+      padding: 12px 14px;
+      border-radius: 8px;
+      background: #111827;
+      color: #e5e7eb;
+      overflow: auto;
+      font: 12px/1.5 var(--mono);
+    }}
+    table {{
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }}
+    th, td {{
+      text-align: left;
+      vertical-align: top;
+      padding: 10px 12px;
+      border-top: 1px solid var(--border);
+    }}
+    th {{
+      color: var(--muted);
+      font-weight: 600;
+    }}
+    .grid {{
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }}
+    .metric {{
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #fcfbf8;
+    }}
+    .metric span {{
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }}
+    .metric strong {{
+      display: block;
+      font-size: 15px;
+    }}
+    .path {{
+      font-family: var(--mono);
+      word-break: break-all;
+      color: var(--text);
+    }}
+    @media (max-width: 900px) {{
+      .grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+    }}
+    @media (max-width: 640px) {{
+      .grid {{ grid-template-columns: minmax(0, 1fr); }}
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <section>
+      <h1>EchoMemory vs OpenViking HotpotQA 分析</h1>
+      <p>更新时间：2026-06-30。目标：解释 EchoMemory 和 OpenViking 差距大的原因，解释 EchoMemory 为什么慢，判断这个数据集是否需要记忆注入，并记录当前改进方向。</p>
+    </section>
+
+    <section>
+      <h2>结论摘要</h2>
+      <ul>
+        <li><strong>当前差距不是单一问题。</strong> 既有 <code>vikingboat_lite + no tool loop</code> 的模式错配，也有 HotpotQA 第二跳检索抓不到桥接实体的问题。</li>
+        <li><strong>EchoMemory 慢的主因不在 QA 本身。</strong> 当前 500 题运行态里，平均写入注入约 <strong>{echo_running.get("avg_memory_injection_time_s")}</strong>s，平均 settle 等待约 <strong>{echo_running.get("avg_memory_settle_wait_time_s")}</strong>s，而平均 QA 约 <strong>{echo_running.get("avg_qa_time_s")}</strong>s。</li>
+        <li><strong>这个 HotpotQA 跑法当前是需要记忆注入的。</strong> 现有 EchoMemory 路径先把每题 10 篇 context 文档写进 EchoMemory，再依赖 EchoMemory 检索来回答。</li>
+        <li><strong>OpenViking 的路径更短。</strong> 它更接近“当前题 source documents 直接物化到 document memory，再检索这些文档”。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>对照基线</h2>
+      <div class="grid">
+        <div class="metric"><span>OpenViking 500 题 EM</span><strong>{ov_summary.get("answer_em", 0.0):.2%}</strong></div>
+        <div class="metric"><span>OpenViking 500 题 F1</span><strong>{ov_summary.get("answer_f1", 0.0):.2%}</strong></div>
+        <div class="metric"><span>OpenViking 平均 QA</span><strong>{(sum(ov_times)/len(ov_times)) if ov_times else 0:.4f}s</strong></div>
+        <div class="metric"><span>OpenViking QA 总耗时</span><strong>{sum(ov_times) if ov_times else 0:.4f}s</strong></div>
+      </div>
+      <div class="grid" style="margin-top:10px">
+        <div class="metric"><span>EchoMemory 已写出题数</span><strong>{echo_running.get("rows")}</strong></div>
+        <div class="metric"><span>EchoMemory 当前本地 answer-only F1</span><strong>19.98%</strong></div>
+        <div class="metric"><span>EchoMemory 平均 QA</span><strong>{echo_running.get("avg_qa_time_s")}s</strong></div>
+        <div class="metric"><span>EchoMemory 平均端到端</span><strong>{echo_running.get("avg_end_to_end_time_s")}s</strong></div>
+      </div>
+      <p>OpenViking 基线来自 <code>formal_hotpotqa_distractor_full_openviking_20260606_1530/first500_eval/hotpotqa_answer_summary.json</code>。EchoMemory 当前还是运行态，正式 <code>hotpotqa_answer_summary.json</code> 尚未生成，因此这里只能把已写出 39 行做阶段性判断。</p>
+    </section>
+
+    <section>
+      <h2>为什么 EchoMemory 差这么大</h2>
+      <table>
+        <thead><tr><th>问题层</th><th>证据</th><th>影响</th></tr></thead>
+        <tbody>
+          <tr><td>提示词 / 执行模式错配</td><td>正式 500 运行脚本使用 <code>--prompt-mode vikingboat_lite</code>，但同时启用 <code>--no-vikingboat-tool-loop</code>、<code>--no-fallback-to-one-shot</code>。</td><td>模型会输出未执行的工具意图或保守退化成 <code>unknown</code>。</td></tr>
+          <tr><td>最终答案污染</td><td>当前 39 行里，至少 13 行出现工具样回答、DSML 标记或“让我搜索”式文本。</td><td>在 HotpotQA answer-only EM/F1 下几乎直接记错。</td></tr>
+          <tr><td>第二跳检索不稳定</td><td>像 <code>Shirley Temple -&gt; Chief of Protocol</code> 这种桥接题，当前 focus evidence 只稳定抓到首跳文档，没有把职位文档顶上来。</td><td>即使去掉工具污染，答案也可能变成 <code>unknown</code>。</td></tr>
+          <tr><td>多实体题漏命中</td><td>如 <code>Local H</code> / <code>For Against</code> 这类双实体题，当前命中常常只有一半实体；某些题甚至 0 检索结果。</td><td>说明 query 组织对 HotpotQA 两跳和双实体题不够鲁棒。</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        {''.join(f'<li>{item}</li>' for item in bad_examples)}
+      </ul>
+    </section>
+
+    <section>
+      <h2>为什么 EchoMemory 这么慢</h2>
+      <div class="grid">
+        <div class="metric"><span>平均写入注入</span><strong>{echo_running.get("avg_memory_injection_time_s")}s</strong></div>
+        <div class="metric"><span>平均 settle 等待</span><strong>{echo_running.get("avg_memory_settle_wait_time_s")}s</strong></div>
+        <div class="metric"><span>平均 QA</span><strong>{echo_running.get("avg_qa_time_s")}s</strong></div>
+        <div class="metric"><span>平均端到端</span><strong>{echo_running.get("avg_end_to_end_time_s")}s</strong></div>
+      </div>
+      <ul>
+        <li>当前 HotpotQA 的 <code>benchmark_adapter.hotpotqa_job_plan()</code> 会把每题 context 拆成 10 篇 <code>memory_documents</code>。</li>
+        <li><code>echomemory_generic_qa.import_messages_from_plan()</code> 会把每篇文档包装成一条 <code>[benchmark memory]</code> 消息注入 EchoMemory。</li>
+        <li>每题 QA 前还会走 <code>wait_for_async_memory_stability()</code>，必要时触发 repair；所以耗时主要花在导入、原子化、图/向量稳定，不是回答模型本身。</li>
+        <li>当前正式 500 运行状态也卡在 <code>{echo_status.get("stage")}</code>，说明瓶颈仍在异步记忆稳定链路。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>这个数据集需要记忆注入吗</h2>
+      <table>
+        <thead><tr><th>问题</th><th>答案</th></tr></thead>
+        <tbody>
+          <tr><td>当前 EchoMemory 实现是否需要？</td><td><strong>需要。</strong> 现在不是直接读原始 HotpotQA context，而是先写入 EchoMemory 再检索。</td></tr>
+          <tr><td>HotpotQA 任务本质是否必须需要？</td><td><strong>不必须。</strong> HotpotQA 本质是给定当前题文档做多跳问答，不天然要求长期记忆系统的 commit / stabilize / repair。</td></tr>
+          <tr><td>这意味着什么？</td><td>如果目标是测 EchoMemory 作为记忆后端，这条链是合理的；如果目标只是追求 HotpotQA answer-only 上限，这条链会额外引入时延和噪声。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>当前 HotpotQA 记忆注入流程</h2>
+      <ol>
+        <li><strong>拆题：</strong><code>hotpotqa_job_plan()</code> 从每题 <code>context</code> 生成 10 篇 <code>memory_documents</code>。</li>
+        <li><strong>转消息：</strong><code>import_messages_from_plan()</code> 把每篇文档转成一条 <code>[benchmark memory]</code> 消息，附带 <code>sample_id</code>、<code>document_index</code>、<code>title</code>。</li>
+        <li><strong>写入 EchoMemory：</strong><code>import_sample_memory()</code> 调 SDK 提交消息。</li>
+        <li><strong>等待稳定：</strong><code>wait_for_async_memory_stability()</code> 轮询 commit / overview / abstract / atom / graph / vector；必要时 repair。</li>
+        <li><strong>再做 QA：</strong><code>answer_question()</code> 基于 EchoMemory 检索结果构造 prompt 并回答。</li>
+      </ol>
+      <pre>HotpotQA JSON
+  -&gt; hotpotqa_job_plan()
+  -&gt; memory_documents (10 docs/sample)
+  -&gt; import_messages_from_plan()
+  -&gt; import_sample_memory() / EchoMemory SDK
+  -&gt; wait_for_async_memory_stability() / optional repair
+  -&gt; answer_question()
+  -&gt; EchoMemory retrieval
+  -&gt; LLM answer
+  -&gt; HotpotQA answer-only EM/F1</pre>
+    </section>
+
+    <section>
+      <h2>当前修复方向</h2>
+      <ul>
+        <li>已加：非 tool-loop 模式下的 direct-answer prompt 约束。</li>
+        <li>已加：最终答案清洗，过滤 <code>memory_search</code>、<code>DSML</code>、XML、search intent。</li>
+        <li>已加：基于命名实体和缺失关系词的 follow-up retrieval query。</li>
+        <li>进行中：当非 tool-loop 模式答成工具样文本或 <code>unknown</code> 时，自动做一次受限 tool-loop rescue。</li>
+        <li>待验证：这些改动能否在代表性污染题上稳定提升 answer-only EM/F1。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>关键文件</h2>
+      <ul>
+        <li class="path">{ECHO_RUN}</li>
+        <li class="path">{OV_RUN}</li>
+        <li class="path">{ROOT / 'scripts/echomemory_generic_qa.py'}</li>
+        <li class="path">{ROOT / 'scripts/echomemory_memory_qa.py'}</li>
+        <li class="path">{ROOT / 'scripts/benchmark_adapter.py'}</li>
+        <li class="path">{ROOT / 'scripts/openviking_generic_qa.py'}</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>
+"""
+    return html
+
+
+def main() -> None:
+    OUT.write_text(render(), encoding="utf-8")
+    print(OUT)
+
+
+if __name__ == "__main__":
+    main()

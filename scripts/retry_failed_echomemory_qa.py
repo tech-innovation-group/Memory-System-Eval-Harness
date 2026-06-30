@@ -109,7 +109,7 @@ def build_retry_command(args: argparse.Namespace, question_ids: list[str], round
         "--agent-id",
         args.agent_id,
         "--prompt-mode",
-        args.prompt_mode,
+        args.prompt_mode if args.prompt_mode != "one_shot" else "vikingboat_lite",
         "--top-k",
         str(args.top_k),
         "--score-threshold",
@@ -183,7 +183,7 @@ def main() -> None:
     parser.add_argument("--account", default="default")
     parser.add_argument("--user-id", default="default")
     parser.add_argument("--agent-id", default="default")
-    parser.add_argument("--prompt-mode", choices=["one_shot", "vikingboat_lite", "vikingboat_compat"], default="one_shot")
+    parser.add_argument("--prompt-mode", choices=["one_shot", "vikingboat_lite", "vikingboat_compat"], default="vikingboat_lite")
     parser.add_argument("--top-k", type=int, default=30)
     parser.add_argument("--score-threshold", type=float, default=0.1)
     parser.add_argument("--memory-budget-chars", type=int, default=6000)

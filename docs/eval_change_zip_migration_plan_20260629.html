@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>eval_change.zip 迁移清单 2026-06-29</title>
+  <style>
+    :root {
+      --bg: #f7f5f0;
+      --surface: #ffffff;
+      --border: #e5ded2;
+      --text: #111827;
+      --muted: #6b7280;
+      --blue: #2563eb;
+      --green: #16a34a;
+      --orange: #d97706;
+      --red: #dc2626;
+      --radius: 8px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .page {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 28px 20px 52px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 22px;
+      margin-bottom: 14px;
+    }
+    h1, h2, h3 { margin: 0 0 10px; }
+    h1 { font-size: 24px; }
+    h2 { font-size: 18px; }
+    h3 { font-size: 15px; margin-top: 14px; }
+    p { margin: 0; color: var(--muted); }
+    ul { margin: 10px 0 0 18px; padding: 0; }
+    li + li { margin-top: 6px; }
+    code {
+      font-family: var(--mono);
+      background: #f3f4f6;
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    .path {
+      font-family: var(--mono);
+      word-break: break-all;
+      color: #1f2937;
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 0 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      font-size: 12px;
+      font-weight: 600;
+      margin-right: 8px;
+    }
+    .tag.ok { color: var(--green); border-color: #bbf7d0; background: #ecfdf5; }
+    .tag.warn { color: var(--orange); border-color: #fed7aa; background: #fff7ed; }
+    .tag.bad { color: var(--red); border-color: #fecaca; background: #fef2f2; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 10px 12px;
+      border-top: 1px solid var(--border);
+    }
+    th {
+      color: var(--muted);
+      font-weight: 600;
+      background: #faf9f7;
+    }
+    pre {
+      margin: 10px 0 0;
+      padding: 12px 14px;
+      border-radius: var(--radius);
+      background: #0f172a;
+      color: #e5e7eb;
+      overflow: auto;
+      font: 12.5px/1.55 var(--mono);
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="card">
+      <h1>eval_change.zip 需要迁移哪些修改</h1>
+      <p>针对这个包：<span class="path">/Users/chx/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/wxid_3d3i35qtk82c22_d4d7/temp/drag/eval_change.zip</span></p>
+      <div style="margin-top:12px;">
+        <span class="tag ok">能直接参考的文件</span>
+        <span class="tag warn">需要补安全默认值</span>
+        <span class="tag bad">不能原样照搬</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>1. zip 里包含的文件</h2>
+      <ul>
+        <li><span class="path">task_orchestrator.py</span></li>
+        <li><span class="path">inspector.py</span></li>
+        <li><span class="path">task_specs.py</span></li>
+        <li><span class="path">retry_failed_echomemory_qa.py</span></li>
+        <li><span class="path">echomemory_memory_qa.py</span></li>
+        <li><span class="path">app.js</span></li>
+        <li><span class="path">web_app.js</span></li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>2. 需要迁移的文件和改动点</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>文件</th>
+            <th>要迁移什么</th>
+            <th>备注</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="path">scripts/echomemory_memory_qa.py</td>
+            <td>
+              <ul>
+                <li>保留 <code>qa_memory_injection</code> 控制检索与注入</li>
+                <li>保留 <code>write_recall_log(...)</code> 写 <code>qNNN.recall.json</code></li>
+                <li>保留 <code>relevant_memory</code>、<code>retrieval_status</code>、<code>qa_memory_injection_enabled</code> 等 CSV 字段</li>
+              </ul>
+            </td>
+            <td>这是 recall 文件和 CSV 检索证据的核心来源。</td>
+          </tr>
+          <tr>
+            <td class="path">static/app.js</td>
+            <td>
+              <ul>
+                <li>LoCoMo EchoMemory QA 发起时传 <code>prompt_mode: "vikingboat_lite"</code></li>
+                <li>传 <code>retrieval_mode: "search"</code></li>
+                <li>传 tool loop 相关参数</li>
+                <li>保留结果页对 <code>row.relevant_memory</code> 的渲染</li>
+              </ul>
+            </td>
+            <td>zip 里这份前端已经能把证据展示出来，但还要补 <code>qa_memory_injection: true</code>。</td>
+          </tr>
+          <tr>
+            <td class="path">web/static/app.js</td>
+            <td>与 <code>static/app.js</code> 同步迁移。</td>
+            <td>两份要保持一致。</td>
+          </tr>
+          <tr>
+            <td class="path">memory/services/task_orchestrator.py</td>
+            <td>
+              <ul>
+                <li>补 LoCoMo EchoMemory QA 的默认值归一化</li>
+                <li>补 QA 前导入完整性 gate</li>
+              </ul>
+            </td>
+            <td>zip 里的版本缺这两块，不能直接覆盖。</td>
+          </tr>
+          <tr>
+            <td class="path">memory/plugins/echomemory/inspector.py</td>
+            <td>
+              <ul>
+                <li>补 <code>session_complete</code></li>
+                <li>补 <code>session_complete_count</code></li>
+                <li>补 <code>session_total_count</code></li>
+                <li>补 <code>conv_complete</code></li>
+              </ul>
+            </td>
+            <td>zip 里的版本没有完整性标志。</td>
+          </tr>
+          <tr>
+            <td class="path">memory/task_specs.py</td>
+            <td>
+              <ul>
+                <li>Retry failed EchoMemory QA 默认 <code>prompt_mode</code> 改成 <code>vikingboat_lite</code></li>
+                <li><code>--qa-memory-injection</code> 默认开启</li>
+              </ul>
+            </td>
+            <td>zip 里这份默认还是不安全。</td>
+          </tr>
+          <tr>
+            <td class="path">scripts/retry_failed_echomemory_qa.py</td>
+            <td>
+              <ul>
+                <li>CLI 默认 <code>--prompt-mode</code> 改成 <code>vikingboat_lite</code></li>
+                <li>收到 <code>one_shot</code> 时归一到 <code>vikingboat_lite</code></li>
+              </ul>
+            </td>
+            <td>zip 里默认还是 <code>one_shot</code>，不能原样用。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>3. zip 里已经有、可以直接参考的代码点</h2>
+
+      <h3>3.1 recall 文件写出逻辑</h3>
+      <div class="path">echomemory_memory_qa.py</div>
+      <pre>write_recall_log(
+    out_dir,
+    job,
+    "echomemory",
+    query,
+    query_plan,
+    sorted(hits, key=hit_score, reverse=True),
+    user_hits=user_hits,
+    agent_hits=agent_hits,
+    ...
+)</pre>
+
+      <h3>3.2 CSV 里写 relevant_memory</h3>
+      <div class="path">echomemory_memory_qa.py</div>
+      <pre>"relevant_memory": json.dumps(hits, ensure_ascii=False),
+"retrieval_status": "ok" if retrieval_ok else "empty",
+"qa_memory_injection_enabled": str(bool(getattr(args, "qa_memory_injection", True))).lower(),</pre>
+
+      <h3>3.3 前端结果页展示 evidence</h3>
+      <div class="path">app.js / web_app.js</div>
+      <pre>const items = parseEvidence(row.relevant_memory);
+...
+return `&lt;summary&gt;证据 · ${row.retrieval_count || items.length || 0} 条 ...&lt;/summary&gt;`;</pre>
+    </section>
+
+    <section class="card">
+      <h2>4. zip 里还必须补的地方</h2>
+
+      <h3>4.1 task_orchestrator.py 缺默认值归一化</h3>
+      <p>zip 里的 <code>normalize_task_payload()</code> 只有 workspace 解析，没有 LoCoMo EchoMemory QA 的默认值保护。</p>
+      <div class="path">当前 zip 版本</div>
+      <pre>def normalize_task_payload(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(payload)
+    ...
+    if workspace:
+        resolved = account_service.resolve_workspace_root(...)
+        ...
+    return normalized</pre>
+      <p>这里应补：</p>
+      <pre>if kind == "echomemory_qa" and dataset_format in {"", "locomo"}:
+    prompt_mode = str(normalized.get("prompt_mode") or "").strip().lower()
+    if prompt_mode in {"", "vikingboat_lite", "vikingboat_compat"}:
+        normalized["vikingboat_tool_loop"] = True
+    if str(normalized.get("qa_memory_injection") or "").strip().lower() in {"", "0", "false", "no", "off"}:
+        normalized["qa_memory_injection"] = True
+    if prompt_mode in {"", "one_shot"}:
+        normalized["prompt_mode"] = "vikingboat_lite"</pre>
+
+      <h3>4.2 task_orchestrator.py 缺 QA 前完整性 gate</h3>
+      <p>zip 里的 <code>create_task()</code> 没有在启动 EchoMemory LoCoMo QA 前做完整性检查。</p>
+      <p>应补：</p>
+      <pre>integrity = plugin_service.import_integrity(...)
+if status != "complete" or not conv_complete or session_complete_count != session_total_count:
+    raise ValueError("导入还不完整，请先完成完整记忆导入")</pre>
+
+      <h3>4.3 inspector.py 缺完整性标志</h3>
+      <p>zip 里的 <code>inspector.py</code> 没有 <code>session_complete_count</code> / <code>conv_complete</code>。</p>
+      <p>应补输出：</p>
+      <pre>session_complete_count
+session_total_count
+conv_complete
+session_complete</pre>
+
+      <h3>4.4 task_specs.py 默认值还不安全</h3>
+      <div class="path">zip 里的当前写法</div>
+      <pre>"--prompt-mode",
+str(payload.get("prompt_mode") or "one_shot"),
+
+command.append("--qa-memory-injection" if str(payload.get("qa_memory_injection", False)) ...)</pre>
+      <p>应改成：</p>
+      <pre>"--prompt-mode",
+str(payload.get("prompt_mode") or "vikingboat_lite"),
+
+command.append("--qa-memory-injection" if str(payload.get("qa_memory_injection", True)) ...)</pre>
+
+      <h3>4.5 retry_failed_echomemory_qa.py 默认值还不安全</h3>
+      <div class="path">zip 里的当前写法</div>
+      <pre>args.prompt_mode
+parser.add_argument("--prompt-mode", ..., default="one_shot")</pre>
+      <p>应改成：</p>
+      <pre>args.prompt_mode if args.prompt_mode != "one_shot" else "vikingboat_lite"
+parser.add_argument("--prompt-mode", ..., default="vikingboat_lite")</pre>
+
+      <h3>4.6 app.js / web_app.js 还要显式传 qa_memory_injection</h3>
+      <div class="path">zip 里的当前写法</div>
+      <pre>prompt_mode: "vikingboat_lite",
+retrieval_mode: "search",
+vikingboat_tool_loop: true,
+fallback_to_one_shot: true,</pre>
+      <p>建议补上：</p>
+      <pre>qa_memory_injection: true</pre>
+    </section>
+
+    <section class="card">
+      <h2>5. 推荐迁移顺序</h2>
+      <ol>
+        <li>先迁 <code>echomemory_memory_qa.py</code> 的 recall / relevant_memory 产物逻辑。</li>
+        <li>再迁 <code>app.js</code> / <code>web_app.js</code> 的 evidence 展示逻辑。</li>
+        <li>然后补 <code>task_orchestrator.py</code> 的默认值归一化和 QA gate。</li>
+        <li>补 <code>inspector.py</code> 的 <code>conv_complete</code> 相关标志。</li>
+        <li>最后修 <code>task_specs.py</code> 和 <code>retry_failed_echomemory_qa.py</code> 的默认值。</li>
+      </ol>
+    </section>
+
+    <section class="card">
+      <h2>6. 可直接复制的代码</h2>
+
+      <h3>6.1 memory/services/task_orchestrator.py</h3>
+      <p>在 <code>normalize_task_payload()</code> 里补这段：</p>
+      <pre>if kind == "echomemory_qa" and (dataset_format in {"", "locomo"}):
+    prompt_mode = str(normalized.get("prompt_mode") or "").strip().lower()
+    if prompt_mode in {"", "vikingboat_lite", "vikingboat_compat"}:
+        normalized["vikingboat_tool_loop"] = True
+    if str(normalized.get("qa_memory_injection") or "").strip().lower() in {"", "0", "false", "no", "off"}:
+        normalized["qa_memory_injection"] = True
+    if prompt_mode in {"", "one_shot"}:
+        normalized["prompt_mode"] = "vikingboat_lite"</pre>
+
+      <p>在 <code>create_task()</code> 里启动 EchoMemory LoCoMo QA 前补 gate：</p>
+      <pre>data_path = context.safe_path(str(payload.get("data") or context.default_repo / "dataset" / "locomo10.json"))
+integrity = plugin_service.import_integrity(
+    "echomemory",
+    Path(str(payload.get("workspace") or payload.get("echomemory_workspace") or "")),
+    str(payload.get("account") or "default"),
+    context.default_output_dir,
+    data_path,
+    str(payload.get("sample") or "all"),
+    None,
+    str(payload.get("user_id") or payload.get("em_user_id") or "default"),
+)
+status = str(integrity.get("status") or "").strip().lower()
+session_complete_count = int(integrity.get("session_complete_count") or 0)
+session_total_count = int(integrity.get("session_total_count") or 0)
+conv_complete = bool(integrity.get("conv_complete"))
+if kind == "echomemory_qa" and str(payload.get("dataset_format") or "").strip().lower() in {"", "locomo"}:
+    if status != "complete" or not conv_complete or (session_total_count &gt; 0 and session_complete_count != session_total_count):
+        raise ValueError(
+            "EchoMemory LoCoMo QA 启动前检查失败：当前 workspace 对该 sample 的导入还不完整。"
+        )</pre>
+
+      <h3>6.2 memory/plugins/echomemory/inspector.py</h3>
+      <p>在 session / integrity 汇总里补这些字段：</p>
+      <pre>session_complete_count = sum(
+    1 for item in sessions
+    if item.get("session_complete") or (item.get("commit_complete") and item.get("atom_flush_complete"))
+)
+session_total_count = len(sessions)
+conv_complete = bool(session_total_count) and session_complete_count == session_total_count
+
+result["session_complete_count"] = session_complete_count
+result["session_total_count"] = session_total_count
+result["conv_complete"] = conv_complete</pre>
+
+      <h3>6.3 memory/task_specs.py</h3>
+      <p>把 EchoMemory retry task 的默认值改成下面这样：</p>
+      <pre>"--prompt-mode",
+str(payload.get("prompt_mode") or "vikingboat_lite"),
+...
+command.append(
+    "--qa-memory-injection"
+    if str(payload.get("qa_memory_injection", True)).strip().lower() not in {"0", "false", "no", "off"}
+    else "--no-qa-memory-injection"
+)</pre>
+
+      <h3>6.4 scripts/retry_failed_echomemory_qa.py</h3>
+      <p>把 retry 命令和 CLI 默认值改成下面这样：</p>
+      <pre>"--prompt-mode",
+args.prompt_mode if args.prompt_mode != "one_shot" else "vikingboat_lite",
+...
+parser.add_argument(
+    "--prompt-mode",
+    choices=["one_shot", "vikingboat_lite", "vikingboat_compat"],
+    default="vikingboat_lite",
+)</pre>
+
+      <h3>6.5 static/app.js 和 web/static/app.js</h3>
+      <p>发起 EchoMemory QA 时补这个 payload：</p>
+      <pre>...(kind === "echomemory_qa" ? {
+  prompt_mode: "vikingboat_lite",
+  retrieval_mode: "search",
+  qa_memory_injection: true,
+  qa_parallelism: 5,
+  top_k: VIKINGBOAT_LITE_TOP_K,
+  score_threshold: 0.1,
+  tool_set: "vikingbot_native_safe",
+  tool_search_limit: VIKINGBOAT_LITE_TOOL_SEARCH_LIMIT,
+  tool_min_score: 0.35,
+  max_iterations: VIKINGBOAT_LITE_MAX_ITERATIONS,
+  user_memory_budget_chars: 4000,
+  agent_memory_budget_chars: 2000,
+  vikingboat_compat: false,
+  vikingboat_tool_loop: true,
+  initial_tool_prefetch: false,
+  fallback_to_one_shot: true,
+} : {})</pre>
+
+      <h3>6.6 scripts/echomemory_memory_qa.py</h3>
+      <p>这部分通常 zip 里已经有。如果没有，就至少保留下面两块：</p>
+      <pre>if bool(getattr(args, "qa_memory_injection", True)):
+    hits, retrieval_error, retrieval_timing = await echomemory_retrieve(args, sdk, query)
+else:
+    hits = []
+
+user_hits, agent_hits = split_user_agent_hits(hits)
+user_memory_block, user_included = format_memory_section_detailed(user_hits, args.user_memory_budget_chars)
+agent_memory_block, agent_included = format_memory_section_detailed(agent_hits, args.agent_memory_budget_chars)</pre>
+
+      <pre>write_recall_log(
+    out_dir,
+    job,
+    "echomemory",
+    query,
+    query_plan,
+    sorted(hits, key=hit_score, reverse=True),
+    user_hits=user_hits,
+    agent_hits=agent_hits,
+    retrieval_error=retrieval_error,
+    question_no=question_no,
+    extra={
+        "retrieval_status": "ok" if retrieval_ok else "empty",
+        "final_evidence_source": final_evidence_source,
+        "retrieval_layers_used": retrieval_layers_used,
+    },
+)
+
+row["relevant_memory"] = json.dumps(hits, ensure_ascii=False)
+row["qa_memory_injection_enabled"] = str(bool(getattr(args, "qa_memory_injection", True))).lower()</pre>
+    </section>
+
+    <section class="card">
+      <h2>7. 最终要达到的效果</h2>
+      <pre>summary.json:
+qa_memory_injection_enabled = true
+prompt_mode = vikingboat_lite
+retrieval_ok_count > 0
+
+qNNN.recall.json:
+retrieval_status = "ok"
+selected_count > 0
+selected[*].uri / score / memory_type / preview 存在
+
+results.csv:
+relevant_memory 非空
+retrieval_status = ok</pre>
+    </section>
+
+    <section class="card">
+      <h2>8. 结论</h2>
+      <p>这个 zip <strong>不是不能用</strong>，但也<strong>不能原样直接覆盖</strong>。它已经包含了 recall 文件落盘、CSV relevant_memory、前端证据展示这三块基础能力；但还缺正式评测需要的默认值保护和导入完整性 gate。</p>
+    </section>
+
+    <section class="card">
+      <h2>9. 文档路径</h2>
+      <div class="path">/Users/chx/locomo-eval-web/docs/eval_change_zip_migration_plan_20260629.html</div>
+    </section>
+  </main>
+</body>
+</html>

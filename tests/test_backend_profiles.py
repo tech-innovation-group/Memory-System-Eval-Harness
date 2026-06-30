@@ -30,7 +30,7 @@ def test_clean_workspace_uses_backend_specific_prefixes() -> None:
     echomemory_workspace = ECHOMEMORY_PROFILE.clean_workspace("/tmp", "alpha team", stamp)
 
     assert openviking_workspace.endswith("/openviking_workspace_alpha-team_20260622_120000")
-    assert echomemory_workspace.endswith("/echomem_workspace_alpha-team_20260622_120000")
+    assert echomemory_workspace.endswith("/echomem_alpha-team_20260622_120000")
 
 
 def test_openviking_storage_root_layout() -> None:

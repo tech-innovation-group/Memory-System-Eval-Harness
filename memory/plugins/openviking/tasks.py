@@ -190,7 +190,7 @@ def build_openviking_generic_qa_command(
     answer_model = payload.get("answer_model") or payload.get("judge_model") or defaults.get("answer_model") or defaults.get("judge_model") or "gpt-5.5"
     judge_base_url = payload.get("judge_base_url") or answer_base_url
     judge_model = payload.get("judge_model") or answer_model
-    auto_judge = bool_value(payload.get("auto_judge"), True)
+    auto_judge = bool_value(payload.get("auto_judge"), fmt != "hotpotqa")
     command = [
         "/usr/bin/env",
         "python3",

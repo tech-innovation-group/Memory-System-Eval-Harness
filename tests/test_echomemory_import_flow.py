@@ -155,6 +155,20 @@ def test_collect_commit_artifact_state_skips_memory_scan_until_overview_ready(
     assert state["complete"] is False
 
 
+def test_recovered_integrity_keeps_active_extracting_commit_pending_async() -> None:
+    integrity = import_mod.recovered_integrity_from_artifacts(
+        archive_complete=True,
+        atom_memory_complete=False,
+        retrieval_ready=False,
+        cursor_complete=False,
+        session_complete=False,
+        fast_import=False,
+        commit_status={"status": "running", "stage": "extracting"},
+    )
+
+    assert integrity == "pending_async_memory"
+
+
 def test_finalize_import_records_reprobes_pending_sessions_before_second_reingest(
     tmp_path: Path,
     monkeypatch,

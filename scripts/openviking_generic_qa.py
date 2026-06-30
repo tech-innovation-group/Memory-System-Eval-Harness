@@ -1364,6 +1364,8 @@ def load_existing_import_records(import_dir: Path, existing_rows: list[dict[str,
 def run_judge(args: argparse.Namespace, csv_path: Path) -> dict[str, Any]:
     if not args.judge_after:
         return {"enabled": False}
+    if str(getattr(args, "dataset_format", "") or "").strip().lower() == "hotpotqa":
+        return {"enabled": False, "reason": "not_applicable_for_hotpotqa"}
     base_url = args.judge_base_url or args.answer_base_url
     model = args.judge_model or args.answer_model
     token = args.judge_token or args.answer_token
@@ -1727,10 +1729,12 @@ def main() -> None:
     }
     summary.update(official_metric_summary(args.dataset_format, official_eval_result))
     (out_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
-    final_status = "failed" if judge_result.get("enabled") and int(judge_result.get("returncode") or 0) != 0 else "succeeded"
+    judge_failed = judge_result.get("enabled") and int(judge_result.get("returncode") or 0) != 0
+    official_failed = official_eval_result.get("enabled") and int(official_eval_result.get("returncode") or 0) != 0
+    final_status = "failed" if (judge_failed or official_failed) else "succeeded"
     write_running_summary(running_summary_path, rows, status=final_status, csv_path=csv_path)
     print(json.dumps(summary, ensure_ascii=False, indent=2), flush=True)
-    if judge_result.get("enabled") and int(judge_result.get("returncode") or 0) != 0:
+    if judge_failed or official_failed:
         raise SystemExit(2)
 
 

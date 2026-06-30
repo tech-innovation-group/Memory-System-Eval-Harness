@@ -802,6 +802,9 @@ def hotpotqa_job_plan(raw: Any, index: int, sample_filter: str = "all") -> tuple
         "preview_events": events[:20],
         "memory_documents": memory_documents,
         "supporting_facts": item.get("supporting_facts") or [],
+        "type": str(item.get("type") or item.get("category") or "hotpotqa"),
+        "level": str(item.get("level") or "").strip(),
+        "has_answer": bool(str(item.get("answer") or item.get("gold_answer") or "").strip()),
     }
     job = Job(
         dataset_format="hotpotqa",

@@ -1,0 +1,45 @@
+Design a professional, clean, linear desktop web workbench mockup for a local AI benchmark platform page named "LongMemEval 评测". This is not a marketing page, not a chat homepage, and not a BI dashboard. It belongs to the same product family as a LoCoMo evaluation workbench, but it should be lighter, simpler, and more maintainable. The tone should feel like Linear, LangSmith, OpenAI Console, or Vercel Dashboard: restrained, engineered, highly scannable, and calm.
+
+Use a 1440x1024 desktop composition with a warm light background (#F7F5F0), white panels (#FFFFFF), subtle secondary surfaces (#FAF9F7), thin borders (#E5DED2), slightly stronger dividers (#D8CCB9), 8px radius, minimal or no shadow, dark text (#111827), muted text (#6B7280), weak text (#9CA3AF), a single restrained blue accent (#2563EB), green success (#16A34A), orange warning (#D97706), and red error (#DC2626). Do not use gradients, illustrations, hero sections, large KPI cards, blue-purple AI styling, card-inside-card layouts, or complex right-side utility sidebars.
+
+The page must use a single-column linear workflow layout with these modules in this exact order:
+Top Application Bar -> Page Header -> 4-step Workflow Stepper -> Horizontal Run Status Bar -> Data Preparation Panel -> Memory Injection Panel -> QA Evaluation Panel -> Result Report Panel -> Recent Tasks Panel -> Live Log Panel.
+
+In the top application bar, place "LongMemEval / MemoryBench" on the left. In the center, show compact state chips for 当前账户 default, 后端 EchoMemory · 正常, and 当前模型名称. On the right, add three 36px buttons with Lucide-style 16px line icons: 刷新, 系统配置, 查看结果. The bar should be about 64px tall, white, and bordered.
+
+Below it, add a compact page header around 64px tall. On the left: title "LongMemEval 评测" and subtitle "Long-context memory injection and QA evaluation." On the right: 校验数据, 停止评测, 开始评测. The start button is the only blue primary button. The stop button is a red outline button. The validate button is a white secondary button.
+
+Below that, create a compact 4-step workflow stepper with equal-width steps:
+1. Data Preparation
+2. Memory Injection
+3. QA Evaluation
+4. Result Report
+The current step uses a blue number dot, blue title, and a 2px blue bottom line. Inactive steps use gray number dots and muted labels. Do not make the stepper look like large cards or a timeline.
+
+Below the stepper, create a one-row horizontal status bar with five compact status blocks:
+Dataset, Memory Backend, Injection Progress, QA Progress, Run Status.
+Each block should use icon + small label + value + short note. Progress blocks should include thin progress indicators. Run Status should use a small pill like Idle, Running, Completed, or Failed. Keep the row neat and workbench-like, not dashboard-like.
+
+The Data Preparation panel is the first main panel. Header: Database icon, title "Data Preparation", subtitle "Select LongMemEval data and prepare samples for memory injection." Right-side actions: 选择数据文件, 使用示例数据, 校验数据. Body layout: first row has Dataset Path input plus a choose/custom button. Second row has Split select, Sample Limit input, Output Workspace input. Under that, show a compact readiness checklist with items like Dataset readable, Schema valid, Conversation field found, Question field found, Answer field found, Workspace writable. Each item is a tight row with a small status dot, label, and short status text. Also show compact path/detail rows instead of multiple nested info cards.
+
+The Memory Injection panel is the second panel. Header: UploadCloud icon, title "Memory Injection", subtitle "Inject long-context memories into selected memory backend." Right-side actions: 开始注入, 停止注入. Inside the panel, keep a compact two-zone layout within the same panel: a left configuration area with Memory Backend, Account, Batch Size, Clear Existing Memory; and a right progress area showing Injection Progress, current sample or session id, injected/total, speed, ETA, and artifact path rows. Do not use large KPI cards.
+
+The QA Evaluation panel is the third panel. Header: MessageSquare icon, title "QA Evaluation", subtitle "Run question answering against injected memory." Right-side actions: 开始 QA, 停止 QA, 导出结果. The body has a compact config row for Model, Test Count, Evaluation Mode, Tool Calling, Retrieval Top-K; then a thin QA progress section; then a visually important current-task preview showing current sample_id, question_id, the question text, predicted answer, gold answer, and optional short retrieved memory evidence. Make this feel like the main operational preview, not a blank placeholder.
+
+The Result Report panel is the fourth panel. Header: FileBarChart icon, title "Result Report", subtitle "Review metrics, output files, and generated reports." Right-side actions: 生成报告, 查看报告, 打开结果目录. The body contains a latest result summary, a compact metrics row, and artifact path rows. Include metrics like Total Questions, Completed, Accuracy / EM, F1, Avg Latency, and Failed. Include path rows for result file, summary, report.html, and run directory. Paths must truncate on one line and support compact copy/open affordances visually.
+
+Below that, add a Recent Tasks panel using a clean, standard table rather than cards. Suggested columns: Task, Stage, Dataset, Progress, Status, Started, Duration, Action. Table rows should be about 44px tall, tightly aligned, and use small status pills.
+
+At the bottom, add a full-width Live Log panel. Header: Terminal icon, title "Live Log", subtitle "固定高度滚动显示，避免拉长页面". Right-side actions: 自动滚动, 复制, 清空. Inside the panel, place a compact log path row above a fixed-height log console around 220px tall. Use a dark console background such as #161B22 with a subtle border and light monospace text. Keep the whole page stable, aligned, and visually quiet.
+
+The final result should look like a polished internal AI benchmark console, clearly showing one workflow: prepare data -> inject memory -> run QA -> inspect results. It should feel like part of a unified benchmark platform, lighter and simpler than LoCoMo, with reusable design system patterns and no visual clutter.
+
+Important simplification constraints for maintainability:
+- Treat the page as one shared benchmark workbench shell, not as many independent mini-pages.
+- Avoid nested cards and avoid multiple visual systems inside one page.
+- Use one top-level workflow and one status bar only.
+- Do not create separate big status cards inside each panel.
+- All file and artifact locations should use compact single-line path rows with truncation.
+- Recent Tasks must be a dense table, not a card list.
+- Live Log must be a single fixed-height console, not several log modules.
+- Keep the overall composition linear and operational, so the frontend can later converge on shared LoCoMo-style components with less CSS override complexity.

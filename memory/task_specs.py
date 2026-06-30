@@ -201,7 +201,7 @@ def build_openviking_qa_retry_failed_task(
         "--answer-base-url",
         str(payload.get("answer_base_url") or payload.get("judge_base_url") or ""),
         "--answer-model",
-        str(payload.get("answer_model") or payload.get("judge_model") or "gpt-5.5"),
+        str(payload.get("answer_model") or payload.get("judge_model") or "deepseek-v4-flash"),
         "--answer-token",
         str(token or ""),
     ]
@@ -273,7 +273,7 @@ def build_openviking_qa_retry_missing_task(
         "--answer-base-url",
         str(payload.get("answer_base_url") or payload.get("judge_base_url") or ""),
         "--answer-model",
-        str(payload.get("answer_model") or payload.get("judge_model") or "gpt-5.5"),
+        str(payload.get("answer_model") or payload.get("judge_model") or "deepseek-v4-flash"),
         "--answer-token",
         str(token or ""),
     ]
@@ -341,7 +341,7 @@ def build_echomemory_qa_retry_failed_task(
         "--answer-base-url",
         str(payload.get("answer_base_url") or payload.get("judge_base_url") or ""),
         "--answer-model",
-        str(payload.get("answer_model") or payload.get("judge_model") or "gpt-5.5"),
+        str(payload.get("answer_model") or payload.get("judge_model") or "deepseek-v4-flash"),
         "--model-retries",
         str(payload.get("model_retries") or 5),
         "--timeout-s",
@@ -365,7 +365,7 @@ def build_echomemory_qa_retry_failed_task(
         "--max-iterations",
         str(payload.get("max_iterations") or 8),
     ]
-    command.append("--qa-memory-injection" if str(payload.get("qa_memory_injection", False)).strip().lower() not in {"0", "false", "no", "off"} else "--no-qa-memory-injection")
+    command.append("--qa-memory-injection" if str(payload.get("qa_memory_injection", True)).strip().lower() not in {"0", "false", "no", "off"} else "--no-qa-memory-injection")
     if token:
         command += ["--answer-token", str(token)]
     if retrieval_mode == "local":

@@ -32,7 +32,7 @@ def test_clean_workspace_delegates_backend_specific_prefixes(tmp_path: Path) -> 
     echomemory_workspace = accounts.clean_workspace(tmp_path, "acct", timestamp="20260622_120000", backend="echomemory")
 
     assert openviking_workspace.endswith("openviking_workspace_acct_20260622_120000")
-    assert echomemory_workspace.endswith("echomem_workspace_acct_20260622_120000")
+    assert echomemory_workspace.endswith("echomem_acct_20260622_120000")
 
 
 def test_account_view_reports_openviking_isolation(tmp_path: Path) -> None:

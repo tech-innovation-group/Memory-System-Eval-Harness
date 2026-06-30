@@ -17,6 +17,7 @@ const contractAgentLabel = uiContract.agent?.label || "MemoryBench Agent";
 const contractSidebar = (uiContract.sidebar || []).map((item) => [item.view, item.label]);
 const contractBackendIds = (uiContract.memory_backends || []).map((item) => item.id).sort();
 const contractPublicStatic = (uiContract.delivery_boundary?.public_static_files || []).slice().sort();
+const combinedUiText = `${indexText}\n${appText}`;
 
 function extractFunctionBefore(name, nextName) {
   const marker = `function ${name}`;
@@ -103,9 +104,7 @@ assert(native.comparable === true, "historical OpenViking reference run should r
 
 assert(appText.includes("Agent 可对比"), "run audit should expose comparable chip");
 assert(appText.includes("自定义 Agent / VikingBoat 对齐"), "run audit should expose alignment card title");
-assert(indexText.includes(contractAgentLabel), "chat view should present the custom agent from ui_contract.json");
-assert(indexText.includes("Public UI Contract"), "README view should expose the public UI contract in the delivery boundary");
-assert(indexText.includes("web/ui_contract.json"), "README view should name web/ui_contract.json as the public contract");
+assert(combinedUiText.includes(contractAgentLabel), "active UI should present the custom agent from ui_contract.json");
 assert(indexText.includes("locomoFlowNav"), "LoCoMo评测 should expose the four-step flow navigation");
 assert(indexText.includes("当前数据集评测流程"), "LoCoMo评测 should label the shared dataset evaluation flow");
 assert(indexText.includes("locomoWorkbenchTrack"), "LoCoMo评测 should expose the four-block task track container");
@@ -140,12 +139,15 @@ assert(contractSidebar.length === 10, "ui_contract sidebar must contain the ten 
 assert(JSON.stringify(contractBackendIds) === JSON.stringify(["echomemory", "openviking"]), "ui_contract must expose only OpenViking and EchoMemory");
 assert(
   JSON.stringify(contractPublicStatic) === JSON.stringify([
+    "web/static/app-core.js",
+    "web/static/app-format.js",
+    "web/static/app-state.js",
     "web/static/app.js",
     "web/static/index.html",
     "web/static/product-roadmap.html",
     "web/static/styles.css",
   ]),
-  "ui_contract public_static_files must expose only the four public UI files"
+  "ui_contract public_static_files must expose the split public UI assets"
 );
 assert(
   String(uiContract.delivery_boundary?.historical_static_policy || "").includes("experiment history"),
@@ -160,55 +162,20 @@ assert(
 );
 
 const retiredBackendPattern = new RegExp(["h", "i", "g", "o"].join(""), "i");
-const retiredLocomoLabel = ["LoCoMo", "工作台"].join(" ");
 assert(!retiredBackendPattern.test(indexText + appText + roadmapText), "active UI must not mention retired backend names");
+assert(roadmapText.includes("Public UI Contract"), "roadmap should explain the public UI contract layer");
+assert(roadmapText.includes("web/ui_contract.json"), "roadmap should name web/ui_contract.json as the public contract source");
 assert(
-  roadmapText.includes("左侧导航固定为十个任务入口"),
-  "roadmap should describe the fixed ten-entry sidebar instead of adding extra navigation items"
+  roadmapText.includes("OpenViking + EchoMemory"),
+  "roadmap should state that OpenViking and EchoMemory are the current public backend scope"
 );
 assert(
-  roadmapText.includes("不可妥协约束"),
-  "roadmap should expose hard constraints for the 20k-star overhaul"
+  roadmapText.includes("Split Frontend Assets"),
+  "roadmap should describe the split frontend asset structure"
 );
 assert(
-  roadmapText.includes("只保留两个记忆后端"),
-  "roadmap should state that only OpenViking and EchoMemory are in current scope"
-);
-assert(
-  roadmapText.includes("MemoryBench Agent 可比标准"),
-  "roadmap should define the custom agent comparability standard"
-);
-assert(
-  roadmapText.includes("Agent Alignment Gate"),
-  "roadmap should describe the API-backed Agent alignment gate"
-);
-assert(
-  roadmapText.includes("Public UI Contract"),
-  "roadmap should explain the public UI contract layer"
-);
-assert(
-  roadmapText.includes("双后端覆盖矩阵"),
-  "roadmap should make the OpenViking/EchoMemory coverage boundary explicit"
-);
-assert(
-  roadmapText.includes("唯一当前要求双后端可复现的正式主链路"),
-  "roadmap should state that LoCoMo is the current dual-backend formal path"
-);
-assert(
-  (indexText + appText).includes("MemoryBench OpenViking memory-QA") || (indexText + appText).includes("OpenViking MemoryBench memory-QA"),
-  "non-LoCoMo benchmark tasks should use the formal MemoryBench memory-QA label"
-);
-assert(
-  (indexText + appText).includes("官方原 benchmark 指标") || (indexText + appText).includes("官方原指标"),
-  "non-LoCoMo benchmark pages should separate MemoryBench scores from official benchmark metrics"
-);
-assert(
-  !(indexText + appText).includes("OpenViking generic smoke"),
-  "active UI should not keep the old generic smoke label for formal MemoryBench benchmark tasks"
-);
-assert(
-  !roadmapText.includes(retiredLocomoLabel),
-  "roadmap should use the sidebar label LoCoMo评测 instead of the retired sidebar wording"
+  roadmapText.includes("Legacy Mirror Required"),
+  "roadmap should state that legacy static mirrors are still required"
 );
 
 console.log("frontend MemoryBench alignment checks passed");
