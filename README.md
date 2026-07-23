@@ -121,11 +121,36 @@ bash scripts/start-workbench-stack.sh
 
 Open <http://127.0.0.1:4173/>.
 
-For a LoCoMo `legacy-77` tool-call ablation, use the same evaluation profile
-and change only `--vikingboat-tool-loop` versus
-`--no-vikingboat-tool-loop`. See
+### Reproduce LoCoMo `conv-30` `legacy-77`
+
+After importing `conv-30` and starting its EchoMemory HTTP service, use these
+QA-only entrypoints. They reuse the existing memory workspace and do not import
+or write memory:
+
+```bash
+# legacy-77 with Agent memory tool calls
+bash scripts/run_locomo_conv30_legacy77_tool.sh
+
+# Same legacy-77 settings with Agent memory tool calls disabled
+bash scripts/run_locomo_conv30_legacy77_no_tool.sh
+```
+
+An optional first argument selects the output directory:
+
+```bash
+bash scripts/run_locomo_conv30_legacy77_no_tool.sh runs/legacy77-no-tool
+```
+
+The no-tool run still performs the initial EchoMemory HTTP search and injects
+the returned evidence into the answer prompt. The only ablation variable is
+iterative Agent tool execution. On another machine, set `LOCOMO_DATASET`,
+`ECHOMEM_ROOT`, `ECHOMEM_WORKSPACE`, and `ECHOMEM_BASE_URL`; auth and model
+settings are read from the EchoMemory workspace by default. Run either script
+with `--help` for every supported override.
+
+See
 [`README_ECHOMEMORY_BLACKBOX.md`](README_ECHOMEMORY_BLACKBOX.md#locomo-legacy-77-tool-on-vs-tool-off)
-for complete commands and required result checks.
+for the black-box contract and required result checks.
 
 Status and stop commands:
 
