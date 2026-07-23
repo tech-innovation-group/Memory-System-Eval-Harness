@@ -24565,7 +24565,7 @@ async function echoAgentDirectFetch(baseUrl, method, path, headers, body) {
   // Add CSRF token for mutation requests
   if (EchoAgentSession.csrfToken && method !== "GET" && method !== "HEAD") {
     fetchOptions.headers["X-CSRF-Token"] = EchoAgentSession.csrfToken;
-    console.log("[echoAgentDirectFetch] Adding CSRF token for", method, path, "token:", EchoAgentSession.csrfToken.substring(0, 8) + "...");
+    console.log("[echoAgentDirectFetch] CSRF header attached for", method, path);
   } else if (method !== "GET" && method !== "HEAD") {
     console.log("[echoAgentDirectFetch] WARNING: No CSRF token available for", method, path, "csrfToken:", EchoAgentSession.csrfToken);
   }
@@ -24662,7 +24662,7 @@ async function echoAgentLogin(baseUrl, username, password) {
     if (csrfToken) {
       EchoAgentSession.csrfToken = csrfToken;
     }
-    console.log("EchoAgent login success (proxy), csrfToken:", csrfToken ? "received" : "not found", "cookies:", EchoAgentSession.cookies ? EchoAgentSession.cookies.length : 0);
+    console.log("EchoAgent login success (proxy), CSRF status:", csrfToken ? "received" : "not found", "cookies:", EchoAgentSession.cookies ? EchoAgentSession.cookies.length : 0);
     return { csrfToken: csrfToken, user: proxyData.user || (proxyData.data && proxyData.data.user) || null };
   } catch (e) {
     throw new Error("登录失败: " + e.message);
