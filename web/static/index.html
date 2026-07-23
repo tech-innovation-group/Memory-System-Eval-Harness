@@ -2598,10 +2598,16 @@
                   <span id="dynamicEvalDatasetFileName" style="font-size: 12px; color: #666; margin-top: 4px; display: block;"></span>
                 </label>
               </div>
-              <div class="dynamic-eval-form-row" id="dynamicEvalThemeRow">
-                <label class="dynamic-eval-field dynamic-eval-field-full">
-                  <span class="dynamic-eval-label">主题（留空自动选择）</span>
-                  <input type="text" id="dynamicEvalTheme" class="dynamic-eval-input" placeholder="如：职场与项目管理、旅行规划与出行">
+              <div class="dynamic-eval-form-row" id="dynamicEvalConfigRow">
+                <label class="dynamic-eval-field" id="dynamicEvalUserSimConfigWrapper">
+                  <span class="dynamic-eval-label">用户模拟 Config</span>
+                  <input type="file" id="dynamicEvalUserSimConfigFile" class="dynamic-eval-input" accept=".yaml,.yml" style="padding: 6px;">
+                  <span id="dynamicEvalUserSimConfigFileName" style="font-size: 12px; color: #666; margin-top: 4px; display: block;">默认: realistic (仅动态模式)</span>
+                </label>
+                <label class="dynamic-eval-field">
+                  <span class="dynamic-eval-label">评估器 Config</span>
+                  <input type="file" id="dynamicEvalEvaluatorConfigFile" class="dynamic-eval-input" accept=".yaml,.yml" style="padding: 6px;">
+                  <span id="dynamicEvalEvaluatorConfigFileName" style="font-size: 12px; color: #666; margin-top: 4px; display: block;">默认: memory_focused</span>
                 </label>
               </div>
               <div class="dynamic-eval-form-row">
@@ -2744,6 +2750,22 @@
           </section>
         </div>
       </div>
+
+      <!-- Conversation History Panel -->
+      <section class="dynamic-eval-panel dynamic-eval-conversation-panel" id="dynamicEvalConversationPanel">
+        <div class="dynamic-eval-panel-header">
+          <div class="dynamic-eval-panel-title">
+            <span class="ui-icon" data-ui-icon="messages-square" data-ui-icon-size="16" aria-hidden="true"></span>
+            <h3>对话历史</h3>
+          </div>
+          <span class="dynamic-eval-conversation-session-tag" id="dynamicEvalConvSessionTag">尚无会话</span>
+        </div>
+        <div class="dynamic-eval-panel-body">
+          <div class="dynamic-eval-conversation-list" id="dynamicEvalConversationList">
+            <p class="dynamic-eval-empty">开始评测后显示对话历史</p>
+          </div>
+        </div>
+      </section>
 
       <!-- Results Panel -->
       <section class="dynamic-eval-panel dynamic-eval-results-panel" id="dynamicEvalResultsPanel" hidden>
@@ -3167,6 +3189,6 @@
   <script src="/app-state.js?v=20260629hotpottabs5"></script>
   <script src="/app-core.js?v=20260629longmemevalworkbench2"></script>
   <script src="/app-format.js?v=20260629longmemevalworkbench2"></script>
-  <script src="/app.js?v=20260715dynamicEval15"></script>
+  <script src="/app.js?v=20260721stopCheck2"></script>
 </body>
 </html>

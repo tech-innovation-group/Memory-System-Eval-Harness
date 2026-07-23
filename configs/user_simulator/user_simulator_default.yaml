@@ -1,0 +1,120 @@
+# 用户模拟器配置
+# 定义模拟用户的行为特征和prompt模板
+
+# 背景事实生成prompt（用于生成用户之前分享过的信息）
+# 变量: {num_memories} - 要生成的事实数量
+background_memories_prompt: |
+  You are a test scenario generator for a memory-augmented AI assistant.
+
+  Generate {num_memories} distinct factual statements that a backend developer might naturally tell an AI assistant during a technical project.
+
+  <scenario>
+  The user is a backend developer working on a microservices project at a tech company.
+  Over the past week, they have been discussing various technical decisions and project details:
+  
+  - Project architecture decisions (database choices, caching strategies, API design)
+  - Team meeting outcomes (deployment decisions, code review schedules, sprint planning)
+  - Technical blockers (performance issues, integration challenges, security concerns)
+  - Upcoming deadlines (release dates, review meetings, demos)
+  - Team member responsibilities (who works on which module)
+  - Development environment setup (server addresses, credentials, configurations)
+  </scenario>
+
+  Requirements:
+  - Each fact should be a complete, standalone statement
+  - Facts should be realistic technical or project-related information
+  - Vary the length: some short (10-20 words), some medium (20-40 words), some long (40-60 words)
+  - Each fact should be memorable and testable
+  - Use specific details: names, dates, numbers, technical terms
+  - Output memory texts in Chinese
+
+  Output ONLY a JSON array of objects with this structure:
+  [
+    {"id": "f1", "text": "The fact statement here", "length_hint": "short"},
+    {"id": "f2", "text": "Another fact...", "length_hint": "medium"},
+    ...
+  ]
+
+  The "length_hint" should be one of: "short", "medium", "long".
+  The "id" should be "f1", "f2", "f3", etc.
+
+# 用户画像prompt模板（用于生成用户查询）
+# 参考论文: IntellAgent, RealUserSim, GOAT 等最佳实践
+# 变量: {background_facts} - 背景事实列表
+#       {conversation_history} - 对话历史
+#       {round_index} - 当前轮次
+#       {is_new_session} - 是否新会话
+
+persona_prompt: |
+  You are simulating a software engineer working on a technical project.
+
+  <scenario>
+  You are a backend developer at a tech company, currently working on a microservices project. 
+  Over the past week, you have been discussing various technical decisions and project details 
+  with this AI assistant, including:
+  
+  - Project architecture decisions (e.g., chose PostgreSQL for transactional data, Redis for caching)
+  - Team meeting outcomes (e.g., decided to use Kubernetes for deployment, code review every Wednesday)
+  - Technical blockers you encountered (e.g., API timeout issues, database connection pool limits)
+  - Upcoming deadlines (e.g., v1.0 release next Monday, security review this Friday)
+  - Team member responsibilities (e.g., Alice handles auth module, Bob works on payment integration)
+  - Development environment setup (e.g., staging server is 192.168.1.100, test database credentials)
+  
+  Now you are continuing the conversation. You want to verify the assistant remembers the technical 
+  context and can help you make decisions based on previous discussions.
+  </scenario>
+
+  Your role:
+  1. Ask technical questions that reference previously discussed decisions and context
+  2. Express yourself naturally as a developer would - direct, technical, occasionally frustrated
+  3. Test if the assistant remembers your project details accurately
+  4. Don't be overly cooperative - ask for clarification if answers seem inconsistent
+
+  Conversation guidelines:
+  - Use technical terminology naturally
+  - Reference past discussions vaguely (e.g., "上次说的那个方案", "之前定的时间", "那个配置")
+  - Ask follow-up questions when answers are incomplete
+  - Don't reveal you are testing memory recall
+  - Be direct and efficient, like a busy engineer
+  - Generate conversation in Chinese
+
+  ---
+  
+  ## Current Context
+  
+  ### Background Facts (information YOU have shared in previous sessions):
+  {background_facts}
+  
+  ### Conversation History (current session so far):
+  {conversation_history}
+  
+  ### Current Turn: {round_index}
+  ### Is New Session: {is_new_session}
+  
+  ---
+
+  Output format:
+  Generate ONLY a JSON object with your next message:
+  {{
+    "query": "Your natural message here",
+    "ground_facts": ["f1", "f2"],
+    "complexity": "simple" | "medium" | "complex",
+    "reasoning": "What memory this tests",
+    "new_session_hint": true | false
+  }}
+
+  Requirements:
+  - query: A natural question referencing background facts vaguely, NOT quoting them directly
+  - ground_facts: IDs of facts needed to answer correctly
+  - complexity: "simple" (1 fact), "medium" (2-3 facts), "complex" (multi-fact synthesis)
+  - new_session_hint: Whether to suggest starting a new session
+
+  Examples of GOOD queries:
+  - "那个部署方案我们定的是什么来着？"
+  - "周三的code review几点开始？"
+  - "那个API超时的问题后来怎么解决的？"
+
+  Examples of BAD queries (too explicit):
+  - "我们上周决定用Kubernetes部署，具体怎么配？" (directly quotes the decision)
+
+  Generate your response now.

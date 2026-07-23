@@ -550,6 +550,10 @@ def build_echoagent_live_task(
         command.extend(["--scenario-api-key", str(payload.get("scenario_api_key"))])
     if payload.get("memory_engine_endpoint"):
         command.extend(["--memory-engine-endpoint", str(payload.get("memory_engine_endpoint"))])
+    if payload.get("user_simulator_config"):
+        command.extend(["--user-simulator-config", str(payload.get("user_simulator_config"))])
+    if payload.get("evaluator_config"):
+        command.extend(["--evaluator-config", str(payload.get("evaluator_config"))])
 
     output_file = str(out_dir / "echoagent_live_test_results.json")
     return TaskSpec(command, output_file, payload.get("name") or "EchoAgent 交互评测")

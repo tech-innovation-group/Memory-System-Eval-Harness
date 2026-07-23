@@ -28,6 +28,7 @@ def _inject_memories_to_echomem(
     session_id: str,
     memories: list[dict[str, Any]],
     user_id: str,
+    evaluator_id: str | None = None,
 ) -> dict[str, Any]:
     """Inject background memories into EchoMem for retrieval.
     
@@ -35,8 +36,12 @@ def _inject_memories_to_echomem(
     Uses the EchoMem direct API with auth key lookup from echoagent_registry.json.
     
     If the session already has committed archives, skip injection.
+    
+    Args:
+        evaluator_id: If provided, check stop flag for this evaluator during polling.
     """
     from pathlib import Path
+    from memory.dynamic_evaluator import is_evaluator_stopped
     
     print(f"[inject_memories] Function called with base_url={echomem_url}, session_id={session_id}, memories={len(memories)}, user_id={user_id}")
     base_url = echomem_url.rstrip("/")
@@ -199,14 +204,19 @@ def _inject_memories_to_echomem(
     except Exception as e:
         return {"success": False, "error": f"Failed to commit: {e}", "messages_added": messages_added}
     
-    # Step 4: Poll for commit completion (no timeout - must wait for completion)
+    # Step 4: Poll for commit completion (no timeout - injection can take a long time)
     if archive_id:
         import time
         status_url = f"{base_url}/api/sessions/{session_id}/commits/{archive_id}"
         poll_interval = 3  # Poll every 3 seconds
         
-        print(f"[inject_memories] Waiting for commit to complete, archive_id={archive_id} (no timeout)")
+        print(f"[inject_memories] Waiting for commit to complete, archive_id={archive_id}")
         while True:
+            # Check if evaluator has been stopped
+            if evaluator_id and is_evaluator_stopped(evaluator_id):
+                print(f"[inject_memories] Evaluator {evaluator_id} stopped, aborting poll")
+                return {"success": False, "error": "Evaluation stopped by user", "messages_added": messages_added, "stopped": True}
+            
             try:
                 req = Request(
                     status_url,
@@ -392,6 +402,9 @@ def handle_dynamic_eval_post(
             result = generate_next_query(evaluator, context)
             send_json(result)
         except Exception as exc:
+            import traceback
+            traceback.print_exc()
+            print(f"[generate_user_query] Error: {exc}")
             send_json({"error": str(exc)}, 500)
         return True
 
@@ -416,6 +429,9 @@ def handle_dynamic_eval_post(
             result = evaluator.evaluate_response(query, reply, ground_facts, recalled_memories)
             send_json(result)
         except Exception as exc:
+            import traceback
+            traceback.print_exc()
+            print(f"[evaluate_response] Error: {exc}")
             send_json({"error": str(exc)}, 500)
         return True
 
@@ -426,6 +442,7 @@ def handle_dynamic_eval_post(
             session_id = payload.get("session_id")
             memories = payload.get("memories", [])
             user_id = payload.get("user_id", "eval_user")
+            evaluator_id = payload.get("evaluator_id")  # Optional: for stop flag checking
 
             print(f"[inject_memories] API called: echomem_url={echomem_url}, agent_id={agent_id}, session_id={session_id}, memories_count={len(memories)}, user_id={user_id}")
 
@@ -444,6 +461,7 @@ def handle_dynamic_eval_post(
                 session_id=session_id,
                 memories=memories,
                 user_id=user_id,
+                evaluator_id=evaluator_id,
             )
             send_json(result)
         except Exception as exc:
@@ -498,6 +516,20 @@ def handle_dynamic_eval_post(
             send_json(evaluator.get_state())
             return True
 
+        if action == "stop":
+            # Set stop flag for this evaluator
+            from memory.dynamic_evaluator import set_evaluator_stopped
+            set_evaluator_stopped(evaluator_id, True)
+            send_json({"status": "stopped", "evaluator_id": evaluator_id})
+            return True
+
+        if action == "clear_stop":
+            # Clear stop flag for this evaluator
+            from memory.dynamic_evaluator import clear_evaluator_stop_flag
+            clear_evaluator_stop_flag(evaluator_id)
+            send_json({"status": "cleared", "evaluator_id": evaluator_id})
+            return True
+
     return False
 
 
@@ -521,6 +553,26 @@ def handle_dynamic_eval_get(
     Returns:
         True if the path was handled, False otherwise
     """
+    # Endpoint: List available user simulator configs
+    if path == "/api/dynamic/user_simulators":
+        try:
+            from memory.prompt_config_loader import list_available_simulators
+            simulators = list_available_simulators()
+            send_json({"simulators": simulators})
+        except Exception as exc:
+            send_json({"error": str(exc)}, 500)
+        return True
+
+    # Endpoint: List available evaluator configs
+    if path == "/api/dynamic/evaluator_configs":
+        try:
+            from memory.prompt_config_loader import list_available_evaluators
+            evaluators = list_available_evaluators()
+            send_json({"evaluator_configs": evaluators})
+        except Exception as exc:
+            send_json({"error": str(exc)}, 500)
+        return True
+
     if path == "/api/dynamic/evaluators":
         try:
             evaluators = list_evaluators()

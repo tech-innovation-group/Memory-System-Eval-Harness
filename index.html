@@ -85,6 +85,33 @@
             <small id="wbBackendHint">读取中</small>
           </article>
         </div>
+        
+        <!-- 新增：用户模拟器和评估器配置选择 -->
+        <div class="wb-account-cluster wb-config-cluster">
+          <article class="wb-account-pill wb-config-pill">
+            <span class="wb-inline-icon" id="wbUserSimIcon" aria-hidden="true"></span>
+            <span class="wb-account-pill-label">用户模拟</span>
+            <strong id="wbUserSimName">default</strong>
+            <div class="wb-account-select-wrap">
+              <select id="wbUserSimSelect" aria-label="选择用户模拟器配置">
+                <option value="">默认</option>
+              </select>
+            </div>
+            <small id="wbUserSimHint">加载中...</small>
+          </article>
+          <article class="wb-account-pill wb-config-pill">
+            <span class="wb-inline-icon" id="wbEvalConfigIcon" aria-hidden="true"></span>
+            <span class="wb-account-pill-label">评估配置</span>
+            <strong id="wbEvalConfigName">default</strong>
+            <div class="wb-account-select-wrap">
+              <select id="wbEvalConfigSelect" aria-label="选择评估器配置">
+                <option value="">默认</option>
+              </select>
+            </div>
+            <small id="wbEvalConfigHint">加载中...</small>
+          </article>
+        </div>
+        
         <div class="wb-account-status">
           <span class="wb-inline-icon" id="wbStatusIcon" aria-hidden="true"></span>
           <span class="wb-account-status-label" id="wbStatusLabel">运行状态</span>

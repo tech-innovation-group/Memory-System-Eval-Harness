@@ -247,6 +247,8 @@ export function createFormReaders({ $, queryAll, currentBenchmark, currentWorksp
       scenario_model: readText("wbScenarioModel", "deepseek-v4-flash"),
       scenario_base_url: readText("wbScenarioBaseUrl", ""),
       scenario_api_key: readText("wbScenarioApiKey", ""),
+      user_simulator_config: readText("wbUserSimSelect", ""),
+      evaluator_config: readText("wbEvalConfigSelect", ""),
     };
   }
 

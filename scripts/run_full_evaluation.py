@@ -286,12 +286,21 @@ class EvaluationRunner:
 
         # LLM 配置
         llm_config = config.get("llm_config", {})
-        self.evaluator = dynamic_evaluator.MemoryDynamicEvaluator({
+        evaluator_init: dict[str, Any] = {
             "mode": config.get("mode", "dynamic"),
             "num_memories": config.get("num_memories", 10),
             "theme": config.get("theme", ""),
             "llm_config": llm_config,
-        })
+        }
+        if config.get("user_simulator_config"):
+            evaluator_init["user_simulator_config"] = config["user_simulator_config"]
+        if config.get("user_simulator_config_yaml"):
+            evaluator_init["user_simulator_config_yaml"] = config["user_simulator_config_yaml"]
+        if config.get("evaluator_config"):
+            evaluator_init["evaluator_config"] = config["evaluator_config"]
+        if config.get("evaluator_config_yaml"):
+            evaluator_init["evaluator_config_yaml"] = config["evaluator_config_yaml"]
+        self.evaluator = dynamic_evaluator.MemoryDynamicEvaluator(evaluator_init)
 
         # 评测参数
         self.queries_per_test = config.get("queries_per_test", 5)

@@ -7917,6 +7917,10 @@ class Handler(BaseHTTPRequestHandler):
         ):
             return
         # Dynamic evaluation endpoints (GET)
+        # SSE streaming proxy for EchoAgent
+        if parsed.path.startswith("/api/dynamic/streaming"):
+            self._handle_sse_streaming_proxy(parsed)
+            return
         if parsed.path.startswith("/api/dynamic/"):
             if handle_dynamic_eval_get(
                 parsed.path,
@@ -8195,6 +8199,61 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": "path must point to a result file"}, 400)
             return
         self.serve_static(parsed.path)
+
+    def _handle_sse_streaming_proxy(self, parsed) -> None:
+        """Proxy SSE streaming requests to EchoAgent with cookies."""
+        from urllib.parse import parse_qs
+        import urllib.request
+        
+        qs = parse_qs(parsed.query)
+        base_url = qs.get("base_url", ["http://127.0.0.1:31020"])[0]
+        cookies = qs.get("cookies", [""])[0]
+        
+        # Support explicit path or construct from session_id/seq
+        explicit_path = qs.get("path", [""])[0]
+        if explicit_path:
+            stream_url = f"{base_url.rstrip('/')}{explicit_path}"
+        else:
+            session_id = qs.get("session_id", [""])[0]
+            seq = qs.get("seq", ["1"])[0]
+            if not session_id:
+                self.send_json({"error": "session_id or path is required"}, 400)
+                return
+            stream_url = f"{base_url.rstrip('/')}/v1/sessions/{session_id}/context-paths/%2F/streaming?seq={seq}"
+        
+        try:
+            # Create request with cookies
+            req_headers = {
+                "Accept": "text/event-stream",
+                "Last-Event-ID": "-1",
+            }
+            if cookies:
+                req_headers["Cookie"] = cookies
+            
+            req = urllib.request.Request(stream_url, headers=req_headers, method="GET")
+            
+            # Open connection
+            with urllib.request.urlopen(req, timeout=180) as response:
+                # Send SSE headers
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "keep-alive")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                
+                # Stream data
+                while True:
+                    chunk = response.read(1024)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+                    
+        except urllib.error.HTTPError as e:
+            self.send_json({"error": f"EchoAgent error: {e.code}"}, e.code)
+        except Exception as e:
+            self.send_json({"error": str(e)}, 500)
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)

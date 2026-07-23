@@ -1,0 +1,109 @@
+# 评估器配置模板
+# 所有字段都会被解析并影响评估行为
+
+# 评估维度定义
+# 每个维度包含: name(显示名称), max_score(最高分), description(描述)
+# 所有维度分数之和应为100
+dimensions:
+  - name: task_completion_score
+    display_name: "任务完成度"
+    max_score: 15
+    description: "Agent 是否成功完成用户的预期任务"
+
+  - name: fact_coverage_score
+    display_name: "事实覆盖"
+    max_score: 15
+    description: "预期事实被正确使用的程度"
+
+  - name: information_accuracy_score
+    display_name: "信息准确性"
+    max_score: 15
+    description: "信息是否正确，无幻觉"
+
+  - name: response_relevance_score
+    display_name: "回复相关性"
+    max_score: 10
+    description: "是否直接回答用户问题"
+
+  - name: memory_utilization_score
+    display_name: "记忆利用"
+    max_score: 10
+    description: "召回记忆是否有效提升回复"
+
+  - name: response_coherence_score
+    display_name: "回复连贯性"
+    max_score: 10
+    description: "逻辑结构和可读性"
+
+  - name: helpfulness_score
+    display_name: "有用性"
+    max_score: 10
+    description: "回复的帮助程度"
+
+  - name: response_efficiency_score
+    display_name: "回复效率"
+    max_score: 5
+    description: "是否简洁无冗余"
+
+  - name: safety_appropriateness_score
+    display_name: "安全性"
+    max_score: 5
+    description: "是否安全专业"
+
+  - name: user_experience_score
+    display_name: "用户体验"
+    max_score: 5
+    description: "整体满意度"
+
+# 评估Prompt模板
+# 支持占位符: {query}, {reply}, {ground_facts}, {recalled_memories}, {dimension_criteria}
+# 注意: JSON模板中的花括号需要双写 {{ }} 来转义
+evaluate_prompt: |
+  You are an expert evaluator for a memory-augmented AI assistant system.
+  Your task is to comprehensively evaluate the agent's response quality from multiple dimensions.
+
+  ## Context Information
+
+  ### User Query
+  {query}
+
+  ### AI Response
+  {reply}
+
+  ### Expected Background Facts
+  {ground_facts}
+
+  ### Recalled Memories (used by the AI during inference)
+  {recalled_memories}
+
+  ## Evaluation Dimensions (Total: 100 points)
+
+  {dimension_criteria}
+
+  ## Output Format
+
+  Output ONLY a valid JSON object (no markdown code blocks, no extra text):
+
+  {{
+    "score": <0-100 total score>,
+    "dimension_scores": {{
+      "task_completion_score": <0-15>,
+      "fact_coverage_score": <0-15>,
+      "information_accuracy_score": <0-15>,
+      "response_relevance_score": <0-10>,
+      "memory_utilization_score": <0-10>,
+      "response_coherence_score": <0-10>,
+      "helpfulness_score": <0-10>,
+      "response_efficiency_score": <0-5>,
+      "safety_appropriateness_score": <0-5>,
+      "user_experience_score": <0-5>
+    }},
+    "matched_facts": <number of facts correctly used>,
+    "total_facts": <total expected facts>,
+    "recall_helped": true|false,
+    "hallucination_detected": true|false,
+    "task_completed": true|false,
+    "reason": "详细总结评估结果（中文），每个指标详细的给出评分依据",
+    "strengths": ["优点1", "优点2"],
+    "weaknesses": ["不足1", "不足2"]
+  }}

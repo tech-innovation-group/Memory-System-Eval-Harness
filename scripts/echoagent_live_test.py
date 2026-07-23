@@ -298,6 +298,7 @@ def collect_round_metrics(
     send_time: float,
     prefetch_committed: bool,
     last_request: dict[str, Any],
+    memory_items: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     reply = reply_result.get("reply") or ""
     ttft = reply_result.get("ttft_ms")
@@ -328,6 +329,7 @@ def collect_round_metrics(
         "complexity": round_data.get("complexity", ""),
         "ground_facts": round_data.get("ground_facts", []),
         "error": reply_result.get("error", ""),
+        "relevant_memory": json.dumps(memory_items or [], ensure_ascii=False),
     }
 
 
@@ -525,9 +527,12 @@ def save_as_locomo_dataset(
                     if turn.get("speaker") == "user" and fid in turn.get("text", ""):
                         evidence.append(turn.get("dia_id", ""))
                         break
+        # Use ground truth (fact text) as the answer, not the AI's reply
+        fact_texts = [all_facts.get(fid, "") for fid in ground_facts if fid in all_facts]
+        answer = "; ".join(fact_texts) if fact_texts else r.get("reply", "")
         qa_pairs.append({
             "question": r.get("query", ""),
-            "answer": r.get("reply", ""),
+            "answer": answer,
             "evidence": evidence,
             "category": 1,  # Factual by default
         })
@@ -666,6 +671,7 @@ def run_replay_test(
             # Simulate typing + send
             client_turn_id = ""
             prefetch_committed = False
+            memory_items = []
             if len(query) > 2:
                 try:
                     client_turn_id = simulate_typing(
@@ -675,8 +681,10 @@ def run_replay_test(
                     finalize_result = client.prefetch_finalize(qa_session_id, context_path, client_turn_id, query)
                     fin_data = finalize_result.get("data", finalize_result)
                     prefetch_committed = bool(fin_data.get("accepted"))
+                    memory_items = fin_data.get("memoryItems") or []
                 except Exception:
                     client_turn_id = ""
+                    memory_items = []
 
             send_time = time.monotonic()
             try:
@@ -715,7 +723,7 @@ def run_replay_test(
                 "is_injection": False,
                 "complexity": job.category,
             }
-            metrics = collect_round_metrics(round_data, reply_result, send_time, prefetch_committed, {})
+            metrics = collect_round_metrics(round_data, reply_result, send_time, prefetch_committed, {}, memory_items)
             metrics["session_id"] = qa_session_id
             metrics["question_id"] = job.question_id
             metrics["gold_answer"] = answer
@@ -750,7 +758,7 @@ def run_replay_test(
     fieldnames = [
         "round_id", "session_id", "query", "reply_length", "query_length",
         "ttft_ms", "cached_tokens", "prompt_tokens", "prefetch_committed", "is_new_session",
-        "is_injection", "complexity", "error",
+        "is_injection", "complexity", "error", "relevant_memory",
     ]
     with csv_path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
@@ -833,6 +841,18 @@ def run_test(args: argparse.Namespace) -> None:
                 "api_key": args.scenario_api_key,
             },
         }
+        if args.user_simulator_config:
+            sim_path = Path(args.user_simulator_config)
+            if sim_path.is_file():
+                evaluator_config["user_simulator_config_yaml"] = sim_path.read_text(encoding="utf-8")
+            else:
+                evaluator_config["user_simulator_config"] = args.user_simulator_config
+        if args.evaluator_config:
+            eval_path = Path(args.evaluator_config)
+            if eval_path.is_file():
+                evaluator_config["evaluator_config_yaml"] = eval_path.read_text(encoding="utf-8")
+            else:
+                evaluator_config["evaluator_config"] = args.evaluator_config
         evaluator = dynamic_evaluator.MemoryDynamicEvaluator(evaluator_config)
 
         # Generate background memories
@@ -900,6 +920,7 @@ def run_test(args: argparse.Namespace) -> None:
 
             client_turn_id = ""
             prefetch_committed = False
+            memory_items = []
             if not round_data.get("is_injection") and len(query) > 2:
                 try:
                     client_turn_id = simulate_typing(
@@ -913,9 +934,11 @@ def run_test(args: argparse.Namespace) -> None:
                         log(f"    prefetch finalize rejected: reason={fin_data.get('reason', 'unknown')}")
                     else:
                         log(f"    prefetch committed={prefetch_committed}")
+                    memory_items = fin_data.get("memoryItems") or []
                 except Exception as exc:
                     log(f"    prefetch error: {exc}")
                     client_turn_id = ""
+                    memory_items = []
 
             send_time = time.monotonic()
             try:
@@ -966,7 +989,7 @@ def run_test(args: argparse.Namespace) -> None:
             except Exception:
                 pass
 
-            metrics = collect_round_metrics(round_data, reply_result, send_time, prefetch_committed, last_request)
+            metrics = collect_round_metrics(round_data, reply_result, send_time, prefetch_committed, last_request, memory_items)
             metrics["session_id"] = session_id
             all_rounds.append(metrics)
             # Track conversation for locomo export
@@ -1002,7 +1025,7 @@ def run_test(args: argparse.Namespace) -> None:
     fieldnames = [
         "round_id", "session_id", "query", "reply_length", "query_length",
         "ttft_ms", "cached_tokens", "prompt_tokens", "prefetch_committed", "is_new_session",
-        "is_injection", "complexity", "error",
+        "is_injection", "complexity", "error", "relevant_memory",
     ]
     with csv_path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
@@ -1177,7 +1200,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dataset-limit", type=int, default=0, help="Max QA questions to replay, 0=all")
     parser.add_argument("--save-dataset", default="", help="Save generated conversations as locomo-format dataset to this path (e.g. dataset/echoagent_gen_001.json)")
     parser.add_argument("--custom-scenario", default="", help="Custom scenario text. If provided, skip LLM generation and use this scenario directly")
-    
+    parser.add_argument("--user-simulator-config", default="", help="User simulator config name (searched in configs/user_simulator/) or file path")
+    parser.add_argument("--evaluator-config", default="", help="Evaluator config name (searched in configs/evaluator/ or configs/custom/) or file path")
+
     # New options for runtime/accuracy metrics separation
     parser.add_argument("--collect-runtime-metrics", action="store_true", default=True, help="Collect runtime metrics from Prometheus endpoints")
     parser.add_argument("--no-runtime-metrics", action="store_true", help="Disable runtime metrics collection")

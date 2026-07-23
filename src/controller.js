@@ -64,6 +64,8 @@ export function createWorkbenchController(deps) {
   const PERSISTED_FIELD_IDS = new Set([
     "wbAccountSelect",
     "wbBackendSelect",
+    "wbUserSimSelect",
+    "wbEvalConfigSelect",
     "wbDataPath",
     "wbImportSample",
     "wbQaSample",
@@ -1000,6 +1002,30 @@ export function createWorkbenchController(deps) {
           .catch((error) => alertUser(error.message || "切换记忆后端失败"));
         return;
       }
+      // 处理用户模拟器配置选择
+      if (target.id === "wbUserSimSelect") {
+        const configName = target.value || "";
+        state.userSimulatorConfig = configName;
+        persistWorkbenchUiState();
+        // 更新显示名称
+        const nameEl = $("wbUserSimName");
+        if (nameEl) nameEl.textContent = configName || "default";
+        const hintEl = $("wbUserSimHint");
+        if (hintEl) hintEl.textContent = configName ? "已选择" : "使用默认";
+        return;
+      }
+      // 处理评估器配置选择
+      if (target.id === "wbEvalConfigSelect") {
+        const configName = target.value || "";
+        state.evaluatorConfig = configName;
+        persistWorkbenchUiState();
+        // 更新显示名称
+        const nameEl = $("wbEvalConfigName");
+        if (nameEl) nameEl.textContent = configName || "default";
+        const hintEl = $("wbEvalConfigHint");
+        if (hintEl) hintEl.textContent = configName ? "已选择" : "使用默认";
+        return;
+      }
       if (target.id === "wbQaQuestionCategory") {
         state.locomoQuestionFilters = {
           ...(state.locomoQuestionFilters || {}),
@@ -1351,6 +1377,10 @@ export function createWorkbenchController(deps) {
       setActiveBenchmark(restored.activeBenchmark || defaultBenchmarkId);
     }
     setActiveStage(state.activeBenchmark === "locomo" ? "import" : restoredStartupStage);
+    
+    // 加载配置列表
+    loadPromptConfigs();
+    
     loadBootstrapRunner({
       account: restored.selectedAccount || undefined,
     }).then(() => {
@@ -1361,9 +1391,71 @@ export function createWorkbenchController(deps) {
       $("wbImportLogBody").textContent = error.message || "初始化失败";
     });
   }
+  
+  // 加载用户模拟器和评估器配置列表
+  async function loadPromptConfigs() {
+    const standaloneApiBase = deps.standaloneApiBase || "";
+    
+    try {
+      // 加载用户模拟器配置列表
+      const userSimResponse = await fetch(`${standaloneApiBase}/api/dynamic/user_simulators`);
+      if (userSimResponse.ok) {
+        const userSimData = await userSimResponse.json();
+        populateConfigSelect("wbUserSimSelect", userSimData.simulators || [], "wbUserSimHint");
+      }
+    } catch (e) {
+      const hint = $("wbUserSimHint");
+      if (hint) hint.textContent = "加载失败";
+    }
+    
+    try {
+      // 加载评估器配置列表
+      const evalConfigResponse = await fetch(`${standaloneApiBase}/api/dynamic/evaluator_configs`);
+      if (evalConfigResponse.ok) {
+        const evalConfigData = await evalConfigResponse.json();
+        populateConfigSelect("wbEvalConfigSelect", evalConfigData.evaluator_configs || [], "wbEvalConfigHint");
+      }
+    } catch (e) {
+      const hint = $("wbEvalConfigHint");
+      if (hint) hint.textContent = "加载失败";
+    }
+  }
+  
+  // 填充配置选择下拉框
+  function populateConfigSelect(selectId, configs, hintId) {
+    const select = $(selectId);
+    const hint = $(hintId);
+    if (!select) return;
+    
+    // 清空现有选项
+    select.innerHTML = '<option value="">默认</option>';
+    
+    // 添加配置选项
+    for (const config of configs) {
+      const option = document.createElement("option");
+      option.value = config.name || "";
+      option.textContent = config.description || config.name || "";
+      option.title = config.description || "";
+      select.appendChild(option);
+    }
+    
+    if (hint) {
+      hint.textContent = configs.length > 0 ? `${configs.length} 个配置` : "无配置";
+    }
+  }
+  
+  // 获取当前选择的配置
+  function getSelectedConfigs() {
+    return {
+      userSimulator: $("wbUserSimSelect")?.value || "",
+      evaluator: $("wbEvalConfigSelect")?.value || "",
+    };
+  }
 
   return {
     bindEvents,
+    getSelectedConfigs,
+    loadPromptConfigs,
     reconcileAfterBootstrap,
     setActiveBenchmark,
     setActiveStage,

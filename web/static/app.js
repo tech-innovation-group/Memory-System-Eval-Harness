@@ -24075,6 +24075,7 @@ const UI_ICON_PATHS = {
   download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" x2="12" y1="15" y2="3"></line>',
   "external-link": '<path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>',
   copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>',
+  "messages-square": '<path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"></path><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"></path>',
   gauge: '<path d="m12 14 4-4"></path><path d="M3.34 19a10 10 0 1 1 17.32 0"></path>',
   timer: '<line x1="10" x2="14" y1="2" y2="2"></line><line x1="12" x2="15" y1="14" y2="11"></line><circle cx="12" cy="14" r="8"></circle>',
 };
@@ -24125,7 +24126,7 @@ var DynamicEvalDatasetFile = null;
 function initDynamicEvalView() {
   const modeSelect = $("dynamicEvalMode");
   const datasetRow = $("dynamicEvalDatasetRow");
-  const themeRow = $("dynamicEvalThemeRow");
+  const configRow = $("dynamicEvalConfigRow");
   const startBtn = $("startDynamicEval");
   const stopBtn = $("stopDynamicEval");
 
@@ -24135,9 +24136,13 @@ function initDynamicEvalView() {
   function updateModeVisibility() {
     const isStaticMode = modeSelect.value === "static";
     const dsRow = $("dynamicEvalDatasetRow");
-    const thRow = $("dynamicEvalThemeRow");
+    const cfgRow = $("dynamicEvalConfigRow");
+    const userSimWrapper = $("dynamicEvalUserSimConfigWrapper");
+    
     if (dsRow) dsRow.style.display = isStaticMode ? "flex" : "none";
-    if (thRow) thRow.style.display = isStaticMode ? "none" : "flex";
+    if (cfgRow) cfgRow.style.display = "flex";  // Always show config row
+    // Hide user simulator config in static mode (not needed)
+    if (userSimWrapper) userSimWrapper.style.display = isStaticMode ? "none" : "flex";
     
     const numMemoriesInput = $("dynamicEvalNumMemories");
     const numQueriesInput = $("dynamicEvalNumQueries");
@@ -24189,6 +24194,39 @@ function initDynamicEvalView() {
   // Bind mode change listener (remove old listener first)
   modeSelect.removeEventListener("change", updateModeVisibility);
   modeSelect.addEventListener("change", updateModeVisibility);
+
+  // Bind config file change handlers
+  const userSimConfigFile = $("dynamicEvalUserSimConfigFile");
+  const userSimConfigFileName = $("dynamicEvalUserSimConfigFileName");
+  const evaluatorConfigFile = $("dynamicEvalEvaluatorConfigFile");
+  const evaluatorConfigFileName = $("dynamicEvalEvaluatorConfigFileName");
+  
+  if (userSimConfigFile) {
+    userSimConfigFile.removeEventListener("change", handleUserSimConfigFile);
+    userSimConfigFile.addEventListener("change", handleUserSimConfigFile);
+  }
+  if (evaluatorConfigFile) {
+    evaluatorConfigFile.removeEventListener("change", handleEvaluatorConfigFile);
+    evaluatorConfigFile.addEventListener("change", handleEvaluatorConfigFile);
+  }
+
+  function handleUserSimConfigFile(event) {
+    const file = event.target.files[0];
+    if (file && userSimConfigFileName) {
+      userSimConfigFileName.textContent = file.name;
+    } else if (userSimConfigFileName) {
+      userSimConfigFileName.textContent = "默认: realistic";
+    }
+  }
+
+  function handleEvaluatorConfigFile(event) {
+    const file = event.target.files[0];
+    if (file && evaluatorConfigFileName) {
+      evaluatorConfigFileName.textContent = file.name;
+    } else if (evaluatorConfigFileName) {
+      evaluatorConfigFileName.textContent = "默认: memory_focused";
+    }
+  }
 
   // Bind file input change handler
   const fileInput = $("dynamicEvalDatasetFile");
@@ -24245,6 +24283,12 @@ function handleDynamicEvalDatasetFile(event) {
           // Also extract queries if available
           if (data.dataset_queries && Array.isArray(data.dataset_queries)) {
             DynamicEvalState.parsedQueries = data.dataset_queries;
+          } else {
+            // If no dataset_queries, extract from samples
+            const extractedQueries = extractQueriesFromDataset(data);
+            if (extractedQueries.length > 0) {
+              DynamicEvalState.parsedQueries = extractedQueries;
+            }
           }
           // Display in facts list
           renderDynamicEvalFacts(memories);
@@ -24421,6 +24465,80 @@ function extractBackgroundMemoriesFromDataset(data) {
   return memories.slice(0, 50);
 }
 
+/**
+ * Extract user queries from dataset samples.
+ * Used in static mode to replay actual user queries from the dataset.
+ */
+function extractQueriesFromDataset(data) {
+  const queries = [];
+  
+  // Handle our exported format: samples[].conversation[].turns[]
+  if (data.samples && Array.isArray(data.samples)) {
+    for (const sample of data.samples) {
+      const conversation = sample.conversation;
+      if (!conversation || typeof conversation !== "object") continue;
+      
+      for (const [sessionId, sessionData] of Object.entries(conversation)) {
+        if (!sessionData || typeof sessionData !== "object") continue;
+        const turns = sessionData.turns;
+        if (!Array.isArray(turns)) continue;
+        
+        for (const turn of turns) {
+          if (!turn || typeof turn !== "object") continue;
+          const speaker = turn.speaker || turn.role || "";
+          if (speaker === "user") {
+            const text = turn.text || turn.content || "";
+            const groundFacts = turn.ground_facts || [];
+            if (text) {
+              queries.push({
+                query: text,
+                ground_facts: groundFacts,
+                complexity: turn.complexity || "medium",
+                reasoning: turn.reasoning || "From dataset sample",
+              });
+            }
+          }
+        }
+      }
+    }
+    if (queries.length > 0) {
+      return queries;
+    }
+  }
+  
+  // Handle LoCoMo format: array of samples with conversation
+  if (Array.isArray(data)) {
+    for (const sample of data) {
+      if (!sample || typeof sample !== "object") continue;
+      const conversation = sample.conversation || sample.dialogue || sample.history;
+      if (!conversation || typeof conversation !== "object") continue;
+      
+      for (const [key, turns] of Object.entries(conversation)) {
+        if (key.endsWith("_date_time")) continue;
+        if (!Array.isArray(turns)) continue;
+        
+        for (const turn of turns) {
+          if (!turn || typeof turn !== "object") continue;
+          const speaker = turn.speaker || turn.role || "";
+          if (speaker === "speaker_a" || speaker === "user") {
+            const text = turn.text || turn.content || "";
+            if (text) {
+              queries.push({
+                query: text,
+                ground_facts: [],
+                complexity: "medium",
+                reasoning: "From LoCoMo dataset",
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  return queries;
+}
+
 // ---------------------------------------------------------------------------
 // EchoAgent Client Functions
 // ---------------------------------------------------------------------------
@@ -24447,10 +24565,18 @@ async function echoAgentDirectFetch(baseUrl, method, path, headers, body) {
   // Add CSRF token for mutation requests
   if (EchoAgentSession.csrfToken && method !== "GET" && method !== "HEAD") {
     fetchOptions.headers["X-CSRF-Token"] = EchoAgentSession.csrfToken;
+    console.log("[echoAgentDirectFetch] Adding CSRF token for", method, path, "token:", EchoAgentSession.csrfToken.substring(0, 8) + "...");
+  } else if (method !== "GET" && method !== "HEAD") {
+    console.log("[echoAgentDirectFetch] WARNING: No CSRF token available for", method, path, "csrfToken:", EchoAgentSession.csrfToken);
   }
   
   var response = await fetch(url, fetchOptions);
   var responseText = await response.text();
+  
+  // Debug log for auth-related requests
+  if (path.includes("login") || path.includes("session")) {
+    console.log("[echoAgentDirectFetch]", method, path, "status:", response.status, "response:", responseText.substring(0, 200));
+  }
   
   // Try to parse as JSON
   var data;
@@ -24476,7 +24602,10 @@ async function echoAgentProxy(baseUrl, method, path, headers, body) {
   }
   if (EchoAgentSession.csrfToken && method !== "GET" && method !== "HEAD") {
     reqHeaders["X-CSRF-Token"] = EchoAgentSession.csrfToken;
+    console.log("[echoAgentProxy] Adding CSRF token for", method, path);
   }
+  
+  console.log("[echoAgentProxy] Request:", method, path, "cookies:", EchoAgentSession.cookies ? EchoAgentSession.cookies.length : 0);
   
   var response = await fetch("/api/dynamic/echo_agent", {
     method: "POST",
@@ -24491,6 +24620,8 @@ async function echoAgentProxy(baseUrl, method, path, headers, body) {
     }),
   });
   var respData = await response.json();
+  
+  console.log("[echoAgentProxy] Response:", path, "status:", respData.status, "cookies received:", respData.cookies ? respData.cookies.length : 0);
   
   if (respData.cookies && respData.cookies.length > 0) {
     EchoAgentSession.cookies = respData.cookies;
@@ -24520,24 +24651,19 @@ async function echoAgentFetch(baseUrl, method, path, headers, body) {
 // Login to EchoAgent
 async function echoAgentLogin(baseUrl, username, password) {
   try {
-    // Try direct access first (works if CORS is configured)
-    try {
-      var data = await echoAgentDirectFetch(baseUrl, "POST", "/v1/auth/login", {}, { username: username, password: password });
-      EchoAgentSession.directAccess = true;
-      if (data.csrfToken) {
-        EchoAgentSession.csrfToken = data.csrfToken;
-      }
-      return { csrfToken: data.csrfToken || "", user: data.user || null };
-    } catch (directError) {
-      console.log("Direct access failed, using proxy:", directError.message);
-      EchoAgentSession.directAccess = false;
-      // Fallback to proxy
-      var proxyData = await echoAgentProxy(baseUrl, "POST", "/v1/auth/login", {}, { username: username, password: password });
-      if (proxyData.csrfToken) {
-        EchoAgentSession.csrfToken = proxyData.csrfToken;
-      }
-      return { csrfToken: proxyData.csrfToken || "", user: proxyData.user || null };
+    // Always use proxy mode for login to ensure cookies are properly captured.
+    // Direct access won't work for subsequent POST requests because
+    // SameSite=lax cookies won't be sent on cross-origin POST.
+    EchoAgentSession.directAccess = false;
+    
+    var proxyData = await echoAgentProxy(baseUrl, "POST", "/v1/auth/login", {}, { username: username, password: password });
+    // CSRF token may be at proxyData.csrfToken or proxyData.data.csrfToken
+    var csrfToken = proxyData.csrfToken || (proxyData.data && proxyData.data.csrfToken) || "";
+    if (csrfToken) {
+      EchoAgentSession.csrfToken = csrfToken;
     }
+    console.log("EchoAgent login success (proxy), csrfToken:", csrfToken ? "received" : "not found", "cookies:", EchoAgentSession.cookies ? EchoAgentSession.cookies.length : 0);
+    return { csrfToken: csrfToken, user: proxyData.user || (proxyData.data && proxyData.data.user) || null };
   } catch (e) {
     throw new Error("登录失败: " + e.message);
   }
@@ -24550,129 +24676,34 @@ async function echoAgentCreateSession(baseUrl, _token, title, memoryEngineEndpoi
   
   // Enable memory engine if provided
   if (sessionId && memoryEngineEndpoint) {
+    console.log(`[echoAgentCreateSession] Enabling memory engine for session ${sessionId}, endpoint: ${memoryEngineEndpoint}`);
     try {
       // Step 1: Test the memory engine endpoint first (required before enabling)
-      await echoAgentFetch(
+      const testResult = await echoAgentFetch(
         baseUrl,
         "POST",
         "/v1/sessions/" + sessionId + "/memory-engine/test",
         {},
         { endpoint: memoryEngineEndpoint }
       );
+      console.log(`[echoAgentCreateSession] Memory engine test result:`, testResult);
       
       // Step 2: Enable the memory engine
-      await echoAgentFetch(
+      const enableResult = await echoAgentFetch(
         baseUrl,
         "PUT",
         "/v1/sessions/" + sessionId + "/memory-engine",
         {},
         { enabled: true, endpoint: memoryEngineEndpoint }
       );
+      console.log(`[echoAgentCreateSession] Memory engine enabled:`, enableResult);
     } catch (e) {
-      console.warn("Failed to enable memory engine:", e);
+      console.warn("[echoAgentCreateSession] Failed to enable memory engine:", e);
     }
+  } else {
+    console.log(`[echoAgentCreateSession] Skipping memory engine setup: sessionId=${sessionId}, endpoint=${memoryEngineEndpoint}`);
   }
   return sessionId;
-}
-
-// Start SSE listener to collect recalled memories during message processing
-// Returns {stop: function, getMemories: function, ready: Promise}
-function startMemoryEventListener(baseUrl, sessionId) {
-  var eventUrl = baseUrl + "/v1/sessions/" + sessionId + "/session-events?include_snapshot=0";
-  var recalledMemories = [];
-  var done = false;
-  var reader = null;
-  var readyResolve = null;
-  var readyPromise = new Promise(function(resolve) {
-    readyResolve = resolve;
-  });
-  
-  // Start SSE connection
-  fetch(eventUrl, {
-    method: "GET",
-    credentials: "include",
-    headers: {
-      "Accept": "text/event-stream",
-      "Last-Event-ID": "-1"
-    }
-  }).then(function(response) {
-    if (!response.ok) {
-      readyResolve();  // Resolve anyway to not block
-      return;
-    }
-    
-    // Connection established, signal ready
-    readyResolve();
-    
-    reader = response.body.getReader();
-    var decoder = new TextDecoder();
-    var buffer = "";
-    
-    function readChunk() {
-      if (done) return;
-      reader.read().then(function(result) {
-        if (result.done || done) {
-          return;
-        }
-        
-        buffer += decoder.decode(result.value, { stream: true });
-        var lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-        
-        var eventType = "";
-        var eventData = "";
-        
-        for (var i = 0; i < lines.length; i++) {
-          var line = lines[i];
-          if (line.startsWith("event:")) {
-            eventType = line.substring(6).trim();
-          } else if (line.startsWith("data:")) {
-            eventData = line.substring(5).trim();
-          } else if (line === "" && eventType && eventData) {
-            // Process debug_prefill event with memory entries
-            if (eventType === "debug_prefill") {
-              try {
-                var data = JSON.parse(eventData);
-                if (data.entries && data.entries.length > 0) {
-                  recalledMemories = data.entries.map(function(e) {
-                    return {
-                      memoryId: e.memoryId || "",
-                      text: e.text || "",
-                      score: e.score || 0,
-                      kind: e.kind || ""
-                    };
-                  });
-                }
-              } catch (parseErr) {}
-            }
-            eventType = "";
-            eventData = "";
-          }
-        }
-        
-        readChunk();
-      }).catch(function(err) {
-        // Ignore errors
-      });
-    }
-    
-    readChunk();
-  }).catch(function(err) {
-    readyResolve();  // Resolve anyway to not block
-  });
-  
-  return {
-    stop: function() {
-      done = true;
-      if (reader) {
-        try { reader.cancel(); } catch (e) {}
-      }
-    },
-    getMemories: function() {
-      return recalledMemories;
-    },
-    ready: readyPromise
-  };
 }
 
 // Simulate typing by sending tick events to EchoAgent prefetch API
@@ -24689,6 +24720,64 @@ async function simulateTyping(baseUrl, sessionId, content, typingSpeedMs, onChar
   // Generate a random clientTurnId for this turn
   var tickRevision = 1;
   var currentText = "";
+  
+  // Memory items collected from finalize response
+  var memoryItems = [];
+
+  // If typing speed is very fast (< 50ms), skip character-by-character tick events
+  // but still need to establish WebSocket connection first, then send finalize
+  if (typingSpeedMs < 50) {
+    console.log(`[simulateTyping] Fast typing mode (${typingSpeedMs}ms), sending tick to establish connection then finalize`);
+    // Update UI to show complete text immediately
+    if (onChar) {
+      onChar(content);
+    }
+    
+    // First, send a tick to establish WebSocket connection
+    // This is necessary because finalize requires an existing connection
+    try {
+      const tickResult = await echoAgentFetch(
+        baseUrl,
+        "POST",
+        "/v1/sessions/" + sessionId + "/context-paths/" + contextPath + "/prefetch/tick",
+        {},
+        {
+          clientTurnId: clientTurnId,
+          revision: 1,
+          draftText: content,
+        }
+      );
+      console.log(`[simulateTyping] initial tick: accepted=${tickResult?.data?.accepted}`);
+    } catch (tickErr) {
+      console.warn("[simulateTyping] initial tick failed:", tickErr);
+    }
+    
+    // Wait for WebSocket connection to be established and memory recall to complete
+    // This is critical - without this wait, finalize may be sent before connection is ready
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Then send finalize to trigger memory recall
+    try {
+      const finalizeResult = await echoAgentFetch(
+        baseUrl,
+        "POST",
+        "/v1/sessions/" + sessionId + "/context-paths/" + contextPath + "/prefetch/finalize",
+        {},
+        {
+          clientTurnId: clientTurnId,
+          revision: 2,
+          fullContent: content,
+        }
+      );
+      const finData = finalizeResult?.data || finalizeResult || {};
+      memoryItems = finData.memoryItems || [];
+      console.log(`[simulateTyping] finalize: accepted=${finData.accepted}, committedCount=${finData.committedCount}, memoryItems=${memoryItems.length}`);
+    } catch (finalizeErr) {
+      console.warn("[simulateTyping] finalize failed:", finalizeErr);
+    }
+    
+    return { clientTurnId: clientTurnId, memoryItems: memoryItems };
+  }
   
   // Send tick events character by character
   for (let i = 0; i < content.length; i++) {
@@ -24734,13 +24823,15 @@ async function simulateTyping(baseUrl, sessionId, content, typingSpeedMs, onChar
         fullContent: content,
       }
     );
-    console.log(`[simulateTyping] finalize: accepted=${finalizeResult?.data?.accepted}, committedCount=${finalizeResult?.data?.committedCount}`);
+    const finData = finalizeResult?.data || finalizeResult || {};
+    memoryItems = finData.memoryItems || [];
+    console.log(`[simulateTyping] finalize: accepted=${finData.accepted}, committedCount=${finData.committedCount}, memoryItems=${memoryItems.length}`);
   } catch (finalizeErr) {
     console.warn("[simulateTyping] finalize failed:", finalizeErr);
     // Continue anyway - finalize is optional
   }
   
-  return clientTurnId;
+  return { clientTurnId: clientTurnId, memoryItems: memoryItems };
 }
 
 // Send a message to the session
@@ -24798,14 +24889,21 @@ async function echoAgentStreamReply(baseUrl, _token, sessionId, seq, onChunk) {
   var cachedTokens = 0;
   var promptTokens = 0;
   var contextPath = encodeURIComponent("/");
-  var streamUrl = baseUrl + "/v1/sessions/" + sessionId + "/context-paths/" + contextPath + "/streaming?seq=" + seq;
+  
+  console.log("[echoAgentStreamReply] Starting SSE stream, cookies:", EchoAgentSession.cookies ? EchoAgentSession.cookies.length : 0);
+  
+  // Use backend SSE proxy instead of direct connection
+  var streamUrl = "/api/dynamic/streaming?" + 
+    "base_url=" + encodeURIComponent(baseUrl) +
+    "&session_id=" + encodeURIComponent(sessionId) +
+    "&seq=" + encodeURIComponent(seq) +
+    "&cookies=" + encodeURIComponent(EchoAgentSession.cookies ? EchoAgentSession.cookies.join("; ") : "");
   
   // Use fetch with Last-Event-ID header (required by EchoAgent)
   var response;
   try {
     response = await fetch(streamUrl, {
       method: "GET",
-      credentials: "include",
       headers: {
         "Accept": "text/event-stream",
         "Last-Event-ID": "-1"  // Required by EchoAgent for initial connection
@@ -24917,6 +25015,18 @@ async function startDynamicEval() {
   DynamicEvalState.avgTtft = null;
   DynamicEvalState.avgCachedTokens = null;
   DynamicEvalState.newSessionCount = 0;
+  clearConversationHistory();
+
+  // Clear stop flag from previous run
+  const prevEvaluatorId = DynamicEvalState.evaluatorId;
+  if (prevEvaluatorId) {
+    api(`/api/dynamic/evaluators/${prevEvaluatorId}`, {
+      method: "POST",
+      body: JSON.stringify({ action: "clear_stop" }),
+    }).catch(err => {
+      console.warn("[startDynamicEval] Failed to clear stop flag:", err);
+    });
+  }
 
   // Read configuration
   const mode = $("dynamicEvalMode")?.value || "dynamic";
@@ -24929,7 +25039,20 @@ async function startDynamicEval() {
     numMemories = parseInt($("dynamicEvalNumMemories")?.value || "10", 10);
     numQueries = parseInt($("dynamicEvalNumQueries")?.value || "5", 10);
   }
-  const theme = $("dynamicEvalTheme")?.value || "";
+  // Get config file contents
+  let userSimConfigContent = null;
+  let evaluatorConfigContent = null;
+  
+  const userSimConfigFileEl = $("dynamicEvalUserSimConfigFile");
+  const evaluatorConfigFileEl = $("dynamicEvalEvaluatorConfigFile");
+  
+  if (userSimConfigFileEl?.files?.[0]) {
+    userSimConfigContent = await userSimConfigFileEl.files[0].text();
+  }
+  if (evaluatorConfigFileEl?.files?.[0]) {
+    evaluatorConfigContent = await evaluatorConfigFileEl.files[0].text();
+  }
+  
   const newSessionRatio = parseFloat($("dynamicEvalNewSessionRatio")?.value || "0.3");
   const echoAgentUrl = $("dynamicEvalEchoAgentUrl")?.value || "http://127.0.0.1:31020";
   const model = $("dynamicEvalModel")?.value || "deepseek-v4-flash";
@@ -24964,7 +25087,8 @@ async function startDynamicEval() {
       config = {
         mode: "static",
         num_memories: DynamicEvalState.parsedMemories.length,
-        custom_scenario: DynamicEvalState.parsedMemories.map(m => m.text).join("\n"),
+        parsed_memories: DynamicEvalState.parsedMemories.map(m => ({ id: m.id, text: m.text })),
+        evaluator_config_yaml: evaluatorConfigContent || undefined,
         llm_config: {
           model,
           base_url: modelBaseUrl || undefined,
@@ -24976,7 +25100,8 @@ async function startDynamicEval() {
       config = {
         mode,
         num_memories: numMemories,
-        theme,
+        user_simulator_config_yaml: userSimConfigContent || undefined,
+        evaluator_config_yaml: evaluatorConfigContent || undefined,
         llm_config: {
           model,
           base_url: modelBaseUrl || undefined,
@@ -25026,6 +25151,7 @@ async function startDynamicEval() {
             session_id: injectSessionId,
             memories: DynamicEvalState.memories,
             user_id: evalUserId,  // Use the same user as EchoAgent session
+            evaluator_id: DynamicEvalState.evaluatorId,  // For stop flag checking
           }),
         });
         const injectResult = await injectResponse.json();
@@ -25084,6 +25210,9 @@ async function runDynamicEvalRound(roundIndex, options) {
   const needNewSession = roundIndex === 0 ||
     (DynamicEvalState.results.length > 0 && Math.random() < newSessionRatio);
 
+  // Check if stopped
+  if (!DynamicEvalState.isRunning) return;
+
   if (needNewSession || !DynamicEvalState.echoAgentSessionId) {
     updateStatus(`正在创建新会话...`);
     DynamicEvalState.echoAgentSessionId = await echoAgentCreateSession(
@@ -25095,48 +25224,81 @@ async function runDynamicEvalRound(roundIndex, options) {
     DynamicEvalState.echoAgentContextSeq = 0;
     DynamicEvalState.newSessionCount++;
     updateMetrics();
+    appendSessionSeparator(DynamicEvalState.newSessionCount, DynamicEvalState.echoAgentSessionId);
   }
+
+  // Check if stopped
+  if (!DynamicEvalState.isRunning) return;
 
   // Generate next query
-  updateStatus(`正在生成查询 (${roundIndex + 1}/${DynamicEvalState.totalRounds})...`);
-  const queryResponse = await fetch("/api/dynamic/generate_user_query", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      evaluator_id: DynamicEvalState.evaluatorId,
-      context: {
-        round_index: roundIndex,
-        previous_queries: DynamicEvalState.results.map((r) => r.query),
-        previous_replies: DynamicEvalState.results.map((r) => r.reply),
-        is_new_session: needNewSession,
-      },
-    }),
-  });
+  // In static mode with parsed queries, use them directly instead of calling backend
+  let query, groundFacts, complexity, newSessionHint;
+  const mode = $("dynamicEvalMode")?.value || "dynamic";
+  
+  if (mode === "static") {
+    // Static mode: MUST use pre-parsed queries from dataset
+    if (!DynamicEvalState.parsedQueries || DynamicEvalState.parsedQueries.length === 0) {
+      throw new Error("静态模式需要数据集包含用户查询，但未能解析到任何查询。请确保数据集包含 samples[].conversation[].turns 或 dataset_queries 字段。");
+    }
+    if (roundIndex >= DynamicEvalState.parsedQueries.length) {
+      throw new Error(`静态模式查询索引超出范围：round ${roundIndex + 1}，但数据集只有 ${DynamicEvalState.parsedQueries.length} 条查询。`);
+    }
+    // Use pre-parsed query from dataset
+    const parsedQuery = DynamicEvalState.parsedQueries[roundIndex];
+    query = parsedQuery.query || parsedQuery.text || String(parsedQuery);
+    groundFacts = parsedQuery.ground_facts || [];
+    complexity = parsedQuery.complexity || "medium";
+    newSessionHint = parsedQuery.new_session_hint || false;
+    updateStatus(`使用数据集查询 (${roundIndex + 1}/${DynamicEvalState.totalRounds})...`);
+  } else {
+    // Dynamic mode: Generate query via backend
+    updateStatus(`正在生成查询 (${roundIndex + 1}/${DynamicEvalState.totalRounds})...`);
+    const queryResponse = await fetch("/api/dynamic/generate_user_query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        evaluator_id: DynamicEvalState.evaluatorId,
+        context: {
+          round_index: roundIndex,
+          previous_queries: DynamicEvalState.results.map((r) => r.query),
+          previous_replies: DynamicEvalState.results.map((r) => r.reply),
+          is_new_session: needNewSession,
+        },
+      }),
+    });
 
-  if (!queryResponse.ok) {
-    throw new Error(`生成查询失败: ${queryResponse.status}`);
+    if (!queryResponse.ok) {
+      throw new Error(`生成查询失败: ${queryResponse.status}`);
+    }
+
+    const queryData = await queryResponse.json();
+    query = queryData.query;
+    groundFacts = queryData.ground_facts || [];
+    complexity = queryData.complexity || "simple";
+    newSessionHint = queryData.new_session_hint || false;
   }
-
-  const queryData = await queryResponse.json();
-  const query = queryData.query;
-  const groundFacts = queryData.ground_facts || [];
-  const complexity = queryData.complexity || "simple";
-  const newSessionHint = queryData.new_session_hint || false;
 
   // Update current query display
   updateCurrentRound(query, "", complexity, needNewSession);
 
-  // Start SSE listener BEFORE sending message to capture recall events
-  const memoryListener = startMemoryEventListener(echoAgentUrl, DynamicEvalState.echoAgentSessionId);
-  
-  // Wait for SSE connection to be ready before sending message
-  await memoryListener.ready;
+  // Append user turn to conversation history
+  appendConversationTurn("user", query, {
+    round: roundIndex + 1,
+    is_new_session: needNewSession,
+    sessionId: DynamicEvalState.echoAgentSessionId,
+  });
+
+  // Check if stopped
+  if (!DynamicEvalState.isRunning) return;
 
   // Send message to EchoAgent
   updateStatus(`正在发送查询到 EchoAgent...`);
   
   // Read typing speed configuration
   const typingSpeedMs = parseInt($("dynamicEvalTypingSpeed")?.value || "200", 10);
+  
+  // Memory items from finalize response
+  var memoryItemsFromFinalize = [];
   
   // Simulate typing before sending message
   if (typingSpeedMs > 0) {
@@ -25150,7 +25312,7 @@ async function runDynamicEvalRound(roundIndex, options) {
       }
     };
     
-    await simulateTyping(
+    const typingResult = await simulateTyping(
       echoAgentUrl,
       DynamicEvalState.echoAgentSessionId,
       query,
@@ -25158,18 +25320,31 @@ async function runDynamicEvalRound(roundIndex, options) {
       onTypingChar
     );
     
+    // Extract memory items from finalize response
+    memoryItemsFromFinalize = typingResult?.memoryItems || [];
+    console.log(`[runDynamicEvalRound] Memory items from finalize: ${memoryItemsFromFinalize.length}`);
+    
+    // Small delay to ensure finalize request is sent before message
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
     // Remove cursor after typing complete
     if (queryEl) {
       queryEl.textContent = query;
     }
   }
   
+  // Check if stopped before sending message
+  if (!DynamicEvalState.isRunning) return;
+
   const seq = await echoAgentSendMessage(
     echoAgentUrl,
     DynamicEvalState.echoAgentToken,
     DynamicEvalState.echoAgentSessionId,
     query
   );
+
+  // Check if stopped after sending message
+  if (!DynamicEvalState.isRunning) return;
 
   // Stream reply
   updateStatus(`正在接收回复...`);
@@ -25195,19 +25370,36 @@ async function runDynamicEvalRound(roundIndex, options) {
   const replyEl = $("dynamicEvalCurrentReply");
   if (replyEl) replyEl.textContent = replyResult.reply || "(无回复)";
 
-  // Stop SSE listener and collect recalled memories
-  updateStatus(`正在收集召回记忆...`);
-  memoryListener.stop();
-  const recalledMemories = memoryListener.getMemories();
+  // Append agent turn to conversation history
+  appendConversationTurn("agent", replyResult.reply || "(无回复)", {
+    round: roundIndex + 1,
+    sessionId: DynamicEvalState.echoAgentSessionId,
+  });
+
+  // Check if stopped before collecting memories
+  if (!DynamicEvalState.isRunning) return;
+
+  // Use memory items from finalize response directly
+  var finalMemoryItems = memoryItemsFromFinalize || [];
+  console.log("[runDynamicEvalRound] Memory items from finalize:", finalMemoryItems.length);
+
+  // Check if stopped
+  if (!DynamicEvalState.isRunning) return;
 
   // Evaluate response quality (call backend API)
   updateStatus(`正在评估回复质量...`);
   let qualityScore = null;
   let qualityReason = "";
+  let dimensionScores = null;
+  let dimensionInfo = null;
   let factCoverageScore = null;
   let accuracyScore = null;
   let relevanceScore = null;
   let recallQualityScore = null;
+  let hallucinationDetected = false;
+  let taskCompleted = false;
+  let strengths = [];
+  let weaknesses = [];
   try {
     const evalResponse = await fetch("/api/dynamic/evaluate_response", {
       method: "POST",
@@ -25217,17 +25409,24 @@ async function runDynamicEvalRound(roundIndex, options) {
         query: query,
         reply: replyResult.reply || "",
         ground_facts: groundFacts,
-        recalled_memories: recalledMemories,
+        recalled_memories: finalMemoryItems,
       }),
     });
     if (evalResponse.ok) {
       const evalData = await evalResponse.json();
       qualityScore = evalData.score;
       qualityReason = evalData.reason || "";
+      dimensionScores = evalData.dimension_scores || null;
+      dimensionInfo = evalData.dimension_info || null;
+      // Legacy scores for backward compatibility
       factCoverageScore = evalData.fact_coverage_score;
       accuracyScore = evalData.accuracy_score;
       relevanceScore = evalData.relevance_score;
       recallQualityScore = evalData.recall_quality_score;
+      hallucinationDetected = evalData.hallucination_detected || false;
+      taskCompleted = evalData.task_completed || false;
+      strengths = evalData.strengths || [];
+      weaknesses = evalData.weaknesses || [];
     }
   } catch (e) {
     console.warn("Quality evaluation failed:", e);
@@ -25243,12 +25442,20 @@ async function runDynamicEvalRound(roundIndex, options) {
     cached_tokens: replyResult.cachedTokens || 0,
     prompt_tokens: replyResult.promptTokens || 0,
     ground_facts: groundFacts,
-    recalled_memories: recalledMemories,
+    recalled_memories: finalMemoryItems,
+    relevant_memory: finalMemoryItems,
     quality_score: qualityScore,
+    dimension_scores: dimensionScores,
+    dimension_info: dimensionInfo,
+    // Legacy scores for backward compatibility
     fact_coverage_score: factCoverageScore,
     accuracy_score: accuracyScore,
     relevance_score: relevanceScore,
     recall_quality_score: recallQualityScore,
+    hallucination_detected: hallucinationDetected,
+    task_completed: taskCompleted,
+    strengths: strengths,
+    weaknesses: weaknesses,
     quality_reason: qualityReason,
     complexity,
     is_new_session: needNewSession,
@@ -25289,6 +25496,63 @@ function updateCurrentRound(query, reply, complexity, isNewSession) {
   if (replyEl) replyEl.textContent = reply || "等待回复...";
   if (complexityEl) complexityEl.textContent = complexity || "-";
   if (isNewSessionEl) isNewSessionEl.textContent = isNewSession ? "新会话" : "同会话";
+}
+
+function clearConversationHistory(sessionLabel) {
+  const listEl = $("dynamicEvalConversationList");
+  if (listEl) listEl.innerHTML = "";
+  const tagEl = $("dynamicEvalConvSessionTag");
+  if (tagEl) tagEl.textContent = sessionLabel || "尚无会话";
+}
+
+function appendSessionSeparator(sessionNum, sessionId) {
+  const listEl = $("dynamicEvalConversationList");
+  if (!listEl) return;
+  const emptyEl = listEl.querySelector(".dynamic-eval-empty");
+  if (emptyEl) emptyEl.remove();
+  const sepEl = document.createElement("div");
+  sepEl.className = "dynamic-eval-conversation-session-divider";
+  const shortId = sessionId ? sessionId.substring(0, 8) : "";
+  sepEl.innerHTML =
+    '<span class="dynamic-eval-conversation-session-divider-label">' +
+    "新会话 · Session " + sessionNum +
+    (shortId ? ' · <code title="' + sessionId + '">' + shortId + "</code>" : "") +
+    "</span>";
+  listEl.appendChild(sepEl);
+  listEl.scrollTop = listEl.scrollHeight;
+  const tagEl = $("dynamicEvalConvSessionTag");
+  if (tagEl) tagEl.textContent = "Session " + sessionNum;
+}
+
+function appendConversationTurn(role, text, meta) {
+  const listEl = $("dynamicEvalConversationList");
+  if (!listEl) return;
+
+  // Remove empty-state placeholder
+  const emptyEl = listEl.querySelector(".dynamic-eval-empty");
+  if (emptyEl) emptyEl.remove();
+
+  const turnEl = document.createElement("div");
+  turnEl.className = `dynamic-eval-conversation-turn dynamic-eval-conversation-turn--${role}`;
+
+  const roleLabel = role === "user" ? "用户" : "助手";
+  const roundLabel = meta && meta.round != null ? ` · 轮次 ${meta.round}` : "";
+  const newSessionLabel = meta && meta.is_new_session ? " · 新会话" : "";
+  const shortSid = meta && meta.sessionId ? meta.sessionId.substring(0, 8) : "";
+  const sessionLabel = shortSid
+    ? ` · <code title="${meta.sessionId}">${shortSid}</code>`
+    : "";
+
+  turnEl.innerHTML =
+    '<div class="dynamic-eval-conversation-turn-meta">' +
+    '<span class="dynamic-eval-conversation-turn-role">' + roleLabel + '</span>' +
+    '<span>' + roundLabel + newSessionLabel + sessionLabel + '</span>' +
+    '</div>' +
+    '<div class="dynamic-eval-conversation-turn-bubble"></div>';
+  turnEl.querySelector(".dynamic-eval-conversation-turn-bubble").textContent = text || "(空)";
+
+  listEl.appendChild(turnEl);
+  listEl.scrollTop = listEl.scrollHeight;
 }
 
 function updateMetrics() {
@@ -25333,14 +25597,25 @@ function showDynamicEvalResults() {
   const qualityScores = DynamicEvalState.results.filter((r) => r.quality_score != null).map((r) => r.quality_score);
   const avgQuality = qualityScores.length > 0 ? Math.round(qualityScores.reduce((a, b) => a + b, 0) / qualityScores.length) : null;
 
-  // Count total recalled memories
-  const totalRecalled = DynamicEvalState.results.reduce((sum, r) => sum + (r.recalled_memories?.length || 0), 0);
+  // Count total recalled memories (use relevant_memory from finalize, fallback to recalled_memories from SSE)
+  const totalRecalled = DynamicEvalState.results.reduce((sum, r) => sum + (r.relevant_memory?.length || r.recalled_memories?.length || 0), 0);
 
-  // Calculate average individual scores
-  const avgFactCoverage = qualityScores.length > 0 ? Math.round(qualityScores.reduce((a, b) => a + (DynamicEvalState.results[qualityScores.indexOf(b)]?.fact_coverage_score || 0), 0) / qualityScores.length) : null;
-  const avgAccuracy = qualityScores.length > 0 ? Math.round(qualityScores.reduce((a, b) => a + (DynamicEvalState.results[qualityScores.indexOf(b)]?.accuracy_score || 0), 0) / qualityScores.length) : null;
-  const avgRelevance = qualityScores.length > 0 ? Math.round(qualityScores.reduce((a, b) => a + (DynamicEvalState.results[qualityScores.indexOf(b)]?.relevance_score || 0), 0) / qualityScores.length) : null;
-  const avgRecallQuality = qualityScores.length > 0 ? Math.round(qualityScores.reduce((a, b) => a + (DynamicEvalState.results[qualityScores.indexOf(b)]?.recall_quality_score || 0), 0) / qualityScores.length) : null;
+  // Calculate average dimension scores dynamically
+  const avgDimensionScores = {};
+  const firstResult = DynamicEvalState.results.find(r => r.dimension_scores && r.dimension_info);
+  if (firstResult && firstResult.dimension_scores && firstResult.dimension_info) {
+    Object.keys(firstResult.dimension_scores).forEach(dimKey => {
+      const dimInfo = firstResult.dimension_info[dimKey] || { display_name: dimKey, max_score: 100 };
+      const scores = DynamicEvalState.results
+        .filter(r => r.dimension_scores && r.dimension_scores[dimKey] != null)
+        .map(r => r.dimension_scores[dimKey]);
+      avgDimensionScores[dimKey] = {
+        avg: scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null,
+        display_name: dimInfo.display_name,
+        max_score: dimInfo.max_score
+      };
+    });
+  }
 
   const summaryEl = $("dynamicEvalResultsSummary");
   if (summaryEl) {
@@ -25361,14 +25636,14 @@ function showDynamicEvalResults() {
         <div class="dynamic-eval-results-card-value">${avgQuality != null ? `${avgQuality}/100` : "-"}</div>
         <div class="dynamic-eval-results-card-label">平均质量评分</div>
       </div>
-      <div class="dynamic-eval-results-card">
-        <div class="dynamic-eval-results-card-value">${avgFactCoverage != null ? `${avgFactCoverage}/40` : "0/40"}</div>
-        <div class="dynamic-eval-results-card-label">平均事实覆盖</div>
-      </div>
-      <div class="dynamic-eval-results-card">
-        <div class="dynamic-eval-results-card-value">${avgAccuracy != null ? `${avgAccuracy}/30` : "0/30"}</div>
-        <div class="dynamic-eval-results-card-label">平均准确性</div>
-      </div>
+      ${Object.keys(avgDimensionScores).length > 0 ? 
+        Object.entries(avgDimensionScores).map(([key, info]) => `
+          <div class="dynamic-eval-results-card">
+            <div class="dynamic-eval-results-card-value">${info.avg != null ? `${info.avg}/${info.max_score}` : "-"}</div>
+            <div class="dynamic-eval-results-card-label">平均${info.display_name}</div>
+          </div>
+        `).join('') : ''
+      }
       <div class="dynamic-eval-results-card">
         <div class="dynamic-eval-results-card-value">${totalRecalled}</div>
         <div class="dynamic-eval-results-card-label">召回记忆总数</div>
@@ -25384,10 +25659,12 @@ function showDynamicEvalResults() {
   if (tableEl) {
     // Build expandable detail rows
     const detailRows = DynamicEvalState.results.map((r, idx) => {
+      // Use relevant_memory from finalize (preferred), fallback to recalled_memories from SSE
+      const memoryList = r.relevant_memory?.length > 0 ? r.relevant_memory : (r.recalled_memories || []);
       // Build recalled memories list
       let memoriesHtml = "<em>无召回记录</em>";
-      if (r.recalled_memories && r.recalled_memories.length > 0) {
-        memoriesHtml = r.recalled_memories.map((m, mi) => {
+      if (memoryList.length > 0) {
+        memoriesHtml = memoryList.map((m, mi) => {
           const memText = m.text || m.query || JSON.stringify(m).substring(0, 200);
           const memScore = m.score != null ? ` (score: ${m.score})` : "";
           return `<div class="dynamic-eval-memory-item">
@@ -25415,7 +25692,7 @@ function showDynamicEvalResults() {
               TTFT: ${r.ttft_ms != null ? `${r.ttft_ms}ms` : "-"} | 
               缓存: ${r.cached_tokens != null ? r.cached_tokens : "0"} | 
               质量: ${r.quality_score != null ? `${r.quality_score}/100` : "-"} | 
-              召回: ${r.recalled_memories?.length || 0}
+              召回: ${memoryList.length}
             </span>
             <span class="dynamic-eval-round-session ${r.is_new_session ? "new-session" : ""}" title="${r.session_id}">
               ${r.is_new_session ? "🆕 " : ""}${r.session_id?.substring(0, 8) || "-"}
@@ -25436,7 +25713,7 @@ function showDynamicEvalResults() {
               <div class="dynamic-eval-detail-content dynamic-eval-facts">${factsHtml}</div>
             </div>
             <div class="dynamic-eval-detail-section">
-              <div class="dynamic-eval-detail-label">召回的记忆 (${r.recalled_memories?.length || 0} 条)</div>
+              <div class="dynamic-eval-detail-label">召回的记忆 (${memoryList.length} 条)</div>
               <div class="dynamic-eval-detail-content dynamic-eval-memories">${memoriesHtml}</div>
             </div>
             <div class="dynamic-eval-detail-section">
@@ -25445,13 +25722,26 @@ function showDynamicEvalResults() {
                 <div class="quality-score-summary">
                   总分: <strong>${r.quality_score != null ? `${r.quality_score}/100` : "-"}</strong>
                   ${r.quality_reason ? `<br/>${escapeHtml(r.quality_reason)}` : ""}
+                  ${r.hallucination_detected ? '<br/><span style="color: #e74c3c;">⚠️ 检测到幻觉</span>' : ''}
+                  ${r.task_completed === false ? '<br/><span style="color: #f39c12;">⚠️ 任务未完成</span>' : ''}
                 </div>
+                ${r.dimension_scores ? `
+                <div class="quality-score-breakdown" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 10px;">
+                  ${Object.entries(r.dimension_scores).map(([key, val]) => {
+                    const dimInfo = r.dimension_info && r.dimension_info[key] ? r.dimension_info[key] : { display_name: key, max_score: 100 };
+                    return `<span class="score-item">${dimInfo.display_name}: <strong>${val || 0}/${dimInfo.max_score}</strong></span>`;
+                  }).join('')}
+                </div>
+                ${r.strengths && r.strengths.length > 0 ? `<div style="margin-top: 10px; color: #27ae60;">✅ 优点: ${r.strengths.map(s => escapeHtml(s)).join(', ')}</div>` : ''}
+                ${r.weaknesses && r.weaknesses.length > 0 ? `<div style="margin-top: 5px; color: #e74c3c;">❌ 不足: ${r.weaknesses.map(w => escapeHtml(w)).join(', ')}</div>` : ''}
+                ` : `
                 <div class="quality-score-breakdown">
                   <span class="score-item">事实覆盖: <strong>${r.fact_coverage_score != null ? `${r.fact_coverage_score}/40` : "0/40"}</strong></span>
                   <span class="score-item">准确性: <strong>${r.accuracy_score != null ? `${r.accuracy_score}/30` : "0/30"}</strong></span>
                   <span class="score-item">相关性: <strong>${r.relevance_score != null ? `${r.relevance_score}/20` : "0/20"}</strong></span>
                   <span class="score-item">召回质量: <strong>${r.recall_quality_score != null ? `${r.recall_quality_score}/10` : "0/10"}</strong></span>
                 </div>
+                `}
               </div>
             </div>
             <div class="dynamic-eval-detail-section">
@@ -25495,6 +25785,17 @@ function toggleDynamicEvalRoundDetail(idx) {
 function stopDynamicEval() {
   DynamicEvalState.isRunning = false;
   updateStatus("已停止");
+  
+  // Notify backend to stop any ongoing operations
+  const evaluatorId = DynamicEvalState.evaluatorId;
+  if (evaluatorId) {
+    api(`/api/dynamic/evaluators/${evaluatorId}`, {
+      method: "POST",
+      body: JSON.stringify({ action: "stop" }),
+    }).catch(err => {
+      console.warn("[stopDynamicEval] Failed to notify backend:", err);
+    });
+  }
 }
 
 function exportDynamicEvalResults() {
@@ -25506,6 +25807,18 @@ function exportDynamicEvalResults() {
   const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, "");
 
   // 1. Export Quality Assessment Report
+  // Calculate avg dimension scores dynamically
+  const avgDimensionScores = {};
+  const firstResult = DynamicEvalState.results.find(r => r.dimension_scores && r.dimension_info);
+  if (firstResult && firstResult.dimension_scores && firstResult.dimension_info) {
+    Object.keys(firstResult.dimension_scores).forEach(dimKey => {
+      const scores = DynamicEvalState.results
+        .filter(r => r.dimension_scores && r.dimension_scores[dimKey] != null)
+        .map(r => r.dimension_scores[dimKey]);
+      avgDimensionScores[dimKey] = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+    });
+  }
+
   const qualityReport = {
     exported_at: new Date().toISOString(),
     theme: DynamicEvalState.theme,
@@ -25515,10 +25828,7 @@ function exportDynamicEvalResults() {
     new_session_count: DynamicEvalState.newSessionCount,
     summary: {
       avg_quality_score: DynamicEvalState.results.reduce((a, b) => a + (b.quality_score || 0), 0) / DynamicEvalState.results.length,
-      avg_fact_coverage: DynamicEvalState.results.reduce((a, b) => a + (b.fact_coverage_score || 0), 0) / DynamicEvalState.results.length,
-      avg_accuracy: DynamicEvalState.results.reduce((a, b) => a + (b.accuracy_score || 0), 0) / DynamicEvalState.results.length,
-      avg_relevance: DynamicEvalState.results.reduce((a, b) => a + (b.relevance_score || 0), 0) / DynamicEvalState.results.length,
-      avg_recall_quality: DynamicEvalState.results.reduce((a, b) => a + (b.recall_quality_score || 0), 0) / DynamicEvalState.results.length,
+      avg_dimension_scores: avgDimensionScores,
       total_recalled_memories: DynamicEvalState.results.reduce((sum, r) => sum + (r.recalled_memories?.length || 0), 0),
     },
     results: DynamicEvalState.results.map((r) => ({
@@ -25528,16 +25838,19 @@ function exportDynamicEvalResults() {
       session_id: r.session_id,
       is_new_session: r.is_new_session,
       quality_score: r.quality_score,
-      fact_coverage_score: r.fact_coverage_score,
-      accuracy_score: r.accuracy_score,
-      relevance_score: r.relevance_score,
-      recall_quality_score: r.recall_quality_score,
+      dimension_scores: r.dimension_scores || null,
+      dimension_info: r.dimension_info || null,
       quality_reason: r.quality_reason,
+      strengths: r.strengths || null,
+      weaknesses: r.weaknesses || null,
+      hallucination_detected: r.hallucination_detected || null,
+      task_completed: r.task_completed !== undefined ? r.task_completed : null,
       ttft_ms: r.ttft_ms,
       cached_tokens: r.cached_tokens,
       prompt_tokens: r.prompt_tokens,
       recalled_memories_count: r.recalled_memories?.length || 0,
       ground_facts_count: r.ground_facts?.length || 0,
+      relevant_memory: r.relevant_memory || [],
     })),
   };
 
@@ -25557,21 +25870,25 @@ function exportDynamicEvalResults() {
   }
 
   // Extract background memories from results - look up actual text by ID
+  // Deduplicate by ID: each memory appears once with its first source_round
+  const seenFactIds = new Set();
   DynamicEvalState.results.forEach((r, idx) => {
     if (r.ground_facts) {
-      r.ground_facts.forEach((f, fidx) => {
-        // ground_facts may be IDs like "f1", "f2" - look up actual text
+      r.ground_facts.forEach((f) => {
+        let factId = "";
         let factText = "";
         if (typeof f === "string") {
-          // It's an ID, look up the text
+          factId = f;
           factText = memoryLookup[f] || f;
         } else if (typeof f === "object") {
           factText = f.text || f.fact || JSON.stringify(f);
+          factId = f.id || "";
         }
-        
-        if (factText && factText.length > 2) {
+
+        if (factText && factText.length > 2 && !seenFactIds.has(factId)) {
+          seenFactIds.add(factId);
           backgroundMemories.push({
-            id: typeof f === "string" ? f : `f${backgroundMemories.length + 1}`,
+            id: factId || `f${backgroundMemories.length + 1}`,
             text: factText,
             source_round: idx,
           });
@@ -25594,6 +25911,7 @@ function exportDynamicEvalResults() {
       round_id: r.round_id,
       speaker: "user",
       text: r.query,
+      ground_facts: r.ground_facts || [],
       timestamp: r.timestamp,
     });
     if (r.reply) {

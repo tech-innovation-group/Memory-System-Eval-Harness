@@ -25,6 +25,8 @@ export function createEchoAgentLiveActions(deps) {
       scenario_model: firstValue(form.scenario_model, config.echoagent_scenario_model, "deepseek-v4-flash"),
       scenario_base_url: form.scenario_base_url || config.echoagent_scenario_base_url || "",
       scenario_api_key: form.scenario_api_key || config.echoagent_scenario_api_key || "",
+      user_simulator_config: form.user_simulator_config || "",
+      evaluator_config: form.evaluator_config || "",
     };
 
     const validation = await validatePayload(payload);

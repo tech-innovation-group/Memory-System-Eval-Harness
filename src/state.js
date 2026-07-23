@@ -63,6 +63,9 @@ export function createInitialState({ defaultBenchmarkId, benchmarkIds }) {
       min_tokens: "",
       max_tokens: "",
     },
+    // 用户模拟器和评估器配置
+    userSimulatorConfig: "",
+    evaluatorConfig: "",
     logPollTimer: null,
     refreshTimer: null,
   };

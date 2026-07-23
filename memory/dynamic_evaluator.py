@@ -4,11 +4,18 @@ This module provides the MemoryDynamicEvaluator class for generating
 background memories and user queries in both static (dataset-based) and
 dynamic (LLM-generated) modes.
 
+Now supports loading prompts from YAML configuration files based on
+RealUserSim, IntellAgent, AgentProcessBench, RigorBench, and MemOps papers.
+
 Usage:
     from memory.dynamic_evaluator import MemoryDynamicEvaluator, get_evaluator, create_evaluator
 
-    # Create a new evaluator
-    evaluator = MemoryDynamicEvaluator(config)
+    # Create a new evaluator with custom config
+    evaluator = MemoryDynamicEvaluator({
+        "user_simulator_config": "realistic",
+        "evaluator_config": "memory_focused",
+        ...
+    })
     memories = evaluator.generate_background_memories()
 
     # Or use the global registry
@@ -34,6 +41,111 @@ if str(ROOT) not in __import__("sys").path:
     __import__("sys").path.insert(0, str(ROOT))
 
 from memory import llm
+from memory.prompt_config_loader import (
+    load_user_simulator_config,
+    load_evaluator_config,
+    get_prompt_template,
+    list_available_simulators,
+    list_available_evaluators,
+)
+
+
+def _validate_user_simulator_config(config: dict[str, Any], mode: str) -> None:
+    """Validate user simulator configuration.
+    
+    For dynamic mode, validates:
+    - persona_prompt field exists
+    - persona_prompt contains required placeholders: {background_facts}, {conversation_history}, {round_index}, {is_new_session}
+    - background_memories_prompt field exists
+    - background_memories_prompt contains {num_memories} placeholder
+    
+    Raises:
+        ValueError: If validation fails
+    """
+    # For dynamic mode, persona_prompt is required
+    if mode == "dynamic":
+        persona_prompt = config.get("persona_prompt", "")
+        if not persona_prompt:
+            raise ValueError(
+                "user_simulator_config must contain 'persona_prompt' field for dynamic mode. "
+                "Please provide a user_simulator_config_yaml file with persona_prompt."
+            )
+        
+        # Check for required placeholders in persona_prompt
+        required_placeholders = ["{background_facts}", "{conversation_history}", "{round_index}", "{is_new_session}"]
+        missing = [p for p in required_placeholders if p not in persona_prompt]
+        if missing:
+            raise ValueError(
+                f"persona_prompt must contain placeholders: {', '.join(missing)}. "
+                f"These placeholders are used to inject context during query generation."
+            )
+        
+        # background_memories_prompt is required for dynamic mode
+        bg_prompt = config.get("background_memories_prompt", "")
+        if not bg_prompt:
+            raise ValueError(
+                "user_simulator_config must contain 'background_memories_prompt' field for dynamic mode. "
+                "This prompt is used to generate background memories."
+            )
+        
+        if "{num_memories}" not in bg_prompt:
+            raise ValueError(
+                "background_memories_prompt must contain '{num_memories}' placeholder. "
+                "This placeholder is used to specify the number of memories to generate."
+            )
+
+
+def _validate_evaluator_config(config: dict[str, Any]) -> None:
+    """Validate evaluator configuration.
+    
+    Validates:
+    - dimensions field exists and is a non-empty list
+    - Each dimension has: name, display_name, max_score
+    - evaluate_prompt field exists and contains required placeholders
+    
+    Raises:
+        ValueError: If validation fails
+    """
+    # dimensions is required
+    dimensions = config.get("dimensions", [])
+    if not dimensions:
+        raise ValueError(
+            "evaluator_config must contain 'dimensions' field with at least one dimension. "
+            "Example: dimensions: [{name: 'fact_coverage_score', display_name: '事实覆盖', max_score: 40}]"
+        )
+    
+    if not isinstance(dimensions, list):
+        raise ValueError("'dimensions' must be a list of dimension objects.")
+    
+    # Validate each dimension
+    for i, dim in enumerate(dimensions):
+        if not isinstance(dim, dict):
+            raise ValueError(f"Dimension {i} must be an object with 'name', 'display_name', 'max_score'.")
+        
+        required_fields = ["name", "display_name", "max_score"]
+        missing = [f for f in required_fields if f not in dim]
+        if missing:
+            raise ValueError(
+                f"Dimension {i} is missing required fields: {', '.join(missing)}. "
+                f"Each dimension needs: name, display_name, max_score."
+            )
+    
+    # evaluate_prompt is required
+    eval_prompt = config.get("evaluate_prompt", "")
+    if not eval_prompt:
+        raise ValueError(
+            "evaluator_config must contain 'evaluate_prompt' field. "
+            "See configs/custom/evaluator_template.yaml for an example."
+        )
+    
+    # Check for required placeholders in evaluate_prompt
+    required_placeholders = ["{query}", "{reply}", "{ground_facts}", "{recalled_memories}", "{dimension_criteria}"]
+    missing = [p for p in required_placeholders if p not in eval_prompt]
+    if missing:
+        raise ValueError(
+            f"evaluate_prompt must contain placeholders: {', '.join(missing)}. "
+            f"These placeholders are used to inject evaluation context."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -44,6 +156,27 @@ _EVALUATOR_LOCK = threading.Lock()
 _EVALUATORS: dict[str, "MemoryDynamicEvaluator"] = {}
 _EVALUATOR_TTL_SECONDS = 3600  # 1 hour
 
+# Global stop flags for evaluators (evaluator_id -> bool)
+_EVALUATOR_STOP_FLAGS: dict[str, bool] = {}
+
+
+def set_evaluator_stopped(evaluator_id: str, stopped: bool = True) -> None:
+    """Set the stop flag for an evaluator."""
+    with _EVALUATOR_LOCK:
+        _EVALUATOR_STOP_FLAGS[evaluator_id] = stopped
+
+
+def is_evaluator_stopped(evaluator_id: str) -> bool:
+    """Check if an evaluator has been stopped."""
+    with _EVALUATOR_LOCK:
+        return _EVALUATOR_STOP_FLAGS.get(evaluator_id, False)
+
+
+def clear_evaluator_stop_flag(evaluator_id: str) -> None:
+    """Clear the stop flag for an evaluator."""
+    with _EVALUATOR_LOCK:
+        _EVALUATOR_STOP_FLAGS.pop(evaluator_id, None)
+
 
 def create_evaluator(config: dict[str, Any]) -> str:
     """Create a new evaluator and return its ID."""
@@ -51,13 +184,22 @@ def create_evaluator(config: dict[str, Any]) -> str:
     evaluator = MemoryDynamicEvaluator(config)
     with _EVALUATOR_LOCK:
         _EVALUATORS[evaluator_id] = evaluator
+        # Ensure no stale stop flag exists for this ID (shouldn't happen with UUID, but be safe)
+        _EVALUATOR_STOP_FLAGS.pop(evaluator_id, None)
     return evaluator_id
 
 
 def get_evaluator(evaluator_id: str) -> "MemoryDynamicEvaluator | None":
-    """Get an evaluator by ID."""
+    """Get an evaluator by ID. Auto-removes expired evaluators."""
     with _EVALUATOR_LOCK:
-        return _EVALUATORS.get(evaluator_id)
+        evaluator = _EVALUATORS.get(evaluator_id)
+        if evaluator is None:
+            return None
+        if time.time() - evaluator.created_at > _EVALUATOR_TTL_SECONDS:
+            del _EVALUATORS[evaluator_id]
+            _EVALUATOR_STOP_FLAGS.pop(evaluator_id, None)
+            return None
+        return evaluator
 
 
 def remove_evaluator(evaluator_id: str) -> bool:
@@ -65,8 +207,19 @@ def remove_evaluator(evaluator_id: str) -> bool:
     with _EVALUATOR_LOCK:
         if evaluator_id in _EVALUATORS:
             del _EVALUATORS[evaluator_id]
+            _EVALUATOR_STOP_FLAGS.pop(evaluator_id, None)  # Also clear stop flag
             return True
         return False
+
+
+def get_available_simulators() -> list[dict[str, Any]]:
+    """List all available user simulator configurations."""
+    return list_available_simulators()
+
+
+def get_available_evaluators() -> list[dict[str, Any]]:
+    """List all available evaluator configurations."""
+    return list_available_evaluators()
 
 
 def list_evaluators() -> list[dict[str, Any]]:
@@ -76,89 +229,6 @@ def list_evaluators() -> list[dict[str, Any]]:
             {"id": eid, "created_at": ev.created_at, "mode": ev.mode, "theme": ev.theme}
             for eid, ev in _EVALUATORS.items()
         ]
-
-
-# ---------------------------------------------------------------------------
-# Prompt templates
-# ---------------------------------------------------------------------------
-
-BACKGROUND_MEMORIES_PROMPT = """You are a test scenario generator for a memory-augmented AI assistant.
-
-Generate {num_memories} distinct factual statements that a user might naturally tell an AI assistant during conversations.
-
-Requirements:
-- Each fact should be a complete, standalone statement
-- Facts should be realistic daily-life information (preferences, events, plans, contacts, etc.)
-- Vary the length: some short (5-15 words), some medium (15-30 words), some long (30-50 words)
-- Theme: {theme}
-- Each fact should be memorable and testable
-
-Output ONLY a JSON array of objects with this structure:
-[
-  {{"id": "f1", "text": "The fact statement here", "length_hint": "short"}},
-  {{"id": "f2", "text": "Another fact...", "length_hint": "medium"}},
-  ...
-]
-
-The "length_hint" should be one of: "short", "medium", "long".
-The "id" should be "f1", "f2", "f3", etc.
-"""
-
-NEXT_QUERY_PROMPT = """You are a test query generator for evaluating a memory-augmented AI assistant.
-
-Given:
-1. Background facts that the user has shared (some in this session, some in previous sessions)
-2. Conversation history
-3. Current context
-
-Generate the next user query that would naturally test the assistant's memory recall ability.
-
-## Background Facts (for reference only - DO NOT include these texts directly in query)
-{facts_text}
-
-## Conversation History
-{history_text}
-
-## Current Context
-- Round: {round_index}
-- Is new session: {is_new_session}
-
-## Requirements
-
-Generate a query that:
-1. Naturally continues the conversation OR starts a new topic (if new session)
-2. Requires recalling one or more background facts to answer correctly
-3. Is phrased as a NATURAL user question that IMPLIES or REFERENCES the fact, but does NOT quote it directly
-4. Varies in complexity: simple recall, multi-fact synthesis, or temporal reasoning
-
-## IMPORTANT: Query Formulation Rules
-
-- DO NOT include the exact fact text in your query
-- DO use vague references, pronouns, or hints that require the assistant to recall the specific details
-- Examples of BAD queries (too explicit):
-  - "我记得我喜欢早上7点去跑步，那时候一般有几个人？" (直接引用了事实文本)
-  - "我家的猫小白是英短，它几岁了？" (直接说出了猫的名字和品种)
-- Examples of GOOD queries (require memory recall):
-  - "我平时早上锻炼一般几点出发来着？" (需要召回具体的锻炼时间)
-  - "我家那只猫今年多大了？" (需要召回猫的具体年龄)
-  - "下周那个重要的会是什么时候？" (需要召回会议时间)
-
-Output ONLY a JSON object:
-{{
-  "query": "The user's question here",
-  "ground_facts": ["f1", "f3"],
-  "complexity": "simple" | "medium" | "complex",
-  "reasoning": "Brief explanation of what this tests",
-  "new_session_hint": true | false
-}}
-
-- ground_facts: IDs of facts needed to answer correctly
-- complexity:
-  - "simple": Direct recall of one fact
-  - "medium": Recall of 2-3 facts or simple synthesis
-  - "complex": Multi-fact synthesis, temporal reasoning, or cross-session recall
-- new_session_hint: Whether this query suggests opening a new session next
-"""
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +260,16 @@ THEME_POOL = [
 # ---------------------------------------------------------------------------
 
 class MemoryDynamicEvaluator:
-    """Dynamic evaluator for generating test scenarios and queries."""
+    """Dynamic evaluator for generating test scenarios and queries.
+    
+    Supports loading prompts from YAML configuration files for:
+    - User simulator behavior (persona, interaction mode, communication style)
+    - Evaluation prompts (response quality, memory recall, step evaluation)
+    
+    Config keys for prompt loading:
+        - user_simulator_config: Name of user simulator config (e.g., "default", "realistic", "difficult")
+        - evaluator_config: Name of evaluator config (e.g., "default", "memory_focused")
+    """
 
     def __init__(self, config: dict[str, Any]):
         """Initialize the evaluator.
@@ -203,11 +282,14 @@ class MemoryDynamicEvaluator:
                 - theme: Theme for generated memories (for dynamic mode)
                 - custom_scenario: Custom scenario text (skip LLM generation if provided)
                 - llm_config: LLM configuration (model, base_url, api_key)
+                - user_simulator_config: Name of user simulator config file
+                - evaluator_config: Name of evaluator config file
         """
         self.config = config
         self.mode = config.get("mode", "dynamic")
         self.theme = config.get("theme", "")
         self.custom_scenario = config.get("custom_scenario", "")
+        self.parsed_memories = config.get("parsed_memories", [])
         self.created_at = time.time()
 
         self.background_memories: list[dict[str, Any]] = []
@@ -224,6 +306,66 @@ class MemoryDynamicEvaluator:
         self.model = llm_config.get("model", "deepseek-v4-flash")
         self.base_url = llm_config.get("base_url") or None
         self.api_key = llm_config.get("api_key") or None
+        
+        # Load prompt configurations
+        self.user_simulator_config: dict[str, Any] = {}
+        self.evaluator_config: dict[str, Any] = {}
+        
+        # Support both config name and direct YAML content
+        user_sim_config_yaml = config.get("user_simulator_config_yaml", "")
+        user_sim_config_name = config.get("user_simulator_config", "")
+        if user_sim_config_yaml:
+            import yaml
+            try:
+                self.user_simulator_config = yaml.safe_load(user_sim_config_yaml) or {}
+                print(f"[DynamicEvaluator] Loaded user simulator config from YAML content")
+            except Exception as e:
+                raise ValueError(f"Failed to parse user_simulator_config_yaml: {e}")
+        elif user_sim_config_name:
+            try:
+                self.user_simulator_config = load_user_simulator_config(user_sim_config_name)
+                print(f"[DynamicEvaluator] Loaded user simulator config: {user_sim_config_name}")
+            except FileNotFoundError as e:
+                raise ValueError(f"User simulator config not found: {e}")
+        
+        eval_config_yaml = config.get("evaluator_config_yaml", "")
+        eval_config_name = config.get("evaluator_config", "")
+        if eval_config_yaml:
+            import yaml
+            try:
+                self.evaluator_config = yaml.safe_load(eval_config_yaml) or {}
+                print(f"[DynamicEvaluator] Loaded evaluator config from YAML content")
+            except Exception as e:
+                raise ValueError(f"Failed to parse evaluator_config_yaml: {e}")
+        elif eval_config_name:
+            try:
+                self.evaluator_config = load_evaluator_config(eval_config_name)
+                print(f"[DynamicEvaluator] Loaded evaluator config: {eval_config_name}")
+            except FileNotFoundError as e:
+                raise ValueError(f"Evaluator config not found: {e}")
+        
+        # Validate configurations
+        _validate_user_simulator_config(self.user_simulator_config, self.mode)
+        if not self.evaluator_config:
+            raise ValueError(
+                "evaluator_config is required. "
+                "Please provide an evaluator_config_yaml file with 'dimensions' and 'evaluate_prompt' fields. "
+                "See configs/custom/evaluator_template.yaml for an example."
+            )
+        _validate_evaluator_config(self.evaluator_config)
+        
+        # Parse evaluation dimensions from config
+        self.eval_dimensions: list[dict[str, Any]] = []
+        if "dimensions" in self.evaluator_config:
+            self.eval_dimensions = self.evaluator_config["dimensions"]
+            total_max = sum(d.get("max_score", 0) for d in self.eval_dimensions)
+            print(f"[DynamicEvaluator] Loaded {len(self.eval_dimensions)} dimensions, total max score: {total_max}")
+        else:
+            # This should be caught by _validate_evaluator_config, but check anyway
+            raise ValueError(
+                "evaluator_config must contain 'dimensions' field. "
+                "See configs/custom/evaluator_template.yaml for an example."
+            )
         
         # Debug log
         print(f"[DynamicEvaluator] Config received: mode={self.mode}, num_memories={config.get('num_memories')}, theme={self.theme}")
@@ -246,9 +388,16 @@ class MemoryDynamicEvaluator:
                 "theme": self.theme,
             }
 
-        # Priority: custom_scenario > static dataset > dynamic generation
-        if self.custom_scenario:
-            # Custom scenario takes precedence regardless of mode
+        # Priority: parsed_memories > custom_scenario > static dataset > dynamic generation
+        if self.parsed_memories:
+            self.background_memories = [
+                {"id": m.get("id", f"f{i+1}"), "text": m.get("text", "")}
+                for i, m in enumerate(self.parsed_memories)
+                if m.get("text")
+            ]
+            if not self.theme:
+                self.theme = "自定义场景"
+        elif self.custom_scenario:
             self.background_memories = self._generate_memories_from_custom_scenario()
         elif self.mode == "static":
             self.background_memories = self._load_static_memories()
@@ -398,13 +547,20 @@ class MemoryDynamicEvaluator:
         """Generate memories using LLM."""
         # Otherwise, generate memories using LLM
         num_memories = self.config.get("num_memories", 10)
-        theme = self.theme or self._pick_random_theme()
-        self.theme = theme
-
-        prompt = BACKGROUND_MEMORIES_PROMPT.format(
-            num_memories=num_memories,
-            theme=theme,
-        )
+        
+        # Must have background_memories_prompt from config
+        bg_prompt_template = self.user_simulator_config.get("background_memories_prompt")
+        if not bg_prompt_template:
+            raise ValueError(
+                "background_memories_prompt is required in user_simulator_config. "
+                "Please provide a user_simulator_config_yaml file with background_memories_prompt field."
+            )
+        # Replace {num_memories} placeholder (avoid .format() which parses all curly braces)
+        prompt = bg_prompt_template.replace("{num_memories}", str(num_memories))
+        
+        # Set theme from config or use default
+        if not self.theme:
+            self.theme = "职场项目开发"  # Default theme matching the config
 
         try:
             result = llm.openai_chat(
@@ -559,25 +715,44 @@ class MemoryDynamicEvaluator:
             for m in self.background_memories[:10]  # Limit for prompt length
         )
 
-        # Build history text
-        history_parts = []
-        for i, (q, r) in enumerate(zip(previous_queries[-5:], previous_replies[-5:])):
-            history_parts.append(f"User: {q[:100]}")
-            history_parts.append(f"Assistant: {r[:100]}")
+        # Build history text — accumulate from most recent round backwards
+        # until approximately 64K tokens (≈256K chars at ~4 chars/token) is reached
+        _MAX_HISTORY_CHARS = 256_000
+        history_parts: list[str] = []
+        total_chars = 0
+        for i in range(len(previous_queries) - 1, -1, -1):
+            q = previous_queries[i]
+            r = previous_replies[i] if i < len(previous_replies) else ""
+            entry = f"User: {q}\nAssistant: {r}"
+            if total_chars + len(entry) > _MAX_HISTORY_CHARS:
+                break
+            history_parts.append(entry)
+            total_chars += len(entry)
+        history_parts.reverse()
         history_text = "\n".join(history_parts) if history_parts else "(No previous conversation)"
 
-        prompt = NEXT_QUERY_PROMPT.format(
-            facts_text=facts_text,
-            history_text=history_text,
-            round_index=round_index,
-            is_new_session=is_new_session,
+        # Use persona_prompt from user_simulator_config - REQUIRED for dynamic mode
+        persona_prompt = self.user_simulator_config.get("persona_prompt", "")
+        
+        if not persona_prompt:
+            raise ValueError(
+                "persona_prompt is required in user_simulator_config for dynamic mode. "
+                "Please provide a user_simulator_config_yaml file with persona_prompt field."
+            )
+        
+        # Use placeholder-based replacement (placeholders validated in __init__)
+        full_prompt = persona_prompt.format(
+            background_facts=facts_text,
+            conversation_history=history_text,
+            round_index=round_index + 1,
+            is_new_session=str(is_new_session),
         )
 
         try:
             result = llm.openai_chat(
                 messages=[
                     {"role": "system", "content": "You are a test query generator. Output only valid JSON."},
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": full_prompt},
                 ],
                 model=self.model,
                 temperature=0.7,
@@ -718,12 +893,50 @@ class MemoryDynamicEvaluator:
         else:
             recalled_text = "(无召回记忆)"
 
-        prompt = EVALUATE_RESPONSE_PROMPT.format(
-            query=query,
-            reply=reply,
-            ground_facts=ground_facts_text,
-            recalled_memories=recalled_text,
-        )
+        # Use custom prompt from evaluator_config - REQUIRED
+        if not self.evaluator_config:
+            raise ValueError(
+                "evaluator_config is required for response evaluation. "
+                "Please provide an evaluator_config_yaml file with 'evaluate_prompt' and 'dimensions' fields."
+            )
+        
+        eval_prompt_template = None
+        if "evaluate_prompt" in self.evaluator_config:
+            custom_prompt = self.evaluator_config["evaluate_prompt"]
+            if isinstance(custom_prompt, str) and custom_prompt.strip():
+                eval_prompt_template = custom_prompt
+                print(f"[DynamicEvaluator] Using evaluate_prompt from config")
+        
+        if not eval_prompt_template:
+            raise ValueError(
+                "evaluator_config must contain 'evaluate_prompt' field. "
+                "See configs/custom/evaluator_template.yaml for an example."
+            )
+
+        # Build format args - support both default and custom placeholder names
+        # Generate dimension criteria text if dimensions are defined
+        dimension_criteria = ""
+        if self.eval_dimensions:
+            criteria_parts = []
+            for i, dim in enumerate(self.eval_dimensions, 1):
+                name = dim.get("name", "")
+                display_name = dim.get("display_name", name)
+                max_score = dim.get("max_score", 0)
+                desc = dim.get("description", "")
+                criteria_parts.append(f"### {i}. {display_name} (0-{max_score} points)\n{desc}")
+            dimension_criteria = "\n\n".join(criteria_parts)
+        else:
+            dimension_criteria = "Use your judgment to evaluate the response quality."
+
+        format_args = {
+            "query": query,
+            "reply": reply,
+            "ground_facts": ground_facts_text,
+            "recalled_memories": recalled_text,
+            "dimension_criteria": dimension_criteria,
+        }
+
+        prompt = eval_prompt_template.format(**format_args)
 
         try:
             result = llm.openai_chat(
@@ -732,59 +945,83 @@ class MemoryDynamicEvaluator:
                     {"role": "user", "content": prompt},
                 ],
                 model=self.model,
-                temperature=0.3,  # Lower temperature for consistent evaluation
+                temperature=0.3,
                 api_key=self.api_key,
                 base_url=self.base_url,
                 timeout=60,
             )
 
             if "error" in result:
+                print(f"[DynamicEvaluator] LLM error: {result.get('error')}")
                 return self._fallback_evaluate(query, reply, ground_facts, recalled_memories)
 
             answer = result.get("answer", "")
             json_match = re.search(r"\{[\s\S]*\}", answer)
             if not json_match:
+                print(f"[DynamicEvaluator] No JSON found in answer: {answer[:200]}")
                 return self._fallback_evaluate(query, reply, ground_facts, recalled_memories)
 
             eval_data = json.loads(json_match.group())
 
-            # Validate and normalize
+            # Validate and normalize total score
             score = eval_data.get("score", 50)
             if not isinstance(score, (int, float)):
                 score = 50
             score = max(0, min(100, int(score)))
 
-            # Extract individual scores
-            fact_coverage = eval_data.get("fact_coverage_score", 0)
-            if not isinstance(fact_coverage, (int, float)):
-                fact_coverage = 0
-            fact_coverage = max(0, min(40, int(fact_coverage)))
+            # Dynamically extract dimension scores based on config
+            dimension_scores = {}
+            for dim in self.eval_dimensions:
+                dim_name = dim.get("name", "")
+                max_val = dim.get("max_score", 100)
+                if dim_name:
+                    val = eval_data.get("dimension_scores", {}).get(dim_name, eval_data.get(dim_name, 0))
+                    if not isinstance(val, (int, float)):
+                        val = 0
+                    dimension_scores[dim_name] = max(0, min(max_val, int(val)))
 
-            accuracy = eval_data.get("accuracy_score", 0)
-            if not isinstance(accuracy, (int, float)):
-                accuracy = 0
-            accuracy = max(0, min(30, int(accuracy)))
+            # If no dimension_scores in response, compute from total score proportionally
+            if not dimension_scores and self.eval_dimensions:
+                total_max = sum(d.get("max_score", 0) for d in self.eval_dimensions)
+                if total_max > 0:
+                    ratio = score / 100
+                    for dim in self.eval_dimensions:
+                        dim_name = dim.get("name", "")
+                        max_val = dim.get("max_score", 0)
+                        if dim_name:
+                            dimension_scores[dim_name] = int(max_val * ratio)
 
-            relevance = eval_data.get("relevance_score", 0)
-            if not isinstance(relevance, (int, float)):
-                relevance = 0
-            relevance = max(0, min(20, int(relevance)))
+            # Additional metadata
+            matched_facts = eval_data.get("matched_facts", 0)
+            total_facts = len(ground_facts) if ground_facts else 0
+            recall_helped = eval_data.get("recall_helped", False)
+            hallucination_detected = eval_data.get("hallucination_detected", False)
+            task_completed = eval_data.get("task_completed", False)
+            strengths = eval_data.get("strengths", [])
+            weaknesses = eval_data.get("weaknesses", [])
 
-            recall_quality = eval_data.get("recall_quality_score", 0)
-            if not isinstance(recall_quality, (int, float)):
-                recall_quality = 0
-            recall_quality = max(0, min(10, int(recall_quality)))
+            # Build dimension_info for frontend display
+            dimension_info = {}
+            for dim in self.eval_dimensions:
+                dim_name = dim.get("name", "")
+                if dim_name:
+                    dimension_info[dim_name] = {
+                        "display_name": dim.get("display_name", dim_name),
+                        "max_score": dim.get("max_score", 100),
+                    }
 
             return {
                 "score": score,
-                "fact_coverage_score": fact_coverage,
-                "accuracy_score": accuracy,
-                "relevance_score": relevance,
-                "recall_quality_score": recall_quality,
+                "dimension_scores": dimension_scores,
+                "dimension_info": dimension_info,
                 "reason": eval_data.get("reason", ""),
-                "matched_facts": eval_data.get("matched_facts", 0),
-                "total_facts": len(ground_facts) if ground_facts else 0,
-                "recall_helped": eval_data.get("recall_helped", False),
+                "matched_facts": matched_facts,
+                "total_facts": total_facts,
+                "recall_helped": recall_helped,
+                "hallucination_detected": hallucination_detected,
+                "task_completed": task_completed,
+                "strengths": strengths,
+                "weaknesses": weaknesses,
                 "details": eval_data.get("details", []),
             }
 
@@ -848,72 +1085,3 @@ class MemoryDynamicEvaluator:
             "recall_helped": recall_helped,
             "details": [],
         }
-
-
-# ---------------------------------------------------------------------------
-# Evaluation prompt
-# ---------------------------------------------------------------------------
-
-EVALUATE_RESPONSE_PROMPT = """You are a quality evaluator for AI assistant responses.
-
-Evaluate whether the AI's response correctly uses the expected background facts to answer the user's query.
-
-## User Query
-{query}
-
-## AI Response
-{reply}
-
-## Expected Background Facts
-{ground_facts}
-
-## Recalled Memories (used by the AI)
-{recalled_memories}
-
-## Evaluation Criteria (Total: 100 points)
-
-### 1. Fact Coverage (0-40 points)
-How many of the expected facts were correctly mentioned or used in the response?
-- 40: All expected facts correctly used
-- 30: Most facts used, some missing or incorrect
-- 20: About half of facts used
-- 10: Few facts used
-- 0: No expected facts mentioned
-
-### 2. Accuracy (0-30 points)
-Is the information in the response factually accurate and consistent with the provided facts?
-- 30: All information accurate, no hallucination
-- 20: Mostly accurate, minor inconsistencies
-- 10: Some accurate parts, some wrong
-- 0: Major inaccuracies or hallucination
-
-### 3. Relevance (0-20 points)
-Does the response directly address the user's query?
-- 20: Fully addresses the query
-- 15: Mostly addresses, some tangential content
-- 10: Partially addresses
-- 5: Barely addresses
-- 0: Does not address the query
-
-### 4. Recall Quality (0-10 points)
-Did the recalled memories help produce a better response?
-- 10: Recalled memories significantly improved the response
-- 5: Recalled memories helped somewhat
-- 0: No recall or recall didn't help
-
-Output ONLY a JSON object:
-{{
-  "score": <0-100>,
-  "fact_coverage_score": <0-40>,
-  "accuracy_score": <0-30>,
-  "relevance_score": <0-20>,
-  "recall_quality_score": <0-10>,
-  "matched_facts": <number of facts correctly used>,
-  "total_facts": <total expected facts>,
-  "recall_helped": true|false,
-  "reason": "Brief explanation in Chinese",
-  "details": [
-    {{"fact_id": "...", "used": true|false, "correct": true|false, "note": "..."}}
-  ]
-}}
-"""
