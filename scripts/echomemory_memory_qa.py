@@ -7061,8 +7061,8 @@ def main() -> None:
     parser.add_argument(
         "--answer-thinking-mode",
         choices=["disabled", "provider_default"],
-        default=os.environ.get("ANSWER_THINKING_MODE", "disabled"),
-        help="Disable provider thinking/reasoning mode by default; use provider_default only for an explicit ablation.",
+        default=os.environ.get("ANSWER_THINKING_MODE", "provider_default"),
+        help="Use provider-default thinking/reasoning behavior by default; pass disabled for no-thinking ablations.",
     )
     parser.add_argument("--answer-temperature", type=float, default=0.7)
     parser.add_argument(
