@@ -30,7 +30,6 @@ LOCOMO_EVALUATION_PROFILES: dict[str, dict[str, Any]] = {
         "agent_memory_budget_chars": 2000,
         "retrieval_ranker": "score",
         "retrieval_uri_dedup": False,
-        "vikingboat_tool_loop": True,
         "tool_set": "vikingbot_native_safe",
         "tool_search_limit": 20,
         "tool_query_dedup_scope": "question",
