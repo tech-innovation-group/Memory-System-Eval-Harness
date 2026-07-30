@@ -2502,13 +2502,15 @@ async def import_sample(
         f"sessions={len(session_batches)} session_start={session_start or ''} session_end={session_end or ''}",
         flush=True,
     )
-    records: list[dict[str, Any]] = []
-
-    async def import_one_batch(batch: dict[str, Any]) -> dict[str, Any]:
-        suffix = batch["session_key"].replace("session_", "s")
-        session_id = f"echomem-locomo-{sample_id}-{suffix}-{uuid.uuid4().hex[:8]}"
-        label = f"{sample_id}/{batch['session_key']}"
-        messages = batch["messages"]
+    records = []
+    for batch in session_batches:
+        if args.session_mode == "locomo":
+            suffix = batch["session_key"].replace("session_", "s")
+            session_id = f"echomem-locomo-{sample_id}-{suffix}-{uuid.uuid4().hex[:8]}"
+            label = f"{sample_id}/{batch['session_key']}"
+            messages = batch["messages"]
+        else:
+            break
         try:
             rec = await import_one_session(args, sdk, session_id, messages, label)
         except Exception as exc:
@@ -2538,9 +2540,6 @@ async def import_sample(
             }
         rec["session_key"] = batch["session_key"]
         rec["date_time"] = batch["date_time"]
-        return rec
-
-    async def append_progress(rec: dict[str, Any], label: str) -> None:
         records.append(rec)
         write_running_summary(
             out_dir,
@@ -2571,15 +2570,9 @@ async def import_sample(
                 else cached_workspace_token_usage_summary(args.workspace, args.account, force_refresh=True)
             ),
         )
-
-    if args.session_mode == "locomo":
-        for batch in session_batches:
-            label = f"{sample_id}/{batch['session_key']}"
-            rec = await import_one_batch(batch)
-            await append_progress(rec, label)
-            if rec.get("integrity") not in {"complete", "pending_async_memory"} and not args.continue_on_session_error:
-                print(f"[error] {label} failed; stopping sample import early", flush=True)
-                break
+        if rec.get("integrity") not in {"complete", "pending_async_memory"} and not args.continue_on_session_error:
+            print(f"[error] {label} failed; stopping sample import early", flush=True)
+            break
     if args.session_mode == "single":
         messages = [msg for batch in session_batches for msg in batch["messages"]]
         try:
@@ -3460,7 +3453,6 @@ def main() -> None:
     parser.add_argument("--session-start", type=int, default=0, help="First LoCoMo session number to import, inclusive.")
     parser.add_argument("--session-end", type=int, default=0, help="Last LoCoMo session number to import, inclusive.")
     parser.add_argument("--max-sessions", type=int, default=0)
-    parser.add_argument("--import-parallelism", type=int, default=1, help="Import up to N sessions concurrently.")
     parser.add_argument("--import-wait-mode", choices=["full", "fast"], default="full")
     parser.add_argument("--commit-wait-s", type=float, default=600.0)
     parser.add_argument("--commit-call-timeout-s", type=float, default=300.0)
