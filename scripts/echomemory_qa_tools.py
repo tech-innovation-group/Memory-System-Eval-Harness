@@ -291,8 +291,9 @@ async def execute_echomemory_http_multi_read_tool(
             if not re.fullmatch(r"[A-Za-z0-9_.-]+", source):
                 source = "echo0_plugin"
             read_candidates = [
-                f"echo://engine/{source}/sessions/{session_id}/overview.md",
-                f"echo://engine/{source}/sessions/{session_id}/abstract.md",
+                f"echo://sessions/{session_id}/current/messages.jsonl",
+                # f"echo://engine/{source}/sessions/{session_id}/overview.md",
+                # f"echo://engine/{source}/sessions/{session_id}/abstract.md",
             ]
         candidate_errors: list[str] = []
         for candidate_uri in read_candidates:
@@ -303,6 +304,22 @@ async def execute_echomemory_http_multi_read_tool(
                     content = candidate_content
                     read_uri = candidate_uri
                     read_count += 1
+                    # For session messages.jsonl, parse and keep only created_at + content
+                    if read_uri.endswith("/messages.jsonl"):
+                        formatted_lines: list[str] = []
+                        for line in candidate_content.splitlines():
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                msg = json.loads(line)
+                                created_at = msg.get("created_at", "")
+                                text = msg.get("content", "")
+                                if text:
+                                    formatted_lines.append(f"[{created_at}] {text}")
+                            except Exception:
+                                formatted_lines.append(line)
+                        content = "\n".join(formatted_lines)
                     break
             except Exception as exc:
                 candidate_errors.append(f"{candidate_uri}: {exc}")

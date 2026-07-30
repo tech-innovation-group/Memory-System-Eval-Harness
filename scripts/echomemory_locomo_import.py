@@ -2066,12 +2066,9 @@ def build_session_batches(sample: dict[str, Any]) -> tuple[list[dict[str, Any]],
             if not parts:
                 continue
             turn_time = format_turn_time(base_dt, idx)
-            time_prefix = f"[session_date={conv.get(f'{key}_date_time')}]"
-            if turn_time:
-                time_prefix += f" [turn_time={turn_time}]"
-            # Keep LoCoMo's original session/turn time in the text as a visible
-            # anchor for relative expressions like "yesterday" and "last week".
-            content = compact(f"{time_prefix} [{speaker}] {dia_id}: {' '.join(parts)}")
+            # EchoMem accepts created_at natively, so only keep the speaker prefix
+            # in the content. Session date, turn time and dia_id are no longer inlined.
+            content = compact(f"[{speaker}] {' '.join(parts)}")
             role = "assistant" if str(speaker).lower() in {"assistant", "agent"} else "user"
             item = {"role": role, "content": content}
             if turn_time:
@@ -2079,6 +2076,11 @@ def build_session_batches(sample: dict[str, Any]) -> tuple[list[dict[str, Any]],
             item["role_id"] = str(speaker)
             item["speaker"] = str(speaker)
             item["dia_id"] = str(dia_id)
+            item["metadata"] = {
+                "dia_id": str(dia_id),
+                "session_key": key,
+                "speaker": str(speaker),
+            }
             messages.append(item)
         total_tokens += sum(token_estimate(msg["content"]) for msg in messages)
         if messages:
@@ -2102,13 +2104,18 @@ async def import_one_session(args: argparse.Namespace, sdk: Any, session_id: str
             and getattr(sdk, "_compat_layout", "") == "develop-src"
         )
         for msg in messages:
+            add_kwargs: dict[str, Any] = {
+                "ctx": context,
+                "created_at": msg.get("created_at") or "",
+                "role_id": msg.get("role_id") or msg.get("role") or "",
+            }
+            if http_blackbox:
+                add_kwargs["metadata"] = msg.get("metadata") or None
             added_ref = await sdk.add_message(
                 actual_session_id,
                 msg.get("role") or "user",
                 msg.get("content") or "",
-                ctx=context,
-                created_at=msg.get("created_at") or "",
-                role_id=msg.get("role_id") or msg.get("role") or "",
+                **add_kwargs,
             )
             last_added_message_id = str(added_ref.get("message_id") or last_added_message_id)
             added += 1
@@ -3422,6 +3429,12 @@ async def run(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    # Avoid UnicodeEncodeError on Windows terminals that default to gbk when
+    # printing messages containing emoji or other non-ASCII characters.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description="Import LoCoMo conversations into EchoMemory.")
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--out-dir", required=True)

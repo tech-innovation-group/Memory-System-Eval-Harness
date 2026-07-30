@@ -1311,21 +1311,23 @@ class EchoMemHTTPCompatSDK:
         ctx: dict[str, Any] | None = None,
         created_at: str = "",
         role_id: str = "",
+        metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        metadata: dict[str, Any] = {}
-        if created_at:
-            metadata["created_at"] = created_at
-        if role_id:
-            metadata["role_id"] = role_id
+        # EchoMem accepts created_at as a top-level field. Avoid putting duplicate
+        # speaker/time fields into metadata; caller-supplied metadata should hold
+        # application-specific provenance such as dia_id / session_key.
+        payload: dict[str, Any] = {
+            "role": role,
+            "content": content,
+            "name": role_id or None,
+            "created_at": created_at or None,
+        }
+        if metadata:
+            payload["metadata"] = metadata
         data = await self._request_async(
             "POST",
             f"/api/sessions/{urllib.parse.quote(session_id, safe='')}/messages",
-            payload={
-                "role": role,
-                "content": content,
-                "name": role_id or None,
-                "metadata": metadata or None,
-            },
+            payload=payload,
         )
         message = data.get("message") or {}
         return {
