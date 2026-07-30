@@ -2573,26 +2573,13 @@ async def import_sample(
         )
 
     if args.session_mode == "locomo":
-        parallelism = max(1, int(getattr(args, "import_parallelism", 1) or 1))
-        semaphore = asyncio.Semaphore(parallelism)
-        lock = asyncio.Lock()
-        stop_event = asyncio.Event()
-
-        async def run_batch(batch: dict[str, Any]) -> None:
-            if stop_event.is_set():
-                return
+        for batch in session_batches:
             label = f"{sample_id}/{batch['session_key']}"
-            async with semaphore:
-                if stop_event.is_set():
-                    return
-                rec = await import_one_batch(batch)
-                await append_progress(rec, label)
-                if rec.get("integrity") not in {"complete", "pending_async_memory"} and not args.continue_on_session_error:
-                    print(f"[error] {label} failed; stopping sample import early", flush=True)
-                    stop_event.set()
-
-        tasks = [asyncio.create_task(run_batch(batch)) for batch in session_batches]
-        await asyncio.gather(*tasks)
+            rec = await import_one_batch(batch)
+            await append_progress(rec, label)
+            if rec.get("integrity") not in {"complete", "pending_async_memory"} and not args.continue_on_session_error:
+                print(f"[error] {label} failed; stopping sample import early", flush=True)
+                break
     if args.session_mode == "single":
         messages = [msg for batch in session_batches for msg in batch["messages"]]
         try:
