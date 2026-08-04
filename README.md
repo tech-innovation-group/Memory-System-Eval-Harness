@@ -47,12 +47,38 @@ shared/             # 共享库
 scripts/
   backend_doctor.py    # 记忆客户端健康检查
   validate_evidence.py # QA 检索证据格式检查
+  stress_echomem_incident.py # EchoMem 事故链路 HTTP 并发压测
 ```
 
 正式数据集的加载、Judge、指标、重试和报告都归属
 `benchmarks/<dataset>/`。评测针对 agent 插件而非记忆后端；记忆注入通过
 `AgentPlugin.inject_memories()` 统一完成，评测平台不直接感知记忆后端。
 当前支持 echomem 和 openviking 两个记忆后端，由 `--memory-backend` 参数选择。
+
+### EchoMem 事故链路并发压测
+
+压测脚本位于 `scripts/stress_echomem_incident.py`，通过真实 HTTP 执行：
+
+```text
+POST /api/sessions/open
+POST /api/sessions/{session_id}/messages
+POST /api/sessions/{session_id}/commit
+```
+
+示例：
+
+```bash
+python scripts/stress_echomem_incident.py \
+  --url http://127.0.0.1:18101 \
+  --concurrency 300 \
+  --context-probes 10 \
+  --output results/echomem_incident_300
+```
+
+脚本不会自动启动或关闭 EchoMem 服务。`--context-probes` 可在 commit
+突发后额外请求 `build_context`，用于验证前台召回是否受到后台 commit
+影响。输出目录包含 `client_results.json`、`client_request.log`，以及
+启用探针时的 `build_context_request.log`。
 
 ## LoCoMo 测试
 
