@@ -54,6 +54,69 @@ scripts/
 `AgentPlugin.inject_memories()` 统一完成，评测平台不直接感知记忆后端。
 当前支持 echomem 和 openviking 两个记忆后端，由 `--memory-backend` 参数选择。
 
+## EchoMem 事故链路压测
+
+独立压测脚本位于
+`scripts/stress_echomem_incident.py`，通过真实 HTTP 请求执行事故链路：
+
+```text
+POST /api/sessions/open
+POST /api/sessions/{session_id}/messages
+POST /api/sessions/{session_id}/commit
+```
+
+### 压测方式
+
+1. 单独启动 EchoMem 服务，并确认 HTTP 地址可以访问。压测脚本不会自动
+   启停 EchoMem。
+2. 每个并发档位同时启动对应数量的异步工作流。每个工作流使用独立的
+   session ID，并依次发送 `open -> add message -> commit` 请求。
+3. 所有工作流结束后，可通过 `--context-probes` 额外发送
+   `build_context` 请求。这些请求属于第二轮探针，不会与写入请求混合。
+4. 按递增并发量重复测试。不同档位之间保持 EchoMem 版本、模型配置、
+   数据集、请求内容、超时时间和测试机器不变。
+
+建议测试档位：
+
+```text
+10 -> 50 -> 100 -> 300 -> 1000
+```
+
+每个档位输出到独立目录，避免结果被覆盖：
+
+```bash
+for n in 10 50 100 300 1000; do
+  python3 scripts/stress_echomem_incident.py \
+    --url http://127.0.0.1:18101 \
+    --concurrency "$n" \
+    --context-probes 10 \
+    --output "results/echomem_incident_$n"
+done
+```
+
+压测客户端不会自动重试失败请求，以保留真实错误率，并暴露连接失败、
+超时、HTTP 4xx/5xx 和工作流中途失败等问题。按照当前 API 约定：
+`open` 和 `messages` 预期返回 `200`，`commit` 通常返回 `202`，表示后台
+提交任务已被异步接收。
+
+以下情况应视为异常：
+
+- 返回非预期状态码；
+- 工作流缺少某个步骤；
+- 出现 `ConnectError`、超时或其他异常；
+- `commit` 返回 `202` 但不代表后台索引已经完成，只代表任务已被接收。
+
+每个输出目录包含：
+
+- `client_results.json`：每个工作流的状态码、异常、响应片段、耗时和可选
+  的上下文探针结果；
+- `client_request.log`：每个写入工作流一行，包含正常状态和错误信息；
+- `build_context_request.log`：启用上下文探针后，每个探针请求一行。
+
+分析每个档位时，重点比较完成的工作流数量、状态码分布、异常数量、
+连接/超时错误、总耗时和 `duration_ms`。EchoMem 服务端日志需要单独收集，
+并使用相同的并发档位和测试时间进行对应。
+
 ## LoCoMo 测试
 
 LoCoMo 数据集已经包含在
