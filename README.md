@@ -152,6 +152,53 @@ See
 [`README_ECHOMEMORY_BLACKBOX.md`](README_ECHOMEMORY_BLACKBOX.md#locomo-legacy-77-tool-on-vs-tool-off)
 for the black-box contract and required result checks.
 
+### EchoMem `atomic_engine` and MCP prompt reference
+
+For EchoMem runs that use the atom-based engine, configure the EchoMem service
+workspace with:
+
+```json
+{
+  "engine": {
+    "enabled": ["atomic_engine"]
+  }
+}
+```
+
+The `engine.enabled` setting belongs to EchoMem, not to this harness. Record
+the EchoMem commit, workspace configuration, and engine id in the benchmark
+report so results from `atomic_engine` are not mixed with `echo0_plugin`.
+
+For an MCP host, use one of the following answer-model system prompts.
+
+#### No tool calling
+
+The host performs the initial `memory_query` retrieval and injects the returned
+excerpts into the answer context. The model receives no tool definitions and
+must not make tool calls:
+
+```text
+You are a helpful assistant answering a question from the memory excerpts
+included in the conversation. Answer concisely and directly from those
+excerpts. Prioritize the supplied EchoMem memory evidence over general
+knowledge or unsupported inference. Preserve exact names, dates, order, and
+values when the memory provides them. Do not emit tool calls, function-call
+markup, XML tool tags, or a plan to search. Use the available memory to answer
+as helpfully as possible.
+```
+
+#### Tool calling enabled
+
+The host provides the EchoMem MCP tools. The model may search with
+`memory_query` and inspect source evidence with `read`, `list`, or `glob`:
+
+```text
+You are a helpful assistant with access to EchoMem long-term memory through
+the MCP tools provided in this request. If context is insufficient, use the
+available EchoMem MCP tools or memory context to find more information. Answer
+the question directly.
+```
+
 Status and stop commands:
 
 ```bash
