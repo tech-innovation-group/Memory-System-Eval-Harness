@@ -38,20 +38,20 @@ python benchmarks/longmemeval/run_eval.py \
   --llm-api-key YOUR_API_KEY
 
 # 指定题目 ID
-./eval.sh longmemeval \
+python benchmarks/longmemeval/run_eval.py \
   --dataset /path/to/longmemeval.json \
   --question-ids q1,q2,q3 \
   --llm-api-key YOUR_API_KEY
 
 # 分成 8 个隔离 shard，最多并行 4 个进程，完成后自动合并
-./eval.sh longmemeval \
+python benchmarks/longmemeval/run_eval.py \
   --dataset /path/to/longmemeval.json \
   --parallel-shards 8 \
   --parallel-workers 4 \
   --llm-api-key YOUR_API_KEY
 
 # 只生成分片命令和 manifest，不启动评测
-./eval.sh longmemeval \
+python benchmarks/longmemeval/run_eval.py \
   --dataset /path/to/longmemeval.json \
   --parallel-shards 8 \
   --parallel-dry-run \

@@ -81,8 +81,7 @@ def build_retry_command(
 ) -> list[str]:
     return [
         sys.executable,
-        str(project_root / "eval.py"),
-        "locomo",
+        str(project_root / "benchmarks" / "locomo" / "run_eval.py"),
         "--dataset",
         str(dataset),
         "--sample",
@@ -116,7 +115,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "eval_args",
         nargs=argparse.REMAINDER,
-        help="Additional eval.py arguments after --",
+        help="Additional run_eval.py arguments after --",
     )
     return parser
 

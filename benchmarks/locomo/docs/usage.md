@@ -84,43 +84,43 @@ export LLM_API_KEY="$DASHSCOPE_API_KEY"
 
 ```bash
 # 默认注入记忆并使用 VikingBoat 0.4.11 工具口径
-./eval.sh locomo --sample conv-30 --tools
+python benchmarks/locomo/run_eval.py --sample conv-30 --tools
 
 # 自然无工具对照
-./eval.sh locomo --sample conv-30 --no-tools
+python benchmarks/locomo/run_eval.py --sample conv-30 --no-tools
 
 # 追加仅保存在本地的实验 prompt
-./eval.sh locomo \
+python benchmarks/locomo/run_eval.py \
   --sample conv-30 \
   --tools \
   --qa-prompt-file /path/to/local-prompt.txt
 
 # 从中断运行继续（统一 --resume）：复用身份，跳过已完成 import batch，
 # 只重新 QA 失败/缺失题、只重判缺失 Judge 行；指标（token/延迟/精度）按整轮累计
-./eval.sh locomo \
+python benchmarks/locomo/run_eval.py \
   --sample conv-30 \
   --resume /path/to/interrupted-run
 
 # 等价的旧参数形式（已被 --resume 取代，仅保留兼容）
-./eval.sh locomo \
+python benchmarks/locomo/run_eval.py \
   --sample conv-30 \
   --resume-qa /path/to/interrupted-run \
   --resume-judge /path/to/interrupted-run
 
 # 使用 VikingBot v0.4.11 prompt、工具语义和循环口径
 # 后端和模型可见工具均使用只读 EchoMemory memory_* 接口
-./eval.sh locomo \
+python benchmarks/locomo/run_eval.py \
   --sample conv-30 \
   --qa-profile vikingboat0411
 
 # 同一 VikingBoat 0.4.11 prompt 和初始记忆注入，但不暴露工具
-./eval.sh locomo \
+python benchmarks/locomo/run_eval.py \
   --sample conv-30 \
   --qa-profile vikingboat0411 \
   --no-tools
 
 # 自然无工具对照：只保留完整初始记忆正文，不保留工具指令或 URI-only 条目
-./eval.sh locomo \
+python benchmarks/locomo/run_eval.py \
   --sample conv-30 \
   --qa-profile vikingboat0411-natural-no-tools \
   --no-tools

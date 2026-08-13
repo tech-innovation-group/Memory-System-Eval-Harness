@@ -776,7 +776,10 @@ class BuildRetryCommandTests(unittest.TestCase):
             eval_args=["--llm-api-key", "secret"],
         )
         self.assertEqual(cmd[0], cmd[0])  # python executable
-        self.assertIn("locomo", cmd)
+        self.assertEqual(
+            str(Path("/project") / "benchmarks" / "locomo" / "run_eval.py"),
+            cmd[1],
+        )
         self.assertIn("--dataset", cmd)
         self.assertIn(str(Path("/data/locomo.json")), cmd)
         self.assertIn("--sample", cmd)
