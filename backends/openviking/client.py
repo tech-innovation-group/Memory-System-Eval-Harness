@@ -287,7 +287,7 @@ class OpenVikingClient(BaseHTTPMemoryClient):
     ) -> list[dict[str, Any]]:
         """List entries under a viking:// URI in the local workspace."""
         if recursive:
-            return self.fs_glob(uri.rstrip("/") + "/**", timeout_s=timeout_s)
+            return self.fs_glob(uri.rstrip("/") + "/**/*", timeout_s=timeout_s)
         path = self._uri_to_local_path(uri)
         if not path or not path.exists():
             return []
