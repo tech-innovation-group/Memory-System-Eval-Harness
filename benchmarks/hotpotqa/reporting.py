@@ -16,6 +16,7 @@ def build_summary(
     qa_results: list[QAResult],
     evaluation_report: EvaluationReport,
     evaluation_identity: dict[str, str],
+    resumed: bool = False,
 ) -> dict:
     qa_errors = sum(1 for result in qa_results if result.llm_error)
     retrieval_errors = sum(
@@ -30,7 +31,7 @@ def build_summary(
         "benchmark": "hotpotqa",
         "dataset": dataset_path,
         "import_mode": import_mode,
-        "memory_source": "injected",
+        "memory_source": "existing" if resumed else "injected",
         "total_questions": len(jobs),
         "import_ok": import_report.completed,
         "import_total": import_report.total,

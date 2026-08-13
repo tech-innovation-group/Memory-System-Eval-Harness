@@ -5,9 +5,10 @@
 
 ## 设计目标
 
-### 1. 对标发论文
+### 1. 支撑业界所有 agent 的评测
 
-框架需要支撑业界所有 agent 的评测，且结果能完全对标 OpenViking，用于论文发表。
+框架支撑业界所有 agent 的评测：被测 agent 通过统一插件协议接入，同一套评测流程
+可在不同 agent 与记忆后端上跑出可比结果，确保结果可复现、可审计。
 
 - **AgentPlugin 协议**：所有被测 agent 实现统一接口（`setup -> inject_memories ->
   create_session -> send_message -> getlog`），评测流程只调用接口，不接触 agent
@@ -476,6 +477,13 @@ class MyBackendClient(BaseHTTPMemoryClient):
 | LongMemEval | 逐题隔离导入 haystack | 仅检索不写入 | 官方 accuracy (LLM yes/no) |
 | 动态 (generate) | LLM 生成场景 | 端到端 EchoAgent | 配置驱动质量评估 (0-100) |
 | 动态 (replay) | 先注入对话再 QA | 跨 session 检索 | 配置驱动质量评估 (0-100) |
+
+> **指标变更同步约定**：如果任何一个 benchmark（locomo / hotpotqa / longmemeval）
+> 或 dynamic 的评估指标、产物字段（`summary.json` / `quality_report.json` /
+> `eval_results.csv` / `dynamic_results.json` 等）发生增删或含义改变，必须同步更新
+> `scripts/memory-eval-improve` skill 中对应的 benchmark/dynamic **特有字段描述**
+> （`references/benchmark-specific-fields.md` 与 `references/analysis-dimensions.md`），
+> 避免分析报告基于过时的字段定义得出结论。
 
 ## 辅助工具
 

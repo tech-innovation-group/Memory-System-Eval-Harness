@@ -27,6 +27,12 @@ from benchmarks.hotpotqa.evaluate import evaluate_hotpotqa, load_references
 from benchmarks.hotpotqa.import_memory import import_hotpotqa_memory
 from benchmarks.hotpotqa.qa import build_qa_tasks, run_hotpotqa_qa
 from benchmarks.hotpotqa.reporting import build_summary
+from benchmarks.hotpotqa.resume import (
+    build_resume_manifest,
+    load_resume_manifest,
+    validate_resume_manifest,
+    write_resume_manifest,
+)
 from benchmarks.hotpotqa.selection import (
     parse_question_ids,
     select_jobs_and_plans,
@@ -41,6 +47,12 @@ from shared.eval_base import (
     validate_eval_config,
 )
 from shared.import_guard import require_complete_imports
+from shared.resume_identity import apply_resume_memory_identity
+from shared.resume_qa import (
+    find_qa_resume_csv,
+    load_prior_import_rows,
+    load_resume_qa_results,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -56,6 +68,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--import-mode", default="per_question",
                         choices=["per_question", "global"],
                         help="导入模式: per_question=每题各自导入; global=合并共享 session")
+    parser.add_argument(
+        "--checkpoint-interval",
+        type=int,
+        default=10,
+        help="Persist partial QA CSV after every N completed questions (0=off)",
+    )
+    parser.add_argument(
+        "--resume",
+        default="",
+        help=(
+            "Resume a prior hotpotqa run directory or qa_results CSV: reuse "
+            "the prior identity, skip already-completed import batches, and "
+            "reuse healthy QA answers; only run the missing/unhealthy "
+            "remainder. Metrics (tokens/latency/F1) are computed over the "
+            "merged whole run."
+        ),
+    )
     add_agent_plugin_args(parser, default_plugin="vikingbot")
     add_eval_args(parser)
     return parser
@@ -106,11 +135,15 @@ def main() -> None:
 
     # 加载 agent 插件 (在记忆操作之前, setup 内部创建 memory_client)
     agent_config = {**vars(args), "benchmark_name": "hotpotqa", "run_id": run.result_dir.name}
+    # 统一 --resume 跳过身份隔离（插件读 config["resume_qa"]）
+    agent_config["resume_qa"] = args.resume
     agent_plugin = load_agent_plugin(args.agent_plugin, agent_config)
     echomem = agent_plugin.memory_client
     echomem.health()
+    if args.resume:
+        apply_resume_memory_identity(echomem, args.resume, log)
     evaluation_identity = {
-        "mode": "fresh",
+        "mode": "resumed" if args.resume else "fresh",
         "tenant_id": echomem.account,
         "user_id": echomem.user_id,
     }
@@ -121,9 +154,27 @@ def main() -> None:
         evaluation_identity.get("user_id", ""),
     )
 
+    # 尽早写 resume manifest（含身份）：即使导入中断，目录也留有身份供后续 --resume 复用。
+    resume_manifest = build_resume_manifest(
+        dataset_path=dataset_path,
+        import_mode=args.import_mode,
+        config=config,
+        memory_identity={
+            "account": echomem.account,
+            "user_id": echomem.user_id,
+            "auth_key": echomem.auth_key,
+        },
+    )
+    write_resume_manifest(run.result_dir, resume_manifest)
+
     # -- 阶段 1: 导入记忆 --
     log.info("=" * 60)
     log.info("阶段 1: 导入记忆 (模式=%s)", args.import_mode)
+    prior_import_rows = (
+        load_prior_import_rows(args.resume) if args.resume else None
+    )
+    if prior_import_rows is not None:
+        log.info("阶段 1: 导入记忆 (resume, 跳过已完成 batches)")
     import_report = import_hotpotqa_memory(
         jobs,
         plans,
@@ -132,6 +183,7 @@ def main() -> None:
         run.result_dir,
         log,
         import_mode=args.import_mode,
+        prior_import_rows=prior_import_rows,
     )
     log.info(
         "导入完成: %d/%d 成功",
@@ -165,12 +217,40 @@ def main() -> None:
         config,
         agent_id=echomem.agent_id,
     )
+    qa_resume_state = None
+    if args.resume:
+        prior_qa_csv = find_qa_resume_csv(args.resume)
+        if prior_qa_csv is None:
+            log.info(
+                "QA resume: no prior QA results under %s (import-only run), "
+                "running full QA",
+                args.resume,
+            )
+        else:
+            source_dir = Path(args.resume).expanduser().resolve()
+            validate_resume_manifest(
+                resume_manifest,
+                load_resume_manifest(
+                    source_dir if source_dir.is_dir() else source_dir.parent
+                ),
+            )
+            qa_resume_state = load_resume_qa_results(args.resume, qa_tasks)
+            log.info(
+                "QA resume: source=%s reused=%d discarded=%d",
+                qa_resume_state.source_csv,
+                len(qa_resume_state.results),
+                len(qa_resume_state.discarded_question_ids),
+            )
     qa_results = run_hotpotqa_qa(
         qa_tasks,
         agent_plugin,
         config,
         run.result_dir,
         log,
+        existing_results=(
+            qa_resume_state.results if qa_resume_state else None
+        ),
+        checkpoint_interval=args.checkpoint_interval,
     )
 
     # -- 阶段 3: 官方 answer/supporting-fact/joint 评测 --
@@ -205,7 +285,26 @@ def main() -> None:
         qa_results=qa_results,
         evaluation_report=evaluation_report,
         evaluation_identity=evaluation_identity,
+        resumed=bool(args.resume),
     )
+    summary["resume"] = {
+        "enabled": bool(args.resume),
+        "source": str(args.resume or ""),
+        "mode": evaluation_identity.get("mode"),
+        "reused_qa": (
+            len(qa_resume_state.results) if qa_resume_state else 0
+        ),
+        "discarded_qa": (
+            qa_resume_state.discarded_question_ids
+            if qa_resume_state
+            else []
+        ),
+        "reused_import_batches": sum(
+            1
+            for row in import_report.rows
+            if str(row.get("status") or "").strip().lower() == "reused"
+        ),
+    }
     run.save_summary(summary)
 
     if summary["status"] != "completed":

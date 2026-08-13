@@ -10,6 +10,7 @@ from typing import Any
 from tqdm import tqdm
 
 from shared.eval_base import EvalConfig
+from shared.import_guard import SUCCESS_STATUSES
 
 
 IMPORT_FIELDS = (
@@ -49,6 +50,13 @@ def _fallback_batches(plan: dict[str, Any]) -> list[dict[str, Any]]:
     }] if messages else []
 
 
+def _write_results(path: Path, rows: list[dict[str, Any]]) -> None:
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=IMPORT_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 def import_longmemeval_memory(
     jobs,
     plans,
@@ -56,14 +64,49 @@ def import_longmemeval_memory(
     config: EvalConfig,
     result_dir: Path,
     log,
+    *,
+    prior_import_rows: list[dict] | None = None,
 ) -> ImportReport:
     rows: list[dict[str, Any]] = []
     question_to_session: dict[str, str] = {}
+    output_path = result_dir / "import_results.csv"
+
+    # Build a map of previously completed imports for --resume.
+    completed_map: dict[str, str] = {}
+    if prior_import_rows:
+        for prior in prior_import_rows:
+            status = str(prior.get("status") or "").strip().lower()
+            if status in SUCCESS_STATUSES:
+                question_id = str(prior.get("question_id") or "").strip()
+                session_id = str(prior.get("session_id") or "").strip()
+                if question_id and session_id:
+                    completed_map[question_id] = session_id
+
     for job, plan in tqdm(
         list(zip(jobs, plans)),
         desc="导入记忆",
         unit="q",
     ):
+        prior_session_id = completed_map.get(job.question_id, "")
+        if prior_session_id:
+            question_to_session[job.question_id] = prior_session_id
+            rows.append({
+                "question_id": job.question_id,
+                "session_id": prior_session_id,
+                "status": "reused",
+                "messages": 0,
+                "sessions": 0,
+                "elapsed_s": 0,
+                "error": "",
+            })
+            log.info(
+                "  %s: reused (prior session=%s)",
+                job.question_id,
+                prior_session_id,
+            )
+            _write_results(output_path, rows)
+            continue
+
         session_id = ""
         archive_id = ""
         try:
@@ -128,13 +171,14 @@ def import_longmemeval_memory(
                 "elapsed_s": 0,
                 "error": str(exc),
             })
+        _write_results(output_path, rows)
 
-    output_path = result_dir / "import_results.csv"
-    with output_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=IMPORT_FIELDS)
-        writer.writeheader()
-        writer.writerows(rows)
-    completed = sum(1 for row in rows if row["status"] == "completed")
+    _write_results(output_path, rows)
+    log.info("导入结果已保存: %s", output_path)
+    completed = sum(
+        1 for row in rows
+        if str(row["status"]).strip().lower() in SUCCESS_STATUSES
+    )
     return ImportReport(
         rows=rows,
         question_to_session=question_to_session,

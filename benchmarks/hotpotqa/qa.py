@@ -31,33 +31,8 @@ def build_qa_tasks(jobs, question_to_session: dict[str, str], config: EvalConfig
     } for job in jobs]
 
 
-def run_hotpotqa_qa(
-    tasks,
-    agent_plugin,
-    config: EvalConfig,
-    result_dir: Path,
-    log,
-) -> list[QAResult]:
-    progress = tqdm(total=len(tasks), desc="QA", unit="q")
-
-    def on_progress(_done: int, result: QAResult) -> None:
-        progress.update(1)
-        preview = result.response[:100] if result.response else f"(no response) error={result.llm_error[:200]}"
-        log.info("  Q[%s] -> %s", result.question_id, preview)
-
-    try:
-        results = run_concurrent_qa(
-            agent_plugin,
-            tasks,
-            concurrency=config.concurrency,
-            question_timeout_s=config.question_timeout_s,
-            progress_callback=on_progress,
-        )
-    finally:
-        progress.close()
-
-    output_path = result_dir / "qa_results.csv"
-    with output_path.open("w", encoding="utf-8", newline="") as handle:
+def _write_qa_results(path: Path, results: list[QAResult]) -> None:
+    with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=QA_FIELDS)
         writer.writeheader()
         for result in results:
@@ -67,5 +42,92 @@ def run_hotpotqa_qa(
                 ensure_ascii=False,
             )
             writer.writerow(row)
+
+
+def run_hotpotqa_qa(
+    tasks,
+    agent_plugin,
+    config: EvalConfig,
+    result_dir: Path,
+    log,
+    existing_results: list[QAResult] | None = None,
+    checkpoint_interval: int = 0,
+) -> list[QAResult]:
+    existing_by_id = {
+        result.question_id: result
+        for result in (existing_results or [])
+    }
+    pending_tasks = [
+        task
+        for task in tasks
+        if str(task["question_id"]) not in existing_by_id
+    ]
+    progress = tqdm(total=len(pending_tasks), desc="QA", unit="q")
+    result_order = {
+        str(task["question_id"]): index
+        for index, task in enumerate(tasks)
+    }
+    completed_results: dict[str, QAResult] = dict(existing_by_id)
+    checkpoint_path = result_dir / "qa_results.checkpoint.csv"
+
+    def on_progress(done: int, result: QAResult) -> None:
+        progress.update(1)
+        completed_results[result.question_id] = result
+        ordered_completed = sorted(
+            completed_results.values(),
+            key=lambda item: result_order.get(item.question_id, len(tasks)),
+        )
+        if (
+            checkpoint_interval > 0
+            and done % checkpoint_interval == 0
+        ):
+            _write_qa_results(checkpoint_path, ordered_completed)
+            log.info(
+                "  QA checkpoint: %d/%d -> %s",
+                len(ordered_completed),
+                len(tasks),
+                checkpoint_path,
+            )
+        preview = result.response[:100] if result.response else f"(no response) error={result.llm_error[:200]}"
+        log.info("  Q[%s] -> %s", result.question_id, preview)
+
+    try:
+        if not pending_tasks:
+            results = []
+        else:
+            results = run_concurrent_qa(
+                agent_plugin,
+                pending_tasks,
+                concurrency=config.concurrency,
+                question_timeout_s=config.question_timeout_s,
+                progress_callback=on_progress,
+            )
+    finally:
+        progress.close()
+        if completed_results:
+            partial = sorted(
+                completed_results.values(),
+                key=lambda item: result_order.get(item.question_id, len(tasks)),
+            )
+            _write_qa_results(checkpoint_path, partial)
+            log.info(
+                "QA latest checkpoint saved: %d/%d -> %s",
+                len(partial),
+                len(tasks),
+                checkpoint_path,
+            )
+
+    completed_results.update({
+        result.question_id: result
+        for result in results
+    })
+    final_results = sorted(
+        completed_results.values(),
+        key=lambda item: result_order.get(item.question_id, len(tasks)),
+    )
+    output_path = result_dir / "qa_results.csv"
+    _write_qa_results(output_path, final_results)
+    if checkpoint_interval > 0:
+        _write_qa_results(checkpoint_path, final_results)
     log.info("QA 结果已保存: %s", output_path)
-    return results
+    return final_results

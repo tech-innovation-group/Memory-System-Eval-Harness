@@ -2,7 +2,7 @@
 
 ## 评测流程
 
-1. **记忆注入**: 总是新开用户身份并执行 open -> add_messages -> commit -> poll_commit；指定 `--resume-qa` 时复用已有身份，跳过已完成的 session 仅注入缺失部分
+1. **记忆注入**: 总是新开用户身份并执行 open -> add_messages -> commit -> poll_commit；指定 `--resume` 时复用已有身份，跳过已完成的 session 仅注入缺失部分（逐 batch 增量落盘，中断可续）
 2. **逐题 QA**: 默认使用历史 VikingBot prompt 和 `memory_search` / `memory_read_many` 多轮工具循环，仅检索不写入
 3. **LLM Judge**: 用 LLM 判定回答 CORRECT / WRONG
 
@@ -95,12 +95,13 @@ export LLM_API_KEY="$DASHSCOPE_API_KEY"
   --tools \
   --qa-prompt-file /path/to/local-prompt.txt
 
-# 从中断运行继续；复用已有身份，跳过已完成 session，只重新 QA 失败和缺失题
+# 从中断运行继续（统一 --resume）：复用身份，跳过已完成 import batch，
+# 只重新 QA 失败/缺失题、只重判缺失 Judge 行；指标（token/延迟/精度）按整轮累计
 ./eval.sh locomo \
   --sample conv-30 \
-  --resume-qa /path/to/interrupted-run
+  --resume /path/to/interrupted-run
 
-# QA 已完成但 Judge 中断时，只复用问题、gold 和回答完全一致的判分
+# 等价的旧参数形式（已被 --resume 取代，仅保留兼容）
 ./eval.sh locomo \
   --sample conv-30 \
   --resume-qa /path/to/interrupted-run \
@@ -341,8 +342,9 @@ python benchmarks/locomo/run_eval.py \
 | `--qa-profile` | 自动 | `--tools` 默认选择 `vikingboat0411`；`--no-tools` 默认选择 `vikingboat0411-natural-no-tools`。显式指定时可覆盖 |
 | `--qa-prompt-file` | (空) | 将本地 UTF-8 文件追加到所选 profile 的 system prompt；`summary.json` 和 resume manifest 仅记录文件名和 SHA-256 |
 | `--checkpoint-interval` | `10` | 每完成 N 题写一次 `qa_results.checkpoint.csv`；0 表示关闭 |
-| `--resume-qa` | (空) | 从先前运行目录或 QA CSV 恢复健康答案；复用已有身份，跳过已完成的 session 仅注入缺失部分，并严格校验数据集、模型和 QA 参数 |
-| `--reuse-memory-from` | (空) | 复用先前运行的身份和已完成记忆导入，但用当前参数重新执行完整 QA/Judge |
+| `--resume` | (空) | **统一续跑**：从先前运行目录或 CSV 恢复——复用身份，跳过已完成 import batch（只补中断/缺失的），恢复健康 QA 答案，复用一致 Judge 判定；只跑缺失/失败部分。summary/blackbox 指标对合并后的整轮累计（token/延迟/精度不会只算本轮） |
+| `--resume-qa` | (空) | 旧参数，语义同 `--resume`（被取代，仅保留兼容） |
+| `--reuse-memory-from` | (空) | 旧参数：只复用身份+已注入记忆、QA/Judge 全量重跑（指标只算本轮；被 `--resume` 取代，仅保留兼容） |
 | `--concurrency` | `4` | QA 并发数 |
 | `--out-dir` | `results` | 结果目录 |
 | `--allow-diagnostics` | false | 导入未完成或 provenance 不一致仍继续；仅限诊断 |
@@ -355,7 +357,7 @@ python benchmarks/locomo/run_eval.py \
 | `--judge-base-url` | (同 `--llm-base-url`) | Judge base URL |
 | `--judge-concurrency` | `4` | Judge 并发数；结果仍按原始题目顺序写入 |
 | `--judge-checkpoint-interval` | `10` | 每完成 N 题写一次 `judge_results.checkpoint.csv`；0 表示关闭 |
-| `--resume-judge` | (空) | 从先前运行目录或 Judge CSV 恢复判分；严格校验 Judge 模型和 prompt，并逐行校验 question/gold/response |
+| `--resume-judge` | (空) | 旧参数，已并入 `--resume`（仅保留兼容） |
 
 ## 输出文件
 

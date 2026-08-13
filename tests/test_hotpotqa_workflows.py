@@ -12,6 +12,7 @@ from benchmarks.hotpotqa.evaluate import (
     predict_supporting_facts,
 )
 from benchmarks.hotpotqa.import_memory import import_hotpotqa_memory
+from benchmarks.hotpotqa.qa import run_hotpotqa_qa
 from benchmarks.hotpotqa.recovery import (
     merge_recovered_rows,
     recovery_question_ids,
@@ -22,6 +23,9 @@ from shared.qa import QAResult
 
 
 class _Log:
+    def info(self, *_args):
+        return None
+
     def error(self, *_args):
         return None
 
@@ -81,6 +85,107 @@ class HotpotQAWorkflowTests(unittest.TestCase):
                 report.question_to_session,
             )
             self.assertEqual(1, report.completed)
+
+    def test_resume_per_question_skips_completed_imports(self):
+        jobs = [
+            SimpleNamespace(question_id="q1"),
+            SimpleNamespace(question_id="q2"),
+        ]
+        plans = [
+            {"events": [{"text": "fact one"}]},
+            {"events": [{"text": "fact two"}]},
+        ]
+        client = _RecordingClient()
+        prior_rows = [
+            {"question_id": "q1", "session_id": "prior-session-1", "status": "completed"},
+        ]
+
+        with tempfile.TemporaryDirectory() as directory:
+            report = import_hotpotqa_memory(
+                jobs,
+                plans,
+                client,
+                EvalConfig(),
+                Path(directory),
+                _Log(),
+                import_mode="per_question",
+                prior_import_rows=prior_rows,
+            )
+
+            # q1 reused without opening/injecting; only q2 injected.
+            self.assertEqual(["hotpotqa_q2"], client.opened)
+            self.assertEqual({"q1": "prior-session-1", "q2": "shared-session"}, report.question_to_session)
+            reused = [r for r in report.rows if r["status"] == "reused"]
+            self.assertEqual(["q1"], [r["question_id"] for r in reused])
+            self.assertEqual(2, report.completed)
+
+    def test_resume_global_reuses_shared_session(self):
+        jobs = [
+            SimpleNamespace(question_id="q1"),
+            SimpleNamespace(question_id="q2"),
+        ]
+        plans = [
+            {"events": [{"text": "fact one"}]},
+            {"events": [{"text": "fact two"}]},
+        ]
+        client = _RecordingClient()
+        prior_rows = [
+            {"question_id": "global", "session_id": "prior-global", "status": "completed"},
+        ]
+
+        with tempfile.TemporaryDirectory() as directory:
+            report = import_hotpotqa_memory(
+                jobs,
+                plans,
+                client,
+                EvalConfig(),
+                Path(directory),
+                _Log(),
+                import_mode="global",
+                prior_import_rows=prior_rows,
+            )
+
+            self.assertEqual([], client.opened)
+            self.assertEqual(
+                {"q1": "prior-global", "q2": "prior-global"},
+                report.question_to_session,
+            )
+
+    def test_qa_resume_merges_existing_and_only_runs_pending(self):
+        from plugins.base import AgentResponse
+
+        class FakePlugin:
+            received_ids: list[str] = []
+
+            def send_message(self, session_id, message, context_path="/", *, extra=None):
+                qid = str((extra or {}).get("question_id", ""))
+                self.received_ids.append(qid)
+                return AgentResponse(text="answer")
+
+        existing = QAResult(
+            question_id="q1", question="Q1", answer="A1", response="R1",
+            prompt_tokens=500, completion_tokens=200,
+        )
+        tasks = [
+            {"question_id": "q1", "question": "Q1", "answer": "A1", "sample_id": "s"},
+            {"question_id": "q2", "question": "Q2", "answer": "A2", "sample_id": "s"},
+        ]
+        plugin = FakePlugin()
+
+        with tempfile.TemporaryDirectory() as directory:
+            results = run_hotpotqa_qa(
+                tasks,
+                plugin,
+                EvalConfig(concurrency=1),
+                Path(directory),
+                _Log(),
+                existing_results=[existing],
+            )
+
+            self.assertEqual(["q2"], plugin.received_ids)
+            self.assertEqual(["q1", "q2"], [r.question_id for r in results])
+            # reused row keeps its tokens so summary accumulates
+            self.assertEqual(500, results[0].prompt_tokens)
 
     def test_answer_metrics_match_hotpot_normalization(self):
         metrics = answer_metrics("The Eiffel Tower.", "Eiffel Tower")
