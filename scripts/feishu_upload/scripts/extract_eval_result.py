@@ -100,8 +100,14 @@ def extract(result_dir: str) -> dict:
     fields["标注"] = tip
 
     # B. 评测配置
-    fields["Benchmark"] = summary.get("benchmark")
-    fields["样本过滤器"] = summary.get("sample_filter")
+    benchmark = summary.get("benchmark")
+    sample_filter = summary.get("sample_filter")
+    # Benchmark 列值为 benchmark 与样本过滤器的组合，如 locomo + conv-30 → locomo-conv-30；
+    # 无样本过滤器时仅写 benchmark 名。
+    fields["Benchmark"] = (
+        f"{benchmark}-{sample_filter}" if benchmark and sample_filter else (benchmark or sample_filter)
+    )
+    fields["样本过滤器"] = sample_filter
     fields["记忆后端"] = cfg.get("memory_backend")
     fields["Agent插件"] = cfg.get("agent_plugin")
     fields["QA Profile"] = summary.get("qa_profile")

@@ -174,3 +174,4 @@ curl -s -X PUT \
 - 上传记录时数字值必须以 JSON number 类型发送（不能是字符串），否则飞书会存为文本
 - 「上传人」「备注」不在提取脚本输出中，由 skill 向用户收集后合并
 - 「附件」列通过上传 zip 到飞书云文档获取 file_token 后填入，格式为 `[{"file_token": "<token>"}]`
+- 「Benchmark」列的值为 benchmark 与样本过滤器的组合（如 locomo + conv-30 → `locomo-conv-30`），无样本过滤器时仅 benchmark 名
