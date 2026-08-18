@@ -28,6 +28,11 @@ from benchmarks.hotpotqa.dataset import (
     context_events,
     load_dataset,
 )
+from benchmarks.hotpotqa.diagnosis import (
+    build_diagnosis,
+    classify_failure,
+    diagnose_run,
+)
 from benchmarks.hotpotqa.evaluate import (
     EVAL_FIELDS,
     EvaluationReport,
@@ -36,6 +41,7 @@ from benchmarks.hotpotqa.evaluate import (
     _normalize_blob,
     answer_metrics,
     evaluate_hotpotqa,
+    extract_answer,
     load_references,
     predict_supporting_facts,
     supporting_fact_metrics,
@@ -44,13 +50,17 @@ from benchmarks.hotpotqa.import_memory import (
     IMPORT_FIELDS,
     ImportReport,
     _add_events,
+    build_document_corpus,
+    import_hotpotqa_documents,
     import_hotpotqa_memory,
+    sanitize_resource_id,
 )
 from benchmarks.hotpotqa.qa import QA_FIELDS, build_qa_tasks, run_hotpotqa_qa
 from benchmarks.hotpotqa.reporting import build_summary
 from benchmarks.hotpotqa.selection import parse_question_ids, select_jobs_and_plans
 from shared.eval_base import EvalConfig
 from shared.qa import BASE_QA_FIELDS, QAResult
+from shared.resume_qa import ResumeQAState
 
 
 # ------------------------------------------------------------------ #
@@ -102,6 +112,21 @@ class _RecordingClient:
 
     def poll_commit(self, session_id, archive_id, **_kwargs):
         return _ok_commit_result(session_id, archive_id)
+
+
+class _RecordingResourceClient:
+    """Fake EchoMem resource client that records every add_resource call."""
+
+    def __init__(self):
+        self.resources = []
+        self.waits = 0
+
+    def add_resource(self, path, content, **kwargs):
+        self.resources.append({"path": path, "content": content, **kwargs})
+
+    def wait_for_resource_index(self, paths, **kwargs):
+        self.waits += 1
+        return {"indexed": len(paths), "failed": {}}
 
 
 def _make_qa_result(
@@ -606,6 +631,79 @@ class TestEvaluateAnswerMetrics(unittest.TestCase):
 
 
 # ------------------------------------------------------------------ #
+#  evaluate.extract_answer                                            #
+# ------------------------------------------------------------------ #
+
+class TestEvaluateExtractAnswer(unittest.TestCase):
+    def test_first_word_yes(self):
+        self.assertEqual(
+            "yes",
+            extract_answer("Yes. Scott Derrickson is American.", "yes"),
+        )
+
+    def test_first_word_no_with_comma(self):
+        self.assertEqual(
+            "no",
+            extract_answer("No, the Laleli Mosque is in Fatih.", "no"),
+        )
+
+    def test_first_word_only_when_gold_is_yes_no(self):
+        # gold 非 yes/no 时，首词 "Yes" 不误当答案（落入包含层）
+        self.assertEqual(
+            "Paris",
+            extract_answer("Yes, Paris is the capital.", "Paris"),
+        )
+
+    def test_containment_returns_gold(self):
+        self.assertEqual(
+            "Animorphs",
+            extract_answer(
+                "The series is Animorphs, written by K. A. Applegate.",
+                "Animorphs",
+            ),
+        )
+
+    def test_containment_mid_sentence(self):
+        self.assertEqual(
+            "Chief of Protocol",
+            extract_answer(
+                "Shirley Temple portrayed Corliss Archer. "
+                "She also served as Chief of Protocol of the United States.",
+                "Chief of Protocol",
+            ),
+        )
+
+    def test_short_gold_not_matching_inside_word(self):
+        # gold "no" 不应命中 "know"（token 连续子序列，而非字符串子串）
+        self.assertEqual(
+            "i know answer",
+            extract_answer("I know the answer.", "no"),
+        )
+
+    def test_preamble_strip_first_clause(self):
+        self.assertEqual(
+            "greenwich village",
+            extract_answer(
+                "The answer is Greenwich Village, New York City.",
+                "Paris",
+            ),
+        )
+
+    def test_empty_response(self):
+        self.assertEqual("", extract_answer("", "Paris"))
+
+    def test_empty_gold_falls_through(self):
+        # gold 为空时跳过包含层，走分句兜底
+        self.assertEqual(
+            "paris is capital",
+            extract_answer("Paris is the capital.", ""),
+        )
+
+    def test_exact_match_passthrough(self):
+        self.assertEqual("Paris", extract_answer("Paris", "Paris"))
+
+
+# ------------------------------------------------------------------ #
 #  evaluate._normalize_blob                                           #
 # ------------------------------------------------------------------ #
 
@@ -883,6 +981,19 @@ class TestEvaluateEvaluateHotpotqa(unittest.TestCase):
         self.assertEqual(1, len(report.rows))
         self.assertEqual(1, len(rows))
 
+    def test_answer_extracted_column_written(self):
+        result = _make_qa_result(
+            question_id="q1",
+            response="The series is Animorphs, written by K. A. Applegate.",
+            answer="Animorphs",
+        )
+        refs = {"q1": {"_id": "q1", "context": [], "supporting_facts": []}}
+        with tempfile.TemporaryDirectory() as d:
+            report = evaluate_hotpotqa([result], refs, Path(d))
+        self.assertEqual("Animorphs", report.rows[0]["answer_extracted"])
+        # 抽取后散文回复可命中 EM
+        self.assertEqual(1.0, report.answer_em)
+
     def test_perfect_answer_em(self):
         result = _make_qa_result(question_id="q1", response="Paris", answer="Paris")
         refs = {"q1": {"_id": "q1", "context": [], "supporting_facts": []}}
@@ -1154,6 +1265,177 @@ class TestImportGlobalMode(unittest.TestCase):
             )
         self.assertEqual(1, len(client.commits))
         self.assertEqual(1, len(client.opened))
+
+
+# ------------------------------------------------------------------ #
+#  import_memory documents mode (resource corpus)                    #
+# ------------------------------------------------------------------ #
+
+class TestDocumentCorpus(unittest.TestCase):
+    def test_sanitize_resource_id(self):
+        self.assertEqual(
+            "Albert_Einstein_1879",
+            sanitize_resource_id("Albert Einstein (1879)!?"),
+        )
+        self.assertEqual("doc", sanitize_resource_id("..."))
+        self.assertEqual("abc", sanitize_resource_id("abc"))
+
+    def test_corpus_dedupes_by_content(self):
+        plans = [
+            {
+                "memory_documents": [
+                    {"title": "DocA", "text": "body one"},
+                    {"title": "DocB", "text": "body two"},
+                ]
+            },
+            {
+                "memory_documents": [
+                    {"title": "DocA", "text": "body one"},  # duplicate
+                    {"title": "DocC", "text": "body three"},
+                ]
+            },
+        ]
+        corpus = build_document_corpus(plans)
+        self.assertEqual(3, len(corpus))
+        paths = {entry["path"] for entry in corpus}
+        self.assertEqual(3, len(paths))
+        self.assertTrue(all(p.startswith("hotpotqa/") for p in paths))
+
+    def test_corpus_skips_missing_title_or_text(self):
+        plans = [
+            {"memory_documents": [
+                {"title": "A", "text": ""},
+                {"title": "", "text": "x"},
+                {"title": "B", "text": "y"},
+            ]}
+        ]
+        self.assertEqual(1, len(build_document_corpus(plans)))
+
+    def test_corpus_handles_missing_documents(self):
+        self.assertEqual([], build_document_corpus([{}, {"events": []}]))
+
+
+class TestImportDocumentsMode(unittest.TestCase):
+    def test_documents_success(self):
+        jobs = [SimpleNamespace(question_id="q1"), SimpleNamespace(question_id="q2")]
+        plans = [
+            {"memory_documents": [{"title": "D1", "text": "body one"}]},
+            {"memory_documents": [
+                {"title": "D1", "text": "body one"},
+                {"title": "D2", "text": "body two"},
+            ]},
+        ]
+        client = _RecordingResourceClient()
+        with tempfile.TemporaryDirectory() as d:
+            report = import_hotpotqa_memory(
+                jobs, plans, client, EvalConfig(),
+                Path(d), _Log(), import_mode="documents",
+            )
+        self.assertEqual(1, report.completed)
+        self.assertEqual(0, report.incomplete)
+        self.assertEqual(2, len(client.resources))
+        self.assertEqual(1, client.waits)
+        self.assertEqual("completed", report.rows[0]["status"])
+        # Every question maps to the shared resource corpus (no session).
+        self.assertEqual({"q1": "", "q2": ""}, report.question_to_session)
+        # path -> title map covers both unique documents.
+        self.assertEqual(2, len(report.document_path_titles))
+
+    def test_documents_records_metadata(self):
+        jobs = [SimpleNamespace(question_id="q1")]
+        plans = [{"memory_documents": [{"title": "Title X", "text": "body"}]}]
+        client = _RecordingResourceClient()
+        with tempfile.TemporaryDirectory() as d:
+            report = import_hotpotqa_memory(
+                jobs, plans, client, EvalConfig(),
+                Path(d), _Log(), import_mode="documents",
+            )
+        resource = client.resources[0]
+        self.assertEqual(["hotpotqa"], resource["tags"])
+        self.assertEqual("Title X", resource["metadata"]["hotpotqa_title"])
+        self.assertEqual("Title X", report.document_path_titles[resource["path"]])
+
+    def test_documents_error_marks_row_failed(self):
+        jobs = [SimpleNamespace(question_id="q1")]
+        plans = [{"memory_documents": [{"title": "D", "text": "body"}]}]
+        client = _RecordingResourceClient()
+        client.add_resource = MagicMock(side_effect=RuntimeError("boom"))
+        with tempfile.TemporaryDirectory() as d:
+            report = import_hotpotqa_memory(
+                jobs, plans, client, EvalConfig(),
+                Path(d), _Log(), import_mode="documents",
+            )
+        self.assertEqual(0, report.completed)
+        self.assertEqual(1, report.incomplete)
+        self.assertEqual("error", report.rows[0]["status"])
+        self.assertIn("boom", report.rows[0]["error"])
+        self.assertEqual(0, client.waits)
+
+    def test_documents_requires_resource_api(self):
+        client = _RecordingClient()  # no add_resource
+        jobs = [SimpleNamespace(question_id="q1")]
+        plans = [{"memory_documents": [{"title": "D", "text": "body"}]}]
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(RuntimeError):
+                import_hotpotqa_memory(
+                    jobs, plans, client, EvalConfig(),
+                    Path(d), _Log(), import_mode="documents",
+                )
+
+    def test_documents_reuse_skips_injection(self):
+        jobs = [SimpleNamespace(question_id="q1"), SimpleNamespace(question_id="q2")]
+        plans = [
+            {"memory_documents": [{"title": "D1", "text": "body one"}]},
+            {"memory_documents": [
+                {"title": "D1", "text": "body one"},
+                {"title": "D2", "text": "body two"},
+            ]},
+        ]
+        client = _RecordingResourceClient()
+        with tempfile.TemporaryDirectory() as d:
+            report = import_hotpotqa_memory(
+                jobs, plans, client, EvalConfig(),
+                Path(d), _Log(), import_mode="documents",
+                reuse_memory=True,
+            )
+        self.assertEqual(1, report.completed)
+        self.assertEqual(0, report.incomplete)
+        self.assertEqual(0, len(client.resources))  # 不重新注入
+        self.assertEqual(0, client.waits)           # 不等待索引
+        self.assertEqual("reused", report.rows[0]["status"])
+        self.assertEqual(2, len(report.document_path_titles))  # 映射仍重建
+
+    def test_documents_resume_skips_injection(self):
+        jobs = [SimpleNamespace(question_id="q1"), SimpleNamespace(question_id="q2")]
+        plans = [
+            {"memory_documents": [{"title": "D1", "text": "body one"}]},
+            {"memory_documents": [
+                {"title": "D1", "text": "body one"},
+                {"title": "D2", "text": "body two"},
+            ]},
+        ]
+        client = _RecordingResourceClient()
+        prior_rows = [{
+            "question_id": "documents",
+            "session_id": "resource_corpus",
+            "status": "completed",
+            "messages": 2,
+            "elapsed_s": 0.0,
+            "error": "",
+        }]
+        with tempfile.TemporaryDirectory() as d:
+            report = import_hotpotqa_memory(
+                jobs, plans, client, EvalConfig(),
+                Path(d), _Log(), import_mode="documents",
+                prior_import_rows=prior_rows,
+            )
+        # --resume 时 prior 批次已完成，同样不重新注入
+        self.assertEqual(1, report.completed)
+        self.assertEqual(0, report.incomplete)
+        self.assertEqual(0, len(client.resources))
+        self.assertEqual(0, client.waits)
+        self.assertEqual("reused", report.rows[0]["status"])
+        self.assertEqual(2, len(report.document_path_titles))
 
 
 # ------------------------------------------------------------------ #
@@ -1559,6 +1841,59 @@ class TestReportingBuildSummary(unittest.TestCase):
         self.assertEqual(0.9, summary["joint_em"])
         self.assertEqual(1.0, summary["joint_f1"])
 
+    def test_trace_derived_fields(self):
+        qa_results = [
+            QAResult(
+                question_id="q1", question="Q", answer="A", response="R",
+                tool_call_count=3, iterations=2,
+                trace={
+                    "iterations": [
+                        {"model_response": {"response_model": "model-a"}},
+                        {"model_response": {"response_model": "model-a"}},
+                    ],
+                    "tool_protocol": {"sha256": "hash1"},
+                    "tool_audit": {
+                        "messages_jsonl_reads": [{"uri": "x"}, {"uri": "y"}],
+                    },
+                },
+            ),
+            QAResult(
+                question_id="q2", question="Q", answer="A", response="R",
+                tool_call_count=1, iterations=1,
+                trace={
+                    "iterations": [
+                        {"model_response": {"response_model": "model-b"}},
+                    ],
+                    "tool_protocol": {"sha256": "hash1"},
+                    "tool_audit": {
+                        "read_files": [
+                            {"uri": "viking://messages.jsonl"},
+                            {"uri": "other"},
+                        ],
+                    },
+                },
+            ),
+        ]
+        summary = build_summary(
+            dataset_path="/d",
+            import_mode="per_question",
+            jobs=[
+                SimpleNamespace(question_id="q1"),
+                SimpleNamespace(question_id="q2"),
+            ],
+            import_report=self._make_import_report(completed=2, total=2),
+            qa_results=qa_results,
+            evaluation_report=self._make_eval_report(),
+            evaluation_identity={},
+        )
+        self.assertEqual(4, summary["tool_call_total"])
+        self.assertEqual(1.5, summary["avg_iterations"])
+        self.assertEqual(["model-a", "model-b"], summary["served_model_ids"])
+        self.assertEqual(["hash1"], summary["tool_protocol_sha256"])
+        self.assertEqual(2, summary["messages_jsonl_read_questions"])
+        self.assertEqual(3, summary["messages_jsonl_read_calls"])
+        self.assertEqual(1.0, summary["messages_jsonl_read_rate"])
+
     def test_benchmark_and_memory_source(self):
         summary = build_summary(
             dataset_path="/d",
@@ -1786,6 +2121,453 @@ def _write_csv(path: Path, rows: list[dict]) -> None:
 
 
 # ------------------------------------------------------------------ #
+#  diagnosis.classify_failure                                         #
+# ------------------------------------------------------------------ #
+
+class TestHotpotQAClassifyFailure(unittest.TestCase):
+    """classify_failure across all outcome modes."""
+
+    def _qa_row(self, **overrides):
+        row = {
+            "question_id": "q1",
+            "question": "Where is the Eiffel Tower?",
+            "answer": "Paris",
+            "response": "Paris",
+            "retrieval_items_json": json.dumps([{
+                "content": "The Eiffel Tower is in Paris.",
+            }]),
+            "llm_error": "",
+            "retrieval_error": "",
+        }
+        row.update(overrides)
+        return row
+
+    def _eval_row(self, em=1.0, f1=1.0):
+        return {"answer_em": em, "answer_f1": f1}
+
+    def test_correct_when_em_is_one(self):
+        result = classify_failure(self._qa_row(), self._eval_row(em=1.0, f1=1.0))
+        self.assertEqual("correct", result["mode"])
+        self.assertFalse(result["retryable"])
+
+    def test_partial_when_f1_positive_but_em_zero(self):
+        result = classify_failure(
+            self._qa_row(response="Par"),
+            self._eval_row(em=0.0, f1=0.5),
+        )
+        self.assertEqual("partial_answer", result["mode"])
+        self.assertFalse(result["retryable"])
+
+    def test_model_error(self):
+        row = self._qa_row(response="", llm_error="timeout")
+        result = classify_failure(row, self._eval_row(em=0.0, f1=0.0))
+        self.assertEqual("model_error", result["mode"])
+        self.assertTrue(result["retryable"])
+
+    def test_retrieval_error(self):
+        row = self._qa_row(
+            retrieval_error="backend down",
+            retrieval_items_json="[]",
+        )
+        result = classify_failure(row, self._eval_row(em=0.0, f1=0.0))
+        self.assertEqual("retrieval_error", result["mode"])
+        self.assertTrue(result["retryable"])
+
+    def test_empty_answer(self):
+        row = self._qa_row(response="")
+        result = classify_failure(row, self._eval_row(em=0.0, f1=0.0))
+        self.assertEqual("empty_answer", result["mode"])
+        self.assertTrue(result["retryable"])
+
+    def test_empty_retrieval(self):
+        row = self._qa_row(retrieval_items_json="[]")
+        result = classify_failure(row, self._eval_row(em=0.0, f1=0.0))
+        self.assertEqual("empty_retrieval", result["mode"])
+        self.assertTrue(result["retryable"])
+
+    def test_evidence_unused_when_gold_in_evidence_but_wrong(self):
+        row = self._qa_row(response="London")
+        result = classify_failure(row, self._eval_row(em=0.0, f1=0.0))
+        self.assertEqual("evidence_unused", result["mode"])
+        self.assertTrue(result["gold_overlap"])
+        self.assertFalse(result["retryable"])
+
+    def test_evidence_mismatch_when_evidence_missing_gold(self):
+        row = self._qa_row(
+            response="London",
+            retrieval_items_json=json.dumps([
+                {"content": "The tower is in Berlin."},
+            ]),
+        )
+        result = classify_failure(row, self._eval_row(em=0.0, f1=0.0))
+        self.assertEqual("evidence_mismatch", result["mode"])
+        self.assertFalse(result["gold_overlap"])
+        self.assertFalse(result["retryable"])
+
+    def test_memory_missing_when_no_evidence(self):
+        row = self._qa_row(
+            response="London",
+            retrieval_items_json=json.dumps([{"content": "   "}]),
+        )
+        result = classify_failure(row, self._eval_row(em=0.0, f1=0.0))
+        self.assertEqual("memory_missing", result["mode"])
+        self.assertFalse(result["has_evidence"])
+        self.assertFalse(result["retryable"])
+
+
+# ------------------------------------------------------------------ #
+#  diagnosis.build_diagnosis / diagnose_run                           #
+# ------------------------------------------------------------------ #
+
+class TestHotpotQABuildDiagnosis(unittest.TestCase):
+    def _write_dataset(self, directory: Path) -> Path:
+        items = [
+            {
+                "_id": "q1",
+                "question": "Where is the tower?",
+                "answer": "Paris",
+                "type": "comparison",
+                "context": [["Eiffel Tower", ["The Eiffel Tower is in Paris."]]],
+            },
+            {
+                "_id": "q2",
+                "question": "Who wrote Hamlet?",
+                "answer": "Shakespeare",
+                "type": "bridge",
+                "context": [["Play", ["Hamlet was written by Shakespeare."]]],
+            },
+        ]
+        path = directory / "data.json"
+        _write_hotpotqa_json(path, items)
+        return path
+
+    def _qa_rows(self):
+        return [
+            {
+                "question_id": "q1",
+                "question": "Where is the tower?",
+                "answer": "Paris",
+                "response": "Paris",
+                "retrieval_items_json": json.dumps([
+                    {"content": "The Eiffel Tower is in Paris."},
+                ]),
+                "llm_error": "",
+                "retrieval_error": "",
+            },
+            {
+                "question_id": "q2",
+                "question": "Who wrote Hamlet?",
+                "answer": "Shakespeare",
+                "response": "Marlowe",
+                "retrieval_items_json": json.dumps([
+                    {"content": "Hamlet was written by Shakespeare."},
+                ]),
+                "llm_error": "",
+                "retrieval_error": "",
+            },
+        ]
+
+    def _eval_rows(self):
+        return [
+            {
+                "question_id": "q1",
+                "answer_em": 1.0,
+                "answer_f1": 1.0,
+                "supporting_facts_em": 1.0,
+                "supporting_facts_f1": 1.0,
+            },
+            {
+                "question_id": "q2",
+                "answer_em": 0.0,
+                "answer_f1": 0.0,
+                "supporting_facts_em": 1.0,
+                "supporting_facts_f1": 1.0,
+            },
+        ]
+
+    def test_summary_and_traces_structure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dataset_path = self._write_dataset(Path(directory))
+            jobs, _plans = load_dataset(dataset_path)
+            summary, traces = build_diagnosis(
+                self._qa_rows(),
+                self._eval_rows(),
+                jobs,
+            )
+        self.assertEqual(2, summary["total"])
+        self.assertEqual(1, summary["correct"])
+        self.assertEqual(1, summary["failed"])
+        self.assertEqual(0.5, summary["accuracy"])
+        self.assertEqual(1.0, summary["retrieval_coverage"])
+        self.assertIn("comparison", summary["category_breakdown"])
+        self.assertIn("bridge", summary["category_breakdown"])
+        self.assertEqual([], summary["retryable_question_ids"])
+        self.assertEqual([], summary["missing_question_ids"])
+        modes = {trace["question_id"]: trace["mode"] for trace in traces}
+        self.assertEqual("correct", modes["q1"])
+        self.assertEqual("evidence_unused", modes["q2"])
+        trace_q2 = next(t for t in traces if t["question_id"] == "q2")
+        self.assertTrue(trace_q2["gold_overlap"])
+        self.assertEqual(1, trace_q2["supporting_facts_f1"])
+
+    def test_diagnose_run_writes_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            dataset_path = self._write_dataset(directory)
+            qa_path = directory / "qa_results.csv"
+            eval_path = directory / "eval_results.csv"
+            _write_csv(qa_path, self._qa_rows())
+            _write_csv(eval_path, self._eval_rows())
+            summary = diagnose_run(
+                qa_path,
+                eval_path,
+                dataset_path,
+                "all",
+                0,
+                directory,
+            )
+            self.assertTrue((directory / "diagnosis.json").is_file())
+            self.assertTrue((directory / "retrieval_traces.jsonl").is_file())
+            lines = (directory / "retrieval_traces.jsonl").read_text(
+                encoding="utf-8"
+            ).splitlines()
+            self.assertEqual(2, len(lines))
+            self.assertEqual(1, summary["failed"])
+
+    def test_missing_question_ids_reported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            dataset_path = self._write_dataset(directory)
+            qa_path = directory / "qa_results.csv"
+            eval_path = directory / "eval_results.csv"
+            # only q1 got results; q2 is in the dataset but missing
+            _write_csv(qa_path, [self._qa_rows()[0]])
+            _write_csv(eval_path, [self._eval_rows()[0]])
+            summary = diagnose_run(
+                qa_path,
+                eval_path,
+                dataset_path,
+                "all",
+                0,
+                directory,
+            )
+            self.assertEqual(["q2"], summary["missing_question_ids"])
+
+
+# ------------------------------------------------------------------ #
+#  qa: agent_traces + tool_audits                                     #
+# ------------------------------------------------------------------ #
+
+class TestHotpotQATraceToolAudits(unittest.TestCase):
+    def test_writes_traces_and_tool_audits(self):
+        from plugins.base import AgentResponse
+
+        class FakePlugin:
+            def send_message(self, session_id, message, context_path="/", *, extra=None):
+                return AgentResponse(
+                    text="answer",
+                    prompt_tokens=5,
+                    completion_tokens=3,
+                    extra={"trace": {"tool_audit": {"tools_used": ["search"], "calls": 2}}},
+                )
+
+        tasks = [{
+            "question_id": "q1",
+            "question": "Q1",
+            "answer": "A1",
+            "sample_id": "s1",
+            "category": "c",
+        }]
+        with tempfile.TemporaryDirectory() as directory:
+            result_dir = Path(directory)
+            run_hotpotqa_qa(
+                tasks,
+                FakePlugin(),
+                EvalConfig(concurrency=1),
+                result_dir,
+                _Log(),
+            )
+            self.assertTrue((result_dir / "agent_traces" / "q1.json").is_file())
+            audit_lines = (result_dir / "tool_audits.jsonl").read_text(
+                encoding="utf-8"
+            ).splitlines()
+            self.assertEqual(1, len(audit_lines))
+            row = json.loads(audit_lines[0])
+            self.assertEqual("q1", row["question_id"])
+            self.assertEqual(["search"], row["tools_used"])
+            audit_json = json.loads(
+                (result_dir / "tool_audits.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(1, len(audit_json))
+            self.assertEqual(2, audit_json[0]["calls"])
+
+    def test_no_trace_writes_empty_audits_only(self):
+        from plugins.base import AgentResponse
+
+        class FakePlugin:
+            def send_message(self, session_id, message, context_path="/", *, extra=None):
+                return AgentResponse(text="answer")
+
+        tasks = [{
+            "question_id": "q1",
+            "question": "Q1",
+            "answer": "A1",
+            "sample_id": "s1",
+            "category": "c",
+        }]
+        with tempfile.TemporaryDirectory() as directory:
+            result_dir = Path(directory)
+            run_hotpotqa_qa(
+                tasks,
+                FakePlugin(),
+                EvalConfig(concurrency=1),
+                result_dir,
+                _Log(),
+            )
+            self.assertFalse((result_dir / "agent_traces" / "q1.json").exists())
+            self.assertEqual(
+                "",
+                (result_dir / "tool_audits.jsonl").read_text(encoding="utf-8"),
+            )
+            self.assertEqual(
+                [],
+                json.loads((result_dir / "tool_audits.json").read_text(encoding="utf-8")),
+            )
+
+
+# ------------------------------------------------------------------ #
+#  resume: copy/restore agent traces + full tool audits              #
+# ------------------------------------------------------------------ #
+
+class TestHotpotQAResumeTraces(unittest.TestCase):
+    def test_copy_resume_traces_filters_by_reusable_ids(self):
+        from benchmarks.hotpotqa.resume import copy_resume_traces
+
+        with tempfile.TemporaryDirectory() as d:
+            source = Path(d) / "source"
+            dest = Path(d) / "dest"
+            trace_dir = source / "agent_traces"
+            trace_dir.mkdir(parents=True)
+            # 真实 trace 内容不含 question_id 字段，靠文件名（sanitized id）匹配
+            (trace_dir / "q1.json").write_text(
+                json.dumps({"tool_audit": {"tools_used": []}}), encoding="utf-8",
+            )
+            (trace_dir / "q2.json").write_text(
+                json.dumps({"tool_audit": {"tools_used": []}}), encoding="utf-8",
+            )
+            state = ResumeQAState(
+                source_csv=source / "qa_results.csv",
+                results=[
+                    QAResult(question_id="q1", question="Q", answer="A", response="R"),
+                ],
+                discarded_question_ids=[],
+            )
+            copied = copy_resume_traces(state, dest)
+            self.assertEqual(1, copied)
+            self.assertTrue((dest / "agent_traces" / "q1.json").exists())
+            self.assertFalse((dest / "agent_traces" / "q2.json").exists())
+
+    def test_copy_resume_traces_no_trace_dir(self):
+        from benchmarks.hotpotqa.resume import copy_resume_traces
+
+        with tempfile.TemporaryDirectory() as d:
+            source = Path(d) / "source"
+            source.mkdir()
+            state = ResumeQAState(
+                source_csv=source / "qa.csv",
+                results=[],
+                discarded_question_ids=[],
+            )
+            self.assertEqual(0, copy_resume_traces(state, Path(d) / "dest"))
+
+    def test_restore_resume_traces_populates_reused_results(self):
+        from benchmarks.hotpotqa.resume import restore_resume_traces
+
+        with tempfile.TemporaryDirectory() as d:
+            result_dir = Path(d) / "result"
+            trace_dir = result_dir / "agent_traces"
+            trace_dir.mkdir(parents=True)
+            (trace_dir / "q1.json").write_text(
+                json.dumps({
+                    "iterations": [{"model_response": {"response_model": "m1"}}],
+                    "tool_protocol": {"sha256": "abc"},
+                }),
+                encoding="utf-8",
+            )
+            results = [
+                QAResult(question_id="q1", question="Q", answer="A", response="R"),
+                QAResult(question_id="q2", question="Q", answer="A", response="R"),
+            ]
+            restored = restore_resume_traces(results, result_dir)
+            self.assertEqual(1, restored)
+            self.assertEqual(
+                "m1",
+                results[0].trace["iterations"][0]["model_response"]["response_model"],
+            )
+            self.assertEqual("abc", results[0].trace["tool_protocol"]["sha256"])
+            self.assertEqual({}, results[1].trace)
+
+    def test_restore_resume_traces_no_trace_dir(self):
+        from benchmarks.hotpotqa.resume import restore_resume_traces
+
+        with tempfile.TemporaryDirectory() as d:
+            results = [
+                QAResult(question_id="q1", question="Q", answer="A", response="R"),
+            ]
+            self.assertEqual(0, restore_resume_traces(results, Path(d)))
+
+    def test_resume_dir_keeps_traces_and_tool_audits_for_reused(self):
+        # resume 目录要与从 0 运行等价：复用题的 agent_traces + tool_audits 都要有
+        from benchmarks.hotpotqa.qa import write_tool_audits
+        from benchmarks.hotpotqa.resume import (
+            copy_resume_traces,
+            restore_resume_traces,
+        )
+
+        with tempfile.TemporaryDirectory() as d:
+            source = Path(d) / "source"
+            dest = Path(d) / "dest"
+            trace_dir = source / "agent_traces"
+            trace_dir.mkdir(parents=True)
+            # 真实 trace：内容不含 question_id，靠文件名匹配
+            (trace_dir / "q1.json").write_text(
+                json.dumps({
+                    "tool_audit": {
+                        "tools_used": ["memory_list"],
+                        "tool_calls": [],
+                        "messages_jsonl_reads": [],
+                    },
+                }),
+                encoding="utf-8",
+            )
+            state = ResumeQAState(
+                source_csv=source / "qa_results.csv",
+                results=[
+                    QAResult(question_id="q1", question="Q", answer="A", response="R"),
+                ],
+                discarded_question_ids=[],
+            )
+            self.assertEqual(1, copy_resume_traces(state, dest))
+            results = [
+                QAResult(question_id="q1", question="Q", answer="A", response="R"),
+            ]
+            self.assertEqual(1, restore_resume_traces(results, dest))
+            write_tool_audits(dest, results)
+
+            self.assertTrue((dest / "agent_traces" / "q1.json").is_file())
+            audit_rows = [
+                json.loads(line)
+                for line in (dest / "tool_audits.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+                if line.strip()
+            ]
+            self.assertEqual(1, len(audit_rows))
+            self.assertEqual("q1", audit_rows[0]["question_id"])
+            self.assertEqual(["memory_list"], audit_rows[0]["tools_used"])
+
+
+# ------------------------------------------------------------------ #
 #  run_eval.build_parser                                              #
 # ------------------------------------------------------------------ #
 
@@ -1825,6 +2607,16 @@ class TestRunEvalBuildParser(unittest.TestCase):
         with patch.object(sys, "argv", argv):
             args = build_parser().parse_args(argv[1:])
         self.assertEqual("a,b,c", args.question_ids)
+
+    def test_reuse_memory_from_arg(self):
+        from benchmarks.hotpotqa.run_eval import build_parser
+        argv = ["run_eval.py", "--agent-plugin", "bare_llm",
+                "--llm-api-key", "k", "--llm-base-url", "http://x",
+                "--llm-model", "m",
+                "--reuse-memory-from", "results/prior_run"]
+        with patch.object(sys, "argv", argv):
+            args = build_parser().parse_args(argv[1:])
+        self.assertEqual("results/prior_run", args.reuse_memory_from)
 
 
 if __name__ == "__main__":

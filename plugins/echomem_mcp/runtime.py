@@ -114,7 +114,10 @@ _SYSTEM_PROMPT = (
     "through the MCP tools provided in this request. "
     "If context is insufficient, use the available EchoMem MCP tools or "
     "memory context to find more information. "
-    "Answer the question directly."
+    "Answer the question directly. "
+    "Answer with only the exact answer: a single word or short phrase, "
+    "with no explanation, preamble, or sentences. For yes/no questions, "
+    "answer with exactly 'yes' or 'no'."
 )
 
 _NO_TOOLS_SYSTEM_PROMPT = (
@@ -125,7 +128,10 @@ _NO_TOOLS_SYSTEM_PROMPT = (
     "Preserve exact names, dates, order, and values when the memory provides them. "
     "Do not emit tool calls, function-call markup, XML tool tags, "
     "or a plan to search. Use the available memory to answer as helpfully as "
-    "possible."
+    "possible. "
+    "Answer with only the exact answer: a single word or short phrase, "
+    "with no explanation, preamble, or sentences. For yes/no questions, "
+    "answer with exactly 'yes' or 'no'."
 )
 
 

@@ -32,7 +32,7 @@ python "Memory-System-Eval-Harness/scripts/feishu_upload/scripts/extract_eval_re
 所有浮点数自动四舍五入到 4 位小数。
 将输出保存为变量，后续组装上传请求体时使用。
 
-**注意**：脚本输出中不包含「上传人」和「备注」字段，这两个字段在步骤 3 中向用户收集后合并进去。
+**注意**：脚本输出已包含「备注」（取自 tip.txt），不包含「上传人」。「上传人」在步骤 3 向用户收集后合并；如需自定义「备注」，可在步骤 3 提供以覆盖 tip.txt 内容。
 
 ### 3. 收集飞书凭证
 
@@ -43,7 +43,7 @@ python "Memory-System-Eval-Harness/scripts/feishu_upload/scripts/extract_eval_re
 - 多维表格 App Token（从飞书多维表格 URL 中获取）
 - 多维表格 Table ID（从飞书多维表格 URL 中获取）
 - 飞书用户名（用于标识是谁上传的）
-- 备注（可选，用户可跳过）
+- 备注（可选，用户可跳过；提供则覆盖脚本输出的 tip.txt 内容）
 
 凭证获取方式参见 `references/feishu_setup_guide.md`。
 
@@ -114,7 +114,7 @@ curl -s -X POST \
   -d '{"fields": <合并后的字段JSON>}'
 ```
 
-**合并方式**：将步骤 2 的 JSON 输出解析为 dict，添加 `"上传人": "<飞书用户名>"`、`"备注": "<备注或空字符串>"` 和 `"附件": [{"file_token": "<file_token>"}]`，然后作为 `fields` 的值。
+**合并方式**：将步骤 2 的 JSON 输出解析为 dict，添加 `"上传人": "<飞书用户名>"` 和 `"附件": [{"file_token": "<file_token>"}]`；「备注」默认取步骤 2 输出（tip.txt），若步骤 3 用户提供了备注则覆盖，然后作为 `fields` 的值。
 
 **null 值处理**：飞书 API 不接受 null 值的字段，上传前需将值为 null 的字段从 fields 中移除。
 
@@ -166,12 +166,13 @@ curl -s -X PUT \
 
 ## 注意事项
 
+- hotpotqa 结果需要共享表格额外创建 6 个数字列：`AnswerEM`/`AnswerF1`/`JointEM`/`JointF1`/`SupportingFactsEM`/`SupportingFactsF1`（formatter `0.0000`）；上传 hotpotqa 前请确认列已存在。
 - 飞书凭证仅在本次会话期间使用，不落盘、不写入任何文件
 - `extract_eval_result.py` 只读本地文件输出 JSON，不做任何网络请求，不接触凭证
 - 所有浮点数自动四舍五入到 4 位小数
 - 上传前必须移除值为 null 的字段，飞书 API 不接受 null
 - 数字字段创建时必须设置 `property.formatter` 为 `0.0000`，否则默认只显示 1 位小数
 - 上传记录时数字值必须以 JSON number 类型发送（不能是字符串），否则飞书会存为文本
-- 「上传人」「备注」不在提取脚本输出中，由 skill 向用户收集后合并
+- 「上传人」不在提取脚本输出中，由 skill 向用户收集后合并；「备注」由脚本从 tip.txt 输出，用户可在上传时覆盖
 - 「附件」列通过上传 zip 到飞书云文档获取 file_token 后填入，格式为 `[{"file_token": "<token>"}]`
 - 「Benchmark」列的值为 benchmark 与样本过滤器的组合（如 locomo + conv-30 → `locomo-conv-30`），无样本过滤器时仅 benchmark 名

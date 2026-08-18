@@ -712,6 +712,20 @@ def main() -> None:
     }
     summary["run_started_at"] = run.started_at.isoformat()
     summary["run_finished_at"] = run.finished_at_iso()
+    if qa_resume_state:
+        # 续跑延续源运行的原始启动时间：批次耗时/吞吐按「原启动 → 本次结束」计算。
+        source_summary_path = Path(qa_resume_state.source_csv).parent / "summary.json"
+        if source_summary_path.is_file():
+            try:
+                with open(source_summary_path, encoding="utf-8") as f:
+                    source_summary = json.load(f)
+            except (OSError, ValueError) as exc:
+                log.warning("读取续跑源 summary 失败: %s", exc)
+                source_summary = {}
+            source_started_at = source_summary.get("run_started_at")
+            if source_started_at:
+                summary["qa_resume"]["original_started_at"] = source_started_at
+                summary["run_started_at"] = source_started_at
     blackbox = write_blackbox_artifacts(
         qa_rows=[result.to_csv_row() for result in qa_results],
         judge_rows=judge_report.rows,

@@ -85,6 +85,8 @@ def _make_plugin(**overrides: Any) -> EchoMemMCPPlugin:
     p._question_timeout_s = overrides.get("question_timeout_s", 120.0)
     p._commit_timeout_s = overrides.get("commit_timeout_s", 0.0)
     p._commit_poll_interval_s = overrides.get("commit_poll_interval_s", 2.0)
+    p._documents_mode = overrides.get("documents_mode", False)
+    p.path_title_map = overrides.get("path_title_map", {})
     p._llm = MagicMock()
     p.memory_client = MagicMock()
     p.memory_client.search.return_value = []
@@ -1254,6 +1256,158 @@ class PluginSendMessageTests(unittest.TestCase):
         result = p.getlog()
         data = json.loads(result)
         self.assertIn("error", data)
+
+
+    def test_documents_mode_no_tools_single_shot_with_trace(self):
+        plugin = _make_plugin(
+            documents_mode=True,
+            tool_calling=False,
+            top_k=10,
+            memory_budget_chars=8000,
+            question_timeout_s=600.0,
+            path_title_map={"hotpotqa/D1-abc12345": "D1"},
+        )
+        plugin.memory_client.search_resources.return_value = [{
+            "path": "hotpotqa/D1-abc12345",
+            "uri": "viking://user/resources/hotpotqa/D1-abc12345",
+            "source_uri": "viking://user/resources/hotpotqa/D1-abc12345",
+            "score": 0.9,
+            "text": "The Eiffel Tower is in Paris.",
+        }]
+        plugin._llm.chat = MagicMock(return_value=MagicMock(
+            content="Paris",
+            prompt_tokens=50,
+            completion_tokens=5,
+            error=None,
+        ))
+        resp = plugin.send_message("s1", "Where is the tower?", extra={
+            "question_id": "q1",
+            "question": "Where is the tower?",
+            "answer": "Paris",
+            "question_time": "2024-01-01",
+            "sample_id": "s1",
+            "category": "comparison",
+        })
+        trace = resp.extra["trace"]
+        self.assertEqual("echomem_mcp_documents", trace["qa_profile"])
+        self.assertEqual("q1", trace["question_id"])
+        self.assertEqual("Paris", trace["gold_answer"])
+        items = trace["initial_retrieval"]["items"]
+        self.assertEqual(1, len(items))
+        self.assertEqual("D1", items[0]["hotpotqa_title"])
+        self.assertEqual(2, len(trace["initial_messages"]))
+        self.assertEqual("Paris", trace["final_response"])
+        self.assertEqual([], trace["iterations"])
+        self.assertEqual([], trace["tool_audit"]["tools_used"])
+
+    def test_documents_mode_with_tools_multi_round_search(self):
+        plugin = _make_plugin(
+            documents_mode=True,
+            tool_calling=True,
+            top_k=10,
+            memory_budget_chars=8000,
+            max_iterations=10,
+            question_timeout_s=600.0,
+            path_title_map={"hotpotqa/D1-abc12345": "D1"},
+        )
+        plugin.memory_client.search_resources.return_value = [{
+            "path": "hotpotqa/D1-abc12345",
+            "uri": "viking://user/resources/hotpotqa/D1-abc12345",
+            "score": 0.9,
+            "text": "The Eiffel Tower is in Paris.",
+        }]
+        # 第 1 轮：LLM 返回 memory_search 工具调用；第 2 轮：最终答案
+        plugin._llm.chat_with_tools = MagicMock(side_effect=[
+            MagicMock(
+                content="",
+                prompt_tokens=10,
+                completion_tokens=5,
+                error=None,
+                tool_calls=[{
+                    "id": "c1",
+                    "type": "function",
+                    "function": {
+                        "name": "memory_search",
+                        "arguments": json.dumps({"query": "Eiffel Tower location"}),
+                    },
+                }],
+            ),
+            MagicMock(
+                content="Paris",
+                prompt_tokens=20,
+                completion_tokens=5,
+                error=None,
+                tool_calls=[],
+            ),
+        ])
+        resp = plugin.send_message("s1", "Where is the tower?", extra={
+            "question_id": "q1",
+            "question": "Where is the tower?",
+            "answer": "Paris",
+        })
+        self.assertEqual("Paris", resp.text)
+        self.assertEqual(1, resp.extra["tool_call_count"])
+        self.assertEqual(2, resp.extra["iterations"])
+        trace = resp.extra["trace"]
+        self.assertEqual(2, len(trace["iterations"]))
+        self.assertEqual(["memory_search"], trace["tool_audit"]["tools_used"])
+        self.assertEqual(1, len(trace["tool_audit"]["tool_calls"]))
+        call = trace["tool_audit"]["tool_calls"][0]
+        self.assertEqual("memory_search", call["name"])
+        self.assertEqual("Eiffel Tower location", call["arguments"]["query"])
+        # 工具检索结果并入 memory_items（带 title），供 supporting-fact 评测
+        self.assertTrue(
+            any(item.get("hotpotqa_title") == "D1" for item in resp.memory_items)
+        )
+
+    def test_documents_mode_with_tools_read_many(self):
+        plugin = _make_plugin(
+            documents_mode=True,
+            tool_calling=True,
+            top_k=10,
+            memory_budget_chars=8000,
+            max_iterations=10,
+            question_timeout_s=600.0,
+        )
+        plugin.memory_client.search_resources.return_value = []
+        plugin.memory_client.fs_read = MagicMock(return_value="The tower is in Paris.")
+        plugin._llm.chat_with_tools = MagicMock(side_effect=[
+            MagicMock(
+                content="",
+                prompt_tokens=10,
+                completion_tokens=5,
+                error=None,
+                tool_calls=[{
+                    "id": "c2",
+                    "type": "function",
+                    "function": {
+                        "name": "memory_read_many",
+                        "arguments": json.dumps({
+                            "uris": ["viking://user/resources/hotpotqa/D1-abc12345"],
+                        }),
+                    },
+                }],
+            ),
+            MagicMock(
+                content="Paris",
+                prompt_tokens=20,
+                completion_tokens=5,
+                error=None,
+                tool_calls=[],
+            ),
+        ])
+        resp = plugin.send_message("s1", "Q", extra={
+            "question_id": "q1",
+            "question": "Q",
+            "answer": "Paris",
+        })
+        self.assertEqual("Paris", resp.text)
+        trace = resp.extra["trace"]
+        self.assertEqual(["memory_read_many"], trace["tool_audit"]["tools_used"])
+        self.assertEqual(1, len(trace["tool_audit"]["tool_calls"]))
+        plugin.memory_client.fs_read.assert_called_once()
+        # 工具消息已回灌给 LLM
+        self.assertEqual(1, len(trace["tool_audit"]["tool_calls"]))
 
 
 if __name__ == "__main__":

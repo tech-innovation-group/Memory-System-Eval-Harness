@@ -9,13 +9,15 @@ from __future__ import annotations
 
 import logging
 import os
+import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from backends.memory_types import BaseHTTPMemoryClient, SearchResult
 
@@ -28,11 +30,17 @@ class OpenVikingClient(BaseHTTPMemoryClient):
     Handles session open/message/commit/search with retry, logging, and
     commit-status polling. Memory files are read from the local workspace
     filesystem (OpenViking has no /fs HTTP endpoints).
+    Document resources are injected via /api/v1/resources (temp_upload +
+    add_resource) and searched under the user resources space.
     """
 
     DEFAULT_USER_TARGET_URI = "viking://user/memories/"
     DEFAULT_AGENT_TARGET_URI = "viking://agent/memories/"
+    RESOURCE_TARGET_URI = "viking://user/resources/"
     DEFAULT_SCORE_THRESHOLD = 0.0
+    _RESOURCE_AUX_BASENAMES = {".abstract.md", ".overview.md"}
+    _DONE_STATUSES = ("completed", "succeeded", "done")
+    _FAILED_STATUSES = ("failed", "error", "cancelled", "canceled", "unknown")
 
     def __init__(
         self,
@@ -57,6 +65,10 @@ class OpenVikingClient(BaseHTTPMemoryClient):
             retry_backoff_s=retry_backoff_s,
         )
         self.api_key = api_key
+        # resource path ("user/...") -> add_resource task_id, for index waiting
+        self._resource_tasks: dict[str, str] = {}
+        # injected resource paths (rel to resources root, e.g. "hotpotqa/x")
+        self._resource_dirs: set[str] = set()
 
     # -- low-level HTTP -------------------------------------------------
 
@@ -351,3 +363,220 @@ class OpenVikingClient(BaseHTTPMemoryClient):
             except Exception as e:
                 logs[name] = {"error": str(e)}
         return logs
+
+    # -- document resources (HotpotQA documents mode) --------------------
+
+    @staticmethod
+    def _unwrap_result(resp: dict[str, Any]) -> dict[str, Any]:
+        """OpenViking responses wrap payloads under ``result``; unwrap if so."""
+        result = resp.get("result")
+        return result if isinstance(result, dict) else resp
+
+    @staticmethod
+    def _normalize_tags(tags: list[str] | None) -> list[str]:
+        """Normalize bare tag values to OpenViking's strict ``k=v`` format.
+
+        The server rejects plain values (``["hotpotqa"]`` -> 400); bare
+        values are prefixed with a default ``source=`` key.
+        """
+        normalized: list[str] = []
+        for item in tags or []:
+            value = str(item).strip()
+            if "=" not in value:
+                value = f"source={value}"
+            if value not in normalized:
+                normalized.append(value)
+        return normalized
+
+    def _post_raw(
+        self,
+        path: str,
+        data: bytes,
+        content_type: str,
+        *,
+        timeout_s: float | None = None,
+    ) -> dict[str, Any]:
+        """POST a raw (non-JSON) body, e.g. multipart temp file upload."""
+        url = f"{self.base_url}{path}"
+        headers = self._headers()
+        headers["Content-Type"] = content_type
+        req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+        return self._do_request(req, timeout_s=timeout_s)
+
+    def _upload_temp_file(
+        self,
+        content: str,
+        filename: str,
+        *,
+        timeout_s: float | None = None,
+    ) -> str:
+        """Upload content as a temp file, return the ``temp_file_id``."""
+        safe_name = re.sub(r'[^\w.\-]+', "_", filename) or "doc.md"
+        boundary = f"----ov-eval-{uuid.uuid4().hex}"
+        head = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{safe_name}"\r\n'
+            "Content-Type: text/markdown\r\n\r\n"
+        ).encode("utf-8")
+        tail = f"\r\n--{boundary}--\r\n".encode("utf-8")
+        resp = self._post_raw(
+            "/api/v1/resources/temp_upload",
+            head + content.encode("utf-8") + tail,
+            f"multipart/form-data; boundary={boundary}",
+            timeout_s=timeout_s,
+        )
+        payload = self._unwrap_result(resp)
+        temp_file_id = str(payload.get("temp_file_id") or "")
+        if not temp_file_id:
+            raise RuntimeError(f"temp_upload returned no temp_file_id: {resp}")
+        return temp_file_id
+
+    def add_resource(
+        self,
+        path: str,
+        content: str,
+        *,
+        name: str = "",
+        content_type: str = "text/markdown",
+        tags: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Inject one document into the OpenViking user resources space.
+
+        The content is uploaded as a temp file and added at
+        ``viking://user/resources/<path>`` with ``processing_mode=vectors_only``
+        (chunk+embed only, no LLM semantic tasks — requires openviking
+        >= 0.4.12). The returned task id is remembered so
+        :meth:`wait_for_resource_index` can poll it.
+        """
+        clean_path = str(path).lstrip("/")
+        source_name = name or clean_path.rsplit("/", 1)[-1]
+        temp_file_id = self._upload_temp_file(
+            content, source_name, timeout_s=max(600.0, self.timeout_s)
+        )
+        body: dict[str, Any] = {
+            "temp_file_id": temp_file_id,
+            "source_name": source_name,
+            "to": f"{self.RESOURCE_TARGET_URI}{clean_path}",
+            # Empty reason: OpenViking skips the per-resource "reason memory"
+            # LLM session_commit (resource_service._link_resource_reason_memory),
+            # which otherwise blocks the add_resource task on a slow LLM call.
+            "reason": "",
+            "instruction": "",
+            "wait": False,
+            "processing_mode": "vectors_only",
+            "tags": self._normalize_tags(tags),
+            "tag_mode": "replace",
+        }
+        resp = self._post(
+            "/api/v1/resources", body, timeout_s=max(600.0, self.timeout_s)
+        )
+        payload = self._unwrap_result(resp)
+        task_id = str(payload.get("task_id") or resp.get("task_id") or "")
+        status = str(payload.get("status") or resp.get("status") or "accepted")
+        resource_key = f"user/{clean_path}"
+        if task_id:
+            self._resource_tasks[resource_key] = task_id
+        self._resource_dirs.add(clean_path)
+        self._log.info(
+            "added resource %s -> task %s (status=%s)", resource_key, task_id or "-", status
+        )
+        return {"task_id": task_id, "status": status, "path": resource_key}
+
+    def wait_for_resource_index(
+        self,
+        paths: list[str],
+        *,
+        timeout_s: float = 3600.0,
+        poll_interval_s: float = 2.0,
+        progress: Callable[[int, int], None] | None = None,
+    ) -> dict[str, Any]:
+        """Wait until every added resource finishes indexing (or fails).
+
+        Polls the add_resource task of each path under
+        ``/api/v1/tasks/{task_id}`` until it reaches a terminal status.
+        ``progress(done, total)`` is invoked after each poll pass with the
+        number of paths that reached a terminal status, for progress bars.
+        """
+        pending: list[str] = [
+            p for p in paths if self._resource_tasks.get(p)
+        ]
+        failures: dict[str, str] = {}
+        deadline = time.monotonic() + timeout_s
+        while pending:
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"resource indexing not finished after {timeout_s:g}s "
+                    f"({len(pending)} pending: {pending[:5]})"
+                )
+            still_pending: list[str] = []
+            for path in pending:
+                task_id = self._resource_tasks[path]
+                try:
+                    status = self._parse_commit_status(
+                        self._fetch_commit_status(path, task_id)
+                    )
+                except Exception as exc:
+                    failures[path] = f"{type(exc).__name__}: {exc}"
+                    self._log.warning("resource %s task poll failed: %s", path, exc)
+                    continue
+                if status in self._FAILED_STATUSES:
+                    failures[path] = status or "failed"
+                elif status not in self._DONE_STATUSES:
+                    still_pending.append(path)
+            pending = still_pending
+            if progress is not None:
+                progress(len(paths) - len(pending), len(paths))
+            if pending:
+                time.sleep(poll_interval_s)
+        return {"indexed": len(paths) - len(failures), "failed": failures}
+
+    def search_resources(
+        self,
+        query: str,
+        limit: int = 8,
+        tags: list[str] | None = None,
+        paths: list[str] | None = None,
+        timeout_s: float | None = None,
+    ) -> list[dict[str, Any]]:
+        """Search the user resources space; read each hit's content locally.
+
+        Returns items with ``path`` relative to the resources root (e.g.
+        ``hotpotqa/<slug>-<hash>``) so HotpotQA evidence can resolve titles
+        via the corpus ``path_title_map``, plus ``text``/``score``/``uri``.
+        """
+        raw_items = self._search_once(
+            query, self.RESOURCE_TARGET_URI, limit, timeout_s
+        )
+        results: list[dict[str, Any]] = []
+        for item in raw_items:
+            if not isinstance(item, dict):
+                continue
+            uri = str(item.get("uri") or item.get("path") or "")
+            if not uri:
+                continue
+            rel = uri.split("resources/", 1)[1] if "resources/" in uri else uri
+            rel = rel.strip("/")
+            basename = rel.rsplit("/", 1)[-1]
+            if basename in self._RESOURCE_AUX_BASENAMES:
+                continue
+            # The server stores the uploaded file under the target path and
+            # may append the source filename as the last segment; normalize
+            # back to the injected resource path so HotpotQA evidence can
+            # resolve titles via the corpus path_title_map.
+            parent = rel.rsplit("/", 1)[0] if "/" in rel else rel
+            if parent and parent in self._resource_dirs:
+                rel = parent
+            content = self.fs_read(uri, timeout_s=timeout_s)
+            if not content:
+                content = str(item.get("abstract") or item.get("content") or "")
+            results.append({
+                "path": rel,
+                "uri": uri,
+                "source_uri": uri,
+                "score": float(item.get("score") or item.get("similarity") or 0.0),
+                "text": content,
+                "abstract": str(item.get("abstract") or ""),
+                "chunk_index": None,
+            })
+        return results

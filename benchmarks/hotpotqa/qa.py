@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from pathlib import Path
+from typing import Any
 
 from tqdm import tqdm
 
@@ -29,6 +31,63 @@ def build_qa_tasks(jobs, question_to_session: dict[str, str], config: EvalConfig
         "agent_id": agent_id,
         "question_time": job.query_time,
     } for job in jobs]
+
+
+def _safe_question_id(question_id: str) -> str:
+    return re.sub(
+        r"[^A-Za-z0-9_.-]+",
+        "_",
+        question_id,
+    ).strip("._") or "question"
+
+
+def _write_trace(trace_dir: Path, result: QAResult) -> None:
+    if not result.trace:
+        return
+    trace_dir.mkdir(parents=True, exist_ok=True)
+    (trace_dir / f"{_safe_question_id(result.question_id)}.json").write_text(
+        json.dumps(result.trace, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _tool_audit_rows(results: list[QAResult]) -> list[dict[str, Any]]:
+    rows = []
+    for result in results:
+        audit = result.trace.get("tool_audit") if result.trace else None
+        if not isinstance(audit, dict):
+            continue
+        rows.append({
+            "question_id": result.question_id,
+            "sample_id": result.sample_id,
+            "category": result.category,
+            "question": result.question,
+            "response": result.response,
+            "qa_profile": result.qa_profile,
+            **audit,
+        })
+    return rows
+
+
+def _write_tool_audits(path: Path, results: list[QAResult]) -> None:
+    rows = _tool_audit_rows(results)
+    path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    path.with_suffix(".json").write_text(
+        json.dumps(rows, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def write_tool_audits(result_dir: Path, results: list[QAResult]) -> None:
+    """Write tool_audits.jsonl/.json for the given results.
+
+    Called after resume trace restoration so the resumed result directory
+    carries tool audits for reused questions too (equivalent to from-scratch).
+    """
+    _write_tool_audits(result_dir / "tool_audits.jsonl", results)
 
 
 def _write_qa_results(path: Path, results: list[QAResult]) -> None:
@@ -69,14 +128,18 @@ def run_hotpotqa_qa(
     }
     completed_results: dict[str, QAResult] = dict(existing_by_id)
     checkpoint_path = result_dir / "qa_results.checkpoint.csv"
+    trace_dir = result_dir / "agent_traces"
+    tool_audit_path = result_dir / "tool_audits.jsonl"
 
     def on_progress(done: int, result: QAResult) -> None:
         progress.update(1)
         completed_results[result.question_id] = result
+        _write_trace(trace_dir, result)
         ordered_completed = sorted(
             completed_results.values(),
             key=lambda item: result_order.get(item.question_id, len(tasks)),
         )
+        _write_tool_audits(tool_audit_path, ordered_completed)
         if (
             checkpoint_interval > 0
             and done % checkpoint_interval == 0
@@ -130,4 +193,13 @@ def run_hotpotqa_qa(
     if checkpoint_interval > 0:
         _write_qa_results(checkpoint_path, final_results)
     log.info("QA 结果已保存: %s", output_path)
+    traced_results = [result for result in final_results if result.trace]
+    if traced_results:
+        log.info(
+            "Agent traces 已保存: %s (%d files)",
+            trace_dir,
+            len(traced_results),
+        )
+        _write_tool_audits(tool_audit_path, final_results)
+        log.info("Tool audits 已保存: %s", tool_audit_path)
     return final_results

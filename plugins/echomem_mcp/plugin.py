@@ -13,13 +13,18 @@ Initial memory pre-fetch is always performed through EchoMem MCP
 ``memory_query``.  The plugin intentionally does not call EchoMem's HTTP
 retrieval API for QA retrieval.
 
+When the benchmark runs with ``--import-mode documents``, QA switches to
+the document mode: the shared document corpus is retrieved via
+``/api/resources/search`` and answered with a single LLM call (no MCP).
+
 Memory injection is handled before QA starts.  The MCP server must be running
-(EchoMem config ``mcp.enabled=true``).
+(EchoMem config ``mcp.enabled=true``) for non-document modes.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import time
@@ -32,6 +37,11 @@ from plugins.echomem_mcp.runtime import (
     _NO_TOOLS_SYSTEM_PROMPT,
     _SYSTEM_PROMPT,
     configured_tools,
+)
+from shared.resource_rag import (
+    RESOURCE_SYSTEM_PROMPT,
+    build_retrieval_items,
+    format_chunk_section,
 )
 from backends.echomem.client import EchoMemClient
 from backends.memory_types import SearchResult
@@ -191,6 +201,10 @@ class EchoMemMCPPlugin(AgentPlugin):
         self._user_memory_budget_chars = config.get("user_memory_budget_chars", 4000)
         self._agent_memory_budget_chars = config.get("agent_memory_budget_chars", 2000)
         self._question_timeout_s = float(config.get("question_timeout_s", 120.0))
+        self._documents_mode = (
+            str(config.get("import_mode") or "").strip().lower() == "documents"
+        )
+        self.path_title_map: dict[str, str] = {}
 
         # Create LLM client
         self._llm = LLMClient(
@@ -263,6 +277,398 @@ class EchoMemMCPPlugin(AgentPlugin):
         self._session_count = getattr(self, "_session_count", 0) + 1
         return f"echomem_mcp_session_{self._session_count}"
 
+    def _send_documents(
+        self,
+        message: str,
+        extra: dict | None = None,
+    ) -> AgentResponse:
+        """Document mode: retrieve the shared corpus and answer in one LLM call.
+
+        Used when the benchmark imports the HotpotQA passages as document
+        resources (``--import-mode documents``). The corpus is stored in
+        EchoMem's resource engine and searched via ``/api/resources/search``;
+        no MCP tools or sessions are involved.
+        """
+        extra = extra or {}
+        start = time.monotonic()
+        deadline = start + self._question_timeout_s if self._question_timeout_s > 0 else None
+
+        def remaining() -> float | None:
+            if deadline is None:
+                return None
+            return max(0.001, deadline - time.monotonic())
+
+        retrieval_items: list[dict[str, Any]] = []
+        retrieval_latency_s = 0.0
+        retrieval_error = ""
+        try:
+            t0 = time.monotonic()
+            results = self.memory_client.search_resources(
+                message,
+                limit=self._top_k,
+                tags=["hotpotqa"],
+                timeout_s=remaining(),
+            )
+            retrieval_latency_s = time.monotonic() - t0
+            retrieval_items = build_retrieval_items(results, self.path_title_map)
+        except Exception as exc:
+            retrieval_error = f"{type(exc).__name__}: {exc}"
+            logger.warning("resource search failed: %s", retrieval_error)
+
+        question_time = str(extra.get("question_time") or "")
+        time_context = f"Current date: {question_time}.\n\n" if question_time.strip() else ""
+        chunks = format_chunk_section(retrieval_items, self._memory_budget_chars)
+        if chunks:
+            user_content = (
+                f"{time_context}Retrieved documents:\n\n{chunks}\n\n"
+                f"Question: {message}"
+            )
+        else:
+            user_content = f"{time_context}Question: {message}"
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": RESOURCE_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ]
+
+        resp = self._llm.chat(messages, timeout_s=remaining())
+        elapsed = time.monotonic() - start
+        trace: dict[str, Any] = {
+            "schema_version": 1,
+            "agent": "echomem_mcp",
+            "qa_profile": "echomem_mcp_documents",
+            "question_id": str(extra.get("question_id") or ""),
+            "sample_id": str(extra.get("sample_id") or ""),
+            "category": str(extra.get("category") or ""),
+            "question": message,
+            "gold_answer": str(extra.get("answer") or ""),
+            "question_time": question_time,
+            "settings": {
+                "top_k": self._top_k,
+                "memory_budget_chars": self._memory_budget_chars,
+                "question_timeout_s": self._question_timeout_s,
+            },
+            "model_request": {
+                "base_url": self._llm.base_url.rstrip("/"),
+                "model": self._llm.model,
+                "max_tokens": self._llm.max_tokens,
+            },
+            "initial_retrieval": {
+                "query": message,
+                "items": retrieval_items,
+                "error": retrieval_error,
+                "latency_ms": round(retrieval_latency_s * 1000, 3),
+            },
+            "initial_messages": json.loads(json.dumps(messages, ensure_ascii=False)),
+            "iterations": [],
+            "tool_audit": {
+                "schema_version": 1,
+                "tools_used": [],
+                "tool_calls": [],
+                "discovered_files": [],
+                "read_files": [],
+            },
+            "tool_protocol": {"names": [], "sha256": ""},
+            "final_response": resp.content,
+            "answer_sanitized": False,
+        }
+        return AgentResponse(
+            text=resp.content,
+            prompt_tokens=resp.prompt_tokens,
+            completion_tokens=resp.completion_tokens,
+            memory_items=retrieval_items,
+            error=resp.error or None,
+            extra={
+                "qa_profile": "echomem_mcp_documents",
+                "elapsed_s": elapsed,
+                "retrieval_latency_s": retrieval_latency_s,
+                "llm_latency_s": elapsed,
+                "retrieval_error": retrieval_error,
+                "iterations": 1,
+                "trace": trace,
+            },
+        )
+
+    def _documents_search_tool(
+        self,
+        query: str,
+        timeout_s: float | None,
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """Resource-backed ``memory_search``: query the corpus, return text + items."""
+        if not query.strip():
+            return "No results found for empty query", []
+        try:
+            results = self.memory_client.search_resources(
+                query,
+                limit=self._top_k,
+                tags=["hotpotqa"],
+                timeout_s=timeout_s,
+            )
+            items = build_retrieval_items(results, self.path_title_map)
+        except Exception as exc:
+            return f"Search failed: {exc}", []
+        if not items:
+            return "No results found.", []
+        lines = [
+            f"[{index}] ({item.get('hotpotqa_title') or item.get('uri') or 'resource'}) "
+            f"{item.get('content') or ''}"
+            for index, item in enumerate(items, 1)
+        ]
+        return "\n\n".join(lines), items
+
+    def _documents_read_tool(
+        self,
+        uris: list[str],
+        timeout_s: float | None,
+    ) -> str:
+        """Resource-backed ``memory_read_many``: read resource content by URI."""
+        if not uris:
+            return "Error: No URIs provided."
+        blocks = []
+        for uri in uris[:20]:
+            try:
+                content = self.memory_client.fs_read(uri, timeout_s=timeout_s)
+            except Exception as exc:
+                content = f"Error reading {uri}: {exc}"
+            blocks.append(f"--- {uri} ---\n{content}")
+        return "\n\n".join(blocks)
+
+    def _send_documents_with_tools(
+        self,
+        message: str,
+        extra: dict | None = None,
+    ) -> AgentResponse:
+        """Document mode with the tool loop: multi-round resource retrieval.
+
+        Reuses ``LLMClient.chat_with_tools`` with resource-backed
+        ``memory_search`` / ``memory_read_many`` tools so the agent can
+        iteratively search/read the shared corpus; the full tool-call chain
+        lands in the trace/tool_audit.
+        """
+        extra = extra or {}
+        start = time.monotonic()
+        deadline = start + self._question_timeout_s if self._question_timeout_s > 0 else None
+
+        def remaining() -> float | None:
+            if deadline is None:
+                return None
+            return max(0.001, deadline - time.monotonic())
+
+        retrieval_items: list[dict[str, Any]] = []
+        retrieval_latency_s = 0.0
+        retrieval_error = ""
+        try:
+            t0 = time.monotonic()
+            results = self.memory_client.search_resources(
+                message,
+                limit=self._top_k,
+                tags=["hotpotqa"],
+                timeout_s=remaining(),
+            )
+            retrieval_latency_s = time.monotonic() - t0
+            retrieval_items = build_retrieval_items(results, self.path_title_map)
+        except Exception as exc:
+            retrieval_error = f"{type(exc).__name__}: {exc}"
+            logger.warning("resource search failed: %s", retrieval_error)
+
+        question_time = str(extra.get("question_time") or "")
+        time_context = f"Current date: {question_time}.\n\n" if question_time.strip() else ""
+        chunks = format_chunk_section(retrieval_items, self._memory_budget_chars)
+        if chunks:
+            user_content = (
+                f"{time_context}Retrieved documents:\n\n{chunks}\n\n"
+                f"Question: {message}"
+            )
+        else:
+            user_content = f"{time_context}Question: {message}"
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": RESOURCE_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ]
+
+        tools: list[dict[str, Any]] = [
+            {"type": "function", "function": {
+                "name": "memory_search",
+                "description": "Search the HotpotQA document corpus for resources relevant to a query.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "The search query"},
+                    },
+                    "required": ["query"],
+                },
+            }},
+            {"type": "function", "function": {
+                "name": "memory_read_many",
+                "description": "Read full content from multiple document resources by URI.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "uris": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Resource URIs to read",
+                        },
+                    },
+                    "required": ["uris"],
+                },
+            }},
+        ]
+        tool_protocol_payload = json.dumps(
+            tools,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        trace: dict[str, Any] = {
+            "schema_version": 1,
+            "agent": "echomem_mcp",
+            "qa_profile": "echomem_mcp_documents",
+            "question_id": str(extra.get("question_id") or ""),
+            "sample_id": str(extra.get("sample_id") or ""),
+            "category": str(extra.get("category") or ""),
+            "question": message,
+            "gold_answer": str(extra.get("answer") or ""),
+            "question_time": question_time,
+            "settings": {
+                "top_k": self._top_k,
+                "memory_budget_chars": self._memory_budget_chars,
+                "question_timeout_s": self._question_timeout_s,
+            },
+            "model_request": {
+                "base_url": self._llm.base_url.rstrip("/"),
+                "model": self._llm.model,
+                "max_tokens": self._llm.max_tokens,
+            },
+            "initial_retrieval": {
+                "query": message,
+                "items": retrieval_items,
+                "error": retrieval_error,
+                "latency_ms": round(retrieval_latency_s * 1000, 3),
+            },
+            "initial_messages": json.loads(json.dumps(messages, ensure_ascii=False)),
+            "iterations": [],
+            "tool_audit": {
+                "schema_version": 1,
+                "tools_used": [],
+                "tool_calls": [],
+                "discovered_files": [],
+                "read_files": [],
+            },
+            "tool_protocol": {
+                "names": [str(t["function"]["name"]) for t in tools],
+                "sha256": hashlib.sha256(tool_protocol_payload).hexdigest(),
+            },
+            "final_response": "",
+            "answer_sanitized": False,
+        }
+
+        prompt_tokens = 0
+        completion_tokens = 0
+        tool_call_count = 0
+        iterations = 0
+        response_text = ""
+        llm_error = ""
+        for iteration in range(1, self._max_iterations + 1):
+            iterations = iteration
+            rem = remaining()
+            if rem is not None and rem <= 0:
+                llm_error = f"question deadline exceeded after {self._question_timeout_s:g}s"
+                break
+            resp = self._llm.chat_with_tools(messages, tools, timeout_s=rem)
+            prompt_tokens += resp.prompt_tokens
+            completion_tokens += resp.completion_tokens
+            if resp.error:
+                llm_error = resp.error
+                break
+            iteration_trace: dict[str, Any] = {
+                "iteration": iteration,
+                "model_message": {
+                    "role": "assistant",
+                    "content": resp.content,
+                    "tool_calls": resp.tool_calls,
+                },
+                "prompt_tokens": resp.prompt_tokens,
+                "completion_tokens": resp.completion_tokens,
+                "tool_calls": [],
+            }
+            trace["iterations"].append(iteration_trace)
+            if not resp.tool_calls:
+                response_text = resp.content
+                break
+            messages.append({
+                "role": "assistant",
+                "content": resp.content or "",
+                "tool_calls": resp.tool_calls,
+            })
+            for tool_call in resp.tool_calls:
+                function = tool_call.get("function") or {}
+                name = str(function.get("name") or "")
+                raw_arguments = function.get("arguments") or "{}"
+                try:
+                    arguments = (
+                        json.loads(raw_arguments)
+                        if isinstance(raw_arguments, str)
+                        else dict(raw_arguments)
+                    )
+                except Exception:
+                    arguments = {}
+                tool_call_count += 1
+                if name == "memory_search":
+                    tool_text, tool_items = self._documents_search_tool(
+                        str(arguments.get("query") or ""),
+                        remaining(),
+                    )
+                    retrieval_items.extend(tool_items)
+                elif name == "memory_read_many":
+                    uris = [
+                        str(uri)
+                        for uri in (arguments.get("uris") or [])
+                        if str(uri or "").strip()
+                    ]
+                    tool_text = self._documents_read_tool(uris, remaining())
+                else:
+                    tool_text = f"Unknown tool: {name}"
+                record: dict[str, Any] = {
+                    "iteration": iteration,
+                    "call_id": str(tool_call.get("id") or ""),
+                    "name": name,
+                    "arguments": arguments,
+                    "duplicate_skipped": False,
+                    "backend_operations": [],
+                }
+                iteration_trace["tool_calls"].append(record)
+                if name not in trace["tool_audit"]["tools_used"]:
+                    trace["tool_audit"]["tools_used"].append(name)
+                trace["tool_audit"]["tool_calls"].append(record)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": str(tool_call.get("id") or ""),
+                    "content": tool_text,
+                })
+
+        trace["final_response"] = response_text
+        trace["answer_sanitized"] = False
+        if llm_error:
+            trace["error"] = llm_error
+        elapsed = time.monotonic() - start
+        return AgentResponse(
+            text=response_text,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            memory_items=retrieval_items,
+            error=llm_error or None,
+            extra={
+                "qa_profile": "echomem_mcp_documents",
+                "elapsed_s": elapsed,
+                "tool_call_count": tool_call_count,
+                "iterations": iterations,
+                "retrieval_latency_s": retrieval_latency_s,
+                "llm_latency_s": elapsed,
+                "retrieval_error": retrieval_error,
+                "trace": trace,
+            },
+        )
+
     def send_message(
         self,
         session_id: str,
@@ -272,6 +678,10 @@ class EchoMemMCPPlugin(AgentPlugin):
         extra: dict | None = None,
     ) -> AgentResponse:
         extra = extra or {}
+        if self._documents_mode:
+            if self._tool_calling:
+                return self._send_documents_with_tools(message, extra)
+            return self._send_documents(message, extra)
         question_time = extra.get("question_time", "")
         start = time.monotonic()
         deadline = start + self._question_timeout_s if self._question_timeout_s > 0 else None
