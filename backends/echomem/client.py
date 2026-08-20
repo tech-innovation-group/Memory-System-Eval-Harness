@@ -95,22 +95,44 @@ class EchoMemClient(BaseHTTPMemoryClient):
         tenant_response = self._post("/api/auth/tenants", {"name": label})
         tenant = tenant_response.get("tenant", {})
         tenant_id = str(tenant.get("tenant_id") or "") if isinstance(tenant, dict) else ""
+        bootstrap_key = (
+            str(tenant.get("bootstrap_key") or "")
+            if isinstance(tenant, dict)
+            else ""
+        )
         if not tenant_id:
             raise RuntimeError(f"tenant provisioning returned no tenant id: {tenant_response}")
 
-        user_response = self._post(f"/api/auth/tenants/{tenant_id}/users", {})
-        user = user_response.get("user", {})
-        user_id = str(user.get("user_id") or "") if isinstance(user, dict) else ""
-        if not user_id:
-            raise RuntimeError(f"user provisioning returned no user id: {user_response}")
-
-        key_response = self._post(
-            f"/api/auth/tenants/{tenant_id}/users/{user_id}/key",
-            {},
+        provisioning_headers = (
+            {"X-EchoMem-Bootstrap-Key": bootstrap_key}
+            if bootstrap_key
+            else None
         )
-        auth_key = str(key_response.get("auth_key") or "")
-        if not auth_key:
-            raise RuntimeError(f"key provisioning returned no auth key: {key_response}")
+        try:
+            user_response = self._post(
+                f"/api/auth/tenants/{tenant_id}/users",
+                {},
+                headers=provisioning_headers,
+            )
+            user = user_response.get("user", {})
+            user_id = str(user.get("user_id") or "") if isinstance(user, dict) else ""
+            if not user_id:
+                raise RuntimeError(
+                    f"user provisioning returned no user id: {user_response}"
+                )
+
+            key_response = self._post(
+                f"/api/auth/tenants/{tenant_id}/users/{user_id}/key",
+                {},
+                headers=provisioning_headers,
+            )
+            auth_key = str(key_response.get("auth_key") or "")
+            if not auth_key:
+                raise RuntimeError(
+                    f"key provisioning returned no auth key: {key_response}"
+                )
+        finally:
+            provisioning_headers = None
 
         self.auth_key = auth_key
         self.account = tenant_id
@@ -361,4 +383,3 @@ class EchoMemClient(BaseHTTPMemoryClient):
             for item in (entries or [])
             if isinstance(item, dict)
         ]
-

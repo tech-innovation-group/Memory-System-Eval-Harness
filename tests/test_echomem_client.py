@@ -40,14 +40,16 @@ class EchoMemClientTests(unittest.TestCase):
     def test_provisions_and_switches_to_isolated_identity(self) -> None:
         client = EchoMemClient(auth_key="old", account="old", user_id="old")
         responses = iter([
-            {"tenant": {"tenant_id": "tenant_new"}},
+            {"tenant": {"tenant_id": "tenant_new", "bootstrap_key": "bootstrap_new"}},
             {"user": {"user_id": "user_new"}},
             {"auth_key": "ek_new"},
         ])
         paths: list[str] = []
+        request_headers: list[dict[str, str] | None] = []
 
         def fake_post(path, body=None, **kwargs):
             paths.append(path)
+            request_headers.append(kwargs.get("headers"))
             return next(responses)
 
         client._post = fake_post  # type: ignore[method-assign]
@@ -64,6 +66,15 @@ class EchoMemClientTests(unittest.TestCase):
                 "/api/auth/tenants/tenant_new/users/user_new/key",
             ],
             paths,
+        )
+        self.assertIsNone(request_headers[0])
+        self.assertEqual(
+            {"X-EchoMem-Bootstrap-Key": "bootstrap_new"},
+            request_headers[1],
+        )
+        self.assertEqual(
+            {"X-EchoMem-Bootstrap-Key": "bootstrap_new"},
+            request_headers[2],
         )
 
     @classmethod
