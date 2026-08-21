@@ -392,12 +392,28 @@ python scripts/stress_echomem_incident.py \
 队列行为。`--max-connections`、`--connect-timeout`、`--read-timeout` 可以按
 目标服务和机器配置调整；如服务需要鉴权，使用 `--auth-key`。
 
-脚本默认只报告 HTTP 请求是否被接受，不自动重试请求，避免把拒绝、超时和连接
-错误隐藏掉。commit 返回 `202` 只代表请求已接收，不代表记忆已经处理完成；使用
+脚本默认会对 commit 的 `429` 按服务端 `Retry-After` 和指数退避重试最多 3 次，
+同时保留第一次响应和最终响应。可使用以下参数调整：
+
+```bash
+  --commit-retries 3 \
+  --retry-backoff 1 \
+  --drain-timeout 300
+```
+
+`--drain-timeout` 用于所有阶段结束后继续轮询已接受但仍在后台处理的 commit，
+避免把排队中的任务直接误判为最终失败。将 `--commit-retries 0 --drain-timeout 0`
+即可恢复只观察初始压力响应的模式。
+
+commit 返回 `202` 只代表请求已接收，不代表记忆已经处理完成；使用
 `--poll-commits` 才会按返回的 `archive_id` 轮询异步状态，并分别统计：
 
 - `accepted_commits`：commit HTTP 请求被接受的数量；
 - `completed_commits`：异步处理最终完成的数量；
+- `commit_initial_status` / `commit_attempts`：第一次响应和实际提交尝试次数；
+- `commit_initial_429` / `commit_recovered_after_429`：
+  首次被限流的数量，以及重试后接受的数量；
+- `commit_final_429` / `commit_total_retries`：最终仍被限流的数量和总重试次数；
 - `commit:failed` / `commit:timeout`：后台处理失败或超过轮询时限；
 - `commit:missing_archive_id`：服务接受了请求但没有返回可轮询的任务 ID。
 

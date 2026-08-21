@@ -6,10 +6,11 @@ The default workflow is:
     POST /api/sessions/{session_id}/messages
     POST /api/sessions/{session_id}/commit
 
-The client does not retry requests. This keeps rejection, timeout, and
-connection-error rates visible instead of hiding them behind a retry loop.
-Use ``--poll-commits`` when the server returns an archive id and you also want
-to measure asynchronous commit completion.
+The client records the first response, retries commit requests rejected with
+HTTP 429 according to ``Retry-After`` and exponential backoff, and keeps both
+initial and final outcomes visible. Use ``--poll-commits`` when the server
+returns an archive id and you also want to measure asynchronous commit
+completion.
 """
 
 from __future__ import annotations
@@ -17,6 +18,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 import json
 import math
 import time
@@ -31,6 +34,8 @@ TERMINAL_COMMIT_STATES = {"completed", "done", "success", "failed", "error"}
 EXPECTED_OPEN = {200}
 EXPECTED_MESSAGE = {200}
 EXPECTED_COMMIT = {200, 201, 202}
+DEFAULT_COMMIT_RETRIES = 3
+DEFAULT_RETRY_BACKOFF = 1.0
 
 
 def percentile(values: list[float], percentile_value: float) -> float | None:
@@ -88,6 +93,26 @@ def response_summary(response: httpx.Response) -> dict[str, Any]:
     return {"status": response.status_code, "body": body}
 
 
+def retry_after_seconds(response: httpx.Response) -> float | None:
+    """Read Retry-After from seconds or an HTTP-date response header."""
+    value = response.headers.get("Retry-After")
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(value)
+            if retry_at.tzinfo is None:
+                retry_at = retry_at.replace(tzinfo=timezone.utc)
+            return max(
+                0.0,
+                (retry_at - datetime.now(timezone.utc)).total_seconds(),
+            )
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+
 def classify_workflow(row: dict[str, Any]) -> str:
     if row.get("exception"):
         return f"exception:{row['exception']}"
@@ -116,6 +141,46 @@ async def post_step(
     started = time.perf_counter()
     response = await client.post(path, json=payload, headers=headers)
     return response, round((time.perf_counter() - started) * 1000, 3)
+
+
+async def post_commit_with_retry(
+    client: httpx.AsyncClient,
+    path: str,
+    *,
+    payload: dict[str, Any],
+    headers: dict[str, str],
+    max_retries: int,
+    retry_backoff_s: float,
+) -> tuple[httpx.Response, float, dict[str, Any]]:
+    """Submit commit and retry only queue-pressure responses."""
+    started = time.perf_counter()
+    attempts = 0
+    retry_delays: list[float] = []
+    first_status: int | None = None
+    response: httpx.Response | None = None
+    max_attempts = max(1, max_retries + 1)
+    while attempts < max_attempts:
+        attempts += 1
+        response = await client.post(path, json=payload, headers=headers)
+        if first_status is None:
+            first_status = response.status_code
+        if response.status_code != 429 or attempts >= max_attempts:
+            break
+        server_delay = retry_after_seconds(response)
+        delay = max(
+            server_delay if server_delay is not None else 0.0,
+            retry_backoff_s * (2 ** (attempts - 1)),
+        )
+        retry_delays.append(round(delay, 3))
+        await asyncio.sleep(delay)
+    assert response is not None
+    return response, round((time.perf_counter() - started) * 1000, 3), {
+        "commit_initial_status": first_status,
+        "commit_attempts": attempts,
+        "commit_retries": max(0, attempts - 1),
+        "commit_retry_delays_s": retry_delays,
+        "commit_retry_exhausted": response.status_code == 429,
+    }
 
 
 async def poll_commit(
@@ -178,6 +243,8 @@ async def run_workflow(
     poll_commits: bool,
     poll_timeout_s: float,
     poll_interval_s: float,
+    commit_retries: int,
+    retry_backoff_s: float,
 ) -> dict[str, Any]:
     session_id = f"incident-{stage}-{index}"
     started = time.perf_counter()
@@ -218,15 +285,18 @@ async def run_workflow(
         if response.status_code not in EXPECTED_MESSAGE:
             return row
 
-        response, elapsed = await post_step(
+        response, elapsed, retry_info = await post_commit_with_retry(
             client,
             f"/api/sessions/{session_id}/commit",
             payload={},
             headers=headers,
+            max_retries=commit_retries,
+            retry_backoff_s=retry_backoff_s,
         )
         commit_response = response_summary(response)
         row["commit_ms"] = elapsed
         row["commit_status"] = response.status_code
+        row.update(retry_info)
         row["commit_body"] = commit_response["body"]
         row["archive_id"] = extract_archive_id(commit_response["body"])
         row["commit_poll_requested"] = poll_commits
@@ -318,6 +388,25 @@ def build_metrics(
         for row in workflows
     )
     failed = sum(row.get("result") != "ok" for row in workflows)
+    initial_429 = sum(
+        row.get("commit_initial_status") == 429
+        for row in workflows
+    )
+    recovered_after_429 = sum(
+        row.get("commit_initial_status") == 429
+        and row.get("commit_status") in EXPECTED_COMMIT
+        and not row.get("commit_retry_exhausted")
+        for row in workflows
+    )
+    final_429 = sum(
+        row.get("commit_retry_exhausted")
+        and row.get("commit_status") == 429
+        for row in workflows
+    )
+    total_commit_retries = sum(
+        int(row.get("commit_retries") or 0)
+        for row in workflows
+    )
     commit_poll_missing_id = sum(
         row.get("result") == "commit:missing_archive_id"
         for row in workflows
@@ -329,6 +418,10 @@ def build_metrics(
         "requested_workflows": requested_workflows,
         "finished_workflows": len(workflows),
         "accepted_commits": accepted,
+        "commit_initial_429": initial_429,
+        "commit_recovered_after_429": recovered_after_429,
+        "commit_final_429": final_429,
+        "commit_total_retries": total_commit_retries,
         "completed_commits": completed if polled else None,
         "commit_poll_missing_archive_id": commit_poll_missing_id,
         "failed_workflows": failed,
@@ -397,6 +490,8 @@ async def run_stage(
                         poll_commits=args.poll_commits,
                         poll_timeout_s=args.poll_timeout,
                         poll_interval_s=args.poll_interval,
+                        commit_retries=args.commit_retries,
+                        retry_backoff_s=args.retry_backoff,
                     )
                 )
             finally:
@@ -409,6 +504,7 @@ async def run_stage(
     elapsed_ms = (time.perf_counter() - started) * 1000
     results.sort(key=lambda row: row["index"])
     return {
+        "_elapsed_ms": elapsed_ms,
         "metrics": build_metrics(
             results,
             elapsed_ms=elapsed_ms,
@@ -417,6 +513,61 @@ async def run_stage(
             stage=stage,
         ),
         "workflows": results,
+    }
+
+
+async def drain_commits(
+    client: httpx.AsyncClient,
+    workflows: list[dict[str, Any]],
+    *,
+    headers: dict[str, str],
+    timeout_s: float,
+    interval_s: float,
+) -> dict[str, int]:
+    """Continue polling accepted commits after stage workers finish."""
+    pending = [
+        row for row in workflows
+        if row.get("archive_id")
+        and row.get("commit_poll_state") not in {"completed", "failed"}
+    ]
+    completed = 0
+    failed = 0
+    deadline = time.perf_counter() + timeout_s
+    for row in pending:
+        remaining = deadline - time.perf_counter()
+        if remaining <= 0:
+            break
+        previous_count = int(row.get("commit_poll_count") or 0)
+        previous_elapsed = float(row.get("commit_poll_elapsed_ms") or 0.0)
+        update = await poll_commit(
+            client,
+            session_id=str(row["session_id"]),
+            archive_id=str(row["archive_id"]),
+            headers=headers,
+            timeout_s=remaining,
+            interval_s=interval_s,
+        )
+        row.update(update)
+        row["commit_poll_count"] = previous_count + int(
+            update.get("commit_poll_count") or 0
+        )
+        row["commit_poll_elapsed_ms"] = round(
+            previous_elapsed + float(update.get("commit_poll_elapsed_ms") or 0.0),
+            3,
+        )
+        row["result"] = classify_workflow(row)
+        if row.get("commit_poll_state") == "completed":
+            completed += 1
+        elif row.get("commit_poll_state") == "failed":
+            failed += 1
+    return {
+        "pending_before": len(pending),
+        "completed": completed,
+        "failed": failed,
+        "remaining": sum(
+            row.get("commit_poll_state") not in {"completed", "failed"}
+            for row in pending
+        ),
     }
 
 
@@ -482,6 +633,35 @@ async def run(args: argparse.Namespace) -> None:
                 )
             )
 
+        drain = {
+            "pending_before": 0,
+            "completed": 0,
+            "failed": 0,
+            "remaining": 0,
+        }
+        if args.poll_commits and args.drain_timeout > 0:
+            workflows = [
+                row
+                for stage in all_stages
+                for row in stage["workflows"]
+            ]
+            drain = await drain_commits(
+                client,
+                workflows,
+                headers=headers,
+                timeout_s=args.drain_timeout,
+                interval_s=args.poll_interval,
+            )
+
+        for stage in all_stages:
+            stage["metrics"] = build_metrics(
+                stage["workflows"],
+                elapsed_ms=stage["_elapsed_ms"],
+                requested_workflows=workflows_count,
+                concurrency=stage["metrics"]["concurrency"],
+                stage=stage["metrics"]["stage"],
+            )
+
     payload = {
         "url": args.url,
         "stages": [stage["metrics"] for stage in all_stages],
@@ -489,6 +669,7 @@ async def run(args: argparse.Namespace) -> None:
         "context_statuses": dict(
             Counter(str(row.get("status")) for row in probes)
         ),
+        "drain": drain,
         "config": {
             "workflows": workflows_count,
             "stages": stages,
@@ -497,6 +678,9 @@ async def run(args: argparse.Namespace) -> None:
             "poll_commits": args.poll_commits,
             "poll_timeout": args.poll_timeout,
             "poll_interval": args.poll_interval,
+            "commit_retries": args.commit_retries,
+            "retry_backoff": args.retry_backoff,
+            "drain_timeout": args.drain_timeout,
         },
         "workflows": [
             row
@@ -553,6 +737,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--poll-commits", action="store_true")
     parser.add_argument("--poll-timeout", type=float, default=120.0)
     parser.add_argument("--poll-interval", type=float, default=1.0)
+    parser.add_argument(
+        "--commit-retries",
+        type=int,
+        default=DEFAULT_COMMIT_RETRIES,
+        help="Retry count for commit HTTP 429 responses",
+    )
+    parser.add_argument(
+        "--retry-backoff",
+        type=float,
+        default=DEFAULT_RETRY_BACKOFF,
+        help="Minimum exponential backoff in seconds for commit retries",
+    )
+    parser.add_argument(
+        "--drain-timeout",
+        type=float,
+        default=300.0,
+        help="Extra seconds to poll accepted commits after all stages finish",
+    )
     parser.add_argument("--max-connections", type=int, default=1000)
     parser.add_argument("--connect-timeout", type=float, default=30.0)
     parser.add_argument("--read-timeout", type=float, default=90.0)

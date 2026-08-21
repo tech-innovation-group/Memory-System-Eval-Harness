@@ -5,6 +5,7 @@ from scripts.stress_echomem_incident import (
     extract_archive_id,
     extract_commit_state,
     percentile,
+    retry_after_seconds,
 )
 
 
@@ -57,6 +58,40 @@ class StressIncidentHelpersTest(unittest.TestCase):
             ),
             "exception:ReadTimeout",
         )
+
+    def test_retry_after_seconds_reads_numeric_header(self):
+        import httpx
+
+        response = httpx.Response(
+            429,
+            headers={"Retry-After": "5"},
+        )
+        self.assertEqual(retry_after_seconds(response), 5.0)
+
+    def test_retry_after_seconds_ignores_invalid_header(self):
+        import httpx
+
+        response = httpx.Response(
+            429,
+            headers={"Retry-After": "later"},
+        )
+        self.assertIsNone(retry_after_seconds(response))
+
+    def test_retry_after_seconds_reads_http_date_header(self):
+        from datetime import datetime, timedelta, timezone
+        from email.utils import format_datetime
+
+        import httpx
+
+        retry_at = datetime.now(timezone.utc) + timedelta(seconds=5)
+        response = httpx.Response(
+            429,
+            headers={"Retry-After": format_datetime(retry_at, usegmt=True)},
+        )
+        delay = retry_after_seconds(response)
+        self.assertIsNotNone(delay)
+        self.assertGreaterEqual(delay, 0.0)
+        self.assertLessEqual(delay, 5.0)
 
 
 if __name__ == "__main__":
