@@ -8,14 +8,45 @@ from unittest import mock
 
 from shared.service_manager import (
     ManagedService,
+    _child_environment,
     _seed_template_embedding_cache,
     _server_address,
+    _validate_echomem_resources,
     start_echomem_service,
     stop_echomem_service,
 )
 
 
 class ServiceManagerTests(unittest.TestCase):
+    def test_validate_echomem_resources_requires_core_rules(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaisesRegex(RuntimeError, "core_rules.txt"):
+                _validate_echomem_resources(root)
+
+            resource = (
+                root
+                / "src/echomem/index_engine/engine/atomic_engine/core/resources"
+                / "prompts/atomic/core_rules.txt"
+            )
+            resource.parent.mkdir(parents=True)
+            resource.write_text("rules", encoding="utf-8")
+            _validate_echomem_resources(root)
+
+    def test_child_environment_prioritizes_current_source(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with mock.patch.dict(
+                "shared.service_manager.os.environ",
+                {"PYTHONPATH": "/old/src"},
+                clear=False,
+            ):
+                env = _child_environment(root)
+            self.assertEqual(
+                f"{root / 'src'}{os.pathsep}/old/src",
+                env["PYTHONPATH"],
+            )
+
     def test_parses_local_http_address(self) -> None:
         self.assertEqual(("127.0.0.1", 18094), _server_address("http://127.0.0.1:18094"))
 
@@ -63,6 +94,13 @@ class ServiceManagerTests(unittest.TestCase):
             python_bin = echomem / ".venv/bin/python"
             python_bin.parent.mkdir(parents=True)
             python_bin.touch()
+            resource = (
+                echomem
+                / "src/echomem/index_engine/engine/atomic_engine/core/resources"
+                / "prompts/atomic/core_rules.txt"
+            )
+            resource.parent.mkdir(parents=True)
+            resource.write_text("rules", encoding="utf-8")
             workspace.mkdir()
             (workspace / "config.json").write_text("{}\n", encoding="utf-8")
             process = mock.Mock()

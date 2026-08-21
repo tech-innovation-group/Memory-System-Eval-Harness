@@ -58,6 +58,41 @@ def _seed_template_embedding_cache(workspace: Path, config_path: Path | None) ->
         shutil.copy2(source, destination)
 
 
+def _validate_echomem_resources(echomem_root: Path) -> None:
+    """Fail early when the checkout is missing runtime prompt resources."""
+    required = (
+        echomem_root
+        / "src"
+        / "echomem"
+        / "index_engine"
+        / "engine"
+        / "atomic_engine"
+        / "core"
+        / "resources"
+        / "prompts"
+        / "atomic"
+        / "core_rules.txt"
+    )
+    if not required.is_file() or required.stat().st_size == 0:
+        raise RuntimeError(
+            "EchoMem source is incomplete: missing "
+            f"{required}. Sync the full repository, including "
+            "src/echomem/**/core/resources, before starting the service."
+        )
+
+
+def _child_environment(echomem_root: Path) -> dict[str, str]:
+    """Prefer the current checkout over a stale globally installed package."""
+    child_env = os.environ.copy()
+    source_dir = str(echomem_root / "src")
+    existing = child_env.get("PYTHONPATH", "")
+    child_env["PYTHONPATH"] = (
+        f"{source_dir}{os.pathsep}{existing}" if existing else source_dir
+    )
+    child_env["PYTHONUNBUFFERED"] = "1"
+    return child_env
+
+
 def start_echomem_service(project_root: str | Path, timeout_s: float = 180.0) -> ManagedService | None:
     base_url = os.environ.get("ECHOMEM_BASE_URL", "http://127.0.0.1:8010").rstrip("/")
     if _healthy(base_url):
@@ -75,6 +110,8 @@ def start_echomem_service(project_root: str | Path, timeout_s: float = 180.0) ->
     python_bin = echomem_root / ".venv" / "bin" / "python"
     if not python_bin.exists():
         raise RuntimeError(f"EchoMem Python not found: {python_bin}")
+    _validate_echomem_resources(echomem_root)
+    child_env = _child_environment(echomem_root)
 
     config_text = os.environ.get("ECHOMEM_CONFIG", "").strip()
     config_path = Path(config_text).expanduser().resolve() if config_text else None
@@ -93,7 +130,7 @@ def start_echomem_service(project_root: str | Path, timeout_s: float = 180.0) ->
                 raise RuntimeError(f"EchoMem config not found: {config_path}")
             init_command.extend(["--config", str(config_path)])
         try:
-            subprocess.run(init_command, cwd=echomem_root, check=True)
+            subprocess.run(init_command, cwd=echomem_root, env=child_env, check=True)
         except (OSError, subprocess.CalledProcessError) as exc:
             raise RuntimeError(f"EchoMem workspace initialization failed: {exc}") from exc
     _seed_template_embedding_cache(workspace, config_path)
@@ -116,8 +153,6 @@ def start_echomem_service(project_root: str | Path, timeout_s: float = 180.0) ->
         str(workspace),
     ]
     log_file = log_path.open("a", encoding="utf-8")
-    child_env = os.environ.copy()
-    child_env["PYTHONUNBUFFERED"] = "1"
     try:
         process = subprocess.Popen(
             command,
