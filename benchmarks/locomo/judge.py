@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -58,6 +59,16 @@ JUDGE_FIELDS = (
     "judge_latency_ms",
 )
 
+# Small judge models sometimes return empty or truncated JSON.  On retry we
+# append a corrective instruction and raise temperature above 0 so the model
+# does not reproduce the identical bad output (temperature 0 is deterministic).
+JUDGE_REPAIR_PROMPT = (
+    "\n\nYour previous response was empty or not valid JSON. "
+    'Respond with JSON only: {"is_correct": "CORRECT" or "WRONG", '
+    '"reasoning": "your explanation"}'
+)
+JUDGE_RETRY_TEMPERATURE = 0.3
+
 
 @dataclass
 class JudgeReport:
@@ -77,26 +88,32 @@ def _write_judge_rows(path: Path, rows: list[dict[str, str]]) -> None:
 
 
 def parse_judge_json(text: str) -> tuple[str, str]:
+    """Extract a CORRECT/WRONG verdict from a judge response.
+
+    Tolerant: accepts a well-formed JSON object, but also recovers a verdict
+    from truncated JSON or prose that already names CORRECT/WRONG in
+    uppercase (common failure modes of small judge models).  Raises only
+    when no usable verdict is present.
+    """
     start = text.find("{")
     end = text.rfind("}")
-    if start == -1 or end == -1 or end < start:
-        raise ValueError(f"judge response contains no JSON: {text[:200]}")
-    try:
-        payload = json.loads(text[start:end + 1])
-    except json.JSONDecodeError as exc:
+    if start != -1 and end != -1 and end >= start:
+        try:
+            payload = json.loads(text[start:end + 1])
+        except json.JSONDecodeError:
+            payload = None
+        if isinstance(payload, dict):
+            verdict = str(payload.get("is_correct") or "").strip().upper()
+            if verdict in {"CORRECT", "WRONG"}:
+                return verdict, str(payload.get("reasoning") or "")
+    match = re.search(r"\b(CORRECT|WRONG)\b", text)
+    if match is not None:
+        return match.group(0), ""
+    if start != -1 and end != -1 and end >= start:
         raise ValueError(
-            f"judge response contains invalid JSON: {text[:200]}"
-        ) from exc
-    if not isinstance(payload, dict):
-        raise ValueError(
-            f"judge response JSON is not an object: {text[:200]}"
+            f"judge response has unknown verdict: {text[:200]}"
         )
-    verdict = str(payload.get("is_correct") or "").strip().upper()
-    if verdict not in {"CORRECT", "WRONG"}:
-        raise ValueError(
-            f"judge response has unknown verdict '{verdict}': {text[:200]}"
-        )
-    return verdict, str(payload.get("reasoning") or "")
+    raise ValueError(f"judge response contains no JSON: {text[:200]}")
 
 
 def locomo_judge(
@@ -123,8 +140,17 @@ def judge_with_retries(
 ) -> tuple[str, str]:
     last_error: Exception | None = None
     for attempt in range(1, attempts + 1):
+        prompt = LOCOMO_JUDGE_TEMPLATE.format(
+            question=question,
+            gold_answer=answer,
+            response=response,
+        )
+        if attempt > 1:
+            prompt += JUDGE_REPAIR_PROMPT
         try:
-            return locomo_judge(judge_llm, question, answer, response)
+            return parse_judge_json(
+                judge_llm.judge(LOCOMO_JUDGE_SYSTEM, prompt)
+            )
         except Exception as exc:
             last_error = exc
             if attempt < attempts:
@@ -170,10 +196,24 @@ def judge_with_metrics(
     usage_observed = False
     last_error: Exception | None = None
     for attempt in range(1, attempts + 1):
-        model_response = judge_llm.chat([
-            {"role": "system", "content": LOCOMO_JUDGE_SYSTEM},
-            {"role": "user", "content": prompt},
-        ])
+        model_response = judge_llm.chat(
+            [
+                {"role": "system", "content": LOCOMO_JUDGE_SYSTEM},
+                {
+                    "role": "user",
+                    "content": (
+                        prompt if attempt == 1
+                        else prompt + JUDGE_REPAIR_PROMPT
+                    ),
+                },
+            ],
+            temperature=(
+                JUDGE_RETRY_TEMPERATURE if attempt > 1 else None
+            ),
+            response_format=True,
+            thinking_disabled=True,
+            omit_max_tokens=True,
+        )
         prompt_tokens += int(model_response.prompt_tokens or 0)
         completion_tokens += int(model_response.completion_tokens or 0)
         retry_count += int(getattr(model_response, "retry_count", 0) or 0)

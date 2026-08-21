@@ -33,6 +33,22 @@ send_message()             ----->  EchoAgent 后端  ----->  LLM
 
 `agent_id` 默认为 `"echoagent"`（与 echoagent 插件 31030 的配置一致），确保注入的记忆能被 QA 阶段检索到。
 
+**禁止创建隔离租户**：`echo_agent` 插件不调用 `provision_isolated_identity`。EchoAgent 后端做记忆召回时，通过 31030 用登录用户的 UUID 作为 `userId` 解析 auth_key。如果注入时创建隔离租户，记忆会写入与召回不同的租户，导致召回全空。注入必须始终使用 `get_memory_auth_key`（内部传 `self.user_uuid`）解析到的同一 auth_key。
+
+## send_message 返回值契约
+
+`send_message` 返回的 `AgentResponse.extra` 必须包含 `qa_profile` 字段。benchmark QA runner（`shared/benchmark_qa.py`）从 `resp.extra["qa_profile"]` 读取 QA profile，写入 QA 结果 CSV。`--resume-qa` 恢复时，`resume.py` 校验 CSV 中的 `qa_profile` 与 manifest 一致；缺失会导致 profile mismatch 错误。
+
+`echo_agent` 的 `qa_profile` 继承自 `AgentPlugin.qa_profile` 属性，默认返回 `descriptor.id`（即 `"echo_agent"`）。`send_message` 在所有返回路径（成功、错误、异常）中都设置 `extra={"qa_profile": self.qa_profile}`。
+
+成功路径的 `AgentResponse` 还携带后端 SSE done 事件注入的指标。`extra` 中的 `elapsed_s`/`retrieval_latency_s`/`llm_latency_s`（ms→s，除以 1000）、`tool_call_count`/`iterations` 与 `trace`（含原始 `metrics` 快照、`model_name`、`finish_reason`、`tool_audit`）均来自 done 事件的 `metrics` 字段（`tool_audit` 来自 done 事件的 `toolAudit`，元素为 `{name, callId, arguments}`）。`memory_items` 优先级为 prefill（typing 模拟产生）> done 事件的 `memoryItems`。token 类字段（`prompt_tokens`/`completion_tokens`/`cached_tokens`/`ttft_ms`）优先取 `metrics` 中的 snake_case 值，回退到 done 事件顶层的 camelCase/snake_case。
+
+## 会话管理
+
+**动态评测**：`run_eval` 先调 `create_session(title)` 创建 EchoAgent 会话，再将返回的 session_id 传给 `send_message`。
+
+**Benchmark 评测**：benchmark 传入的 `session_id` 是 EchoMem 记忆会话 ID（用于记忆注入），不是 EchoAgent 会话 ID。当 `session_mode=locomo` 时，每个 sample 有多个记忆会话，`session_id` 为空字符串。`send_message` 在 `session_id` 为空时自动调 `client.create_session()` 创建新的 EchoAgent 会话，确保每条 QA 问题在独立上下文中执行。记忆检索不依赖 EchoAgent 会话历史，而是通过 echoagent 插件（31030）查询 EchoMem。
+
 ## 打字模拟
 
 `supports_typing_simulation = True`。`simulate_typing()` 模拟用户逐字输入，触发 EchoAgent 的 prefill 管线：

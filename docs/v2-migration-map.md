@@ -25,7 +25,6 @@ EchoMemory is the only backend in scope.
 | OpenAI-compatible iterative tool loop | `plugins/vikingbot/runtime.py` |
 | Reusable VikingBot entrypoint | `plugins/vikingbot/plugin.py` |
 | Agent contract and lookup | `plugins/base.py`, `plugins/registry.py` |
-| July 13 actual `head_clean` prompt, five-tool loop, and `63/81` settings | `plugins/vikingbot/legacy77_prompting.py`, `benchmarks/locomo/profiles/legacy77.py` |
 | VikingBoat v0.4.11 prompt, five-tool protocol, and alignment settings | `plugins/vikingbot/vikingboat0411_prompting.py`, `plugins/vikingbot/tools.py`, `benchmarks/locomo/profiles/vikingboat0411.py` |
 | v2 backend descriptor/config contract | `backends/base.py` |
 | v2 backend registry | `backends/registry.py` |
@@ -33,8 +32,7 @@ EchoMemory is the only backend in scope.
 | EchoMemory backend plugin | `backends/echomemory/plugin.py` |
 | Backend-neutral search and commit result types | `backends/types.py` |
 
-The `legacy-77` profile targets the July 13, 2026 `head_clean` run (`63/81`,
-`77.78%`). The two VikingBoat v0.4.11 profiles carry no score claim.
+The two VikingBoat v0.4.11 profiles carry no score claim.
 
 ## Backend Migration
 

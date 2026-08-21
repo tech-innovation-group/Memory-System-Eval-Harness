@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,6 +23,7 @@ class ServiceManagerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "local http"):
             _server_address("https://example.test")
 
+    @unittest.skipUnless(os.name == "posix", "os.killpg is POSIX-only")
     def test_stop_terminates_process_group_and_removes_pid_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             pid_path = Path(directory) / "service.pid"

@@ -177,8 +177,12 @@ def main() -> None:
         "recovery_question_ids": selected_ids,
         "recovery_count": len(selected_ids),
         "retry_command": [
-            str(Path(__file__).resolve().parents[2] / "eval.sh"),
-            "longmemeval",
+            str(
+                Path(__file__).resolve().parents[2]
+                / "benchmarks"
+                / "longmemeval"
+                / "run_eval.py"
+            ),
             "--dataset",
             str(dataset_path),
             "--question-ids",

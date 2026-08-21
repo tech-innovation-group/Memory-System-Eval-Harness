@@ -70,6 +70,7 @@ from benchmarks.longmemeval.selection import (
     select_jobs_and_plans,
 )
 from shared.eval_base import EvalConfig
+from shared.llm_client import LLMResponse
 from shared.qa import BASE_QA_FIELDS, QAResult
 
 
@@ -88,15 +89,41 @@ class _Log:
 
 
 class _JudgeLLM:
-    """Fake judge LLM that returns predefined responses in order."""
+    """Fake judge LLM that returns predefined responses in order.
+
+    Repeats the last response when exhausted so retry loops run their full
+    budget instead of raising StopIteration.
+    """
 
     def __init__(self, responses):
-        self.responses = iter(responses)
+        self._responses = list(responses)
+        self._index = 0
         self.calls = []
 
-    def judge(self, system, prompt):
-        self.calls.append((system, prompt))
-        return next(self.responses)
+    def chat(
+        self,
+        messages,
+        *,
+        temperature=None,
+        response_format=False,
+        thinking_disabled=False,
+        omit_max_tokens=False,
+    ):
+        self.calls.append((
+            messages,
+            temperature,
+            response_format,
+            thinking_disabled,
+            omit_max_tokens,
+        ))
+        content = self._responses[min(self._index, len(self._responses) - 1)]
+        self._index += 1
+        return LLMResponse(
+            content=content,
+            prompt_tokens=0,
+            completion_tokens=0,
+            elapsed_s=0.0,
+        )
 
 
 class _CommitResult:
@@ -614,14 +641,32 @@ class JudgeTests(unittest.TestCase):
         llm = _JudgeLLM(["yes"])
         judge_answer(llm, "multi-session", "Q", "A", "R", abstention=True)
         self.assertEqual(1, len(llm.calls))
-        system, prompt = llm.calls[0]
-        self.assertIn("answer evaluation assistant", system)
-        self.assertIn("unanswerable", prompt)
+        messages, temperature, response_format, thinking_disabled, omit_max_tokens = llm.calls[0]
+        self.assertIsNone(temperature)
+        # Yes/no verdict: JSON off, but thinking off and no max_tokens cap.
+        self.assertFalse(response_format)
+        self.assertTrue(thinking_disabled)
+        self.assertTrue(omit_max_tokens)
+        self.assertIn("answer evaluation assistant", messages[0]["content"])
+        self.assertIn("unanswerable", messages[1]["content"])
 
     def test_judge_answer_propagates_parse_error(self):
         llm = _JudgeLLM(["maybe"])
-        with self.assertRaises(ValueError):
-            judge_answer(llm, "multi-session", "Q", "A", "R")
+        with patch("shared.llm_client.time.sleep"):
+            with self.assertRaises(ValueError):
+                judge_answer(llm, "multi-session", "Q", "A", "R")
+
+    def test_judge_answer_recovers_via_repair_retry(self):
+        # Empty judge output is retried with a corrective instruction and a
+        # higher temperature instead of failing the question.
+        llm = _JudgeLLM(["", "yes"])
+        with patch("shared.llm_client.time.sleep"):
+            result = judge_answer(llm, "single-session-user", "Q", "A", "R")
+        self.assertTrue(result)
+        self.assertEqual(2, len(llm.calls))
+        messages, temperature, *_ = llm.calls[1]
+        self.assertEqual(0.3, temperature)
+        self.assertIn("single word: yes or no", messages[1]["content"])
 
 
 # ------------------------------------------------------------------ #
@@ -690,9 +735,10 @@ class EvaluateTests(unittest.TestCase):
         qa_results = [QAResult("q1", "Q1", "A1", "R1")]
         jobs = [SimpleNamespace(category="single-session-user")]
         with tempfile.TemporaryDirectory() as d:
-            report = evaluate_longmemeval(
-                qa_results, jobs, _JudgeLLM(["ambiguous"]), Path(d), _Log()
-            )
+            with patch("shared.llm_client.time.sleep"):
+                report = evaluate_longmemeval(
+                    qa_results, jobs, _JudgeLLM(["ambiguous"]), Path(d), _Log()
+                )
         self.assertEqual(1, report.errors)
         self.assertEqual(0, report.graded)
         rows = report.rows
@@ -1746,16 +1792,9 @@ class RunEvalTests(unittest.TestCase):
             self.assertEqual(1, args.parallel_shards)
             self.assertEqual(2, args.parallel_workers)
             self.assertFalse(args.parallel_dry_run)
-            self.assertFalse(args.check)
             self.assertEqual("", args.judge_model)
             self.assertEqual("", args.judge_api_key)
             self.assertEqual("", args.judge_base_url)
-
-    def test_build_parser_check_flag(self):
-        with patch.object(sys, "argv", ["test"]):
-            parser = build_eval_parser()
-            args = parser.parse_args(["--check", "--llm-base-url", "u", "--llm-api-key", "k"])
-            self.assertTrue(args.check)
 
     def test_build_parser_judge_env_defaults(self):
         with patch.dict("os.environ", {

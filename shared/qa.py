@@ -120,6 +120,24 @@ class QAResult:
         retrieval, answer, model, health = self.resolved_statuses()
         answer_total = self.prompt_tokens + self.completion_tokens
         usage_observed = self.model_usage_observed or answer_total > 0
+        trace = self.trace or {}
+        initial_search_via_mcp = bool(trace.get("initial_search_via_mcp"))
+        if initial_search_via_mcp:
+            evidence_origin = "echomem_mcp"
+            retrieval_source_mode = "mcp_initial_search"
+            platform_evidence_injection_enabled = "true"
+        elif self.qa_profile == "echomem_mcp":
+            evidence_origin = "echomem_mcp"
+            retrieval_source_mode = "mcp_tools" if self.tool_call_count else "mcp_only_no_retrieval"
+            platform_evidence_injection_enabled = "false"
+        elif self.qa_profile in ("vikingbot_docs", "echomem_mcp_documents"):
+            evidence_origin = "echomemory_http_api"
+            retrieval_source_mode = "resource_search"
+            platform_evidence_injection_enabled = "false"
+        else:
+            evidence_origin = "echomemory_http_api"
+            retrieval_source_mode = "echo_http_native"
+            platform_evidence_injection_enabled = "false"
         return {
             "question_id": self.question_id,
             "sample_id": self.sample_id,
@@ -160,8 +178,8 @@ class QAResult:
             "iterations": str(self.iterations),
             "qa_profile": self.qa_profile,
             "evidence_policy": "blackbox",
-            "evidence_origin": "echomemory_http_api",
-            "retrieval_source_mode": "echo_http_native",
-            "platform_evidence_injection_enabled": "false",
+            "evidence_origin": evidence_origin,
+            "retrieval_source_mode": retrieval_source_mode,
+            "platform_evidence_injection_enabled": platform_evidence_injection_enabled,
             "qa_memory_writeback_enabled": "false",
         }

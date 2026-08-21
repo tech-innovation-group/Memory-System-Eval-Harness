@@ -464,6 +464,95 @@ class TestAddMessage(unittest.TestCase):
 
 
 # ------------------------------------------------------------------ #
+#  fetch_logs()                                                        #
+# ------------------------------------------------------------------ #
+
+class TestFetchLogs(unittest.TestCase):
+    def setUp(self) -> None:
+        self.client = EchoMemClient(
+            auth_key="k", account="tenant-1", user_id="user-1",
+        )
+        self.captured: dict[str, Any] = {}
+
+    def _install(self, responses: list[dict[str, Any]]) -> None:
+        iterator = iter(responses)
+
+        def fake_do_request(req: Any) -> dict[str, Any]:
+            self.captured = {
+                "url": req.full_url,
+                "headers": {k: v for k, v in req.header_items()},
+            }
+            return next(iterator)
+
+        self.client._do_request = fake_do_request  # type: ignore[method-assign]
+
+    def test_requires_at_least_one_filter(self) -> None:
+        with self.assertRaises(ValueError):
+            self.client.fetch_logs()
+
+    def test_sends_only_nonempty_filters(self) -> None:
+        self._install([
+            {"result": {"items": [], "page": {"has_more": False}}},
+        ])
+        self.client.fetch_logs(tenant_id="t1", user_id="u1")
+        self.assertIn("/api/logs", self.captured["url"])
+        self.assertIn("tenant_id=t1", self.captured["url"])
+        self.assertIn("user_id=u1", self.captured["url"])
+        self.assertIn("limit=200", self.captured["url"])
+        self.assertIn("offset=0", self.captured["url"])
+        self.assertNotIn("event=", self.captured["url"])
+        self.assertNotIn("route=", self.captured["url"])
+        self.assertNotIn("request_id=", self.captured["url"])
+
+    def test_sends_optional_filters_when_provided(self) -> None:
+        self._install([
+            {"result": {"items": [], "page": {"has_more": False}}},
+        ])
+        self.client.fetch_logs(
+            tenant_id="t", request_id="req-1", event="commit",
+            route="/api/sessions/open", since="2026-01-01T00:00:00Z", limit=50,
+        )
+        self.assertIn("request_id=req-1", self.captured["url"])
+        self.assertIn("event=commit", self.captured["url"])
+        self.assertIn("route=%2Fapi%2Fsessions%2Fopen", self.captured["url"])
+        self.assertIn("since=2026-01-01T00%3A00%3A00Z", self.captured["url"])
+        self.assertIn("limit=50", self.captured["url"])
+
+    def test_sends_x_log_access_key_when_configured(self) -> None:
+        client = EchoMemClient(auth_key="k", log_access_key="la-key")
+        captured: dict[str, Any] = {}
+
+        def fake_do_request(req: Any) -> dict[str, Any]:
+            captured["headers"] = {
+                k.lower(): v for k, v in req.header_items()
+            }
+            return {"result": {"items": [], "page": {"has_more": False}}}
+
+        client._do_request = fake_do_request  # type: ignore[method-assign]
+        client.fetch_logs(tenant_id="t")
+        self.assertEqual("la-key", captured["headers"].get("x-log-access-key"))
+        self.assertEqual("k", captured["headers"].get("x-auth-key"))
+
+    def test_aggregates_pages_until_has_more_false(self) -> None:
+        self._install([
+            {"result": {"items": [{"ts": "a"}, {"ts": "b"}],
+                        "page": {"has_more": True}}},
+            {"result": {"items": [{"ts": "c"}],
+                        "page": {"has_more": False}}},
+        ])
+        result = self.client.fetch_logs(tenant_id="t")
+        self.assertEqual(3, len(result["items"]))
+        self.assertEqual([{"ts": "a"}, {"ts": "b"}, {"ts": "c"}], result["items"])
+
+    def test_stops_when_page_returns_no_items(self) -> None:
+        self._install([
+            {"result": {"items": [], "page": {"has_more": True}}},
+        ])
+        result = self.client.fetch_logs(tenant_id="t")
+        self.assertEqual([], result["items"])
+
+
+# ------------------------------------------------------------------ #
 #  Zero third-party dependencies                                      #
 # ------------------------------------------------------------------ #
 
@@ -479,6 +568,8 @@ class TestModuleImports(unittest.TestCase):
         allowed = (
             "from __future__",
             "import logging",
+            "import time",
+            "import urllib",
             "from typing",
             "from backends.memory_types",
         )

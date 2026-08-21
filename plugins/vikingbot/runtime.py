@@ -14,10 +14,10 @@ from backends.memory_types import MemoryClient, SearchResult
 from shared.llm_client import LLMClient
 from shared.qa import QAResult
 
-from .answers import sanitize_final_answer_text
 from .prompting import build_messages, build_question_prompt
 from .tools import (
     MEMORY_SEARCH_TOOL,
+    _resource_search_result,
     execute_tool,
     tool_definitions,
 )
@@ -316,6 +316,8 @@ def answer_one_vikingbot_question(
     system_prompt_append: str = "",
     system_prompt_append_sha256: str = "",
     system_prompt_append_source: str = "",
+    search_resources_mode: bool = False,
+    path_title_map: dict[str, str] | None = None,
 ) -> QAResult:
     started = time.monotonic()
     deadline = started + question_timeout_s if question_timeout_s > 0 else None
@@ -338,7 +340,20 @@ def answer_one_vikingbot_question(
         else question
     )
     try:
-        items = echomem.search(initial_query, top_k=top_k, timeout_s=remaining())
+        if search_resources_mode:
+            raw_items = echomem.search_resources(
+                initial_query,
+                limit=top_k,
+                tags=["hotpotqa"],
+                timeout_s=remaining(),
+            )
+            items = [
+                _resource_search_result(item, path_title_map)
+                for item in raw_items
+                if str(item.get("uri") or "").strip()
+            ]
+        else:
+            items = echomem.search(initial_query, top_k=top_k, timeout_s=remaining())
         items = [
             item for item in items
             if item.score >= initial_min_score
@@ -399,6 +414,7 @@ def answer_one_vikingbot_question(
                 search_tool_target_uri_schema
             ),
             "tools_enabled": tools_enabled,
+            "search_resources_mode": search_resources_mode,
             "system_prompt_append_sha256": system_prompt_append_sha256,
             "system_prompt_append_source": system_prompt_append_source,
         },
@@ -519,14 +535,7 @@ def answer_one_vikingbot_question(
             trace["iterations"].append(iteration_trace)
             if not tool_calls:
                 raw_response = str(message.get("content") or "").strip()
-                final_response = (
-                    raw_response
-                    if qa_profile in {
-                        "vikingboat0411",
-                        "vikingboat0411-natural-no-tools",
-                    }
-                    else sanitize_final_answer_text(raw_response)
-                )
+                final_response = raw_response
                 trace["raw_response"] = raw_response
                 trace["final_response"] = final_response
                 trace["answer_sanitized"] = final_response != raw_response
@@ -624,6 +633,8 @@ def answer_one_vikingbot_question(
                     tool_min_score=tool_min_score,
                     timeout_s=remaining(),
                     tool_set=tool_set,
+                    search_resources=search_resources_mode,
+                    path_title_map=path_title_map,
                 )
                 return (
                     result_text,
@@ -747,14 +758,7 @@ def answer_one_vikingbot_question(
         prompt_tokens += prompt_count
         completion_tokens += completion_count
         raw_response = str(message.get("content") or "").strip()
-        final_response = (
-            raw_response
-            if qa_profile in {
-                "vikingboat0411",
-                "vikingboat0411-natural-no-tools",
-            }
-            else sanitize_final_answer_text(raw_response)
-        )
+        final_response = raw_response
         trace["forced_final_answer"] = {
             "model_message": message,
             "prompt_tokens": prompt_count,

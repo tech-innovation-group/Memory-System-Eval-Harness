@@ -143,16 +143,6 @@ def build_messages(
                 return updated
         raise ValueError("QA prompt append requires a system message")
 
-    if qa_profile == "legacy-77":
-        from .legacy77_prompting import build_legacy77_messages
-
-        return with_prompt_append(build_legacy77_messages(
-            question,
-            question_time,
-            items,
-            user_memory_budget_chars,
-            agent_memory_budget_chars,
-        ))
     if qa_profile == "vikingboat0411":
         from .vikingboat0411_prompting import build_vikingboat0411_messages
 

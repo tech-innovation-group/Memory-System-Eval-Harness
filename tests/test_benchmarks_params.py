@@ -4,7 +4,7 @@ Covers every functional point in ``shared/eval_base.py`` that relates to
 benchmark parameters and configuration:
 
   - EvalConfig dataclass: fields, defaults, construction, to_dict masking
-  - add_eval_args: --concurrency, --out-dir, --check, --allow-diagnostics
+  - add_eval_args: --concurrency, --out-dir, --allow-diagnostics
   - add_llm_args: the seven LLM CLI parameters (incl. env-var defaults)
   - add_qa_args: the three QA CLI parameters
   - add_agent_plugin_args: pre-parses sys.argv, delegates to plugin
@@ -180,17 +180,16 @@ class EvalConfigToDictTests(unittest.TestCase):
 #  add_eval_args
 # --------------------------------------------------------------------------- #
 class AddEvalArgsTests(unittest.TestCase):
-    def test_declares_four_eval_args_with_defaults(self) -> None:
+    def test_declares_three_eval_args_with_defaults(self) -> None:
         parser = _make_parser()
         add_eval_args(parser)
         opts = _option_strings(parser)
-        for opt in ("--concurrency", "--out-dir", "--check", "--allow-diagnostics"):
+        for opt in ("--concurrency", "--out-dir", "--allow-diagnostics"):
             with self.subTest(opt=opt):
                 self.assertIn(opt, opts)
         ns = parser.parse_args([])
         self.assertEqual(ns.concurrency, 4)
         self.assertEqual(ns.out_dir, "results")
-        self.assertFalse(ns.check)
         self.assertFalse(ns.allow_diagnostics)
 
     def test_parses_explicit_values(self) -> None:

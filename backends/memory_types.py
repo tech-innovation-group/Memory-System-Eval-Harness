@@ -167,10 +167,14 @@ class BaseHTTPMemoryClient(ABC):
         body: dict | None = None,
         *,
         timeout_s: float | None = None,
+        headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         url = f"{self.base_url}{path}"
         data = json.dumps(body or {}).encode()
-        req = urllib.request.Request(url, data=data, headers=self._headers(), method="POST")
+        request_headers = self._headers()
+        if headers:
+            request_headers.update(headers)
+        req = urllib.request.Request(url, data=data, headers=request_headers, method="POST")
         return self._do_request(req, timeout_s=timeout_s)
 
     def _get(
@@ -400,6 +404,43 @@ class NullMemoryClient:
         agent_id: str = "",
         timeout_s: float | None = None,
     ) -> list[SearchResult]:
+        return []
+
+    def add_resource(
+        self,
+        path: str,
+        content: str,
+        *,
+        name: str = "",
+        content_type: str = "text/markdown",
+        tags: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return {}
+
+    def reindex_all_resources(self) -> dict[str, Any]:
+        return {}
+
+    def resource_index_status(self, path: str) -> dict[str, Any]:
+        return {}
+
+    def wait_for_resource_index(
+        self,
+        paths: list[str],
+        *,
+        timeout_s: float = 3600.0,
+        poll_interval_s: float = 2.0,
+    ) -> dict[str, Any]:
+        return {"indexed": len(paths), "failed": {}}
+
+    def search_resources(
+        self,
+        query: str,
+        limit: int = 8,
+        tags: list[str] | None = None,
+        paths: list[str] | None = None,
+        timeout_s: float | None = None,
+    ) -> list[dict[str, Any]]:
         return []
 
     def fs_read(self, uri: str, *, timeout_s: float | None = None) -> str:

@@ -2,7 +2,7 @@
 
 ## 评测流程
 
-1. **记忆注入**: 总是新开用户身份并执行 open -> add_messages -> commit -> poll_commit；指定 `--resume-qa` 时复用已有身份，跳过已完成的 session 仅注入缺失部分
+1. **记忆注入**: 总是新开用户身份并执行 open -> add_messages -> commit -> poll_commit；指定 `--resume` 时复用已有身份，跳过已完成的 session 仅注入缺失部分（逐 batch 增量落盘，中断可续）
 2. **逐题 QA**: 默认使用历史 VikingBot prompt 和 `memory_search` / `memory_read_many` 多轮工具循环，仅检索不写入
 3. **LLM Judge**: 用 LLM 判定回答 CORRECT / WRONG
 
@@ -23,22 +23,36 @@ export LLM_MODEL=deepseek-v4-flash
 export LLM_API_KEY="$DASHSCOPE_API_KEY"
 ```
 
-不带 MCP 工具调用：
+不带 MCP 工具调用。平台仍通过 MCP `memory_query` 做初始召回，但回答阶段不向
+模型暴露工具，只进行一次模型调用：
 
 ```bash
-./eval.sh locomo \
+./.venv/bin/python benchmarks/locomo/run_eval.py \
   --agent-plugin echomem_mcp \
+  --echomem-url http://127.0.0.1:8110 \
+  --mcp-url http://127.0.0.1:8111 \
+  --echomem-auth-key "$ECHOMEM_AUTH_KEY" \
+  --mcp-auth-key "$ECHOMEM_AUTH_KEY" \
   --sample conv-30 \
-  --no-tool-calling \
-  --mcp-read-mode disabled
+  --llm-base-url "$LLM_BASE_URL" \
+  --llm-model "$LLM_MODEL" \
+  --llm-api-key "$LLM_API_KEY" \
+  --no-tool-calling
 ```
 
 带 MCP 工具调用但不读 `messages.jsonl`：
 
 ```bash
-./eval.sh locomo \
+./.venv/bin/python benchmarks/locomo/run_eval.py \
   --agent-plugin echomem_mcp \
+  --echomem-url http://127.0.0.1:8110 \
+  --mcp-url http://127.0.0.1:8111 \
+  --echomem-auth-key "$ECHOMEM_AUTH_KEY" \
+  --mcp-auth-key "$ECHOMEM_AUTH_KEY" \
   --sample conv-30 \
+  --llm-base-url "$LLM_BASE_URL" \
+  --llm-model "$LLM_MODEL" \
+  --llm-api-key "$LLM_API_KEY" \
   --tool-calling \
   --mcp-read-mode disabled
 ```
@@ -46,59 +60,67 @@ export LLM_API_KEY="$DASHSCOPE_API_KEY"
 该模式会从工具 schema 中移除 `read`，并拒绝执行模型返回的未暴露 `read` 调用，
 因此不会把 transcript 请求转发给 MCP。
 
-带 MCP 工具调用并读 `messages.jsonl`：
+带 MCP 工具调用并允许读取 `messages.jsonl`：
 
 ```bash
-./eval.sh locomo \
+./.venv/bin/python benchmarks/locomo/run_eval.py \
   --agent-plugin echomem_mcp \
+  --echomem-url http://127.0.0.1:8110 \
+  --mcp-url http://127.0.0.1:8111 \
+  --echomem-auth-key "$ECHOMEM_AUTH_KEY" \
+  --mcp-auth-key "$ECHOMEM_AUTH_KEY" \
   --sample conv-30 \
+  --llm-base-url "$LLM_BASE_URL" \
+  --llm-model "$LLM_MODEL" \
+  --llm-api-key "$LLM_API_KEY" \
   --tool-calling \
-  --mcp-read-mode require
+  --mcp-read-mode allow
 ```
 
-`require` 模式追加的规则是：每题先调用 `memory_query`，回答前必须读取至少
-一个相关 URI 对应的 `current/messages.jsonl`；日期、顺序、原话和多事件问题
-以完整 transcript 为准。`summary.json` 的 `messages_jsonl_read_rate` 用于
-观察 prompt 是否真正推动了 transcript 读取，不能把调用率直接等同于准确率。
+平台侧初始召回始终使用 MCP `memory_query`。`allow` 保留 `read` 工具，但不强制
+模型调用；模型是否读取 `current/messages.jsonl` 由模型根据工具描述和上下文自行
+决定。`summary.json` 的 `messages_jsonl_read_rate` 用于观察实际读取情况，不能
+把调用率直接等同于准确率。
 
 ```bash
 # 默认注入记忆并使用 VikingBoat 0.4.11 工具口径
-./eval.sh locomo --sample conv-30 --tools
+python benchmarks/locomo/run_eval.py --sample conv-30 --tools
 
 # 自然无工具对照
-./eval.sh locomo --sample conv-30 --no-tools
+python benchmarks/locomo/run_eval.py --sample conv-30 --no-tools
 
 # 追加仅保存在本地的实验 prompt
-./eval.sh locomo \
+python benchmarks/locomo/run_eval.py \
   --sample conv-30 \
   --tools \
   --qa-prompt-file /path/to/local-prompt.txt
 
-# 从中断运行继续；复用已有身份，跳过已完成 session，只重新 QA 失败和缺失题
-./eval.sh locomo \
+# 从中断运行继续（统一 --resume）：复用身份，跳过已完成 import batch，
+# 只重新 QA 失败/缺失题、只重判缺失 Judge 行；指标（token/延迟/精度）按整轮累计
+python benchmarks/locomo/run_eval.py \
   --sample conv-30 \
-  --resume-qa /path/to/interrupted-run
+  --resume /path/to/interrupted-run
 
-# QA 已完成但 Judge 中断时，只复用问题、gold 和回答完全一致的判分
-./eval.sh locomo \
+# 等价的旧参数形式（已被 --resume 取代，仅保留兼容）
+python benchmarks/locomo/run_eval.py \
   --sample conv-30 \
   --resume-qa /path/to/interrupted-run \
   --resume-judge /path/to/interrupted-run
 
 # 使用 VikingBot v0.4.11 prompt、工具语义和循环口径
 # 后端和模型可见工具均使用只读 EchoMemory memory_* 接口
-./eval.sh locomo \
+python benchmarks/locomo/run_eval.py \
   --sample conv-30 \
   --qa-profile vikingboat0411
 
 # 同一 VikingBoat 0.4.11 prompt 和初始记忆注入，但不暴露工具
-./eval.sh locomo \
+python benchmarks/locomo/run_eval.py \
   --sample conv-30 \
   --qa-profile vikingboat0411 \
   --no-tools
 
 # 自然无工具对照：只保留完整初始记忆正文，不保留工具指令或 URI-only 条目
-./eval.sh locomo \
+python benchmarks/locomo/run_eval.py \
   --sample conv-30 \
   --qa-profile vikingboat0411-natural-no-tools \
   --no-tools
@@ -183,7 +205,8 @@ python benchmarks/locomo/run_eval.py \
 | `--max-retries` | `3` | 后端 HTTP 请求最大重试次数 |
 
 #### echomem_mcp 插件
-固定使用 EchoMem 后端，不暴露 `--memory-backend`。
+固定使用 EchoMem 后端，不暴露 `--memory-backend`。声明 QA 检索参数（`--top-k`
+默认覆盖为 25）。
 
 | 参数 | 默认值 | 说明 |
 |---|---|---|
@@ -197,10 +220,17 @@ python benchmarks/locomo/run_eval.py \
 | `--commit-poll-interval-s` | `2.0` | Commit 轮询间隔 (秒) |
 | `--timeout-s` | `60.0` | 后端 HTTP 请求超时 (秒) |
 | `--max-retries` | `3` | 后端 HTTP 请求最大重试次数 |
+| `--mcp-url` | `http://127.0.0.1:8001` | EchoMem MCP server URL |
+| `--mcp-auth-key` | (空) | MCP server X-Auth-Key（留空时回退到 `--echomem-auth-key`） |
+| `--mcp-max-iterations` | `50` | 每个问题的最大工具调用迭代次数 |
+| `--tool-calling` / `--no-tool-calling` | `True` | 是否启用 LLM 工具调用 |
+| `--search-in-tools` / `--no-search-in-tools` | `True` | 是否将 `memory_query` 加入工具定义 |
+| `--manual-search` / `--no-manual-search` | `True` | 是否在每轮 LLM 前预取记忆 |
+| `--mcp-read-mode` | `allow` | 对话读取策略：`disabled`/`allow`/`require` |
 
 #### openviking_mcp 插件
 固定使用 OpenViking 后端，不暴露 `--memory-backend`。使用时需指定
-`--echomem-url http://127.0.0.1:19080`。
+`--echomem-url http://127.0.0.1:19080`。声明 QA 检索参数。
 
 | 参数 | 默认值 | 说明 |
 |---|---|---|
@@ -214,10 +244,16 @@ python benchmarks/locomo/run_eval.py \
 | `--commit-poll-interval-s` | `2.0` | Commit 轮询间隔 (秒) |
 | `--timeout-s` | `60.0` | 后端 HTTP 请求超时 (秒) |
 | `--max-retries` | `3` | 后端 HTTP 请求最大重试次数 |
+| `--ov-max-iterations` | `10` | 每个问题的最大工具调用迭代次数 |
+| `--ov-search-limit` | `8` | 每次 `memory_search` 返回的最大结果数 |
+| `--tool-calling` / `--no-tool-calling` | `True` | 是否启用 LLM 工具调用 |
+| `--search-in-tools` / `--no-search-in-tools` | `True` | 是否将 `memory_search` 加入工具定义 |
+| `--manual-search` / `--no-manual-search` | `True` | 是否在每轮 LLM 前预取记忆 |
 
 #### echo_agent 插件
 支持 `--memory-backend` 选择 echomem 或 openviking。`--echomem-auth-key` 留空
 时自动从 echoagent 插件解析；`--agent-id` 为 `default` 时自动设为 `echoagent`。
+不声明 QA 检索参数（QA 走 EchoAgent 管线）。
 
 | 参数 | 默认值 | 说明 |
 |---|---|---|
@@ -232,9 +268,37 @@ python benchmarks/locomo/run_eval.py \
 | `--commit-poll-interval-s` | `2.0` | Commit 轮询间隔 (秒) |
 | `--timeout-s` | `60.0` | 后端 HTTP 请求超时 (秒) |
 | `--max-retries` | `3` | 后端 HTTP 请求最大重试次数 |
+| `--echoagent-url` | `http://127.0.0.1:31020` | EchoAgent 后端地址 (环境变量 `ECHOAGENT_URL`) |
+| `--username` | `test_user` | EchoAgent 登录用户名 (环境变量 `ECHOAGENT_TEST_USERNAME`) |
+| `--password` | (空) | EchoAgent 登录密码 (环境变量 `ECHOAGENT_TEST_PASSWORD`) |
+| `--memory-engine-endpoint` | `http://127.0.0.1:31030` | echoagent 插件地址 (环境变量 `GLOBAL_MEMORY_ENGINE_ENDPOINT`) |
+
+#### echoagent_live 插件
+与 `echo_agent` 共享 `EchoAgentClient`，但不模拟打字、不触发 prefill 管线。
+默认地址指向外网部署。`--echomem-auth-key` 留空时自动从 echoagent 插件解析；
+`--agent-id` 为 `default` 时自动设为 `echoagent`。不声明 QA 检索参数。
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `--memory-backend` | `echomem` | 记忆后端选择: `echomem` 或 `openviking` |
+| `--echomem-url` | `http://127.0.0.1:8010` | 后端 HTTP 地址 |
+| `--echomem-auth-key` | (空) | 后端 X-Auth-Key (留空时自动解析) |
+| `--account` | `default` | 后端 account |
+| `--user-id` | `default` | 后端 user_id |
+| `--agent-id` | `default` | 后端 agent_id (默认自动设为 `echoagent`) |
+| `--workspace` | (空) | 后端 workspace 路径 |
+| `--commit-timeout-s` | `0` | Commit 轮询超时 (秒)，0 表示无限等待 |
+| `--commit-poll-interval-s` | `2.0` | Commit 轮询间隔 (秒) |
+| `--timeout-s` | `60.0` | 后端 HTTP 请求超时 (秒) |
+| `--max-retries` | `3` | 后端 HTTP 请求最大重试次数 |
+| `--echoagent-url` | `https://echo-agent.online` | EchoAgent 后端地址 (环境变量 `ECHOAGENT_URL`) |
+| `--echoagent-api-prefix` | `/api` | API 路径前缀（外网反代 `/api` -> `/v1`；本地直连 `/v1`）(环境变量 `ECHOAGENT_API_PREFIX`) |
+| `--username` | `test_user` | EchoAgent 登录用户名 (环境变量 `ECHOAGENT_TEST_USERNAME`) |
+| `--password` | (空) | EchoAgent 登录密码 (环境变量 `ECHOAGENT_TEST_PASSWORD`) |
+| `--memory-engine-endpoint` | `http://8.134.127.8:31030` | echoagent 插件地址 (环境变量 `GLOBAL_MEMORY_ENGINE_ENDPOINT`) |
 
 #### bare_llm 插件
-不声明任何记忆后端参数，适用于无记忆系统基线测试。
+不声明任何记忆后端参数，适用于无记忆系统基线测试。声明 QA 检索参数。
 
 ### LLM 参数 (通过插件声明)
 | 参数 | 默认值 | 说明 |
@@ -248,20 +312,23 @@ python benchmarks/locomo/run_eval.py \
 | `--llm-retries` | `3` | LLM 请求重试次数 |
 
 ### QA 检索参数 (通过插件声明)
+> 由 `bare_llm`、`echomem_mcp`、`openviking_mcp`、`vikingbot` 声明；
+> `echo_agent` 和 `echoagent_live` 不声明（QA 走 EchoAgent 管线）。
+
 | 参数 | 默认值 | 说明 |
 |---|---|---|
-| `--top-k` | profile 决定 | 三个保留 profile 均为 `25` |
+| `--top-k` | profile 决定 | 两个保留 profile 均为 `25` |
 | `--memory-budget-chars` | `6000` | 总记忆字符预算 |
-| `--question-timeout-s` | profile 决定 | 三个保留 profile 均为 `600` 秒；0 表示不增加总限制 |
+| `--question-timeout-s` | profile 决定 | 两个保留 profile 均为 `600` 秒；0 表示不增加总限制 |
 
 ### VikingBot 插件参数
 | 参数 | 默认值 | 说明 |
 |---|---|---|
-| `--tool-search-limit` | profile 决定 | 三个保留 profile 均为 `25` |
-| `--initial-min-score` | profile 决定 | `legacy-77=0`；VikingBoat 0.4.11 profiles=`0.1` |
-| `--tool-min-score` | profile 决定 | `legacy-77=0`；VikingBoat 0.4.11 profiles=`0.35` |
-| `--tool-search-pool-multiplier` | profile 决定 | 三个保留 profile 均为 `1` |
-| `--tool-set` | profile 决定 | `legacy-77=vikingbot_native_safe`；VikingBoat 0.4.11 profiles=`vikingbot_echo_native` |
+| `--tool-search-limit` | profile 决定 | 两个保留 profile 均为 `25` |
+| `--initial-min-score` | profile 决定 | VikingBoat 0.4.11 profiles=`0.1` |
+| `--tool-min-score` | profile 决定 | VikingBoat 0.4.11 profiles=`0.35` |
+| `--tool-search-pool-multiplier` | profile 决定 | 两个保留 profile 均为 `1` |
+| `--tool-set` | profile 决定 | VikingBoat 0.4.11 profiles=`vikingbot_echo_native` |
 | `--tools` / `--no-tools` | `--tools` | 是否向回答模型暴露 profile 的记忆工具；关闭后保留相同 prompt 和初始检索注入，只执行一次模型调用 |
 | `--user-memory-budget-chars` | `4000` | user memory prompt 预算 |
 | `--agent-memory-budget-chars` | `2000` | agent memory prompt 预算 |
@@ -275,7 +342,9 @@ python benchmarks/locomo/run_eval.py \
 | `--qa-profile` | 自动 | `--tools` 默认选择 `vikingboat0411`；`--no-tools` 默认选择 `vikingboat0411-natural-no-tools`。显式指定时可覆盖 |
 | `--qa-prompt-file` | (空) | 将本地 UTF-8 文件追加到所选 profile 的 system prompt；`summary.json` 和 resume manifest 仅记录文件名和 SHA-256 |
 | `--checkpoint-interval` | `10` | 每完成 N 题写一次 `qa_results.checkpoint.csv`；0 表示关闭 |
-| `--resume-qa` | (空) | 从先前运行目录或 QA CSV 恢复健康答案；复用已有身份，跳过已完成的 session 仅注入缺失部分，并严格校验数据集、模型和 QA 参数 |
+| `--resume` | (空) | **统一续跑**：从先前运行目录或 CSV 恢复——复用身份，跳过已完成 import batch（只补中断/缺失的），恢复健康 QA 答案，复用一致 Judge 判定；只跑缺失/失败部分。summary/blackbox 指标对合并后的整轮累计（token/延迟/精度不会只算本轮） |
+| `--resume-qa` | (空) | 旧参数，语义同 `--resume`（被取代，仅保留兼容） |
+| `--reuse-memory-from` | (空) | 旧参数：只复用身份+已注入记忆、QA/Judge 全量重跑（指标只算本轮；被 `--resume` 取代，仅保留兼容） |
 | `--concurrency` | `4` | QA 并发数 |
 | `--out-dir` | `results` | 结果目录 |
 | `--allow-diagnostics` | false | 导入未完成或 provenance 不一致仍继续；仅限诊断 |
@@ -288,7 +357,7 @@ python benchmarks/locomo/run_eval.py \
 | `--judge-base-url` | (同 `--llm-base-url`) | Judge base URL |
 | `--judge-concurrency` | `4` | Judge 并发数；结果仍按原始题目顺序写入 |
 | `--judge-checkpoint-interval` | `10` | 每完成 N 题写一次 `judge_results.checkpoint.csv`；0 表示关闭 |
-| `--resume-judge` | (空) | 从先前运行目录或 Judge CSV 恢复判分；严格校验 Judge 模型和 prompt，并逐行校验 question/gold/response |
+| `--resume-judge` | (空) | 旧参数，已并入 `--resume`（仅保留兼容） |
 
 ## 输出文件
 
@@ -299,14 +368,14 @@ python benchmarks/locomo/run_eval.py \
 - `memory_provenance.json` - 数据集 SHA-256、预期/实际 session 数和实际 session URI manifest
 - `qa_results.csv` - QA 结果，包含 tool_call_count、iterations、qa_profile
 - `qa_results.checkpoint.csv` - 运行中定期更新的可恢复 QA 快照
-- `qa_resume_manifest.json` - 恢复兼容性所需的数据集、身份、模型、QA 参数和本地 prompt/tool/runtime contract hash
+- `qa_resume_manifest.json` - 恢复兼容性所需的数据集、身份、模型、QA 参数、agent_options 和本地 prompt/tool/runtime contract hash
 - `judge_results.csv` - Judge 结果 (question_id, verdict, reasoning)
 - `judge_results.checkpoint.csv` - 运行中定期更新的 Judge 快照
 - `judge_resume_manifest.json` - Judge 模型和 prompt 指纹，用于防止混合判分口径
 - `diagnosis.json` - 失败分类、检索覆盖率、可重试/缺失/重复题目 ID
 - `retrieval_traces.jsonl` - 每题检索内容和失败归因 trace
 - `agent_traces/*.json` - VikingBot 初始 prompt、逐轮模型消息、请求/响应模型身份、工具协议 hash、工具参数/结果、原始与清洗后答案
-- `summary.json` - 汇总指标，包含 memory_source、qa_profile、served model ids、tool protocol hash、tool_call_total、avg_iterations 和 diagnosis 摘要
+- `summary.json` - 汇总指标，包含 memory_source、qa_profile、agent_options、served model ids、tool protocol hash、tool_call_total、avg_iterations 和 diagnosis 摘要
 - `strict_blackbox_metrics.json` - 仅使用外部可观测状态、延迟、重试和 token usage 的指标
 - `strict_blackbox_report.md` - strict black-box Markdown 报告
 

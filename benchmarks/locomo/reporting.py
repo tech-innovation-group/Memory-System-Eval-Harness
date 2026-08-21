@@ -121,6 +121,7 @@ def build_summary(
         ),
         "top_k": qa_options.top_k,
         "memory_budget_chars": qa_options.memory_budget_chars,
+        "agent_options": qa_options.agent_options,
         "checkpoint_interval": qa_options.checkpoint_interval,
         "session_mode": session_mode,
         "retrieval_scope": "session" if session_mode == "single" else "account",

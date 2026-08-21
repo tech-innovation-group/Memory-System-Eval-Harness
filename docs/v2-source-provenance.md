@@ -12,25 +12,6 @@ Tracked files at this commit are the authority for migrated v2 CLI, dataset,
 metric, report, and recovery behavior. Experimental v2 QA profiles are not
 registered in the current CLI.
 
-## Actual Head-Clean `legacy-77` Run
-
-- Reference run:
-  `runs/head_clean_top25_http_messages_full_20260713`
-- Memory workspace:
-  `/Users/chx/echomem_eval_matrix_20260712/head_clean`
-- Account: `locomo-conv30-headclean-matrix-20260712`
-- Provenance: 19 LoCoMo sessions
-- Result on the original Judge route: `63/81` (`77.78%`)
-
-The `legacy-77` profile vendors the persisted prompt snapshot and the actual
-run settings, including question-time context, group-session layout, raw final
-question, provider-default answer temperature, Top-25 search, the historical
-`target_uri` schema hint, and no URI or query deduplication.
-
-The profile source metadata includes the prompt SHA-256 and reference artifact.
-Later HTTP URI correctness fixes are retained because they prevent invalid
-session reads without adding hidden evidence.
-
 ## VikingBoat v0.4.11 Profiles
 
 The default `vikingboat0411` profile follows the prompt, question envelope,

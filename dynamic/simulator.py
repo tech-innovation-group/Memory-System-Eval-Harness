@@ -1,8 +1,7 @@
 """Dynamic evaluator for memory recall testing.
 
 This module provides the MemoryDynamicEvaluator class for generating
-background memories and user queries in both static (dataset-based) and
-dynamic (LLM-generated) modes.
+background memories and user queries in dynamic (LLM-generated) mode.
 
 Now supports loading prompts from YAML configuration files based on
 RealUserSim, IntellAgent, AgentProcessBench, RigorBench, and MemOps papers.
@@ -45,49 +44,47 @@ from dynamic.prompt_config import (
 )
 
 
-def _validate_user_simulator_config(config: dict[str, Any], mode: str) -> None:
+def _validate_user_simulator_config(config: dict[str, Any]) -> None:
     """Validate user simulator configuration.
-    
-    For dynamic mode, validates:
+
+    Validates:
     - persona_prompt field exists
     - persona_prompt contains required placeholders: {background_facts}, {conversation_history}, {round_index}, {is_new_session}
     - background_memories_prompt field exists
     - background_memories_prompt contains {num_memories} placeholder
-    
+
     Raises:
         ValueError: If validation fails
     """
-    # For dynamic mode, persona_prompt is required
-    if mode == "dynamic":
-        persona_prompt = config.get("persona_prompt", "")
-        if not persona_prompt:
-            raise ValueError(
-                "user_simulator_config must contain 'persona_prompt' field for dynamic mode. "
-                "Please provide a user_simulator_config_yaml file with persona_prompt."
-            )
-        
-        # Check for required placeholders in persona_prompt
-        required_placeholders = ["{background_facts}", "{conversation_history}", "{round_index}", "{is_new_session}"]
-        missing = [p for p in required_placeholders if p not in persona_prompt]
-        if missing:
-            raise ValueError(
-                f"persona_prompt must contain placeholders: {', '.join(missing)}. "
-                f"These placeholders are used to inject context during query generation."
-            )
-        
-        # background_memories_prompt is required for dynamic mode
-        bg_prompt = config.get("background_memories_prompt", "")
-        if not bg_prompt:
-            raise ValueError(
-                "user_simulator_config must contain 'background_memories_prompt' field for dynamic mode. "
-                "This prompt is used to generate background memories."
-            )
-        
-        if "{num_memories}" not in bg_prompt:
-            raise ValueError(
-                "background_memories_prompt must contain '{num_memories}' placeholder. "
-                "This placeholder is used to specify the number of memories to generate."
-            )
+    persona_prompt = config.get("persona_prompt", "")
+    if not persona_prompt:
+        raise ValueError(
+            "user_simulator_config must contain 'persona_prompt' field. "
+            "Please provide a user_simulator_config_yaml file with persona_prompt."
+        )
+
+    # Check for required placeholders in persona_prompt
+    required_placeholders = ["{background_facts}", "{conversation_history}", "{round_index}", "{is_new_session}"]
+    missing = [p for p in required_placeholders if p not in persona_prompt]
+    if missing:
+        raise ValueError(
+            f"persona_prompt must contain placeholders: {', '.join(missing)}. "
+            f"These placeholders are used to inject context during query generation."
+        )
+
+    # background_memories_prompt is required
+    bg_prompt = config.get("background_memories_prompt", "")
+    if not bg_prompt:
+        raise ValueError(
+            "user_simulator_config must contain 'background_memories_prompt' field. "
+            "This prompt is used to generate background memories."
+        )
+
+    if "{num_memories}" not in bg_prompt:
+        raise ValueError(
+            "background_memories_prompt must contain '{num_memories}' placeholder. "
+            "This placeholder is used to specify the number of memories to generate."
+        )
 
 
 def _validate_evaluator_config(config: dict[str, Any]) -> None:
@@ -271,17 +268,14 @@ class MemoryDynamicEvaluator:
 
         Args:
             config: Configuration dict with keys:
-                - mode: "static" or "dynamic"
-                - dataset_path: Path to dataset file (for static mode)
-                - num_memories: Number of memories to generate (for dynamic mode)
-                - theme: Theme for generated memories (for dynamic mode)
+                - num_memories: Number of memories to generate
+                - theme: Theme for generated memories
                 - custom_scenario: Custom scenario text (skip LLM generation if provided)
                 - llm_config: LLM configuration (model, base_url, api_key)
                 - user_simulator_config: Name of user simulator config file
                 - evaluator_config: Name of evaluator config file
         """
         self.config = config
-        self.mode = config.get("mode", "dynamic")
         self.theme = config.get("theme", "")
         self.custom_scenario = config.get("custom_scenario", "")
         self.parsed_memories = config.get("parsed_memories", [])
@@ -291,10 +285,6 @@ class MemoryDynamicEvaluator:
         self.conversation_history: list[dict[str, Any]] = []
         self.generated_queries: list[dict[str, Any]] = []
         self._memories_generated = False
-        
-        # For static mode: store dataset queries
-        self.dataset_queries: list[dict[str, Any]] = []
-        self._dataset_loaded = False
 
         # LLM config
         llm_config = config.get("llm_config", {})
@@ -340,7 +330,7 @@ class MemoryDynamicEvaluator:
                 raise ValueError(f"Evaluator config not found: {e}")
         
         # Validate configurations
-        _validate_user_simulator_config(self.user_simulator_config, self.mode)
+        _validate_user_simulator_config(self.user_simulator_config)
         if not self.evaluator_config:
             raise ValueError(
                 "evaluator_config is required. "
@@ -363,7 +353,7 @@ class MemoryDynamicEvaluator:
             )
         
         # Debug log
-        print(f"[DynamicEvaluator] Config received: mode={self.mode}, num_memories={config.get('num_memories')}, theme={self.theme}")
+        print(f"[DynamicEvaluator] Config received: num_memories={config.get('num_memories')}, theme={self.theme}")
         print(f"[DynamicEvaluator] LLM config: model={self.model}, base_url={self.base_url}, api_key={'***' if self.api_key else 'None'}")
 
     def generate_background_memories(self) -> dict[str, Any]:
@@ -372,18 +362,16 @@ class MemoryDynamicEvaluator:
         Returns:
             {
                 "memories": [...],
-                "mode": "static" | "dynamic",
                 "theme": str,
             }
         """
         if self._memories_generated:
             return {
                 "memories": self.background_memories,
-                "mode": self.mode,
                 "theme": self.theme,
             }
 
-        # Priority: parsed_memories > custom_scenario > static dataset > dynamic generation
+        # Priority: parsed_memories > custom_scenario > dynamic generation
         if self.parsed_memories:
             self.background_memories = [
                 {"id": m.get("id", f"f{i+1}"), "text": m.get("text", "")}
@@ -394,134 +382,19 @@ class MemoryDynamicEvaluator:
                 self.theme = "自定义场景"
         elif self.custom_scenario:
             self.background_memories = self._generate_memories_from_custom_scenario()
-        elif self.mode == "static":
-            self.background_memories = self._load_static_memories()
         else:
             self.background_memories = self._generate_dynamic_memories()
 
         self._memories_generated = True
         return {
             "memories": self.background_memories,
-            "mode": self.mode,
             "theme": self.theme,
         }
 
-    def _load_static_memories(self) -> list[dict[str, Any]]:
-        """Load memories from a dataset file."""
-        dataset_path = self.config.get("dataset_path", "")
-        if not dataset_path:
-            return self._generate_fallback_memories()
-
-        path = Path(dataset_path).expanduser()
-        if not path.exists():
-            return self._generate_fallback_memories()
-
-        try:
-            with path.open("r", encoding="utf-8") as f:
-                data = json.load(f)
-        except Exception:
-            return self._generate_fallback_memories()
-
-        memories = []
-        queries = []
-
-        # Handle our exported format with background_memories and samples
-        if isinstance(data, dict) and "background_memories" in data:
-            # Our exported format
-            for mem in data.get("background_memories", []):
-                text = mem.get("text", "")
-                if text and len(text) > 2:
-                    memories.append({
-                        "id": mem.get("id", f"f{len(memories)+1}"),
-                        "text": text,
-                        "source": mem.get("source", "background_memories"),
-                    })
-            
-            # Extract queries from samples
-            samples = data.get("samples", [])
-            for sample in samples[:1]:  # Use first sample
-                conversation = sample.get("conversation", {})
-                for session_id, session_data in conversation.items():
-                    if isinstance(session_data, dict):
-                        turns = session_data.get("turns", [])
-                        for turn in turns:
-                            if isinstance(turn, dict):
-                                speaker = turn.get("speaker", "")
-                                if speaker == "user":
-                                    text = turn.get("text", "")
-                                    if text:
-                                        # Find matching ground facts from assistant turn
-                                        ground_facts = []
-                                        queries.append({
-                                            "query": text,
-                                            "ground_facts": ground_facts,  # Will be populated from dataset
-                                            "complexity": "medium",
-                                            "reasoning": "From dataset",
-                                        })
-            
-            self.dataset_queries = queries
-            self._dataset_loaded = True
-            return memories
-
-        # LoCoMo format: facts are embedded in conversations
-        if isinstance(data, list):
-            for sample_idx, sample in enumerate(data[:1]):  # Use first sample
-                if not isinstance(sample, dict):
-                    continue
-                # Try to extract from conversation
-                conv = sample.get("conversation", {})
-                if isinstance(conv, dict):
-                    for key in conv:
-                        if key.startswith("session_") and not key.endswith("_date_time"):
-                            turns = conv.get(key, [])
-                            if isinstance(turns, list):
-                                for turn_idx, turn in enumerate(turns):
-                                    if isinstance(turn, dict) and turn.get("speaker") == "speaker_a":
-                                        text = turn.get("text", "")
-                                        if text and len(text) > 10:
-                                            memories.append({
-                                                "id": f"f{len(memories)+1}",
-                                                "text": text,
-                                                "length_hint": "short" if len(text) < 50 else "medium" if len(text) < 100 else "long",
-                                                "source": f"locomo_session_{key}_turn_{turn_idx}",
-                                            })
-                                            # Also add as a query
-                                            queries.append({
-                                                "query": text,
-                                                "ground_facts": [f"f{len(memories)}"],
-                                                "complexity": "simple",
-                                                "reasoning": "From LoCoMo dataset",
-                                            })
-                # Also check for explicit facts in sample
-                events = sample.get("event_summary", {})
-                if isinstance(events, dict):
-                    for event_id, event_text in events.items():
-                        if isinstance(event_text, str) and event_text:
-                            memories.append({
-                                "id": f"f{len(memories)+1}",
-                                "text": event_text,
-                                "length_hint": "short" if len(event_text) < 50 else "medium",
-                                "source": f"locomo_event_{event_id}",
-                            })
-
-        # Limit to configured number
-        num_memories = self.config.get("num_memories", 10)
-        if len(memories) > num_memories:
-            memories = memories[:num_memories]
-
-        self.dataset_queries = queries[:num_memories]
-        self._dataset_loaded = True
-
-        if not memories:
-            return self._generate_fallback_memories()
-
-        return memories
-
     def _generate_memories_from_custom_scenario(self) -> list[dict[str, Any]]:
         """Generate memories from custom scenario text.
-        
-        This is used when custom_scenario is provided directly from the frontend,
-        typically from parsed static dataset memories.
+
+        This is used when custom_scenario is provided directly from the frontend.
         """
         self.theme = "自定义场景"
         # Split custom scenario into memory-like chunks
@@ -654,47 +527,6 @@ class MemoryDynamicEvaluator:
         if not self._memories_generated:
             self.generate_background_memories()
 
-        if self.mode == "static":
-            return self._generate_static_query(context)
-        else:
-            return self._generate_dynamic_query(context)
-
-    def _generate_static_query(self, context: dict[str, Any]) -> dict[str, Any]:
-        """Generate query from static dataset.
-        
-        If dataset_queries are loaded, use them directly.
-        Otherwise, fallback to simple memory-based queries.
-        """
-        round_index = context.get("round_index", 0)
-        
-        # If we have loaded queries from dataset, use them directly
-        if self.dataset_queries and round_index < len(self.dataset_queries):
-            return self.dataset_queries[round_index]
-        
-        # Fallback: simple round-robin through memories (for backward compatibility)
-        if round_index < len(self.background_memories):
-            fact = self.background_memories[round_index]
-            return {
-                "query": f"我之前告诉你的关于{fact['text'][:30]}的事是什么？",
-                "ground_facts": [fact["id"]],
-                "complexity": "simple",
-                "reasoning": "Simple recall test from loaded memories",
-                "new_session_hint": False,
-            }
-
-        # Query about previously mentioned facts
-        query_idx = round_index - len(self.background_memories)
-        if query_idx >= 0 and query_idx < len(self.background_memories):
-            fact = self.background_memories[query_idx]
-            return {
-                "query": f"我之前告诉你的那个关于{fact['text'][:20]}的事情，你还记得吗？",
-                "ground_facts": [fact["id"]],
-                "complexity": "simple",
-                "reasoning": "Simple recall test",
-                "new_session_hint": query_idx % 3 == 2,
-            }
-
-        # Final fallback to dynamic generation
         return self._generate_dynamic_query(context)
 
     def _generate_dynamic_query(self, context: dict[str, Any]) -> dict[str, Any]:
@@ -812,7 +644,6 @@ class MemoryDynamicEvaluator:
     def get_state(self) -> dict[str, Any]:
         """Get the current state of the evaluator."""
         return {
-            "mode": self.mode,
             "theme": self.theme,
             "num_background_memories": len(self.background_memories),
             "num_conversation_turns": len(self.conversation_history),

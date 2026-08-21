@@ -33,7 +33,13 @@ def _failed_round(
         "ttft_ms": None,
         "cached_tokens": 0,
         "prompt_tokens": 0,
+        "completion_tokens": 0,
         "prefetch_committed": prefetch_committed,
+        "elapsed_s": None,
+        "retrieval_latency_s": None,
+        "llm_latency_s": None,
+        "tool_call_count": 0,
+        "iterations": 1,
         "is_new_session": bool(round_data.get("new_session")),
         "is_injection": False,
         "complexity": round_data.get("complexity", ""),
@@ -67,25 +73,17 @@ def _ask_agent(
             prefetch_committed = typing_result.committed
             memory_items = typing_result.memory_items
 
-    sent_at = time.monotonic()
     try:
         response = agent_plugin.send_message(session_id, query, context_path)
     except Exception as exc:
         return _failed_round(round_data, prefetch_committed, exc)
 
-    reply = {
-        "reply": response.text,
-        "ttft_ms": response.ttft_ms,
-        "error": response.error,
-        "done_event": response.extra.get("done_event", {}),
-    }
-    return collect_round_metrics(
-        round_data,
-        reply,
-        sent_at,
-        prefetch_committed,
-        memory_items,
-    )
+    # If typing simulation didn't produce memory_items, fall back to
+    # response.memory_items (e.g. vikingbot, echomem_mcp, openviking_mcp)
+    if not memory_items:
+        memory_items = response.memory_items or []
+
+    return collect_round_metrics(round_data, response, memory_items)
 
 
 def run_generate_mode(
@@ -98,7 +96,6 @@ def run_generate_mode(
     log.info("模式: generate (LLM 生成场景)")
     evaluator_config_dict = load_evaluator_config(args.evaluator_config)
     evaluator_config = {
-        "mode": "dynamic",
         "num_memories": args.num_memories,
         "llm_config": {
             "model": args.scenario_model,
@@ -131,7 +128,11 @@ def run_generate_mode(
     log.info("theme=%s memories=%d", evaluator.theme, len(memories))
 
     backend = getattr(args, "memory_backend", "echomem")
+    inject_start = time.monotonic()
     inject_session_id = agent_plugin.inject_memories(memories, backend=backend)
+    inject_elapsed = time.monotonic() - inject_start
+    print(f"[inject] {len(memories)} memories injected in {inject_elapsed:.1f}s (session={inject_session_id})")
+    log.info("memory injection completed: %d memories in %.1fs", len(memories), inject_elapsed)
 
     rounds: list[dict[str, Any]] = []
     dataset_queries: list[dict[str, Any]] = []
@@ -195,7 +196,7 @@ def run_generate_mode(
             "mode": "generate",
             "num_memories": args.num_memories,
             "num_queries": args.num_queries,
-            "echoagent_url": args.echoagent_url,
+            "agent_plugin": args.agent_plugin,
             "evaluator_config": args.evaluator_config,
             "user_simulator_config": args.user_simulator_config,
         },
@@ -204,7 +205,7 @@ def run_generate_mode(
         background_memories=memories,
         dataset_queries=dataset_queries,
         inject_session_id=inject_session_id,
-        inject_user_id=args.user_id,
+        inject_user_id=getattr(args, "user_id", ""),
     )
 
 
@@ -235,6 +236,7 @@ def run_replay_mode(
         events = plan.get("events") or []
         if not events:
             continue
+        inject_start = time.monotonic()
         try:
             inject_session = agent_plugin.inject_memories(
                 events, backend=backend,
@@ -246,6 +248,9 @@ def run_replay_mode(
                 exc,
             )
             continue
+        inject_elapsed = time.monotonic() - inject_start
+        print(f"[inject] sample={sample_id} {len(events)} memories injected in {inject_elapsed:.1f}s (session={inject_session})")
+        log.info("memory injection completed: sample=%s %d memories in %.1fs", sample_id, len(events), inject_elapsed)
         qa_session = agent_plugin.create_session(
             title=f"replay-qa-{sample_id}",
         )
@@ -290,11 +295,10 @@ def run_replay_mode(
             "dataset": args.dataset,
             "sample": args.sample,
             "questions": args.questions,
-            "echoagent_url": args.echoagent_url,
-            "echomem_url": args.echomem_url,
+            "agent_plugin": args.agent_plugin,
             "evaluator_config": args.evaluator_config,
         },
         evaluator_config,
         theme="replay",
-        inject_user_id=args.user_id,
+        inject_user_id=getattr(args, "user_id", ""),
     )

@@ -39,6 +39,10 @@ plugins/
     plugin.py          # EchoAgentPlugin (inject_memories 支持 echomem/openviking)
     client.py          # EchoAgentClient (HTTP 客户端)
     docs/design.md     # 使用说明与设计意图
+  echoagent_live/      # EchoAgent 外网部署评测 (无打字模拟)
+    __init__.py
+    plugin.py          # EchoAgentLivePlugin (复用 EchoAgentClient, 无 prefill)
+    docs/design.md     # 使用说明与设计意图
   echomem_mcp/         # LLM 通过 EchoMem MCP 工具检索记忆
     __init__.py
     plugin.py          # EchoMemMCPPlugin
@@ -62,11 +66,12 @@ plugins/
 |---|---|---|---|---|---|---|---|
 | `vikingbot` | VikingBot 工具调用 agent (LoCoMo 默认) | 工具调用循环 (直连 EchoMem REST) | echomem / openviking | 不支持 | 支持 | 是 | LLM API + 记忆后端 |
 | `echo_agent` | EchoAgent + EchoMem 完整管线 | 不支持 benchmark QA | echomem / openviking | 支持 (prefetch tick/finalize) | 支持 | 否 (有 typing 实例状态) | EchoAgent 后端 + 记忆后端 |
+| `echoagent_live` | EchoAgent 外网部署评测 (无打字模拟) | 不支持 benchmark QA | echomem / openviking | 不支持 | 支持 | 是 | EchoAgent 后端 + 记忆后端 |
 | `echomem_mcp` | LLM 通过 MCP 工具检索记忆 | 工具调用循环 (MCP 协议) | echomem | 不支持 | 支持 | 是 | LLM API + EchoMem MCP 服务 (8001) |
 | `openviking_mcp` | LLM 通过 MemoryClient 工具检索记忆 | 工具调用循环 (MemoryClient 协议) | openviking | 不支持 | 支持 | 是 | LLM API + 记忆后端 |
 | `bare_llm` | 纯 LLM 基线 (system prompt + 用户查询) | 纯 LLM 调用 (无记忆检索) | 不支持 | 不支持 | 支持 | 是 | 仅 LLM API |
 
-> **线程安全**: benchmark 评测使用 `ThreadPoolExecutor` 并发 QA。`vikingbot`、`echomem_mcp`、`openviking_mcp` 和 `bare_llm` 的调用是无状态的, 支持并发。`echo_agent` 有 typing 实例状态, benchmark 使用时需 `--concurrency 1`。
+> **线程安全**: benchmark 评测使用 `ThreadPoolExecutor` 并发 QA。`vikingbot`、`echomem_mcp`、`openviking_mcp`、`bare_llm` 和 `echoagent_live` 的调用是无状态的, 支持并发。`echo_agent` 有 typing 实例状态, benchmark 使用时需 `--concurrency 1`。
 
 ## 接口
 
@@ -86,13 +91,13 @@ class AgentPlugin(ABC):
 ```
 
 - `add_arguments(parser)` (classmethod): 声明该插件所需的 CLI 参数。`run_eval.py` 根据 `--agent-plugin` 值动态调用此方法。默认空实现。
-- `setup(config)`: 初始化客户端 (登录、解析凭据、创建 memory_client)。`config` 是所有 CLI 参数的扁平 dict。
+- `setup(config)`: 初始化客户端 (登录、解析凭据、创建 memory_client)。`config` 是所有 CLI 参数的扁平 dict。**每个插件必须在 `setup` 中设置 `self.memory_client`**：有记忆后端的插件设置 `EchoMemClient` / `OpenVikingClient`，无记忆后端的插件（如 `bare_llm`）设置 `NullMemoryClient`（no-op，`health()` 直接返回 ok）。评测框架在插件加载后无条件调用 `agent_plugin.memory_client.health()` 做健康检查，因此 `self.memory_client` 不能为 `None`。
 - `inject_memories(memories, backend=)`: 把全部记忆注入指定后端。`backend` 参数选择 echomem 或 openviking。返回 session_id。不支持的插件不覆盖此方法 (默认 no-op 返回 session_id)。
 - `create_session(title)`: 创建 QA 会话。返回 session ID。
 - `send_message(session_id, message, context_path, *, extra)`: 发送消息, 返回 `AgentResponse`。`extra` dict 携带 benchmark 上下文 (question_time, question_id 等)，动态模式为 None。
 - `supports_typing_simulation` (property): 是否支持模拟打字。
 - `simulate_typing(...)`: 模拟打字触发 prefill。返回 `TypingResult` 或 `None`。
-- `getlog()`: 获取 agent/记忆后端日志, 返回 JSON 字符串。评测结束时由 runner 保存到结果目录。
+- `getlog()`: 获取 agent/记忆后端日志, 返回 JSON 字符串。评测结束时由 runner 保存到结果目录。echomem 后端按本运行租户/user 拉取 EchoMem `GET /api/logs`（注入记忆的全部日志 + 本次评测 QA 日志），不拉全局；`auth.mode=x_auth_key` 时用 `--echomem-log-access-key` 提供专用日志访问密钥。
 - `teardown()`: 释放资源。
 
 `AgentResponse` 字段: `text`, `ttft_ms`, `prompt_tokens`, `completion_tokens`, `cached_tokens`, `prefetch_committed`, `memory_items`, `error`, `extra`。

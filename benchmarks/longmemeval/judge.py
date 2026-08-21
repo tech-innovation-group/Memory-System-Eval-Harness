@@ -4,6 +4,16 @@ from __future__ import annotations
 
 import re
 
+from shared.llm_client import chat_with_repair
+
+# Judge models sometimes return empty or ambiguous output.  On retry we
+# append a corrective instruction and raise temperature above 0 so the model
+# does not reproduce the identical bad output (temperature 0 is deterministic).
+LONGMEMEVAL_REPAIR_PROMPT = (
+    "\n\nYour previous response was empty or not a clear yes/no answer. "
+    "Answer with a single word: yes or no."
+)
+
 
 def build_answer_check_prompt(
     task: str,
@@ -90,6 +100,7 @@ def judge_answer(
     response: str,
     *,
     abstention: bool = False,
+    attempts: int = 3,
 ) -> bool:
     prompt = build_answer_check_prompt(
         task,
@@ -98,6 +109,14 @@ def judge_answer(
         response,
         abstention=abstention,
     )
-    return parse_yes_no(
-        llm.judge("You are an answer evaluation assistant.", prompt)
+    return chat_with_repair(
+        llm,
+        "You are an answer evaluation assistant.",
+        prompt,
+        repair_prompt=LONGMEMEVAL_REPAIR_PROMPT,
+        parse=parse_yes_no,
+        attempts=attempts,
+        # Yes/no verdict is a plain word, not JSON: keep response_format off
+        # (thinking stays disabled and max_tokens stays uncapped via defaults).
+        response_format=False,
     )

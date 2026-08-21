@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 from benchmarks.longmemeval.evaluate import evaluate_longmemeval
 from benchmarks.longmemeval.import_memory import import_longmemeval_memory
+from benchmarks.longmemeval.qa import run_longmemeval_qa
 from benchmarks.longmemeval.parallel import (
     build_shard_commands,
     partition_question_ids,
@@ -18,6 +19,7 @@ from benchmarks.longmemeval.recovery import (
 )
 from benchmarks.longmemeval.selection import select_jobs_and_plans
 from shared.eval_base import EvalConfig
+from shared.llm_client import LLMResponse
 from shared.qa import QAResult
 
 
@@ -30,11 +32,29 @@ class _Log:
 
 
 class _JudgeLLM:
-    def __init__(self, responses):
-        self.responses = iter(responses)
+    """Fake judge LLM; repeats the last response when exhausted."""
 
-    def judge(self, _system, _prompt):
-        return next(self.responses)
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self._index = 0
+
+    def chat(
+        self,
+        _messages,
+        *,
+        temperature=None,
+        response_format=False,
+        thinking_disabled=False,
+        omit_max_tokens=False,
+    ):
+        content = self._responses[min(self._index, len(self._responses) - 1)]
+        self._index += 1
+        return LLMResponse(
+            content=content,
+            prompt_tokens=0,
+            completion_tokens=0,
+            elapsed_s=0.0,
+        )
 
 
 class LongMemEvalWorkflowTests(unittest.TestCase):
@@ -65,6 +85,102 @@ class LongMemEvalWorkflowTests(unittest.TestCase):
             self.assertEqual(0.5, report.task_averaged_accuracy)
             self.assertEqual(1.0, report.abstention_accuracy)
             self.assertEqual(1, report.abstention_count)
+
+    def test_resume_import_skips_completed_questions(self):
+        class _RecordingClient:
+            def __init__(self):
+                self.opened = []
+
+            def open_session(self, title=""):
+                self.opened.append(title)
+                return f"session-{len(self.opened)}"
+
+            def add_message(self, *_args, **_kwargs):
+                return None
+
+            def commit_session(self, session_id):
+                return f"archive-{session_id}"
+
+            def poll_commit(self, session_id, archive_id, **_kwargs):
+                return type(
+                    "Commit",
+                    (),
+                    {"session_id": session_id, "archive_id": archive_id,
+                     "status": "completed", "elapsed_s": 0.1, "polls": 1,
+                     "error": ""},
+                )()
+
+        jobs = [
+            SimpleNamespace(question_id="q1"),
+            SimpleNamespace(question_id="q2"),
+        ]
+        plans = [
+            {"session_batches": [{"messages": [{"content": "fact one"}]}]},
+            {"session_batches": [{"messages": [{"content": "fact two"}]}]},
+        ]
+        client = _RecordingClient()
+        prior_rows = [
+            {"question_id": "q1", "session_id": "prior-session", "status": "completed"},
+        ]
+
+        with tempfile.TemporaryDirectory() as directory:
+            report = import_longmemeval_memory(
+                jobs,
+                plans,
+                client,
+                EvalConfig(),
+                Path(directory),
+                _Log(),
+                prior_import_rows=prior_rows,
+            )
+
+            self.assertEqual(["longmemeval_q2"], client.opened)
+            self.assertEqual(
+                {"q1": "prior-session", "q2": "session-1"},
+                report.question_to_session,
+            )
+            reused = [r for r in report.rows if r["status"] == "reused"]
+            self.assertEqual(["q1"], [r["question_id"] for r in reused])
+            self.assertEqual(2, report.completed)
+
+    def test_judge_resume_reuses_matching_rows_without_llm_calls(self):
+        class _CountingJudgeLLM:
+            def __init__(self):
+                self.calls = 0
+
+            def chat(self, *_args, **_kwargs):
+                self.calls += 1
+                return LLMResponse(content="no", prompt_tokens=0,
+                                   completion_tokens=0, elapsed_s=0.0)
+
+        qa_results = [
+            QAResult("q1", "Q1", "A1", "R1"),
+            QAResult("q2", "Q2", "A2", "R2"),
+        ]
+        jobs = [
+            SimpleNamespace(category="single-session-user"),
+            SimpleNamespace(category="single-session-user"),
+        ]
+        prior_eval_rows = [
+            {"question_id": "q1", "question": "Q1", "answer": "A1",
+             "response": "R1", "correct": "True", "judge_error": ""},
+        ]
+        judge = _CountingJudgeLLM()
+
+        with tempfile.TemporaryDirectory() as directory:
+            report = evaluate_longmemeval(
+                qa_results,
+                jobs,
+                judge,
+                Path(directory),
+                _Log(),
+                existing_rows=prior_eval_rows,
+            )
+
+            # only q2 (no prior row) hits the judge LLM
+            self.assertEqual(1, judge.calls)
+            self.assertEqual(2, report.graded)
+            self.assertEqual(1, report.correct)
 
     def test_random_selection_is_seeded(self):
         jobs = [

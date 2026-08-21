@@ -46,16 +46,28 @@ class EvaluationReport:
     per_type: dict[str, dict[str, Any]]
 
 
+def _reuse_correct(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes"}
+
+
 def evaluate_longmemeval(
     qa_results: list[QAResult],
     jobs,
     judge_llm,
     result_dir: Path,
     log,
+    *,
+    existing_rows: list[dict[str, str]] | None = None,
 ) -> EvaluationReport:
     rows: list[dict[str, Any]] = []
     type_scores: dict[str, list[bool]] = {task: [] for task in TASK_TYPES}
     abstention_scores: list[bool] = []
+    existing_by_id: dict[str, dict[str, str]] = {}
+    if existing_rows:
+        for prior in existing_rows:
+            question_id = str(prior.get("question_id") or "").strip()
+            if question_id and not str(prior.get("judge_error") or "").strip():
+                existing_by_id[question_id] = prior
     for result, job in tqdm(
         list(zip(qa_results, jobs)),
         desc="Judge",
@@ -63,7 +75,16 @@ def evaluate_longmemeval(
     ):
         task_type = str(job.category or "")
         abstention = "_abs" in result.question_id
-        if result.llm_error or result.retrieval_error:
+        prior = existing_by_id.get(result.question_id)
+        if (
+            prior
+            and str(prior.get("question") or "") == result.question
+            and str(prior.get("answer") or "") == result.answer
+            and str(prior.get("response") or "") == result.response
+        ):
+            correct = _reuse_correct(prior.get("correct"))
+            judge_error = ""
+        elif result.llm_error or result.retrieval_error:
             correct = False
             judge_error = "skipped because QA or retrieval failed"
         else:

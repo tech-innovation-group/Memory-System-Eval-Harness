@@ -43,7 +43,7 @@ counts, workspace state, and readiness are not inferred.
 | v2 committed path family | Disposition |
 | --- | --- |
 | `benchmark/locomo/echomemory/*` | Migrated into `benchmarks/locomo/`; wrapper scripts replaced by the unified CLI |
-| `memory/vikingboat_alignment.py` | Superseded by the retained `legacy-77` and VikingBoat v0.4.11 profiles |
+| `memory/vikingboat_alignment.py` | Superseded by the retained VikingBoat v0.4.11 profiles |
 | `memory/plugins/echomemory/*` | HTTP transport and read-only agent behavior split between `backends/echomemory/` and `plugins/vikingbot/`; SDK/workspace inspection excluded |
 | `memory/adapters/*`, plugin contracts and registries | Replaced by `backends/` contracts, registry, and backend doctor |
 | `memory/datasets.py` | Formal loaders split by dataset; custom dry-run parsing moved to `benchmarks/generic/` |
@@ -82,7 +82,7 @@ SDK, or enable an OpenViking workflow.
 | --- | --- |
 | Paid LoCoMo conv-30 81-question QA and Judge run | Completed for retained profiles; local artifacts are excluded from the repository |
 | Reproduction score claim | Retained profile references are memory-qualified |
-| Dirty/untracked v2 `legacy-77` experiment behavior | Migrated as an explicit tested profile because it is the actual `head_clean` reference run |
+| Dirty/untracked v2 experiment behavior | Excluded from the supported profile set |
 
 ## Behavioral Guarantees
 

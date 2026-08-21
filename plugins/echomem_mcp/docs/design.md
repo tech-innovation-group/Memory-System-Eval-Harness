@@ -2,7 +2,7 @@
 
 ## 设计意图
 
-测试 agent 通过 EchoMem MCP 协议检索记忆的能力。与 bare_llm 的单轮检索不同，echomem_mcp 让 LLM 自主决定何时检索、检索什么 -- 通过 OpenAI function-calling 调用 MCP 工具（`memory_query`、`read`、`list`、`glob`），模拟真实 agent 与记忆系统的交互。
+测试 agent 通过 EchoMem MCP 协议检索记忆的能力。EchoMem QA 检索不再使用 HTTP search API：平台侧初始检索固定通过 MCP `memory_query` 完成；开启工具调用时，LLM 也通过 OpenAI function-calling 调用 MCP 工具（`memory_query`、`read`、`list`、`glob`），模拟真实 agent 与记忆系统的交互。
 
 ## 工作原理
 
@@ -16,15 +16,16 @@
 
 ## 工具调用控制
 
-`send_message` 通过三个 CLI 参数控制工具调用行为：
+`send_message` 通过两个 CLI 参数控制模型侧工具调用行为：
 
-- `--tool-calling` / `--no-tool-calling`：是否开启工具调用循环。开启时解析 LLM 返回的工具并执行，把结果返回给 LLM 不断迭代；关闭时只做单次 LLM 调用。
-- `--search-in-tools` / `--no-search-in-tools`：是否将 `memory_query`（搜索接口）包含在工具定义中。
-- `--manual-search` / `--no-manual-search`：是否在每轮用户查询时手动调 search 接口，把接收到的记忆组装好再返回给 LLM。
+- `--tool-calling` / `--no-tool-calling`：是否开启模型工具调用循环。开启时解析 LLM 返回的工具并执行，把结果返回给 LLM 不断迭代；关闭时只做单次 LLM 调用。
+- `--search-in-tools` / `--no-search-in-tools`：是否将 `memory_query` 包含在模型可调用工具定义中。
+
+无论是否开启模型工具调用，平台侧初始检索都固定通过 MCP `memory_query` 完成，不再提供 `--manual-search` / `--mcp-initial-search`，也不会调用 EchoMem HTTP search API。
 
 ## 记忆注入
 
-`send_message` 通过 `self.memory_client`（`EchoMemClient`）注入和检索记忆。记忆客户端定义在 `backends/echomem/client.py`，由 `setup()` 创建。auth key 回退到 `echomem_auth_key`。
+`send_message` 通过 `self.memory_client`（`EchoMemClient`）注入记忆；QA 检索通过 `McpClient.call_tool("memory_query", ...)` 访问 EchoMem MCP。记忆客户端定义在 `backends/echomem/client.py`，由 `setup()` 创建。auth key 回退到 `echomem_auth_key`。
 
 ## 前置条件
 
@@ -46,4 +47,4 @@
 |---|---|---|
 | `--mcp-url` | `http://127.0.0.1:8001` | MCP 服务器地址 |
 | `--mcp-auth-key` | `""` | X-Auth-Key，空则回退到 `--echomem-auth-key` |
-| `--mcp-max-iterations` | `10` | 每个问题的最大工具调用迭代数 |
+| `--mcp-max-iterations` | `50` | 每个问题的最大工具调用迭代数 |

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import hashlib
 import tempfile
 import threading
 import unittest
@@ -12,7 +11,6 @@ from plugins import load_agent_plugin
 from plugins.vikingbot.answers import sanitize_final_answer_text
 from plugins.vikingbot.prompting import build_system_prompt
 from plugins.vikingbot.prompting import build_messages
-from plugins.vikingbot.legacy77_prompting import _system_prompt
 from plugins.vikingbot.runtime import answer_one_vikingbot_question
 from plugins.vikingbot.tools import _engine_uri, execute_tool, tool_definitions
 from plugins.vikingbot.vikingboat0411_prompting import format_vikingbot_memory
@@ -22,10 +20,6 @@ from plugins.vikingbot.vikingboat0411_prompting import (
 from backends.memory_types import SearchResult
 from benchmarks.locomo.profiles import (
     AGENT_PLUGIN,
-    LEGACY_77_PROFILE,
-    LEGACY_77_REFERENCE,
-    LEGACY_77_SETTINGS,
-    LEGACY_77_SOURCE,
     VIKINGBOAT_0411_PROFILE,
     VIKINGBOAT_0411_SETTINGS,
     VIKINGBOAT_0411_NATURAL_NO_TOOLS_PROFILE,
@@ -136,7 +130,7 @@ class VikingBotCoreTests(unittest.TestCase):
                 answer="19 January 2023",
                 question_time="2023-07-23",
                 vikingbot_workspace="",
-                qa_profile=LEGACY_77_PROFILE,
+                qa_profile=VIKINGBOAT_0411_PROFILE,
             )
 
         self.assertEqual(
@@ -146,7 +140,7 @@ class VikingBotCoreTests(unittest.TestCase):
         self.assertEqual("19 January 2023", result.response)
         self.assertEqual(1, result.tool_call_count)
         self.assertEqual(2, result.iterations)
-        self.assertEqual(LEGACY_77_PROFILE, result.qa_profile)
+        self.assertEqual(VIKINGBOAT_0411_PROFILE, result.qa_profile)
         self.assertEqual(220, result.prompt_tokens)
         self.assertEqual(30, result.completion_tokens)
         self.assertEqual("vikingbot", result.trace["agent"])
@@ -268,142 +262,6 @@ class VikingBotCoreTests(unittest.TestCase):
         plugin = load_agent_plugin(AGENT_PLUGIN, {})
 
         self.assertEqual("vikingbot", plugin.descriptor.id)
-
-class Legacy77VikingBotTests(unittest.TestCase):
-    def test_profile_matches_actual_head_clean_reference_run(self):
-        self.assertEqual(
-            "2026-07-13 head_clean conv-30 run: 63/81 (77.78%)",
-            LEGACY_77_REFERENCE,
-        )
-        self.assertEqual(25, LEGACY_77_SETTINGS["top_k"])
-        self.assertEqual(25, LEGACY_77_SETTINGS["tool_search_limit"])
-        self.assertEqual(1, LEGACY_77_SETTINGS["tool_search_pool_multiplier"])
-        self.assertTrue(LEGACY_77_SETTINGS["omit_answer_temperature"])
-        self.assertEqual(
-            "question_only",
-            LEGACY_77_SETTINGS["initial_retrieval_query_mode"],
-        )
-        self.assertEqual(
-            "none",
-            LEGACY_77_SETTINGS["tool_query_dedup_scope"],
-        )
-        self.assertTrue(
-            LEGACY_77_SETTINGS["search_tool_target_uri_schema"]
-        )
-        self.assertEqual(
-            19,
-            LEGACY_77_SOURCE["reference_memory"]["session_count"],
-        )
-
-    def test_system_prompt_matches_persisted_reference_hash(self):
-        self.assertEqual(
-            LEGACY_77_SOURCE["prompt_sha256"],
-            hashlib.sha256(_system_prompt().encode()).hexdigest(),
-        )
-
-    def test_prompt_uses_question_time_group_session_and_raw_question(self):
-        messages = build_messages(
-            "When did it happen?",
-            "2023-07-23",
-            [SearchResult(
-                uri="echo://tenant/sessions/session-1",
-                score=1.0,
-                content="It happened yesterday.",
-            )],
-            4000,
-            2000,
-            "",
-            LEGACY_77_PROFILE,
-        )
-
-        self.assertIn(
-            "## Current Time: 2023-07-23",
-            messages[1]["content"],
-        )
-        self.assertIn("Group chat session", messages[1]["content"])
-        self.assertEqual("When did it happen?", messages[-1]["content"])
-        self.assertIn(
-            "Before replying 'unknown'",
-            messages[0]["content"],
-        )
-
-    def test_search_schema_preserves_historical_target_uri_hint(self):
-        search_tool = tool_definitions(
-            "vikingbot_native_safe",
-            search_target_uri=True,
-        )[0]
-
-        properties = search_tool["function"]["parameters"]["properties"]
-        self.assertIn("target_uri", properties)
-        self.assertEqual(
-            (
-                "Optional EchoMemory URI prefix to limit search scope. "
-                "If omitted, search all available memory."
-            ),
-            properties["target_uri"]["description"],
-        )
-
-    def test_no_dedup_scope_executes_repeated_searches(self):
-        echomem = _FakeEchoMem()
-        calls = iter([
-            (
-                {
-                    "role": "assistant",
-                    "content": "",
-                    "tool_calls": [{
-                        "id": "call-1",
-                        "type": "function",
-                        "function": {
-                            "name": "memory_search",
-                            "arguments": json.dumps({"query": "same query"}),
-                        },
-                    }],
-                },
-                1,
-                1,
-            ),
-            (
-                {
-                    "role": "assistant",
-                    "content": "",
-                    "tool_calls": [{
-                        "id": "call-2",
-                        "type": "function",
-                        "function": {
-                            "name": "memory_search",
-                            "arguments": json.dumps({"query": "same query"}),
-                        },
-                    }],
-                },
-                1,
-                1,
-            ),
-            ({"role": "assistant", "content": "done"}, 1, 1),
-        ])
-
-        with patch(
-            "plugins.vikingbot.runtime.chat_with_tools",
-            side_effect=lambda *_args, **_kwargs: next(calls),
-        ):
-            result = answer_one_vikingbot_question(
-                echomem,
-                _FakeLLM(),
-                question_id="q1",
-                question="Question",
-                answer="done",
-                qa_profile=LEGACY_77_PROFILE,
-                tool_set="vikingbot_native_safe",
-                tool_query_dedup_scope="none",
-                search_tool_target_uri_schema=True,
-            )
-
-        self.assertEqual(
-            ["Question", "same query", "same query"],
-            echomem.queries,
-        )
-        self.assertEqual(2, result.tool_call_count)
-        self.assertEqual(1, len(result.retrieval_items))
-
 
 class VikingBotRuntimeTests(unittest.TestCase):
     def test_same_turn_tools_execute_concurrently_in_original_order(self):
@@ -1144,7 +1002,6 @@ class ProfileSchemaTests(unittest.TestCase):
     def test_all_registered_profiles_are_validated(self):
         self.assertEqual(
             {
-                LEGACY_77_PROFILE,
                 VIKINGBOAT_0411_PROFILE,
                 VIKINGBOAT_0411_NATURAL_NO_TOOLS_PROFILE,
             },

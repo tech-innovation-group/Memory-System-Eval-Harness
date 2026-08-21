@@ -110,19 +110,28 @@ MCP_TOOLS: list[dict[str, Any]] = [
 ]
 
 _SYSTEM_PROMPT = (
-    "You are a helpful assistant with access to a memory system via tools. "
-    "Use the memory_query tool to find relevant information, and the read tool "
-    "to read full content of specific memory items. "
-    "Answer the user's question concisely based on what you find. "
-    "If the memory does not contain the answer, say you don't know."
+    "You are a helpful assistant with access to EchoMem long-term memory "
+    "through the MCP tools provided in this request. "
+    "If context is insufficient, use the available EchoMem MCP tools or "
+    "memory context to find more information. "
+    "Answer the question directly. "
+    "Answer with only the exact answer: a single word or short phrase, "
+    "with no explanation, preamble, or sentences. For yes/no questions, "
+    "answer with exactly 'yes' or 'no'."
 )
 
 _NO_TOOLS_SYSTEM_PROMPT = (
     "You are a helpful assistant answering a question from the memory excerpts "
     "included in the conversation. Answer concisely and directly from those "
-    "excerpts. Do not emit tool calls, function-call markup, XML tool tags, "
-    "or a plan to search. If the supplied memory does not contain the answer, "
-    "say you don't know."
+    "excerpts. Prioritize the supplied EchoMem memory evidence over general "
+    "knowledge or unsupported inference. "
+    "Preserve exact names, dates, order, and values when the memory provides them. "
+    "Do not emit tool calls, function-call markup, XML tool tags, "
+    "or a plan to search. Use the available memory to answer as helpfully as "
+    "possible. "
+    "Answer with only the exact answer: a single word or short phrase, "
+    "with no explanation, preamble, or sentences. For yes/no questions, "
+    "answer with exactly 'yes' or 'no'."
 )
 
 

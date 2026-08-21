@@ -18,6 +18,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 # 确保能 import shared 包
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -39,7 +40,6 @@ from benchmarks.locomo.judge import (
     judge_locomo_results,
 )
 from benchmarks.locomo.profiles import (
-    LEGACY_77_PROFILE,
     VIKINGBOAT_0411_PROFILE,
     VIKINGBOAT_0411_NATURAL_NO_TOOLS_PROFILE,
 )
@@ -50,13 +50,21 @@ from benchmarks.locomo.provenance import (
 from benchmarks.locomo.memory_scope import (
     SessionPrefixMemoryClient,
 )
-from benchmarks.locomo.qa import QAOptions, build_qa_tasks, run_locomo_qa
+from benchmarks.locomo.qa import (
+    QAOptions,
+    build_qa_tasks,
+    run_locomo_qa,
+    write_tool_audits,
+)
 from benchmarks.locomo.resume import (
     build_qa_resume_manifest,
     build_judge_resume_manifest,
     copy_resume_traces,
+    find_judge_resume_csv,
+    find_qa_resume_csv,
     load_judge_resume_state,
     load_qa_resume_state,
+    restore_resume_traces,
     write_judge_resume_manifest,
     write_qa_resume_manifest,
 )
@@ -74,47 +82,60 @@ from shared.eval_base import (
 )
 from shared.import_guard import require_complete_imports
 from shared.llm_client import LLMClient
+from shared.resume_identity import apply_resume_memory_identity
 
 
-def _apply_resume_memory_identity(
-    client,
-    resume_source: str,
-    log,
-) -> None:
-    """Load account/user_id/auth_key from a prior run's QA resume manifest.
+def _redact_secret(value: Any) -> str:
+    text = str(value or "")
+    if not text:
+        return ""
+    return text[:4] + "***" + text[-4:] if len(text) > 8 else "***"
 
-    When resuming with --resume-qa, the harness does not provision a fresh
-    identity.  The prior run's tenant credentials are needed to access its
-    sessions.
-    """
-    source = Path(resume_source)
-    manifest_path = (
-        source / "qa_resume_manifest.json"
-        if source.is_dir()
-        else source.parent / "qa_resume_manifest.json"
+
+def _build_agent_options(args, config) -> dict[str, Any]:
+    """Capture run-affecting plugin options for reproducible QA reports."""
+    options: dict[str, Any] = {
+        "agent_plugin": getattr(args, "agent_plugin", ""),
+        "qa_profile": getattr(args, "qa_profile", None) or "",
+        "tool_calling": bool(
+            getattr(args, "tools", getattr(args, "tool_calling", True))
+        ),
+        "initial_retrieval_protocol": "mcp",
+        "search_in_tools": bool(getattr(args, "search_in_tools", False)),
+        "top_k": config.top_k,
+        "memory_budget_chars": config.memory_budget_chars,
+        "question_timeout_s": config.question_timeout_s,
+        "llm_temperature": config.llm_temperature,
+        "llm_timeout_s": config.llm_timeout_s,
+        "llm_retries": config.llm_retries,
+        "qa_concurrency": config.concurrency,
+        "judge_concurrency": getattr(args, "judge_concurrency", None),
+    }
+    for name in (
+        "mcp_url",
+        "mcp_max_iterations",
+        "mcp_read_mode",
+        "user_memory_budget_chars",
+        "agent_memory_budget_chars",
+    ):
+        if hasattr(args, name):
+            options[name] = getattr(args, name)
+    for name in ("mcp_auth_key", "echomem_auth_key"):
+        if hasattr(args, name):
+            value = getattr(args, name)
+            options[f"{name}_configured"] = bool(value)
+            options[f"{name}_redacted"] = _redact_secret(value)
+    return options
+
+
+def _write_agent_options_to_config(result_dir: Path, options: dict[str, Any]) -> None:
+    config_path = result_dir / "config.json"
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+    payload["agent_options"] = options
+    config_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
-    if not manifest_path.is_file():
-        return
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return
-    identity = manifest.get("memory_identity") or {}
-    account = str(identity.get("account") or "").strip()
-    user_id = str(identity.get("user_id") or "").strip()
-    auth_key = str(identity.get("auth_key") or "").strip()
-    if account:
-        client.account = account
-    if user_id:
-        client.user_id = user_id
-    if auth_key:
-        client.auth_key = auth_key
-    if account or auth_key:
-        log.info(
-            "Resumed memory identity from prior run: account=%s user=%s",
-            client.account,
-            client.user_id,
-        )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -141,14 +162,12 @@ def build_parser() -> argparse.ArgumentParser:
     qa.add_argument(
         "--qa-profile",
         choices=[
-            LEGACY_77_PROFILE,
             VIKINGBOAT_0411_PROFILE,
             VIKINGBOAT_0411_NATURAL_NO_TOOLS_PROFILE,
         ],
         default=None,
         help=(
-            "LoCoMo QA executor; legacy-77 preserves the actual July 13 "
-            "head_clean 63/81 run; vikingboat0411 adapts the v0.4.11 "
+            "LoCoMo QA executor; vikingboat0411 adapts the v0.4.11 "
             "VikingBot agent behavior to EchoMemory tools; "
             "vikingboat0411-natural-no-tools keeps only complete initially "
             "retrieved memory excerpts"
@@ -169,11 +188,32 @@ def build_parser() -> argparse.ArgumentParser:
         help="Persist partial QA CSV after every N completed questions (0=off)",
     )
     qa.add_argument(
+        "--resume",
+        default="",
+        help=(
+            "Resume a prior locomo run directory or qa_results CSV: reuse the "
+            "prior identity, skip already-injected import batches, reuse "
+            "healthy QA answers, and reuse judge verdicts; only run the "
+            "missing/unhealthy remainder. Metrics (tokens/latency/accuracy) "
+            "are computed over the merged whole run."
+        ),
+    )
+    qa.add_argument(
         "--resume-qa",
         default="",
         help=(
             "Resume QA from a prior LoCoMo run directory or qa_results CSV; "
-            "reuses the prior identity and skips already-injected sessions"
+            "reuses the prior identity and skips already-injected sessions "
+            "(superseded by --resume)"
+        ),
+    )
+    qa.add_argument(
+        "--reuse-memory-from",
+        default="",
+        help=(
+            "Reuse the identity and completed memory imports from a prior run, "
+            "but execute a fresh QA/Judge pass with the current MCP mode "
+            "(superseded by --resume)"
         ),
     )
     # judge 参数 (三个基础参数由共享 helper 声明, locomo 额外参数在此声明)
@@ -196,7 +236,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help=(
             "Resume matching Judge rows from a prior LoCoMo run directory "
-            "or judge_results CSV"
+            "or judge_results CSV (superseded by --resume)"
         ),
     )
     return parser
@@ -217,7 +257,7 @@ def load_qa_prompt_append(path_value: str) -> tuple[str, str, str]:
 
 
 def _load_prior_import_rows(resume_source: str) -> list[dict]:
-    """Load import_results.csv from a prior run directory for resume-qa."""
+    """Load import_results.csv from a prior run directory for resume."""
     import csv
 
     source = Path(resume_source)
@@ -254,21 +294,8 @@ def main() -> None:
     dataset_path = resolve_dataset_path("locomo", args.dataset)
     config.dataset_path = dataset_path
     question_ids = parse_question_ids(args.question_ids)
-    if args.check:
-        jobs, plans = load_dataset(dataset_path, sample_filter=args.sample)
-        session_mode = resolve_session_mode(args.session_mode, len(plans))
-        jobs = select_questions(
-            jobs,
-            question_ids=question_ids,
-            limit=config.question_limit,
-        )
-        if not plans or not jobs:
-            raise ValueError("dataset/sample filter produced no LoCoMo samples or questions")
-        print(
-            f"[check] OK benchmark=locomo dataset={dataset_path} "
-            f"samples={len(plans)} questions={len(jobs)} session_mode={session_mode}"
-        )
-        return
+
+    agent_options = _build_agent_options(args, config)
 
     # 创建评测运行
     run = EvalRun(
@@ -276,6 +303,7 @@ def main() -> None:
         results_root=results_root_for(Path(__file__).parent, args.out_dir),
         config=config,
     )
+    _write_agent_options_to_config(run.result_dir, agent_options)
     log = run.logger
 
     # 加载数据集
@@ -307,13 +335,27 @@ def main() -> None:
 
     # 加载 agent 插件 (在记忆操作之前, setup 内部创建 memory_client)
     agent_config = {**vars(args), "benchmark_name": "locomo", "run_id": run.result_dir.name}
+    # 统一 --resume 与 --resume-qa 都跳过身份隔离（插件读 config["resume_qa"]）
+    agent_config["resume_qa"] = (
+        args.resume or args.resume_qa or args.reuse_memory_from
+    )
     agent_plugin = load_agent_plugin(args.agent_plugin, agent_config)
+    agent_options["qa_profile"] = agent_plugin.qa_profile
+    _write_agent_options_to_config(run.result_dir, agent_options)
     echomem = agent_plugin.memory_client
+    raw_echomem = echomem
     echomem.health()
-    if args.resume_qa:
-        _apply_resume_memory_identity(echomem, args.resume_qa, log)
+    memory_reuse_source = args.resume or args.resume_qa or args.reuse_memory_from
+    if memory_reuse_source:
+        apply_resume_memory_identity(echomem, memory_reuse_source, log)
     evaluation_identity = {
-        "mode": "resumed" if args.resume_qa else "fresh",
+        "mode": (
+            "resumed"
+            if (args.resume or args.resume_qa)
+            else "reused"
+            if args.reuse_memory_from
+            else "fresh"
+        ),
         "tenant_id": echomem.account,
         "user_id": echomem.user_id,
         "auth_key": echomem.auth_key,
@@ -325,11 +367,11 @@ def main() -> None:
         evaluation_identity.get("user_id", ""),
     )
     memory_session_prefix = ""
-    if args.resume_qa:
+    if memory_reuse_source:
         sample = str(args.sample or "").strip()
         if re.fullmatch(r"conv-\d+", sample):
             memory_session_prefix = f"echomem-locomo-{sample}-"
-    if memory_session_prefix:
+    if memory_session_prefix and not args.reuse_memory_from:
         echomem = SessionPrefixMemoryClient(
             echomem,
             memory_session_prefix,
@@ -339,11 +381,44 @@ def main() -> None:
             memory_session_prefix,
         )
 
+    # 尽早写 resume manifest（含身份）：即使导入中断，目录也留有身份供后续 --resume 复用。
+    qa_options = QAOptions(
+        profile=agent_plugin.qa_profile,
+        checkpoint_interval=args.checkpoint_interval,
+        top_k=config.top_k,
+        memory_budget_chars=config.memory_budget_chars,
+        tools_enabled=bool(
+            getattr(args, "tools", getattr(args, "tool_calling", True))
+        ),
+        system_prompt_append=system_prompt_append,
+        system_prompt_append_sha256=system_prompt_append_sha256,
+        system_prompt_append_source=system_prompt_append_source,
+        agent_options=agent_options,
+    )
+    qa_resume_manifest = build_qa_resume_manifest(
+        dataset_path=dataset_path,
+        sample_filter=args.sample,
+        session_mode=session_mode,
+        config=config,
+        options=qa_options,
+        memory_identity={
+            "account": echomem.account,
+            "user_id": echomem.user_id,
+            "agent_id": echomem.agent_id,
+            "auth_key": echomem.auth_key,
+        },
+    )
+    write_qa_resume_manifest(run.result_dir, qa_resume_manifest)
+
     # -- 阶段 1: 导入记忆 --
     log.info("=" * 60)
-    prior_import_rows = _load_prior_import_rows(args.resume_qa) if args.resume_qa else None
+    prior_import_rows = (
+        _load_prior_import_rows(memory_reuse_source)
+        if memory_reuse_source
+        else None
+    )
     if prior_import_rows is not None:
-        log.info("阶段 1: 导入记忆 (resume-qa, 跳过已完成 batches)")
+        log.info("阶段 1: 导入记忆 (resume, 跳过已完成 batches)")
     else:
         log.info("阶段 1: 导入记忆 (共 %d 个 sample)", len(plans))
 
@@ -354,7 +429,7 @@ def main() -> None:
         ImportOptions(
             session_mode=session_mode,
             max_sessions=args.max_sessions,
-            resume_qa=bool(args.resume_qa),
+            resume_qa=bool(memory_reuse_source),
             sample_filter=args.sample,
             prior_import_rows=prior_import_rows,
         ),
@@ -385,7 +460,7 @@ def main() -> None:
         raise SystemExit(2) from exc
 
     memory_provenance = inspect_memory_provenance(
-        echomem,
+        raw_echomem,
         dataset_path=dataset_path,
         plans=plans,
         session_mode=session_mode,
@@ -428,18 +503,6 @@ def main() -> None:
     log.info("=" * 60)
     log.info("阶段 2: QA (共 %d 题, 并发=%d)", len(jobs), config.concurrency)
 
-    qa_options = QAOptions(
-        profile=agent_plugin.qa_profile,
-        checkpoint_interval=args.checkpoint_interval,
-        top_k=config.top_k,
-        memory_budget_chars=config.memory_budget_chars,
-        tools_enabled=bool(
-            getattr(args, "tools", getattr(args, "tool_calling", True))
-        ),
-        system_prompt_append=system_prompt_append,
-        system_prompt_append_sha256=system_prompt_append_sha256,
-        system_prompt_append_source=system_prompt_append_source,
-    )
     qa_tasks = build_qa_tasks(
         jobs,
         import_report.sample_to_session_ids,
@@ -447,38 +510,33 @@ def main() -> None:
         qa_options,
         agent_id=echomem.agent_id,
     )
-    qa_resume_manifest = build_qa_resume_manifest(
-        dataset_path=dataset_path,
-        sample_filter=args.sample,
-        session_mode=session_mode,
-        config=config,
-        options=qa_options,
-        memory_identity={
-            "account": echomem.account,
-            "user_id": echomem.user_id,
-            "agent_id": echomem.agent_id,
-            "auth_key": echomem.auth_key,
-        },
-    )
-    write_qa_resume_manifest(run.result_dir, qa_resume_manifest)
     qa_resume_state = None
-    if args.resume_qa:
-        qa_resume_state = load_qa_resume_state(
-            args.resume_qa,
-            tasks=qa_tasks,
-            expected_manifest=qa_resume_manifest,
-        )
-        copied_traces = copy_resume_traces(
-            qa_resume_state,
-            run.result_dir,
-        )
-        log.info(
-            "QA resume: source=%s reused=%d discarded=%d traces=%d",
-            qa_resume_state.source_csv,
-            len(qa_resume_state.results),
-            len(qa_resume_state.discarded_question_ids),
-            copied_traces,
-        )
+    if args.resume or args.resume_qa:
+        qa_resume_source = args.resume or args.resume_qa
+        prior_qa_csv = find_qa_resume_csv(qa_resume_source)
+        if prior_qa_csv is None:
+            log.info(
+                "QA resume: no prior QA results under %s (import-only run), "
+                "running full QA",
+                qa_resume_source,
+            )
+        else:
+            qa_resume_state = load_qa_resume_state(
+                qa_resume_source,
+                tasks=qa_tasks,
+                expected_manifest=qa_resume_manifest,
+            )
+            copied_traces = copy_resume_traces(
+                qa_resume_state,
+                run.result_dir,
+            )
+            log.info(
+                "QA resume: source=%s reused=%d discarded=%d traces=%d",
+                qa_resume_state.source_csv,
+                len(qa_resume_state.results),
+                len(qa_resume_state.discarded_question_ids),
+                copied_traces,
+            )
     qa_results = run_locomo_qa(
         qa_tasks,
         agent_plugin,
@@ -490,6 +548,11 @@ def main() -> None:
             qa_resume_state.results if qa_resume_state else None
         ),
     )
+    if qa_resume_state:
+        restored = restore_resume_traces(qa_results, run.result_dir)
+        log.info("QA resume: restored %d traces from source run", restored)
+        # 全量写 tool audits：让 resume 目录与从 0 运行的目录等价（含复用题的审计）
+        write_tool_audits(run.result_dir, qa_results)
 
     # -- 阶段 3: LLM Judge --
     log.info("=" * 60)
@@ -515,16 +578,24 @@ def main() -> None:
         judge_resume_manifest,
     )
     judge_resume_state = None
-    if args.resume_judge:
-        judge_resume_state = load_judge_resume_state(
-            args.resume_judge,
-            expected_manifest=judge_resume_manifest,
-        )
-        log.info(
-            "Judge resume: source=%s candidate_rows=%d",
-            judge_resume_state.source_csv,
-            len(judge_resume_state.rows),
-        )
+    if args.resume or args.resume_judge:
+        judge_resume_source = args.resume or args.resume_judge
+        prior_judge_csv = find_judge_resume_csv(judge_resume_source)
+        if prior_judge_csv is None:
+            log.info(
+                "Judge resume: no prior judge results under %s, running full judge",
+                judge_resume_source,
+            )
+        else:
+            judge_resume_state = load_judge_resume_state(
+                judge_resume_source,
+                expected_manifest=judge_resume_manifest,
+            )
+            log.info(
+                "Judge resume: source=%s candidate_rows=%d",
+                judge_resume_state.source_csv,
+                len(judge_resume_state.rows),
+            )
 
     judge_report = judge_locomo_results(
         qa_results,
@@ -567,7 +638,7 @@ def main() -> None:
         total_samples=len(plans),
         total_questions=len(jobs),
         import_report=import_report,
-        resume_qa=bool(args.resume_qa),
+        resume_qa=bool(memory_reuse_source),
         qa_results=qa_results,
         judge_report=judge_report,
         qa_options=qa_options,
@@ -583,6 +654,27 @@ def main() -> None:
         "missing_question_ids": diagnosis["missing_question_ids"],
     }
     summary["qa_parallelism"] = config.concurrency
+    summary["resume"] = {
+        "enabled": bool(memory_reuse_source),
+        "source": str(memory_reuse_source or ""),
+        "mode": evaluation_identity.get("mode"),
+        "reused_qa": (
+            len(qa_resume_state.results) if qa_resume_state else 0
+        ),
+        "discarded_qa": (
+            qa_resume_state.discarded_question_ids
+            if qa_resume_state
+            else []
+        ),
+        "reused_import_batches": sum(
+            1
+            for row in import_report.rows
+            if str(row.get("status") or "").strip().lower() == "reused"
+        ),
+        "reused_judge_rows": (
+            len(judge_resume_state.rows) if judge_resume_state else 0
+        ),
+    }
     summary["qa_resume"] = {
         "enabled": bool(qa_resume_state),
         "source": (
@@ -596,6 +688,10 @@ def main() -> None:
             if qa_resume_state
             else []
         ),
+    }
+    summary["memory_reuse"] = {
+        "enabled": bool(args.reuse_memory_from),
+        "source": str(args.reuse_memory_from or ""),
     }
     summary["judge_parallelism"] = args.judge_concurrency
     summary["judge_checkpoint_interval"] = args.judge_checkpoint_interval
@@ -616,6 +712,20 @@ def main() -> None:
     }
     summary["run_started_at"] = run.started_at.isoformat()
     summary["run_finished_at"] = run.finished_at_iso()
+    if qa_resume_state:
+        # 续跑延续源运行的原始启动时间：批次耗时/吞吐按「原启动 → 本次结束」计算。
+        source_summary_path = Path(qa_resume_state.source_csv).parent / "summary.json"
+        if source_summary_path.is_file():
+            try:
+                with open(source_summary_path, encoding="utf-8") as f:
+                    source_summary = json.load(f)
+            except (OSError, ValueError) as exc:
+                log.warning("读取续跑源 summary 失败: %s", exc)
+                source_summary = {}
+            source_started_at = source_summary.get("run_started_at")
+            if source_started_at:
+                summary["qa_resume"]["original_started_at"] = source_started_at
+                summary["run_started_at"] = source_started_at
     blackbox = write_blackbox_artifacts(
         qa_rows=[result.to_csv_row() for result in qa_results],
         judge_rows=judge_report.rows,

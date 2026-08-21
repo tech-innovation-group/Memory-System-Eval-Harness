@@ -168,5 +168,144 @@ class EchoMemClientTests(unittest.TestCase):
         ], calls)
 
 
+    def test_resource_client_methods_use_http_contract(self) -> None:
+        calls: list[tuple[str, str, dict]] = []
+
+        def fake_post(path, body=None, **_kwargs):
+            calls.append(("POST", path, dict(body or {})))
+            if path == "/api/resources/search":
+                return {
+                    "status": "ok",
+                    "query": "q",
+                    "results": [
+                        {
+                            "path": "user/hotpotqa/doc-x",
+                            "domain": "user",
+                            "chunk_index": 0,
+                            "text": "chunk text",
+                            "score": 0.91,
+                            "source_uri": "echo://resources/user/hotpotqa/doc-x",
+                            "rank": 1,
+                        }
+                    ],
+                }
+            if path == "/api/resources/reindex_all":
+                return {"reindexed": 3, "degraded": 0, "errors": 0}
+            return {"path": "user/hotpotqa/doc-x", "uri": "echo://resources/user/hotpotqa/doc-x", "status": "accepted"}
+
+        def fake_get(path, query=None, **_kwargs):
+            calls.append(("GET", path, dict(query or {})))
+            return {"path": "user/hotpotqa/doc-x", "status": "indexed"}
+
+        self.client._post = fake_post  # type: ignore[method-assign]
+        self.client._get = fake_get  # type: ignore[method-assign]
+
+        add_resp = self.client.add_resource(
+            "hotpotqa/doc-x",
+            "content",
+            name="Doc X",
+            tags=["hotpotqa"],
+            metadata={"hotpotqa_title": "Doc X"},
+        )
+        results = self.client.search_resources(
+            "query", limit=5, tags=["hotpotqa"], paths=["hotpotqa/"]
+        )
+        reindex = self.client.reindex_all_resources()
+        status = self.client.resource_index_status("user/hotpotqa/doc-x")
+
+        self.assertEqual("accepted", add_resp["status"])
+        self.assertEqual("chunk text", results[0]["text"])
+        self.assertEqual(0.91, results[0]["score"])
+        self.assertEqual("user/hotpotqa/doc-x", results[0]["path"])
+        self.assertEqual(3, reindex["reindexed"])
+        self.assertEqual("indexed", status["status"])
+
+        self.assertEqual([
+            ("POST", "/api/resources", {
+                "content": "content",
+                "name": "Doc X",
+                "content_type": "text/markdown",
+                "tags": ["hotpotqa"],
+                "metadata": {"hotpotqa_title": "Doc X"},
+                "path": "hotpotqa/doc-x",
+            }),
+            ("POST", "/api/resources/search", {
+                "query": "query",
+                "limit": 5,
+                "tags": ["hotpotqa"],
+                "paths": ["hotpotqa/"],
+            }),
+            ("POST", "/api/resources/reindex_all", {}),
+            ("GET", "/api/resources/index", {"path": "user/hotpotqa/doc-x"}),
+        ], calls)
+
+    def test_wait_for_resource_index_polls_until_done(self) -> None:
+        statuses = iter([
+            {"status": "running"},
+            {"status": "running"},
+            {"status": "completed", "detail": {"chunk_count": 3}},
+        ])
+        path_calls: list[str] = []
+
+        def fake_get(path, query=None, **_kwargs):
+            path_calls.append((query or {}).get("path", ""))
+            return next(statuses)
+
+        self.client._get = fake_get  # type: ignore[method-assign]
+        result = self.client.wait_for_resource_index(
+            ["user/hotpotqa/doc-x"],
+            timeout_s=10,
+            poll_interval_s=0.01,
+        )
+        self.assertEqual({"indexed": 1, "failed": {}}, result)
+        self.assertEqual(["user/hotpotqa/doc-x"] * 3, path_calls)
+
+    def test_wait_for_resource_index_reports_failures(self) -> None:
+        def fake_get(path, query=None, **_kwargs):
+            return {"status": "failed", "detail": {"error": "embed failed"}}
+
+        self.client._get = fake_get  # type: ignore[method-assign]
+        result = self.client.wait_for_resource_index(
+            ["user/hotpotqa/doc-x", "user/hotpotqa/doc-y"],
+            timeout_s=10,
+            poll_interval_s=0.01,
+        )
+        self.assertEqual(0, result["indexed"])
+        self.assertIn("user/hotpotqa/doc-x", result["failed"])
+
+    def test_wait_for_resource_index_reports_progress(self) -> None:
+        statuses = iter([
+            {"status": "running"},
+            {"status": "completed", "detail": {"chunk_count": 3}},
+        ])
+
+        def fake_get(path, query=None, **_kwargs):
+            return next(statuses)
+
+        self.client._get = fake_get  # type: ignore[method-assign]
+        calls: list[tuple[int, int]] = []
+        result = self.client.wait_for_resource_index(
+            ["user/hotpotqa/doc-x"],
+            timeout_s=10,
+            poll_interval_s=0.01,
+            progress=lambda done, total: calls.append((done, total)),
+        )
+        self.assertEqual({"indexed": 1, "failed": {}}, result)
+        # pass 1: still running -> (0, 1); pass 2: terminal -> (1, 1)
+        self.assertEqual([(0, 1), (1, 1)], calls)
+
+    def test_wait_for_resource_index_times_out(self) -> None:
+        def fake_get(path, query=None, **_kwargs):
+            return {"status": "running"}
+
+        self.client._get = fake_get  # type: ignore[method-assign]
+        with self.assertRaises(TimeoutError):
+            self.client.wait_for_resource_index(
+                ["user/hotpotqa/doc-x"],
+                timeout_s=0.05,
+                poll_interval_s=0.01,
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

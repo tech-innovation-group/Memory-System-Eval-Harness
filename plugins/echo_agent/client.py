@@ -25,8 +25,10 @@ def _encode_context_path(context_path: str) -> str:
 class EchoAgentClient:
     """EchoAgent backend HTTP client, all calls have fallback."""
 
-    def __init__(self, base_url: str, username: str, password: str):
+    def __init__(self, base_url: str, username: str, password: str,
+                 api_prefix: str = "/v1"):
         self.base_url = base_url.rstrip("/")
+        self.api_prefix = api_prefix.rstrip("/")
         self.username = username
         self.password = password
         self.token: str = ""
@@ -54,7 +56,7 @@ class EchoAgentClient:
         body = {"username": self.username, "password": self.password}
         data = json.dumps(body).encode("utf-8")
         req = Request(
-            f"{self.base_url}/v1/auth/login",
+            f"{self.base_url}{self.api_prefix}/auth/login",
             data=data,
             headers={"Content-Type": "application/json"},
             method="POST",
@@ -74,12 +76,12 @@ class EchoAgentClient:
     def get_memory_auth_key(self, memory_engine_endpoint: str) -> str:
         """Resolve the auth_key that EchoAgent uses for memory retrieval.
 
-        EchoAgent's transform mode does not pass userId; the echoagent plugin
-        resolves auth_key using "anonymous". Injection must use the same
-        auth_key, otherwise memories are stored under one tenant and retrieved
-        under another.
+        EchoAgent's backend sends the logged-in user's UUID to the echoagent
+        plugin (31030), which maps it to an auth_key via echoagent_registry.json.
+        Injection must use the same auth_key, otherwise memories are stored
+        under one tenant and retrieved under another.
         """
-        body = {"mode": "credential", "userId": "anonymous"}
+        body = {"mode": "credential", "userId": self.user_uuid or "anonymous"}
         data = json.dumps(body).encode("utf-8")
         req = Request(
             memory_engine_endpoint,
@@ -96,13 +98,13 @@ class EchoAgentClient:
 
     def create_session(self, title: str = "", memory_engine_endpoint: str = "") -> str:
         """Create a session, try to enable memory engine (ignore failure)."""
-        result = self._request("POST", "/v1/sessions", {"title": title or f"test-{uuid.uuid4().hex[:8]}"})
+        result = self._request("POST", f"{self.api_prefix}/sessions", {"title": title or f"test-{uuid.uuid4().hex[:8]}"})
         session_id = result.get("data", result).get("id") or result.get("id", "")
         if session_id and memory_engine_endpoint:
             try:
-                self._request("POST", f"/v1/sessions/{session_id}/memory-engine/test",
+                self._request("POST", f"{self.api_prefix}/sessions/{session_id}/memory-engine/test",
                               {"endpoint": memory_engine_endpoint})
-                self._request("PUT", f"/v1/sessions/{session_id}/memory-engine",
+                self._request("PUT", f"{self.api_prefix}/sessions/{session_id}/memory-engine",
                               {"enabled": True, "endpoint": memory_engine_endpoint})
             except Exception as exc:
                 logging.warning("启用记忆引擎失败 (session %s): %s", session_id, exc)
@@ -111,7 +113,7 @@ class EchoAgentClient:
     def prefetch_tick(self, session_id: str, context_path: str, client_turn_id: str,
                       revision: int, draft_text: str) -> dict[str, Any] | None:
         """Typing simulation tick. Returns None if endpoint absent."""
-        path = f"/v1/sessions/{session_id}/context-paths/{_encode_context_path(context_path)}/prefetch/tick"
+        path = f"{self.api_prefix}/sessions/{session_id}/context-paths/{_encode_context_path(context_path)}/prefetch/tick"
         try:
             return self._request("POST", path, {
                 "clientTurnId": client_turn_id,
@@ -130,7 +132,7 @@ class EchoAgentClient:
     def prefetch_finalize(self, session_id: str, context_path: str, client_turn_id: str,
                           full_content: str) -> dict[str, Any] | None:
         """Finalize typing simulation. Returns None if endpoint absent."""
-        path = f"/v1/sessions/{session_id}/context-paths/{_encode_context_path(context_path)}/prefetch/finalize"
+        path = f"{self.api_prefix}/sessions/{session_id}/context-paths/{_encode_context_path(context_path)}/prefetch/finalize"
         try:
             return self._request("POST", path, {
                 "clientTurnId": client_turn_id,
@@ -150,7 +152,7 @@ class EchoAgentClient:
         """Send a message, auto-retry on seq conflicts."""
         key = f"{session_id}:{context_path}"
         after_seq = self._context_seq.get(key, 0)
-        path = f"/v1/sessions/{session_id}/context-paths/{_encode_context_path(context_path)}/messages"
+        path = f"{self.api_prefix}/sessions/{session_id}/context-paths/{_encode_context_path(context_path)}/messages"
         result = {}
         for attempt in range(3):
             body: dict[str, Any] = {"content": content, "afterSeq": after_seq}
@@ -170,7 +172,7 @@ class EchoAgentClient:
     def stream_reply(self, session_id: str, context_path: str, seq: int,
                      timeout: float = 300) -> dict[str, Any]:
         """Read SSE stream, return {reply, ttft_ms, done_event}."""
-        url = (f"{self.base_url}/v1/sessions/{session_id}/context-paths/"
+        url = (f"{self.base_url}{self.api_prefix}/sessions/{session_id}/context-paths/"
                f"{_encode_context_path(context_path)}/streaming?seq={seq}")
         headers = self._headers(json_content=False)
         headers["Accept"] = "text/event-stream"
@@ -233,7 +235,7 @@ class EchoAgentClient:
 
     def get_last_request(self, session_id: str, context_path: str = "/") -> dict[str, Any]:
         try:
-            path = (f"/v1/sessions/{session_id}/primary-model/last-request"
+            path = (f"{self.api_prefix}/sessions/{session_id}/primary-model/last-request"
                     f"?contextPath={_encode_context_path(context_path)}")
             return self._request("GET", path)
         except Exception:

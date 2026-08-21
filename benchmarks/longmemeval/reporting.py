@@ -15,6 +15,7 @@ def build_summary(
     qa_results: list[QAResult],
     evaluation_report: EvaluationReport,
     evaluation_identity: dict[str, str],
+    resumed: bool = False,
 ) -> dict:
     qa_errors = sum(1 for result in qa_results if result.llm_error)
     retrieval_errors = sum(
@@ -35,7 +36,7 @@ def build_summary(
         "import_ok": import_report.completed,
         "import_total": import_report.total,
         "incomplete_imports": import_report.incomplete,
-        "memory_source": "injected",
+        "memory_source": "existing" if resumed else "injected",
         "qa_count": len(qa_results),
         "qa_errors": qa_errors,
         "retrieval_errors": retrieval_errors,

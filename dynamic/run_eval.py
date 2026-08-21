@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
-"""动态评测脚本: 仿真 EchoAgent+EchoMem 线上真实效果。
+"""动态评测脚本: 仿真 Agent+记忆系统 线上真实效果。
 
 两种模式:
-  - generate: LLM 生成背景记忆 -> 注入 EchoMem -> 逐轮 QA 测试端到端召回+TTFT
-  - replay: 回放数据集对话, 直接注入 EchoMem -> 新会话 QA 测试跨 session 召回
+  - generate: LLM 生成背景记忆 -> 注入记忆后端 -> 逐轮 QA 测试端到端召回+TTFT
+  - replay: 回放数据集对话, 直接注入记忆后端 -> 新会话 QA 测试跨 session 召回
 
-两种模式的注入阶段都直连 EchoMem (open_session -> add_message -> commit -> poll),
-不经 EchoAgent, 不触发 LLM 生成。QA 阶段走 EchoAgent 完整管线 (含 prefill/TTFT)。
+两种模式的注入阶段都直连记忆后端 (open_session -> add_message -> commit -> poll),
+不经 Agent, 不触发 LLM 生成。QA 阶段走 Agent 完整管线 (含 prefill/TTFT, 由插件决定)。
 
-所有 EchoAgent API 调用都有容错: 接口不存在 (404) 时回退。
-例如 prefill/tick 返回 404 则跳过打字模拟, 直接发消息。
-
+支持不同 Agent 插件: 通过 --agent-plugin 选择, 插件特有参数由插件自身声明。
 用法见 docs/usage.md
 """
 
@@ -29,12 +27,12 @@ from plugins import load_agent_plugin
 from dynamic.artifacts import build_v2_quality_report as _build_v2_quality_report
 from dynamic.workflows import run_generate_mode, run_replay_mode
 from shared.eval_base import (
-    EvalConfig,
     EvalRun,
     add_agent_plugin_args,
-    add_eval_args,
+    build_config_from_args,
     resolve_llm_credentials,
     results_root_for,
+    validate_eval_config,
 )
 from shared.llm_client import LLMClient
 
@@ -46,7 +44,7 @@ _CONFIGS_DIR = Path(__file__).resolve().parent / "configs"
 # ---------------------------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="动态评测: 仿真 EchoAgent+EchoMem 线上效果")
+    parser = argparse.ArgumentParser(description="动态评测: 仿真 Agent+记忆系统 线上效果")
 
     # 模式选择
     g = parser.add_argument_group("模式")
@@ -80,32 +78,15 @@ def build_parser() -> argparse.ArgumentParser:
     # Agent 插件 (声明 LLM / 记忆后端 / 插件特有参数)
     add_agent_plugin_args(parser, default_plugin="echo_agent")
 
-    # 评测基础设施参数
-    add_eval_args(parser)
+    # 评测基础设施参数 (dynamic 不支持并发, 不声明 --concurrency)
+    g = parser.add_argument_group("评测")
+    g.add_argument("--out-dir", default="results", help="结果输出目录")
 
     return parser
 
 
 def validate_dynamic_args(args: argparse.Namespace) -> list[str]:
     errors: list[str] = []
-    # LLM 参数 (由插件通过 add_llm_args 声明, 用于质量评估)
-    for name, value in (
-        ("LLM base URL", getattr(args, "llm_base_url", "")),
-        ("LLM model", getattr(args, "llm_model", "")),
-        ("LLM API key", getattr(args, "llm_api_key", "")),
-    ):
-        if not str(value or "").strip():
-            errors.append(f"missing {name}")
-
-    # echo_agent 插件特有参数 (仅当使用 echo_agent 时校验)
-    if getattr(args, "agent_plugin", "") == "echo_agent":
-        for name, value in (
-            ("EchoAgent URL", getattr(args, "echoagent_url", "")),
-            ("username", getattr(args, "username", "")),
-            ("password", getattr(args, "password", "")),
-        ):
-            if not str(value or "").strip():
-                errors.append(f"missing {name}")
 
     evaluator_path = Path(args.evaluator_config).expanduser()
     if not evaluator_path.is_file():
@@ -126,12 +107,6 @@ def validate_dynamic_args(args: argparse.Namespace) -> list[str]:
         if not simulator_path.is_file():
             errors.append(f"user simulator config not found: {simulator_path}")
 
-    commit_timeout = getattr(args, "commit_timeout_s", 0.0)
-    commit_interval = getattr(args, "commit_poll_interval_s", 2.0)
-    if commit_timeout < 0:
-        errors.append("commit timeout must be >= 0")
-    if commit_interval <= 0:
-        errors.append("commit poll interval must be > 0")
     if args.questions < 0:
         errors.append("questions must be >= 0")
     if args.num_memories < 1:
@@ -150,38 +125,14 @@ def main() -> None:
 
     resolve_llm_credentials(args)
 
+    config = build_config_from_args(args)
+    validate_eval_config(config)
+
     errors = validate_dynamic_args(args)
     if errors:
         raise ValueError("; ".join(errors))
 
-    # 加载 agent 插件 (EchoAgentPlugin.setup 内部完成登录、agent_id 设置、auth_key 解析)
-    try:
-        agent_plugin = load_agent_plugin(args.agent_plugin, vars(args))
-    except Exception as e:
-        print(f"agent plugin 加载失败: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    if args.check:
-        agent_plugin.memory_client.health()
-        print(
-            "[check] OK "
-            f"benchmark=dynamic echoagent={getattr(args, 'echoagent_url', 'N/A')} "
-            f"memory_backend={getattr(args, 'memory_backend', 'echomem')} "
-            f"echomem={getattr(args, 'echomem_url', 'N/A')} "
-            f"user={getattr(args, 'username', 'N/A')} "
-            f"memory_identity={'resolved' if getattr(args, 'echomem_auth_key', '') else 'default'}"
-        )
-        agent_plugin.teardown()
-        return
-
-    # 创建评测运行 (在 auth_key 解析后, 确保保存的配置包含正确的 auth_key)
     results_root = results_root_for(Path(__file__).parent, args.out_dir)
-    config = EvalConfig(
-        memory_backend=getattr(args, "memory_backend", "echomem"),
-        llm_base_url=args.llm_base_url,
-        llm_model=args.llm_model,
-        llm_api_key=args.llm_api_key,
-    )
     run = EvalRun(
         benchmark_name="dynamic",
         results_root=results_root,
@@ -189,20 +140,33 @@ def main() -> None:
     )
     log = run.logger
 
-    log.info("agent plugin loaded: %s", args.agent_plugin)
-    log.info("agent_id=%s, auth_key=%s", getattr(args, "agent_id", ""), "已设置" if getattr(args, "echomem_auth_key", "") else "未设置")
+    agent_config = {**vars(args), "benchmark_name": "dynamic", "run_id": run.result_dir.name}
+    try:
+        agent_plugin = load_agent_plugin(args.agent_plugin, agent_config)
+    except Exception as e:
+        print(f"agent plugin 加载失败: {e}", file=sys.stderr)
+        sys.exit(1)
 
-    # 创建 LLM 客户端 (用于质量评估)
+    log.info("agent plugin loaded: %s", args.agent_plugin)
+
+    try:
+        agent_plugin.memory_client.health()
+    except Exception as e:
+        log.error("memory backend health check failed: %s", e)
+        agent_plugin.teardown()
+        sys.exit(1)
+    log.info("memory backend health check passed")
+
     llm = LLMClient(
-        base_url=args.llm_base_url or args.scenario_base_url,
-        api_key=args.llm_api_key or args.scenario_api_key,
-        model=args.llm_model,
+        base_url=config.llm_base_url,
+        api_key=config.llm_api_key,
+        model=config.llm_model,
         temperature=0.3,
         max_tokens=4096,
-        timeout_s=120.0,
+        timeout_s=config.llm_timeout_s,
+        max_retries=config.llm_retries,
     )
 
-    # 选择模式
     try:
         if args.dataset:
             run_replay_mode(args, run, agent_plugin, llm)

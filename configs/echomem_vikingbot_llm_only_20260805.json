@@ -1,0 +1,89 @@
+{
+  "workspace_version": 1,
+  "runtime": {
+    "mode": "local",
+    "log_level": "INFO"
+  },
+  "storage": {
+    "filesystem": "local"
+  },
+  "auth": {
+    "mode": "local",
+    "default_tenant_id": "local",
+    "default_user_id": "local_user"
+  },
+  "model": {
+    "llm": {
+      "provider": "openai_compatible",
+      "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "api_key_env": "DASHSCOPE_API_KEY",
+      "model": "deepseek-v4-flash",
+      "extra_params": {
+        "thinking": {
+          "type": "disabled"
+        }
+      }
+    },
+    "embedding": {
+      "provider": "openai_compatible",
+      "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "api_key_env": "DASHSCOPE_API_KEY",
+      "model": "text-embedding-v3",
+      "extra_params": {},
+      "dimensions": 1024
+    },
+    "vlm": {
+      "provider": "fake",
+      "api_base": "",
+      "api_key": "",
+      "model": "fake-vlm"
+    },
+    "max_concurrent": 4
+  },
+  "index": {
+    "text": "sqlite_fts5",
+    "vector": "sqlite_numpy"
+  },
+  "engine": {
+    "enabled": [
+      "atomic_engine"
+    ],
+    "configs": {
+      "atomic_engine": {
+        "extractor": {
+          "extraction": {
+            "max_tokens": 8192
+          }
+        },
+        "vector": {
+          "dim": 1024
+        }
+      }
+    }
+  },
+  "commit_pipeline": {
+    "engine_timeout_seconds": 1800
+  },
+  "recall": {
+    "routers": [
+      "template",
+      "llm"
+    ],
+    "include_explain": true
+  },
+  "template_evolve": {
+    "enabled": false,
+    "max_trace_files": 7,
+    "max_pool_items": 5000,
+    "judge_llm": {},
+    "trace_policy": {},
+    "trigger_policy": {},
+    "sample_policy": {}
+  },
+  "mcp": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 8001,
+    "log_level": "info"
+  }
+}

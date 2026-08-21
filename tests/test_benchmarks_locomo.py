@@ -47,7 +47,6 @@ from benchmarks.locomo.memory_scope import (
     SessionPrefixMemoryClient,
 )
 from benchmarks.locomo.profiles import (
-    LEGACY_77_PROFILE,
     VIKINGBOAT_0411_NATURAL_NO_TOOLS_PROFILE,
     VIKINGBOAT_0411_PROFILE,
     profile_reference,
@@ -63,7 +62,7 @@ from benchmarks.locomo.provenance import (
 from benchmarks.locomo.qa import QAOptions, build_qa_tasks
 from benchmarks.locomo.reporting import build_summary
 from benchmarks.locomo.retry import build_retry_command, latest_qa_csv
-from benchmarks.locomo.run_eval import build_parser
+from benchmarks.locomo.run_eval import _build_agent_options, build_parser
 from benchmarks.locomo.selection import parse_question_ids, select_questions
 from benchmarks.locomo.stats import summarize_judge_rows
 from benchmarks.locomo.blackbox import metric_stats, percentile
@@ -777,7 +776,10 @@ class BuildRetryCommandTests(unittest.TestCase):
             eval_args=["--llm-api-key", "secret"],
         )
         self.assertEqual(cmd[0], cmd[0])  # python executable
-        self.assertIn("locomo", cmd)
+        self.assertEqual(
+            str(Path("/project") / "benchmarks" / "locomo" / "run_eval.py"),
+            cmd[1],
+        )
         self.assertIn("--dataset", cmd)
         self.assertIn(str(Path("/data/locomo.json")), cmd)
         self.assertIn("--sample", cmd)
@@ -924,6 +926,34 @@ class BuildSummaryTests(unittest.TestCase):
         self.assertEqual("session", summary["retrieval_scope"])
         self.assertTrue(summary["tools_enabled"])
 
+    def test_resume_accumulates_tokens_across_segments(self):
+        # 用户诉求的回归：resume 后 summary 的 token 是「旧+新」累计，而非只算本轮。
+        old = QAResult(
+            question_id="q1", question="Q", answer="A", response="R",
+            prompt_tokens=500, completion_tokens=200, elapsed_s=1.0,
+        )
+        new = QAResult(
+            question_id="q2", question="Q", answer="A", response="R",
+            prompt_tokens=700, completion_tokens=300, elapsed_s=2.0,
+        )
+        merged = [old, new]
+        summary = build_summary(
+            dataset_path="/data/locomo.json",
+            sample_filter="all",
+            total_samples=1,
+            total_questions=2,
+            import_report=self._import_report(completed=1, total=1),
+            resume_qa=True,
+            qa_results=merged,
+            judge_report=self._judge_report(correct=1, wrong=1),
+            qa_options=QAOptions(profile=VIKINGBOAT_0411_PROFILE, top_k=25),
+            session_mode="single",
+            evaluation_identity={},
+        )
+        self.assertEqual(1200, summary["total_prompt_tokens"])
+        self.assertEqual(500, summary["total_completion_tokens"])
+        self.assertEqual(1.5, summary["avg_qa_elapsed_s"])
+
     def test_qa_prompt_append_fields(self):
         summary = build_summary(
             dataset_path="/data/locomo.json",
@@ -946,6 +976,32 @@ class BuildSummaryTests(unittest.TestCase):
         self.assertTrue(summary["qa_prompt_append"]["enabled"])
         self.assertEqual("custom.txt", summary["qa_prompt_append"]["source"])
         self.assertEqual("deadbeef", summary["qa_prompt_append"]["sha256"])
+
+    def test_agent_options_included(self):
+        options = {
+            "agent_plugin": "echomem_mcp",
+            "initial_retrieval_protocol": "mcp",
+            "mcp_read_mode": "allow",
+            "user_memory_budget_chars": 4000,
+            "agent_memory_budget_chars": 2000,
+        }
+        summary = build_summary(
+            dataset_path="/data/locomo.json",
+            sample_filter="all",
+            total_samples=1,
+            total_questions=1,
+            import_report=self._import_report(completed=1, total=1),
+            resume_qa=False,
+            qa_results=[],
+            judge_report=self._judge_report(),
+            qa_options=QAOptions(
+                profile=VIKINGBOAT_0411_PROFILE,
+                agent_options=options,
+            ),
+            session_mode="locomo",
+            evaluation_identity={},
+        )
+        self.assertEqual(options, summary["agent_options"])
 
 
 # ------------------------------------------------------------------ #
@@ -1135,8 +1191,10 @@ class ProfileSettingsTests(unittest.TestCase):
     """Tests for profile_settings and ProfileSettings validation."""
 
     def test_returns_dict_for_each_profile(self):
-        for name in (LEGACY_77_PROFILE, VIKINGBOAT_0411_PROFILE,
-                     VIKINGBOAT_0411_NATURAL_NO_TOOLS_PROFILE):
+        for name in (
+            VIKINGBOAT_0411_PROFILE,
+            VIKINGBOAT_0411_NATURAL_NO_TOOLS_PROFILE,
+        ):
             with self.subTest(profile=name):
                 settings = profile_settings(name)
                 self.assertIsInstance(settings, dict)
@@ -1148,12 +1206,6 @@ class ProfileSettingsTests(unittest.TestCase):
     def test_unknown_profile_raises(self):
         with self.assertRaisesRegex(ValueError, "unknown LoCoMo QA profile"):
             profile_settings("nonexistent")
-
-    def test_legacy77_has_zero_score_thresholds(self):
-        s = profile_settings(LEGACY_77_PROFILE)
-        self.assertEqual(0.0, s["initial_min_score"])
-        self.assertEqual(0.0, s["tool_min_score"])
-        self.assertEqual("vikingbot_native_safe", s["tool_set"])
 
     def test_vikingboat0411_has_positive_score_thresholds(self):
         s = profile_settings(VIKINGBOAT_0411_PROFILE)
@@ -1168,8 +1220,10 @@ class ProfileSettingsTests(unittest.TestCase):
         self.assertEqual(base, s)
 
     def test_all_profiles_share_same_top_k_and_timeout(self):
-        for name in (LEGACY_77_PROFILE, VIKINGBOAT_0411_PROFILE,
-                     VIKINGBOAT_0411_NATURAL_NO_TOOLS_PROFILE):
+        for name in (
+            VIKINGBOAT_0411_PROFILE,
+            VIKINGBOAT_0411_NATURAL_NO_TOOLS_PROFILE,
+        ):
             with self.subTest(profile=name):
                 s = profile_settings(name)
                 self.assertEqual(25, s["top_k"])
@@ -1181,25 +1235,25 @@ class ProfileSettingsTests(unittest.TestCase):
             ProfileSettings.from_mapping({"top_k": 10})
 
     def test_from_mapping_rejects_unknown_fields(self):
-        full = profile_settings(LEGACY_77_PROFILE)
+        full = profile_settings(VIKINGBOAT_0411_PROFILE)
         bad = {**full, "nonexistent_field": 42}
         with self.assertRaisesRegex(ValueError, "unknown fields"):
             ProfileSettings.from_mapping(bad)
 
     def test_from_mapping_rejects_non_positive_values(self):
-        full = profile_settings(LEGACY_77_PROFILE)
+        full = profile_settings(VIKINGBOAT_0411_PROFILE)
         bad = {**full, "top_k": 0}
         with self.assertRaisesRegex(ValueError, "must be >= 1"):
             ProfileSettings.from_mapping(bad)
 
     def test_from_mapping_rejects_negative_score(self):
-        full = profile_settings(LEGACY_77_PROFILE)
+        full = profile_settings(VIKINGBOAT_0411_PROFILE)
         bad = {**full, "initial_min_score": -0.5}
         with self.assertRaisesRegex(ValueError, "score thresholds must be >= 0"):
             ProfileSettings.from_mapping(bad)
 
     def test_validate_rejects_bad_query_mode(self):
-        full = profile_settings(LEGACY_77_PROFILE)
+        full = profile_settings(VIKINGBOAT_0411_PROFILE)
         bad = {**full, "initial_retrieval_query_mode": "invalid"}
         with self.assertRaisesRegex(ValueError, "initial_retrieval_query_mode"):
             ProfileSettings.from_mapping(bad)
@@ -1217,9 +1271,9 @@ class ProfileSourceReferenceTests(unittest.TestCase):
         self.assertEqual({}, profile_source("nonexistent"))
 
     def test_profile_reference_returns_string(self):
-        ref = profile_reference(LEGACY_77_PROFILE)
+        ref = profile_reference(VIKINGBOAT_0411_PROFILE)
         self.assertIsInstance(ref, str)
-        self.assertIn("63/81", ref)
+        self.assertTrue(ref)
 
     def test_profile_reference_unknown_returns_empty(self):
         self.assertEqual("", profile_reference("nonexistent"))
@@ -1391,7 +1445,6 @@ class RunEvalParserTests(unittest.TestCase):
 
     def test_qa_profile_choices(self):
         for profile in (
-            LEGACY_77_PROFILE,
             VIKINGBOAT_0411_PROFILE,
             VIKINGBOAT_0411_NATURAL_NO_TOOLS_PROFILE,
         ):
@@ -1431,7 +1484,17 @@ class ResumeManifestTests(unittest.TestCase):
             llm_model="model",
             llm_max_tokens=1024,
         )
-        options = QAOptions(profile=VIKINGBOAT_0411_PROFILE, top_k=25)
+        agent_options = {
+            "agent_plugin": "echomem_mcp",
+            "initial_retrieval_protocol": "mcp",
+            "user_memory_budget_chars": 4000,
+            "agent_memory_budget_chars": 2000,
+        }
+        options = QAOptions(
+            profile=VIKINGBOAT_0411_PROFILE,
+            top_k=25,
+            agent_options=agent_options,
+        )
         manifest = build_qa_resume_manifest(
             dataset_path="/data/locomo.json",
             sample_filter="conv-30",
@@ -1444,6 +1507,44 @@ class ResumeManifestTests(unittest.TestCase):
         self.assertEqual("u", manifest["memory_identity"]["user_id"])
         self.assertEqual("locomo", manifest["session_mode"])
         self.assertEqual("model", manifest["answer_model"]["model"])
+        self.assertEqual(agent_options, manifest["qa"]["agent_options"])
+
+    def test_build_agent_options_records_mcp_switches_and_redacts_keys(self):
+        args = SimpleNamespace(
+            agent_plugin="echomem_mcp",
+            qa_profile=None,
+            tool_calling=True,
+            search_in_tools=False,
+            mcp_url="http://127.0.0.1:8001",
+            mcp_auth_key="test-mcp-secret-123456",
+            mcp_max_iterations=50,
+            mcp_read_mode="disabled",
+            echomem_auth_key="test-echomem-secret-abcdef",
+            user_memory_budget_chars=4000,
+            agent_memory_budget_chars=2000,
+            judge_concurrency=10,
+        )
+        config = EvalConfig(
+            top_k=25,
+            memory_budget_chars=8000,
+            question_timeout_s=0,
+            llm_temperature=0.7,
+            llm_timeout_s=600,
+            llm_retries=3,
+            concurrency=10,
+        )
+        options = _build_agent_options(args, config)
+        self.assertEqual("echomem_mcp", options["agent_plugin"])
+        self.assertTrue(options["tool_calling"])
+        self.assertEqual("mcp", options["initial_retrieval_protocol"])
+        self.assertNotIn("manual_search", options)
+        self.assertNotIn("mcp_initial_search", options)
+        self.assertEqual("disabled", options["mcp_read_mode"])
+        self.assertEqual(4000, options["user_memory_budget_chars"])
+        self.assertEqual(2000, options["agent_memory_budget_chars"])
+        self.assertTrue(options["mcp_auth_key_configured"])
+        self.assertEqual("test***3456", options["mcp_auth_key_redacted"])
+        self.assertNotIn("test-mcp-secret-123456", json.dumps(options))
 
     def test_copy_resume_traces_filters_by_reusable_ids(self):
         from benchmarks.locomo.resume import (
@@ -1455,11 +1556,12 @@ class ResumeManifestTests(unittest.TestCase):
             dest = Path(d) / "dest"
             trace_dir = source / "agent_traces"
             trace_dir.mkdir(parents=True)
+            # 真实 trace 内容不含 question_id 字段，靠文件名（sanitized id）匹配
             (trace_dir / "q1.json").write_text(
-                json.dumps({"question_id": "q1"}), encoding="utf-8",
+                json.dumps({"tool_audit": {"tools_used": []}}), encoding="utf-8",
             )
             (trace_dir / "q2.json").write_text(
-                json.dumps({"question_id": "q2"}), encoding="utf-8",
+                json.dumps({"tool_audit": {"tools_used": []}}), encoding="utf-8",
             )
             state = QAResumeState(
                 source_csv=source / "qa_results.csv",
@@ -1491,6 +1593,115 @@ class ResumeManifestTests(unittest.TestCase):
                 manifest={},
             )
             self.assertEqual(0, copy_resume_traces(state, Path(d) / "dest"))
+
+    def test_restore_resume_traces_populates_reused_results(self):
+        from benchmarks.locomo.resume import restore_resume_traces
+        with tempfile.TemporaryDirectory() as d:
+            result_dir = Path(d) / "result"
+            trace_dir = result_dir / "agent_traces"
+            trace_dir.mkdir(parents=True)
+            (trace_dir / "q1.json").write_text(
+                json.dumps({
+                    "question_id": "q1",
+                    "iterations": [{"model_response": {"response_model": "m1"}}],
+                    "tool_protocol": {"sha256": "abc"},
+                }),
+                encoding="utf-8",
+            )
+            results = [
+                QAResult(question_id="q1", question="Q", answer="A", response="R"),
+                QAResult(question_id="q2", question="Q", answer="A", response="R"),
+            ]
+            restored = restore_resume_traces(results, result_dir)
+            self.assertEqual(1, restored)
+            self.assertEqual("m1", results[0].trace["iterations"][0]["model_response"]["response_model"])
+            self.assertEqual("abc", results[0].trace["tool_protocol"]["sha256"])
+            self.assertEqual({}, results[1].trace)
+
+    def test_restore_resume_traces_no_trace_dir(self):
+        from benchmarks.locomo.resume import restore_resume_traces
+        with tempfile.TemporaryDirectory() as d:
+            results = [
+                QAResult(question_id="q1", question="Q", answer="A", response="R"),
+            ]
+            self.assertEqual(0, restore_resume_traces(results, Path(d)))
+
+    def test_resume_dir_keeps_traces_and_tool_audits_for_reused(self):
+        # resume 目录要与从 0 运行等价：复用题的 agent_traces + tool_audits 都要有
+        from benchmarks.locomo.qa import write_tool_audits
+        from benchmarks.locomo.resume import (
+            QAResumeState,
+            copy_resume_traces,
+            restore_resume_traces,
+        )
+        with tempfile.TemporaryDirectory() as d:
+            source = Path(d) / "source"
+            dest = Path(d) / "dest"
+            trace_dir = source / "agent_traces"
+            trace_dir.mkdir(parents=True)
+            # 真实 trace：内容不含 question_id，靠文件名匹配
+            (trace_dir / "q1.json").write_text(
+                json.dumps({
+                    "tool_audit": {
+                        "tools_used": ["memory_list"],
+                        "tool_calls": [],
+                        "messages_jsonl_reads": [],
+                    },
+                }),
+                encoding="utf-8",
+            )
+            state = QAResumeState(
+                source_csv=source / "qa_results.csv",
+                source_dir=source,
+                results=[
+                    QAResult(question_id="q1", question="Q", answer="A", response="R"),
+                ],
+                discarded_question_ids=[],
+                manifest={},
+            )
+            self.assertEqual(1, copy_resume_traces(state, dest))
+            results = [
+                QAResult(question_id="q1", question="Q", answer="A", response="R"),
+            ]
+            self.assertEqual(1, restore_resume_traces(results, dest))
+            write_tool_audits(dest, results)
+
+            self.assertTrue((dest / "agent_traces" / "q1.json").is_file())
+            audit_rows = [
+                json.loads(line)
+                for line in (dest / "tool_audits.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+                if line.strip()
+            ]
+            self.assertEqual(1, len(audit_rows))
+            self.assertEqual("q1", audit_rows[0]["question_id"])
+            self.assertEqual(["memory_list"], audit_rows[0]["tools_used"])
+
+    def test_find_judge_resume_csv_none_when_no_judge(self):
+        from benchmarks.locomo.resume import find_judge_resume_csv
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "qa_results.csv").write_text("question_id\n", encoding="utf-8")
+            # QA done but judge not yet -> no judge resume source
+            self.assertIsNone(find_judge_resume_csv(root))
+
+    def test_find_judge_resume_csv_returns_csv_when_present(self):
+        from benchmarks.locomo.resume import find_judge_resume_csv
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "judge_results.csv").write_text("question_id\n", encoding="utf-8")
+            self.assertEqual(root / "judge_results.csv", find_judge_resume_csv(root))
+
+    def test_find_judge_resume_csv_falls_back_to_checkpoint(self):
+        from benchmarks.locomo.resume import find_judge_resume_csv
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "judge_results.checkpoint.csv").write_text("question_id\n", encoding="utf-8")
+            self.assertEqual(
+                root / "judge_results.checkpoint.csv",
+                find_judge_resume_csv(root),
+            )
 
 
 # ------------------------------------------------------------------ #

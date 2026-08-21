@@ -6,7 +6,10 @@ Moved from plugins/echomem_mcp/memory_client.py.
 from __future__ import annotations
 
 import logging
-from typing import Any
+import time
+import urllib.parse
+import urllib.request
+from typing import Any, Callable
 
 from backends.memory_types import BaseHTTPMemoryClient, SearchResult
 
@@ -16,8 +19,9 @@ logger = logging.getLogger("echomem_client")
 class EchoMemClient(BaseHTTPMemoryClient):
     """Thin HTTP client for EchoMem's REST API.
 
-    Handles session open/message/commit/search with retry, logging, and
-    commit-status polling. Uses urllib so there are zero Third-party deps.
+    Handles session open/message/commit/search/log-query with retry,
+    logging, and commit-status polling. Uses urllib so there are zero
+    Third-party deps.
     """
 
     def __init__(
@@ -31,6 +35,7 @@ class EchoMemClient(BaseHTTPMemoryClient):
         timeout_s: float = 60.0,
         max_retries: int = 3,
         retry_backoff_s: float = 1.0,
+        log_access_key: str = "",
     ):
         super().__init__(
             base_url,
@@ -43,6 +48,7 @@ class EchoMemClient(BaseHTTPMemoryClient):
             retry_backoff_s=retry_backoff_s,
         )
         self.auth_key = auth_key
+        self.log_access_key = log_access_key
 
     # -- low-level HTTP -------------------------------------------------
 
@@ -93,7 +99,21 @@ class EchoMemClient(BaseHTTPMemoryClient):
         if not tenant_id:
             raise RuntimeError(f"tenant provisioning returned no tenant id: {tenant_response}")
 
-        user_response = self._post(f"/api/auth/tenants/{tenant_id}/users", {})
+        # Newer local EchoMem servers issue a short-lived tenant bootstrap
+        # capability when the tenant is created. It is required for the
+        # follow-up user/key provisioning calls.
+        bootstrap_key = str(tenant_response.get("bootstrap_key") or "")
+        provisioning_headers = (
+            {"X-EchoMem-Bootstrap-Key": bootstrap_key}
+            if bootstrap_key
+            else None
+        )
+
+        user_response = self._post(
+            f"/api/auth/tenants/{tenant_id}/users",
+            {},
+            headers=provisioning_headers,
+        )
         user = user_response.get("user", {})
         user_id = str(user.get("user_id") or "") if isinstance(user, dict) else ""
         if not user_id:
@@ -102,6 +122,7 @@ class EchoMemClient(BaseHTTPMemoryClient):
         key_response = self._post(
             f"/api/auth/tenants/{tenant_id}/users/{user_id}/key",
             {},
+            headers=provisioning_headers,
         )
         auth_key = str(key_response.get("auth_key") or "")
         if not auth_key:
@@ -218,6 +239,173 @@ class EchoMemClient(BaseHTTPMemoryClient):
         items = resp.get("result", {}).get("items", []) if "result" in resp else resp.get("items", [])
         return [SearchResult.from_dict(item) for item in items]
 
+    # -- document resources (resource_engine) -----------------------------
+
+    def add_resource(
+        self,
+        path: str,
+        content: str,
+        *,
+        name: str = "",
+        content_type: str = "text/markdown",
+        tags: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Add one document resource; indexing is triggered by reindex_all.
+
+        Writes the resource under ``echo://resources/user/<path>`` for the
+        client's tenant/user identity.
+        """
+        body: dict[str, Any] = {
+            "content": content,
+            "name": name or path.rsplit("/", 1)[-1],
+            "content_type": content_type,
+            "tags": list(tags or []),
+            "metadata": dict(metadata or {}),
+            "path": path,
+        }
+        return self._post("/api/resources", body)
+
+    def reindex_all_resources(self) -> dict[str, Any]:
+        """Force-reindex every resource file under the client's tenant."""
+        return self._post("/api/resources/reindex_all", {})
+
+    def resource_index_status(self, path: str) -> dict[str, Any]:
+        """Return the indexing status of one resource path."""
+        return self._get("/api/resources/index", {"path": path})
+
+    def wait_for_resource_index(
+        self,
+        paths: list[str],
+        *,
+        timeout_s: float = 3600.0,
+        poll_interval_s: float = 2.0,
+        progress: Callable[[int, int], None] | None = None,
+    ) -> dict[str, Any]:
+        """Wait until every resource path is indexed (or failed).
+
+        Indexing runs asynchronously after ``add_resource``; this polls
+        ``/api/resources/index`` until all paths reach a terminal status.
+        ``progress(done, total)`` is invoked after each poll pass with the
+        number of paths that reached a terminal status, for progress bars.
+        """
+        done_statuses = {"completed", "degraded", "empty"}
+        failed_statuses = {"failed", "error"}
+        deadline = time.monotonic() + timeout_s
+        pending = list(paths)
+        failures: dict[str, str] = {}
+        while pending:
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"resource indexing not finished after {timeout_s:g}s "
+                    f"({len(pending)} pending: {pending[:5]})"
+                )
+            still_pending: list[str] = []
+            for path in pending:
+                status = self.resource_index_status(path)
+                current = str(status.get("status") or "").lower()
+                if current in failed_statuses:
+                    failures[path] = str(status.get("detail") or status)
+                elif current not in done_statuses:
+                    still_pending.append(path)
+            pending = still_pending
+            if progress is not None:
+                progress(len(paths) - len(pending), len(paths))
+            if pending:
+                time.sleep(poll_interval_s)
+        return {"indexed": len(paths) - len(failures), "failed": failures}
+
+    def search_resources(
+        self,
+        query: str,
+        limit: int = 8,
+        tags: list[str] | None = None,
+        paths: list[str] | None = None,
+        timeout_s: float | None = None,
+    ) -> list[dict[str, Any]]:
+        """Search the document resource index; returns raw result items."""
+        body: dict[str, Any] = {"query": query, "limit": limit}
+        if tags:
+            body["tags"] = list(tags)
+        if paths:
+            body["paths"] = list(paths)
+        resp = self._post("/api/resources/search", body, timeout_s=timeout_s)
+        return list(resp.get("results", []) or [])
+
+
+    def fetch_logs(
+        self,
+        *,
+        tenant_id: str = "",
+        user_id: str = "",
+        request_id: str = "",
+        event: str = "",
+        route: str = "",
+        since: str = "",
+        until: str = "",
+        limit: int = 200,
+        log_access_key: str = "",
+        max_pages: int = 25,
+    ) -> dict[str, Any]:
+        """Query EchoMem core logs, scoped to the run's tenant/user.
+
+        Calls ``GET /api/logs`` and pages through all matching records so
+        the result covers every log line for the requested identity (e.g.
+        injected memories plus QA of one eval run). Only non-empty filters
+        are sent; ``limit`` is capped at 200 (the API maximum) and
+        pagination stops on ``page.has_more`` or after *max_pages*.
+        """
+        if not tenant_id and not user_id and not request_id:
+            raise ValueError("fetch_logs requires at least one of tenant_id/user_id/request_id")
+        access_key = log_access_key or self.log_access_key
+        query: dict[str, Any] = {}
+        if tenant_id:
+            query["tenant_id"] = tenant_id
+        if user_id:
+            query["user_id"] = user_id
+        if request_id:
+            query["request_id"] = request_id
+        if event:
+            query["event"] = event
+        if route:
+            query["route"] = route
+        if since:
+            query["since"] = since
+        if until:
+            query["until"] = until
+        query["limit"] = min(int(limit or 200), 200)
+
+        items: list[dict[str, Any]] = []
+        page: dict[str, Any] = {}
+        diagnostics: dict[str, Any] = {}
+        offset = 0
+        for _ in range(max_pages):
+            query["offset"] = offset
+            url = f"{self.base_url}/api/logs?{urllib.parse.urlencode(query)}"
+            headers = self._headers()
+            if access_key:
+                headers["X-Log-Access-Key"] = access_key
+            req = urllib.request.Request(url, headers=headers, method="GET")
+            result = self._do_request(req)
+            result = result.get("result", result) if isinstance(result, dict) else {}
+            page_items = result.get("items", []) or []
+            items.extend(page_items)
+            page = result.get("page", {}) if isinstance(result, dict) else {}
+            if isinstance(result, dict) and "diagnostics" in result:
+                diagnostics = result.get("diagnostics") or {}
+            if not page.get("has_more"):
+                break
+            returned_this_page = len(page_items)
+            if returned_this_page <= 0:
+                break
+            offset += returned_this_page
+        return {
+            "query": query,
+            "items": items,
+            "page": page,
+            "diagnostics": diagnostics,
+        }
+
     def fs_read(self, uri: str, *, timeout_s: float | None = None) -> str:
         """Read a public EchoMem filesystem URI."""
         response = self._get("/fs/read", {"uri": uri}, timeout_s=timeout_s)
@@ -283,4 +471,3 @@ class EchoMemClient(BaseHTTPMemoryClient):
             for item in (entries or [])
             if isinstance(item, dict)
         ]
-

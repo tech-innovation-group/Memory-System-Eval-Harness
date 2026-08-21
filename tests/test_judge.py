@@ -4,10 +4,12 @@ import csv
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from benchmarks.locomo.judge import (
     judge_locomo_results,
+    judge_with_metrics,
     judge_with_retries,
     parse_judge_json,
 )
@@ -28,6 +30,28 @@ class JudgeParserTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no JSON"):
             parse_judge_json("probably correct")
 
+    def test_recovers_verdict_from_truncated_json(self) -> None:
+        verdict, reasoning = parse_judge_json(
+            '{"is_correct": "WRONG", "reasoning": "cut off'
+        )
+        self.assertEqual("WRONG", verdict)
+        self.assertEqual("", reasoning)
+
+    def test_recovers_verdict_from_prose(self) -> None:
+        verdict, reasoning = parse_judge_json(
+            "The answer is CORRECT because it matches the gold."
+        )
+        self.assertEqual("CORRECT", verdict)
+        self.assertEqual("", reasoning)
+
+    def test_prefers_json_verdict_over_prose(self) -> None:
+        verdict, reasoning = parse_judge_json(
+            '{"is_correct": "WRONG", "reasoning": "off topic"} '
+            "trailing CORRECT prose"
+        )
+        self.assertEqual("WRONG", verdict)
+        self.assertEqual("off topic", reasoning)
+
     def test_rejects_ambiguous_longmemeval_verdict(self) -> None:
         with self.assertRaisesRegex(ValueError, "not unambiguous"):
             parse_yes_no("yes and no")
@@ -41,7 +65,7 @@ class JudgeParserTests(unittest.TestCase):
             def __init__(self) -> None:
                 self.responses = iter([
                     "",
-                    '{"is_correct": "CORRECT"',
+                    '{"is_correct": "MAYBE"}',
                     '{"is_correct": "CORRECT", "reasoning": "matches"}',
                 ])
 
@@ -58,6 +82,66 @@ class JudgeParserTests(unittest.TestCase):
 
         self.assertEqual("CORRECT", verdict)
         self.assertEqual("matches", reasoning)
+
+
+class JudgeRepairRetryTests(unittest.TestCase):
+    def test_retries_with_repair_prompt_and_higher_temperature(self) -> None:
+        calls: list[tuple[list, object]] = []
+
+        class FakeChat:
+            def chat(
+                self,
+                messages,
+                *,
+                temperature=None,
+                response_format=False,
+                thinking_disabled=False,
+                omit_max_tokens=False,
+            ):
+                calls.append((
+                    messages,
+                    temperature,
+                    response_format,
+                    thinking_disabled,
+                    omit_max_tokens,
+                ))
+                if len(calls) == 1:
+                    return SimpleNamespace(
+                        content="",
+                        prompt_tokens=1,
+                        completion_tokens=0,
+                        elapsed_s=0.1,
+                        error="",
+                        retry_count=0,
+                        usage_observed=False,
+                    )
+                return SimpleNamespace(
+                    content='{"is_correct": "CORRECT", "reasoning": "ok"}',
+                    prompt_tokens=1,
+                    completion_tokens=1,
+                    elapsed_s=0.1,
+                    error="",
+                    retry_count=0,
+                    usage_observed=True,
+                )
+
+        with patch("benchmarks.locomo.judge.time.sleep"):
+            verdict, reasoning, metrics = judge_with_metrics(
+                FakeChat(),
+                "question",
+                "answer",
+                "response",
+            )
+
+        self.assertEqual("CORRECT", verdict)
+        self.assertEqual(2, len(calls))
+        # First attempt uses the client default; the retry raises temperature
+        # and appends a corrective instruction instead of repeating the
+        # identical deterministic request.
+        self.assertIsNone(calls[0][1])
+        self.assertEqual(0.3, calls[1][1])
+        self.assertIn("empty or not valid JSON", calls[1][0][1]["content"])
+        self.assertEqual(1, metrics["retry_count"])
 
 
 class JudgeCheckpointTests(unittest.TestCase):

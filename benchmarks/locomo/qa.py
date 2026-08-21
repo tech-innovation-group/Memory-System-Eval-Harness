@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +37,7 @@ class QAOptions:
     system_prompt_append: str = ""
     system_prompt_append_sha256: str = ""
     system_prompt_append_source: str = ""
+    agent_options: dict[str, Any] = field(default_factory=dict)
 
 
 def _safe_question_id(question_id: str) -> str:
@@ -87,6 +88,15 @@ def _write_tool_audits(path: Path, results: list[QAResult]) -> None:
     )
 
 
+def write_tool_audits(result_dir: Path, results: list[QAResult]) -> None:
+    """Write tool_audits.jsonl/.json for the given results.
+
+    Called after resume trace restoration so the resumed result directory
+    carries tool audits for reused questions too (equivalent to from-scratch).
+    """
+    _write_tool_audits(result_dir / "tool_audits.jsonl", results)
+
+
 def _write_qa_results(path: Path, results: list[QAResult]) -> None:
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=QA_FIELDS)
@@ -131,6 +141,7 @@ def build_qa_tasks(
             "system_prompt_append_source": (
                 options.system_prompt_append_source
             ),
+            "agent_options": options.agent_options,
         })
     return tasks
 
@@ -188,7 +199,8 @@ def run_locomo_qa(
                 len(tasks),
                 checkpoint_path,
             )
-        log.info("  Q[%s] -> %s", result.question_id, result.response[:100])
+        preview = result.response[:100] if result.response else f"(no response) error={result.llm_error[:200]}"
+        log.info("  Q[%s] -> %s", result.question_id, preview)
 
     try:
         if not pending_tasks:

@@ -40,6 +40,11 @@ def add_memory_backend_args(parser: argparse.ArgumentParser, *, with_backend_cho
         help="Memory backend HTTP base URL",
     )
     g.add_argument("--echomem-auth-key", default=os.getenv("ECHOMEM_AUTH_KEY", ""), help="Memory backend auth key / API key")
+    g.add_argument(
+        "--echomem-log-access-key",
+        default=os.getenv("ECHOMEM_LOG_ACCESS_KEY", ""),
+        help="Privileged log query access key (EchoMem /api/logs, x_auth_key mode)",
+    )
     g.add_argument("--account", default=os.getenv("ECHOMEM_ACCOUNT", "default"))
     g.add_argument("--user-id", default=os.getenv("ECHOMEM_USER_ID", "default"))
     g.add_argument("--agent-id", default=os.getenv("ECHOMEM_AGENT_ID", "default"))
