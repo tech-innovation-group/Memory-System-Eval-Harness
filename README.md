@@ -345,6 +345,68 @@ python benchmarks/longmemeval/run_eval.py \
 `judge_results.csv`、`summary.json`、`config.json`、`agent_traces/`、
 `backend_logs.json`。
 
+### EchoMem Incident API 压测
+
+PR #12 的 `scripts/stress_echomem_incident.py` 用真实 HTTP API 压测
+EchoMem 的 `open -> message -> commit` 链路。它不会自动启动 EchoMem，也不会
+伪造记忆后端；运行前请先启动目标服务，并确认服务暴露以下接口：
+
+```text
+POST /api/sessions/open
+POST /api/sessions/{session_id}/messages
+POST /api/sessions/{session_id}/commit
+GET  /api/sessions/{session_id}/commits/{archive_id}  # 可选，异步 commit 查询
+POST /api/retrieval/build_context                         # 可选探针
+```
+
+最小验证命令：
+
+```bash
+python scripts/stress_echomem_incident.py \
+  --url http://127.0.0.1:18101 \
+  --stages 2 5 \
+  --workflows 5 \
+  --poll-commits \
+  --poll-timeout 30 \
+  --output /tmp/echomem-stress-smoke
+```
+
+多阶段压测示例：
+
+```bash
+export ECHOMEM_AUTO_COMMIT_THRESHOLD=20000
+python scripts/stress_echomem_incident.py \
+  --url http://127.0.0.1:18101 \
+  --stages 10 50 100 300 \
+  --workflows 1000 \
+  --message-size 512 \
+  --poll-commits \
+  --poll-timeout 120 \
+  --poll-interval 1 \
+  --context-probes 10 \
+  --output /tmp/echomem-stress-$(date +%Y%m%d_%H%M%S)
+```
+
+`--stages` 是每阶段的并发 worker 数，`--workflows` 是每阶段提交的完整工作流
+数量。每个工作流使用独立的 `session_id`，因此适合观察单租户高频提交和服务
+队列行为。`--max-connections`、`--connect-timeout`、`--read-timeout` 可以按
+目标服务和机器配置调整；如服务需要鉴权，使用 `--auth-key`。
+
+脚本默认只报告 HTTP 请求是否被接受，不自动重试请求，避免把拒绝、超时和连接
+错误隐藏掉。commit 返回 `202` 只代表请求已接收，不代表记忆已经处理完成；使用
+`--poll-commits` 才会按返回的 `archive_id` 轮询异步状态，并分别统计：
+
+- `accepted_commits`：commit HTTP 请求被接受的数量；
+- `completed_commits`：异步处理最终完成的数量；
+- `commit:failed` / `commit:timeout`：后台处理失败或超过轮询时限；
+- `commit:missing_archive_id`：服务接受了请求但没有返回可轮询的任务 ID。
+
+结果目录包含 `summary.json`（阶段指标）、`client_results.json`（逐工作流和响应
+体）以及 `workflows.csv`（便于表格分析）。每个阶段会记录 workflow 成功率、
+workflows/s、HTTP 状态码、异常分类，以及 workflow 和 commit 延迟的 P50/P95/P99。
+该脚本适合压测 PR345 这类异步 commit、队列满时拒绝、失败恢复和并发公平性场景；
+它本身不判断业务准确率，精度仍应通过上面的 LoCoMo 评测命令单独验证。
+
 ### 动态评测
 
 直接调用 `dynamic/run_eval.py`。需先启动 EchoAgent Backend（端口 31020）和
