@@ -392,6 +392,11 @@ python scripts/stress_echomem_incident.py \
 队列行为。`--max-connections`、`--connect-timeout`、`--read-timeout` 可以按
 目标服务和机器配置调整；如服务需要鉴权，使用 `--auth-key`。
 
+每次运行会自动生成唯一 `run_id` 并写入结果，避免不同压测进程重复使用
+`session_id`。也可以显式传入 `--run-id`。结果同时区分请求阶段和异步完成阶段：
+`request_latency_ms` 只覆盖 open/message/commit 请求，`commit_completion_latency_ms`
+覆盖请求结束到 commit 终态的完整耗时。
+
 脚本默认会对 commit 的 `429` 按服务端 `Retry-After` 和指数退避重试最多 3 次，
 同时保留第一次响应和最终响应。可使用以下参数调整：
 
@@ -404,6 +409,10 @@ python scripts/stress_echomem_incident.py \
 `--drain-timeout` 用于所有阶段结束后继续轮询已接受但仍在后台处理的 commit，
 避免把排队中的任务直接误判为最终失败。将 `--commit-retries 0 --drain-timeout 0`
 即可恢复只观察初始压力响应的模式。
+
+排空阶段默认最多 32 路并发轮询，可用 `--poll-concurrency` 调整。状态查询中的
+`401/403/404` 会立即归类为查询失败，`429` 和 `5xx` 按
+`--poll-retries`、`--poll-backoff` 有限重试，避免把接口错误误报为普通超时。
 
 commit 返回 `202` 只代表请求已接收，不代表记忆已经处理完成；使用
 `--poll-commits` 才会按返回的 `archive_id` 轮询异步状态，并分别统计：

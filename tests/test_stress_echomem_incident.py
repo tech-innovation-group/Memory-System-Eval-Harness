@@ -1,9 +1,13 @@
 import unittest
+import asyncio
+import httpx
 
 from scripts.stress_echomem_incident import (
+    build_metrics,
     classify_workflow,
     extract_archive_id,
     extract_commit_state,
+    poll_commit,
     percentile,
     retry_after_seconds,
 )
@@ -92,6 +96,54 @@ class StressIncidentHelpersTest(unittest.TestCase):
         self.assertIsNotNone(delay)
         self.assertGreaterEqual(delay, 0.0)
         self.assertLessEqual(delay, 5.0)
+
+    def test_metrics_keep_request_and_completion_latency_separate(self):
+        metrics = build_metrics(
+            [
+                {
+                    "result": "ok",
+                    "duration_ms": 150,
+                    "request_duration_ms": 20,
+                    "commit_completion_ms": 120,
+                    "commit_ms": 5,
+                    "commit_status": 202,
+                }
+            ],
+            elapsed_ms=150,
+            requested_workflows=1,
+            concurrency=1,
+            stage=1,
+        )
+        self.assertEqual(metrics["request_latency_ms"]["p50"], 20)
+        self.assertEqual(
+            metrics["commit_completion_latency_ms"]["p50"],
+            120,
+        )
+
+    def test_poll_404_is_immediate_failure(self):
+        async def run():
+            transport = httpx.MockTransport(
+                lambda request: httpx.Response(404, json={"detail": "missing"})
+            )
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://test",
+            ) as client:
+                return await poll_commit(
+                    client,
+                    session_id="s1",
+                    archive_id="a1",
+                    headers={},
+                    timeout_s=10,
+                    interval_s=0,
+                    max_retries=3,
+                    retry_backoff_s=0,
+                )
+
+        result = asyncio.run(run())
+        self.assertEqual(result["commit_poll_state"], "failed")
+        self.assertEqual(result["commit_poll_raw_state"], "http_404")
+        self.assertEqual(result["commit_poll_count"], 1)
 
 
 if __name__ == "__main__":

@@ -26,6 +26,7 @@ import time
 from collections import Counter
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import httpx
 
@@ -36,6 +37,8 @@ EXPECTED_MESSAGE = {200}
 EXPECTED_COMMIT = {200, 201, 202}
 DEFAULT_COMMIT_RETRIES = 3
 DEFAULT_RETRY_BACKOFF = 1.0
+DEFAULT_POLL_RETRIES = 3
+DEFAULT_POLL_BACKOFF = 1.0
 
 
 def percentile(values: list[float], percentile_value: float) -> float | None:
@@ -191,18 +194,65 @@ async def poll_commit(
     headers: dict[str, str],
     timeout_s: float,
     interval_s: float,
+    max_retries: int,
+    retry_backoff_s: float,
 ) -> dict[str, Any]:
     started = time.perf_counter()
     polls = 0
     deadline = time.perf_counter() + timeout_s
     last_body: Any = None
+    poll_http_counts: Counter[str] = Counter()
+    transient_failures = 0
     while time.perf_counter() < deadline:
-        response = await client.get(
-            f"/api/sessions/{session_id}/commits/{archive_id}",
-            headers=headers,
-        )
+        try:
+            response = await client.get(
+                f"/api/sessions/{session_id}/commits/{archive_id}",
+                headers=headers,
+            )
+        except httpx.HTTPError as exc:
+            transient_failures += 1
+            if transient_failures > max_retries:
+                return {
+                    "commit_poll_state": "failed",
+                    "commit_poll_raw_state": type(exc).__name__,
+                    "commit_poll_error": str(exc)[:500],
+                    "commit_poll_count": polls,
+                    "commit_poll_elapsed_ms": round(
+                        (time.perf_counter() - started) * 1000, 3
+                    ),
+                    "commit_poll_http_counts": dict(poll_http_counts),
+                }
+            await asyncio.sleep(retry_backoff_s * (2 ** (transient_failures - 1)))
+            continue
         polls += 1
+        poll_http_counts[str(response.status_code)] += 1
         last_body = response_summary(response)
+        if response.status_code in {401, 403, 404}:
+            return {
+                "commit_poll_state": "failed",
+                "commit_poll_raw_state": f"http_{response.status_code}",
+                "commit_poll_count": polls,
+                "commit_poll_elapsed_ms": round(
+                    (time.perf_counter() - started) * 1000, 3
+                ),
+                "commit_poll_body": last_body.get("body"),
+                "commit_poll_http_counts": dict(poll_http_counts),
+            }
+        if response.status_code == 429 or response.status_code >= 500:
+            transient_failures += 1
+            if transient_failures > max_retries:
+                return {
+                    "commit_poll_state": "failed",
+                    "commit_poll_raw_state": f"http_{response.status_code}",
+                    "commit_poll_count": polls,
+                    "commit_poll_elapsed_ms": round(
+                        (time.perf_counter() - started) * 1000, 3
+                    ),
+                    "commit_poll_body": last_body.get("body"),
+                    "commit_poll_http_counts": dict(poll_http_counts),
+                }
+            await asyncio.sleep(retry_backoff_s * (2 ** (transient_failures - 1)))
+            continue
         state = extract_commit_state(last_body.get("body"))
         if state in TERMINAL_COMMIT_STATES:
             return {
@@ -219,6 +269,7 @@ async def poll_commit(
                     3,
                 ),
                 "commit_poll_body": last_body.get("body"),
+                "commit_poll_http_counts": dict(poll_http_counts),
             }
         await asyncio.sleep(interval_s)
     return {
@@ -229,6 +280,7 @@ async def poll_commit(
             3,
         ),
         "commit_poll_body": last_body,
+        "commit_poll_http_counts": dict(poll_http_counts),
     }
 
 
@@ -245,8 +297,11 @@ async def run_workflow(
     poll_interval_s: float,
     commit_retries: int,
     retry_backoff_s: float,
+    poll_retries: int,
+    poll_backoff_s: float,
+    run_id: str,
 ) -> dict[str, Any]:
-    session_id = f"incident-{stage}-{index}"
+    session_id = f"incident-{run_id}-{stage}-{index}"
     started = time.perf_counter()
     row: dict[str, Any] = {
         "index": index,
@@ -300,6 +355,9 @@ async def run_workflow(
         row["commit_body"] = commit_response["body"]
         row["archive_id"] = extract_archive_id(commit_response["body"])
         row["commit_poll_requested"] = poll_commits
+        row["request_duration_ms"] = round(
+            (time.perf_counter() - started) * 1000, 3
+        )
         if (
             poll_commits
             and response.status_code in EXPECTED_COMMIT
@@ -313,7 +371,14 @@ async def run_workflow(
                     headers=headers,
                     timeout_s=poll_timeout_s,
                     interval_s=poll_interval_s,
+                    max_retries=poll_retries,
+                    retry_backoff_s=poll_backoff_s,
                 )
+            )
+            row["commit_completion_ms"] = round(
+                row["request_duration_ms"]
+                + float(row.get("commit_poll_elapsed_ms") or 0.0),
+                3,
             )
     except Exception as exc:
         row["exception"] = type(exc).__name__
@@ -378,6 +443,16 @@ def build_metrics(
         for row in workflows
         if "commit_ms" in row
     ]
+    request_durations = [
+        float(row["request_duration_ms"])
+        for row in workflows
+        if "request_duration_ms" in row
+    ]
+    completion_durations = [
+        float(row["commit_completion_ms"])
+        for row in workflows
+        if "commit_completion_ms" in row
+    ]
     accepted = sum(
         row.get("commit_status") in EXPECTED_COMMIT
         for row in workflows
@@ -389,18 +464,22 @@ def build_metrics(
     )
     failed = sum(row.get("result") != "ok" for row in workflows)
     initial_429 = sum(
-        row.get("commit_initial_status") == 429
+        int(row.get("commit_initial_status") == 429)
         for row in workflows
     )
     recovered_after_429 = sum(
-        row.get("commit_initial_status") == 429
-        and row.get("commit_status") in EXPECTED_COMMIT
-        and not row.get("commit_retry_exhausted")
+        int(
+            row.get("commit_initial_status") == 429
+            and row.get("commit_status") in EXPECTED_COMMIT
+            and not row.get("commit_retry_exhausted")
+        )
         for row in workflows
     )
     final_429 = sum(
-        row.get("commit_retry_exhausted")
-        and row.get("commit_status") == 429
+        int(
+            bool(row.get("commit_retry_exhausted"))
+            and row.get("commit_status") == 429
+        )
         for row in workflows
     )
     total_commit_retries = sum(
@@ -411,6 +490,9 @@ def build_metrics(
         row.get("result") == "commit:missing_archive_id"
         for row in workflows
     )
+    poll_http_counts: Counter[str] = Counter()
+    for row in workflows:
+        poll_http_counts.update(row.get("commit_poll_http_counts") or {})
     elapsed_s = elapsed_ms / 1000
     return {
         "stage": stage,
@@ -424,6 +506,7 @@ def build_metrics(
         "commit_total_retries": total_commit_retries,
         "completed_commits": completed if polled else None,
         "commit_poll_missing_archive_id": commit_poll_missing_id,
+        "commit_poll_http_counts": dict(poll_http_counts),
         "failed_workflows": failed,
         "workflow_success_rate": round(
             (len(workflows) - failed) / len(workflows),
@@ -443,6 +526,16 @@ def build_metrics(
             "p50": percentile(commit_durations, 50),
             "p95": percentile(commit_durations, 95),
             "p99": percentile(commit_durations, 99),
+        },
+        "request_latency_ms": {
+            "p50": percentile(request_durations, 50),
+            "p95": percentile(request_durations, 95),
+            "p99": percentile(request_durations, 99),
+        },
+        "commit_completion_latency_ms": {
+            "p50": percentile(completion_durations, 50),
+            "p95": percentile(completion_durations, 95),
+            "p99": percentile(completion_durations, 99),
         },
         "result_counts": dict(
             Counter(str(row.get("result", "missing")) for row in workflows)
@@ -492,6 +585,9 @@ async def run_stage(
                         poll_interval_s=args.poll_interval,
                         commit_retries=args.commit_retries,
                         retry_backoff_s=args.retry_backoff,
+                        poll_retries=args.poll_retries,
+                        poll_backoff_s=args.poll_backoff,
+                        run_id=args.run_id,
                     )
                 )
             finally:
@@ -523,6 +619,9 @@ async def drain_commits(
     headers: dict[str, str],
     timeout_s: float,
     interval_s: float,
+    poll_concurrency: int,
+    poll_retries: int,
+    poll_backoff_s: float,
 ) -> dict[str, int]:
     """Continue polling accepted commits after stage workers finish."""
     pending = [
@@ -530,36 +629,45 @@ async def drain_commits(
         if row.get("archive_id")
         and row.get("commit_poll_state") not in {"completed", "failed"}
     ]
-    completed = 0
-    failed = 0
     deadline = time.perf_counter() + timeout_s
-    for row in pending:
-        remaining = deadline - time.perf_counter()
-        if remaining <= 0:
-            break
-        previous_count = int(row.get("commit_poll_count") or 0)
-        previous_elapsed = float(row.get("commit_poll_elapsed_ms") or 0.0)
-        update = await poll_commit(
-            client,
-            session_id=str(row["session_id"]),
-            archive_id=str(row["archive_id"]),
-            headers=headers,
-            timeout_s=remaining,
-            interval_s=interval_s,
-        )
-        row.update(update)
-        row["commit_poll_count"] = previous_count + int(
-            update.get("commit_poll_count") or 0
-        )
-        row["commit_poll_elapsed_ms"] = round(
-            previous_elapsed + float(update.get("commit_poll_elapsed_ms") or 0.0),
-            3,
-        )
-        row["result"] = classify_workflow(row)
-        if row.get("commit_poll_state") == "completed":
-            completed += 1
-        elif row.get("commit_poll_state") == "failed":
-            failed += 1
+    semaphore = asyncio.Semaphore(max(1, poll_concurrency))
+
+    async def drain_one(row: dict[str, Any]) -> None:
+        async with semaphore:
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                return
+            previous_count = int(row.get("commit_poll_count") or 0)
+            previous_elapsed = float(row.get("commit_poll_elapsed_ms") or 0.0)
+            update = await poll_commit(
+                client,
+                session_id=str(row["session_id"]),
+                archive_id=str(row["archive_id"]),
+                headers=headers,
+                timeout_s=remaining,
+                interval_s=interval_s,
+                max_retries=poll_retries,
+                retry_backoff_s=poll_backoff_s,
+            )
+            row.update(update)
+            row["commit_poll_count"] = previous_count + int(
+                update.get("commit_poll_count") or 0
+            )
+            row["commit_poll_elapsed_ms"] = round(
+                previous_elapsed
+                + float(update.get("commit_poll_elapsed_ms") or 0.0),
+                3,
+            )
+            row["commit_completion_ms"] = round(
+                float(row.get("request_duration_ms") or row.get("duration_ms") or 0)
+                + float(row.get("commit_poll_elapsed_ms") or 0),
+                3,
+            )
+            row["result"] = classify_workflow(row)
+
+    await asyncio.gather(*(drain_one(row) for row in pending))
+    completed = sum(row.get("commit_poll_state") == "completed" for row in pending)
+    failed = sum(row.get("commit_poll_state") == "failed" for row in pending)
     return {
         "pending_before": len(pending),
         "completed": completed,
@@ -580,6 +688,7 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
 
 
 async def run(args: argparse.Namespace) -> None:
+    args.run_id = args.run_id or uuid4().hex[:12]
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     timeout = httpx.Timeout(
@@ -651,6 +760,9 @@ async def run(args: argparse.Namespace) -> None:
                 headers=headers,
                 timeout_s=args.drain_timeout,
                 interval_s=args.poll_interval,
+                poll_concurrency=args.poll_concurrency,
+                poll_retries=args.poll_retries,
+                poll_backoff_s=args.poll_backoff,
             )
 
         for stage in all_stages:
@@ -664,6 +776,7 @@ async def run(args: argparse.Namespace) -> None:
 
     payload = {
         "url": args.url,
+        "run_id": args.run_id,
         "stages": [stage["metrics"] for stage in all_stages],
         "context_probe_count": len(probes),
         "context_statuses": dict(
@@ -697,6 +810,8 @@ async def run(args: argparse.Namespace) -> None:
         json.dumps(
             {
                 "url": args.url,
+                "run_id": args.run_id,
+                "drain": payload["drain"],
                 "config": payload["config"],
                 "stages": payload["stages"],
                 "context_statuses": payload["context_statuses"],
@@ -731,12 +846,16 @@ def parse_args() -> argparse.Namespace:
         help="Workflows per stage; defaults to the first concurrency value",
     )
     parser.add_argument("--agent-id", default="incident-load")
+    parser.add_argument("--run-id", default="", help="Unique run id; generated when omitted")
     parser.add_argument("--context-probes", type=int, default=0)
     parser.add_argument("--message-size", type=int, default=128)
     parser.add_argument("--auth-key", default="")
     parser.add_argument("--poll-commits", action="store_true")
     parser.add_argument("--poll-timeout", type=float, default=120.0)
     parser.add_argument("--poll-interval", type=float, default=1.0)
+    parser.add_argument("--poll-retries", type=int, default=DEFAULT_POLL_RETRIES)
+    parser.add_argument("--poll-backoff", type=float, default=DEFAULT_POLL_BACKOFF)
+    parser.add_argument("--poll-concurrency", type=int, default=32)
     parser.add_argument(
         "--commit-retries",
         type=int,
