@@ -152,7 +152,7 @@ ECHOMEM_IMAGE_PREFIX = os.getenv(
     "memory-eval-echomem",
 )
 ECHOMEM_CONFIG_REVISION = (
-    os.getenv("ECHOMEM_CONFIG_REVISION", "10") + "-mcp-required"
+    os.getenv("ECHOMEM_CONFIG_REVISION", "11") + "-mcp-required"
 )
 ECHOMEM_CONFIG_MODEL = os.getenv(
     "ECHOMEM_CONFIG_MODEL",
@@ -712,16 +712,6 @@ def eval_command(job: dict[str, Any], secret_values: dict[str, str]) -> tuple[li
     provisioning_key = str(job.get("echomem_provisioning_auth_key") or "")
     if provisioning_key:
         environment["ECHOMEM_PROVISIONING_AUTH_KEY"] = provisioning_key
-    command.extend(
-        [
-            "--llm-base-url",
-            secret_values["llm_base_url"],
-            "--llm-model",
-            secret_values["llm_model"],
-            "--llm-api-key",
-            secret_values["llm_api_key"],
-        ]
-    )
     return command, environment
 
 
@@ -731,6 +721,38 @@ def source_label(source_ref: str, pr_number: int | None = None) -> str:
     if source_ref == "commit":
         return "commit"
     return f"PR {pr_number}" if pr_number is not None else source_ref
+
+
+def dependency_fingerprint(source_dir: Path) -> str:
+    """Hash dependency declarations, excluding application source files."""
+    names = (
+        "pyproject.toml",
+        "requirements.txt",
+        "requirements-dev.txt",
+        "requirements-test.txt",
+        "setup.py",
+        "setup.cfg",
+        "Pipfile",
+        "Pipfile.lock",
+        "poetry.lock",
+        "uv.lock",
+    )
+    digest = hashlib.sha256()
+    found = False
+    for name in names:
+        path = source_dir / name
+        if not path.is_file():
+            continue
+        found = True
+        digest.update(name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    if not found:
+        raise RuntimeError(
+            "EchoMem checkout 没有可识别的依赖声明文件，无法安全复用依赖镜像"
+        )
+    return digest.hexdigest()[:16]
 
 
 def append_job_log(job_id: str, line: str) -> None:
@@ -774,7 +796,7 @@ def run_checked(
 
 
 def prepare_echomem_source(job: dict[str, Any], secret_values: dict[str, str]) -> dict[str, Any]:
-    """Prepare a commit-cached image from develop or a conflict-free PR merge."""
+    """Prepare a dependency-cached image and an isolated source checkout."""
     source_ref = job["source_ref"]
     pr_number = job.get("pr_number")
     source_dir = SOURCE_ROOT / job["id"] / "source"
@@ -1001,13 +1023,11 @@ def prepare_echomem_source(job: dict[str, Any], secret_values: dict[str, str]) -
         )
     # Source preparation and image preparation are cached independently. A
     # repeated evaluation still creates a new task and runs QA again, while
-    # the expensive dependency installation is reused for the same commit.
-    if re.fullmatch(r"[0-9a-fA-F]{7,64}", commit_sha):
-        image_suffix = commit_sha[:16].lower()
-    else:
-        image_suffix = hashlib.sha256(commit_sha.encode("utf-8")).hexdigest()[:16]
+    # the dependency image is reused across source commits with the same
+    # dependency declarations.
+    image_suffix = dependency_fingerprint(source_dir)
     image_name = (
-        f"{ECHOMEM_IMAGE_PREFIX}:commit-{image_suffix}"
+        f"{ECHOMEM_IMAGE_PREFIX}:deps-{image_suffix}"
         f"-cfg{ECHOMEM_CONFIG_REVISION}"
     )
     config_example_path = source_dir / "configs" / "config.example.json"
@@ -1061,7 +1081,10 @@ def prepare_echomem_source(job: dict[str, Any], secret_values: dict[str, str]) -
             image=image_name,
             image_cached=True,
             image_temporary=False,
-            message=f"代码和镜像准备完成（镜像缓存命中）: {commit_sha[:12]}",
+            message=(
+                "代码和依赖镜像准备完成（依赖镜像缓存命中）: "
+                f"{commit_sha[:12]}"
+            ),
         )
         return {
             "image": image_name,
@@ -1089,7 +1112,8 @@ RUN python -m pip install --no-cache-dir .
 COPY source/configs/ /usr/local/lib/python3.11/configs/
 COPY config.json %s/config.json
 EXPOSE 8010 8001
-CMD ["echomem", "server", "--host", "0.0.0.0", "--port", "8010", "--workspace", "%s"]
+ENV PYTHONPATH=/opt/echomem/src
+CMD ["python", "-m", "echomem.entrypoints.cli", "server", "--host", "0.0.0.0", "--port", "8010", "--workspace", "%s"]
 """ % (PIP_INDEX_URL, ECHOMEM_WORKSPACE, ECHOMEM_WORKSPACE),
         encoding="utf-8",
     )
@@ -3309,6 +3333,7 @@ def run_source_job(job_id: str, secret_values: dict[str, str]) -> None:
         echo_environment["ECHOMEM_ATOMIC_EXTRACTION_TEMPERATURE"] = (
             ECHOMEM_ATOMIC_EXTRACTION_TEMPERATURE
         )
+        echo_environment["PYTHONPATH"] = "/opt/echomem/src"
         # EchoMem's local auth API requires a registry provisioning capability
         # for creating isolated tenants/users. Keep this per-task secret only
         # in the two containers; it is never persisted in the job record.
@@ -3331,6 +3356,10 @@ def run_source_job(job_id: str, secret_values: dict[str, str]) -> None:
             },
             environment=echo_environment,
             volumes={
+                str(prepared["source_dir"]): {
+                    "bind": "/opt/echomem",
+                    "mode": "ro",
+                },
                 str(job_cache): {
                     "bind": f"{ECHOMEM_WORKSPACE}/cache",
                     "mode": "rw",

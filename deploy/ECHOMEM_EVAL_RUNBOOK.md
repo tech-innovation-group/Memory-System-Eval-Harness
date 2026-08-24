@@ -139,7 +139,8 @@ merge_commit
 ### 4. 复用环境并隔离任务
 
 - 依赖声明文件没有变化：复用长期 runner 镜像。
-- 依赖声明文件变化：按新的依赖指纹构建镜像。
+- 依赖声明文件变化：按新的依赖指纹构建镜像；源码变化但依赖不变时只
+  更换任务源码挂载，不重建 EchoMem 依赖镜像。
 - 每次任务都切换到自己的源码目录。
 - 每次任务都使用新的 workspace、tenant、session、memory 状态和结果目录。
 - 只共享静态 `semantic_embeddings.json` 和（存在时）`template_embeddings.json`；
@@ -150,8 +151,8 @@ merge_commit
   jobs、日志或结果文件。若任务显式提供 `--echomem-auth-key`，则直接复用该身份，
   不重复 provision。
 - 评测容器统一复用长期 runner 镜像；当前服务器镜像为
-  `memory-eval-harness:20260823-auth-fix`。依赖指纹未变化时不重建镜像，
-  EchoMem 镜像也按 commit 缓存复用。
+  `memory-eval-harness:20260823-auth-fix`。依赖指纹未变化时不重建镜像；
+  EchoMem 运行源码按任务只读挂载，依赖镜像按依赖指纹复用。
 - Web 容器内的 `/results` 与 Docker 宿主机挂载路径分离；创建评测容器时使用
   `HOST_RESULTS_DIR=/opt/memory-eval-harness/results`，避免结果目录权限错误。
 - 任务级 `cache/recall/semantic_embeddings.json` 和（存在时）

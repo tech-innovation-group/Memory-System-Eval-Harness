@@ -162,7 +162,8 @@ QA/Judge 并发由任务配置传入，当前服务器单并发队列通常使�
    `develop + PR` 的合并结果，而不是只测试 PR head。
 6. 从 checkout 内的 `configs/config.example.json` 生成任务配置；没有该文件时直接
    失败，不回退到测试平台模板。
-7. 根据依赖声明文件指纹复用长期 runner 镜像；依赖变化才重新构建。
+7. 根据依赖声明文件指纹复用 EchoMem 依赖镜像；源码变化但依赖不变时只
+   更换任务源码挂载，依赖变化才重新构建。
 8. 将当前任务源码挂载到 runner，停止旧 EchoMem 进程，创建独立 workspace。
 9. 复用只读的共享 `semantic_embeddings.json` 和（存在时）
    `template_embeddings.json`，但 workspace/cache、tenant、session 和 memory 状态

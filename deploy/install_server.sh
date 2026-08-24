@@ -18,7 +18,9 @@ docker info >/dev/null || { echo "Docker daemon 不可用"; exit 1; }
 
 mkdir -p "$INSTALL_ROOT" "$WEB_ROOT/data" "$WEB_ROOT/cache/recall" "$SOURCE_ROOT" \
   "$INSTALL_ROOT/results/_archives"
-cp -a "$ROOT/." "$INSTALL_ROOT/"
+if [[ "$ROOT" != "$INSTALL_ROOT" ]]; then
+  cp -a "$ROOT/." "$INSTALL_ROOT/"
+fi
 if [[ ! -f "$ENV_FILE" ]]; then
   cp "$ROOT/deploy/server.env.example" "$ENV_FILE"
   chmod 600 "$ENV_FILE"
