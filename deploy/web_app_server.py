@@ -893,10 +893,12 @@ def prepare_echomem_source(job: dict[str, Any], secret_values: dict[str, str]) -
         )
         merge_resolved = False
         for merge_attempt in range(1, 4):
-            # GitHub can briefly serve a stale PR representation while the
-            # base branch is moving. Cache-bust both the PR and develop
-            # requests and never promote the stale PR base SHA to our
-            # evaluation baseline.
+            # GitHub can briefly report ``unknown`` while it computes the
+            # merge ref. Once a concrete PR payload is returned, its
+            # ``base.sha`` and ``pull/<number>/merge`` archive form one
+            # coherent snapshot. Lock that snapshot for this task: develop is
+            # allowed to move after the task starts and must not invalidate a
+            # reproducible PR evaluation.
             commit_data = requests.get(
                 commit_url,
                 params={"_eval_ts": str(time.time_ns())},
@@ -922,36 +924,21 @@ def prepare_echomem_source(job: dict[str, Any], secret_values: dict[str, str]) -
             if base_sha and base_sha != develop_commit_sha:
                 append_job_log(
                     job["id"],
-                    f"develop 在合并检查期间更新: {develop_commit_sha[:12]} -> {base_sha[:12]}，"
-                    f"自动刷新基线（第 {merge_attempt}/3 次）",
+                    f"检测到 develop 在合并检查期间更新: "
+                    f"{develop_commit_sha[:12]} -> {base_sha[:12]}；"
+                    "锁定 GitHub 当前 PR merge snapshot，不再重试",
                 )
-                if merge_attempt >= 3:
-                    raise RuntimeError(
-                        "develop 持续更新，暂时无法获得稳定合并基线，平台已自动重试 3 次"
-                    )
-                refresh_response = requests.get(
-                    "https://api.github.com/repos/tech-innovation-group/EchoMem/commits/develop",
-                    params={"_eval_ts": str(time.time_ns())},
-                    headers=github_headers,
-                    timeout=30,
-                )
-                refresh_response.raise_for_status()
-                refreshed_sha = str(
-                    (refresh_response.json() or {}).get("sha") or ""
-                )
-                if not re.fullmatch(r"[0-9a-fA-F]{7,64}", refreshed_sha):
-                    raise RuntimeError("GitHub develop 刷新未返回有效 commit SHA")
-                develop_commit_sha = refreshed_sha
+                # The merge API payload is the authoritative base for the
+                # archive URL used below. Persist it so the result clearly
+                # states which develop commit was actually tested.
+                develop_commit_sha = base_sha
                 update_job(
                     job["id"],
                     develop_commit_sha=develop_commit_sha,
                     message=(
-                        f"develop 已更新，重新读取 PR 合并状态"
-                        f"（第 {merge_attempt}/3 次）"
+                        f"已锁定 PR merge 基线 {develop_commit_sha[:12]}"
                     ),
                 )
-                time.sleep(1)
-                continue
             if mergeable is False or mergeable_state in {"dirty", "blocked"}:
                 update_job(
                     job["id"],

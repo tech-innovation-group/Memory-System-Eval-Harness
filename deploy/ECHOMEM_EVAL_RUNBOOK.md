@@ -104,7 +104,7 @@ shell 退出时，桌面执行器可能主动回收后台子进程，这不代�
 
 ### 2. 固定代码版本
 
-对每个任务都重新读取最新 `EchoMem/develop` commit，并记录：
+任务开始时读取 `EchoMem/develop` commit，并记录：
 
 ```text
 develop_commit
@@ -120,6 +120,10 @@ merge_commit
 - 关闭 PR、合并快照不可用或确实存在冲突时，不启动 EchoMem。
 
 源码按 commit 缓存。缓存只避免重复下载，不复用旧的准确率结果。
+PR 任务一旦取得 GitHub 的 `base.sha`、PR head 和 merge archive，就锁定这一组
+快照；测试期间 develop 继续合并不会使本次任务失效。结果中的
+`develop_commit_sha` 是实际 merge snapshot 的基线，而不是测试结束时的最新
+develop。
 
 ### 3. 准备配置和 API Key
 
