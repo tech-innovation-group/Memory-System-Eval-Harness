@@ -25,6 +25,11 @@ from urllib.parse import urlparse
 import docker
 from docker.errors import DockerException, ImageNotFound
 import requests
+try:
+    from cryptography.hazmat.primitives import padding
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+except ImportError:  # Optional unless Feishu encrypted callbacks are enabled.
+    padding = Cipher = algorithms = modes = None
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, session, url_for
 
 
@@ -2825,6 +2830,11 @@ def is_all_members_mention(message: dict[str, Any]) -> bool:
 
 
 def decrypt_feishu_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    if Cipher is None or padding is None or algorithms is None or modes is None:
+        raise RuntimeError(
+            "收到加密 Feishu 事件，但 Web 镜像未安装 cryptography；"
+            "请重新构建 deploy/web-requirements.txt"
+        )
     """Decrypt Feishu event envelopes when an Encrypt Key is configured."""
     encrypted = payload.get("encrypt")
     if not encrypted:
