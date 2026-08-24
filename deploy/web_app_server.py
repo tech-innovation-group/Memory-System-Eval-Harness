@@ -2428,20 +2428,32 @@ def upload_feishu_file(chat_id: str, path: Path) -> str:
         return ""
     if path.stat().st_size > 30 * 1024 * 1024:
         raise RuntimeError("结果文件超过飞书 30 MB 限制")
-    response = requests.post(
-        "https://open.feishu.cn/open-apis/im/v1/files",
-        headers={"Authorization": f"Bearer {token}"},
-        data={"file_type": "stream", "file_name": path.name},
-        files={"file": (path.name, path.open("rb"), "application/octet-stream")},
-        timeout=120,
-    )
-    response.raise_for_status()
-    payload = response.json()
+    response = None
+    for attempt in range(3):
+        with path.open("rb") as file_handle:
+            response = requests.post(
+                "https://open.feishu.cn/open-apis/im/v1/files",
+                headers={"Authorization": f"Bearer {token}"},
+                data={"file_type": "stream", "file_name": path.name},
+                files={"file": (path.name, file_handle, "application/octet-stream")},
+                timeout=120,
+            )
+        if response.status_code < 500 or attempt == 2:
+            break
+        time.sleep(2**attempt)
+    assert response is not None
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {}
+    if response.status_code >= 400:
+        detail = payload.get("msg") or response.text[:500] or response.reason
+        raise RuntimeError(f"飞书群文件上传失败（HTTP {response.status_code}）：{detail}")
     if payload.get("code", 0) != 0:
-        raise RuntimeError(f"飞书文件上传失败: {payload.get('msg', 'unknown error')}")
+        raise RuntimeError(f"飞书群文件上传失败：{payload.get('msg', 'unknown error')}")
     file_key = str((payload.get("data") or {}).get("file_key", ""))
     if not file_key:
-        raise RuntimeError("飞书文件上传成功但未返回 file_key")
+        raise RuntimeError("飞书群文件上传成功但未返回 file_key")
     send_feishu_file(chat_id, file_key, path.name)
     return file_key
 
@@ -2755,22 +2767,44 @@ def notify_feishu_job(job_id: str) -> None:
     job = get_job(job_id)
     if not job or not job.get("feishu_chat_id"):
         return
+    chat_id = str(job["feishu_chat_id"])
     try:
         if job.get("status") == "completed":
             text = format_result(job) + f"\n详情：{job_detail_url(job_id)}"
-            send_feishu_text(str(job["feishu_chat_id"]), text)
-            artifact_path = result_upload_path(job_id)
-            file_key = upload_feishu_file(
-                str(job["feishu_chat_id"]), artifact_path
-            )
-            update_job(
-                job_id,
-                feishu_result_file=artifact_path.name,
-                feishu_file_key=file_key,
-            )
+            text_error = ""
             try:
-                bitable_result = upload_feishu_bitable_result(job_id, artifact_path)
-                if bitable_result.get("status") != "disabled":
+                send_feishu_text(chat_id, text)
+            except Exception as exc:
+                text_error = str(exc)[:1000]
+                update_job(job_id, feishu_text_error=text_error)
+                app.logger.exception("failed to send Feishu result text for job %s", job_id)
+
+            artifact_path = None
+            artifact_error = ""
+            try:
+                artifact_path = result_upload_path(job_id)
+                update_job(job_id, feishu_result_file=artifact_path.name)
+            except Exception as exc:
+                artifact_error = str(exc)[:1000]
+                update_job(job_id, feishu_artifact_error=artifact_error)
+                app.logger.exception("failed to package result for job %s", job_id)
+
+            file_error = ""
+            if artifact_path is not None:
+                try:
+                    file_key = upload_feishu_file(chat_id, artifact_path)
+                    update_job(job_id, feishu_file_key=file_key, feishu_file_error="")
+                except Exception as exc:
+                    file_error = str(exc)[:1000]
+                    update_job(job_id, feishu_file_error=file_error)
+                    app.logger.exception("failed to upload Feishu group file for job %s", job_id)
+
+            try:
+                if artifact_path is not None:
+                    bitable_result = upload_feishu_bitable_result(job_id, artifact_path)
+                else:
+                    bitable_result = {"status": "skipped"}
+                if bitable_result.get("status") not in {"disabled", "skipped"}:
                     update_job(
                         job_id,
                         feishu_bitable_status=bitable_result.get("status"),
@@ -2781,6 +2815,27 @@ def notify_feishu_job(job_id: str) -> None:
             except Exception as exc:
                 update_job(job_id, feishu_bitable_error=str(exc)[:500])
                 app.logger.exception("failed to upload Bitable result for job %s", job_id)
+
+            failures = []
+            if text_error:
+                failures.append(f"文字消息：{text_error}")
+            if artifact_error:
+                failures.append(f"结果打包：{artifact_error}")
+            if file_error:
+                failures.append(f"群文件：{file_error}")
+            current = get_job(job_id) or {}
+            if current.get("feishu_bitable_error"):
+                failures.append(f"多维表格：{current['feishu_bitable_error']}")
+            if failures:
+                try:
+                    send_feishu_text(
+                        chat_id,
+                        "评测结果已完成，但附件分发有异常：\n"
+                        + "\n".join(f"- {item}" for item in failures)
+                        + f"\n任务 ID：{job_id}\n可在权限补齐后发送“结果 {job_id}”重试。",
+                    )
+                except Exception:
+                    app.logger.exception("failed to report Feishu delivery error for job %s", job_id)
             return
         elif job.get("status") == "conflict":
             text = (
@@ -2804,15 +2859,12 @@ def notify_feishu_job(job_id: str) -> None:
                 f"{progress.get('current', 0)}/{progress.get('total') or '?'}\n"
                 f"详情：{job_detail_url(job_id)}"
             )
-        send_feishu_text(str(job["feishu_chat_id"]), text)
-    except Exception:
+        send_feishu_text(chat_id, text)
+    except Exception as exc:
         app.logger.exception("failed to notify Feishu for job %s", job_id)
+        update_job(job_id, feishu_notification_error=str(exc)[:1000])
         try:
-            send_feishu_text(
-                str(job["feishu_chat_id"]),
-                f"测试结果文件上传失败\n任务 ID: {job_id}\n"
-                "准确率文字结果已发送，请稍后使用“结果 <任务ID>”重试。",
-            )
+            send_feishu_text(chat_id, f"飞书通知失败\n任务 ID: {job_id}\n原因：{exc}")
         except Exception:
             app.logger.exception("failed to report Feishu upload error for job %s", job_id)
 
