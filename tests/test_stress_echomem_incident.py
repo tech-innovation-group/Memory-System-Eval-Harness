@@ -154,6 +154,31 @@ class StressIncidentHelpersTest(unittest.TestCase):
         self.assertEqual(metrics["window_commit_timeouts"], 1)
         self.assertEqual(metrics["final_completed_commits"], 1)
 
+    def test_metrics_expose_structured_failure_details(self):
+        metrics = build_metrics(
+            [
+                {
+                    "result": "commit:failed",
+                    "duration_ms": 10,
+                    "commit_status": 202,
+                    "commit_poll_state": "failed",
+                    "commit_poll_body": {
+                        "status": {
+                            "error": "Atomic extraction failed (window)",
+                        }
+                    },
+                }
+            ],
+            elapsed_ms=10,
+            requested_workflows=1,
+            concurrency=1,
+            stage=1,
+        )
+        self.assertEqual(
+            metrics["failure_details"],
+            {"Atomic extraction failed (window)": 1},
+        )
+
     def test_tenant_metrics_are_separated(self):
         metrics = build_tenant_metrics(
             [

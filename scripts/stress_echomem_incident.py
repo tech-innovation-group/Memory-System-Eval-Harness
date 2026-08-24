@@ -591,8 +591,33 @@ def build_metrics(
         for row in workflows
     )
     poll_http_counts: Counter[str] = Counter()
+    failure_details: Counter[str] = Counter()
     for row in workflows:
         poll_http_counts.update(row.get("commit_poll_http_counts") or {})
+        if row.get("result") != "ok":
+            poll_body = row.get("commit_poll_body")
+            detail = ""
+            if isinstance(poll_body, dict):
+                detail = str(
+                    poll_body.get("error")
+                    or poll_body.get("detail")
+                    or poll_body.get("message")
+                    or ""
+                ).strip()
+                status = poll_body.get("status")
+                if isinstance(status, dict):
+                    detail = str(
+                        status.get("error")
+                        or status.get("detail")
+                        or status.get("message")
+                        or detail
+                    ).strip()
+            if detail:
+                failure_details[detail[:240]] += 1
+            elif row.get("error"):
+                failure_details[str(row["error"])[:240]] += 1
+            else:
+                failure_details[str(row.get("result", "unknown"))] += 1
     elapsed_s = elapsed_ms / 1000
     request_started = [
         float(row["started_at"])
@@ -679,6 +704,7 @@ def build_metrics(
         "result_counts": dict(
             Counter(str(row.get("result", "missing")) for row in workflows)
         ),
+        "failure_details": dict(failure_details.most_common()),
         "http_counts": dict(
             Counter(
                 f"{step}:{row.get(f'{step}_status')}"

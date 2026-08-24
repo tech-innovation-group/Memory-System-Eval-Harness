@@ -518,6 +518,15 @@ python scripts/stress_echomem_incident.py \
 该脚本适合压测 PR345 这类异步 commit、队列满时拒绝、失败恢复和并发公平性场景；
 它本身不判断业务准确率，精度仍应通过上面的 LoCoMo 评测命令单独验证。
 
+可将结果目录生成一个可直接用浏览器打开的 HTML 报告，报告包含阶段表格、
+成功率/最终完成数/吞吐/P95 延迟图表和结构化失败原因：
+
+```bash
+python scripts/build_stress_report.py \
+  /tmp/echomem-stress-20260825 \
+  --output /tmp/echomem-stress-20260825/report.html
+```
+
 ### 动态评测
 
 直接调用 `dynamic/run_eval.py`。需先启动 EchoAgent Backend（端口 31020）和
