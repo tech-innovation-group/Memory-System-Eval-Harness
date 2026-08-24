@@ -2,3 +2,4 @@ Flask>=3.0,<4
 requests>=2.31,<3
 docker>=7.0,<8
 waitress>=3.0,<4
+cryptography>=42,<47

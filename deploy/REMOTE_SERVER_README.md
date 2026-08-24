@@ -62,6 +62,7 @@ Feishu application before debugging the evaluator:
 [ ] The latest application version is published after changing events or URL
 [ ] The bot is installed in the target group and the message @mentions the bot
 [ ] The app has permission to receive messages and send messages as the bot
+[ ] If Encrypt Key is enabled, `FEISHU_ENCRYPT_KEY` is configured on the server
 ```
 
 The server-side smoke checks are:
@@ -77,6 +78,10 @@ docker logs --since 10m memory-eval-web
 An unchanged `jobs.json` together with no `Feishu event received` log means
 the message did not reach this server. In that case, changing evaluator or
 EchoMem code cannot fix the missing reply.
+
+When Feishu encryption is enabled, the request body contains an `encrypt` field.
+The Web service decrypts it with `FEISHU_ENCRYPT_KEY`; a missing or invalid key
+returns HTTP 400 and writes an explicit error to the Web log.
 
 固定执行清单见 [ECHOMEM_EVAL_RUNBOOK.md](ECHOMEM_EVAL_RUNBOOK.md)。本文档保留
 服务器目录、入口和复核命令；实际执行时先读 runbook，再按本文档定位文件。

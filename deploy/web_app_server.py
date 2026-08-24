@@ -25,6 +25,8 @@ from urllib.parse import urlparse
 import docker
 from docker.errors import DockerException, ImageNotFound
 import requests
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, session, url_for
 
 
@@ -117,6 +119,7 @@ IMAGE = os.getenv("EVAL_IMAGE", "memory-eval-harness:20260823-auth-fix")
 FEISHU_APP_ID = os.getenv("FEISHU_APP_ID", "")
 FEISHU_APP_SECRET = os.getenv("FEISHU_APP_SECRET", "")
 FEISHU_VERIFICATION_TOKEN = os.getenv("FEISHU_VERIFICATION_TOKEN", "")
+FEISHU_ENCRYPT_KEY = os.getenv("FEISHU_ENCRYPT_KEY", "").strip()
 FEISHU_BITABLE_APP_TOKEN = os.getenv("FEISHU_BITABLE_APP_TOKEN", "").strip()
 FEISHU_BITABLE_TABLE_ID = os.getenv("FEISHU_BITABLE_TABLE_ID", "").strip()
 FEISHU_UPLOAD_USER = os.getenv("FEISHU_UPLOAD_USER", "").strip()
@@ -2815,6 +2818,39 @@ def is_all_members_mention(message: dict[str, Any]) -> bool:
     return bool(re.search(r"@(?:所有人|all)\b?", raw_text, flags=re.IGNORECASE))
 
 
+def decrypt_feishu_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Decrypt Feishu event envelopes when an Encrypt Key is configured."""
+    encrypted = payload.get("encrypt")
+    if not encrypted:
+        return payload
+    if not FEISHU_ENCRYPT_KEY:
+        app.logger.error(
+            "received encrypted Feishu event but FEISHU_ENCRYPT_KEY is not configured"
+        )
+        raise RuntimeError("服务器缺少 FEISHU_ENCRYPT_KEY，无法处理加密飞书事件")
+    try:
+        import base64
+
+        key = hashlib.sha256(FEISHU_ENCRYPT_KEY.encode("utf-8")).digest()
+        ciphertext = base64.b64decode(str(encrypted), validate=True)
+        if len(ciphertext) == 0 or len(ciphertext) % 16:
+            raise ValueError("ciphertext length is not an AES block multiple")
+        decryptor = Cipher(
+            algorithms.AES(key),
+            modes.CBC(key[:16]),
+        ).decryptor()
+        padded = decryptor.update(ciphertext) + decryptor.finalize()
+        unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
+        plaintext = unpadder.update(padded) + unpadder.finalize()
+        decoded = json.loads(plaintext.decode("utf-8"))
+    except Exception as exc:
+        app.logger.exception("failed to decrypt Feishu event envelope")
+        raise RuntimeError("飞书事件解密失败，请检查 FEISHU_ENCRYPT_KEY") from exc
+    if not isinstance(decoded, dict):
+        raise RuntimeError("飞书解密后的事件不是 JSON 对象")
+    return decoded
+
+
 def parse_test_command(text: str) -> tuple[str, int | None] | None:
     normalized = re.sub(r"\s+", " ", text.strip().lower())
     normalized = re.sub(r"[，。！？!?,:：]+$", "", normalized).strip()
@@ -3773,6 +3809,10 @@ def create_job():
 @app.post("/feishu/events")
 def feishu_events():
     payload = request.get_json(silent=True) or {}
+    try:
+        payload = decrypt_feishu_payload(payload)
+    except RuntimeError as exc:
+        return jsonify({"code": 1, "msg": str(exc)}), 400
     if payload.get("type") == "url_verification":
         token = payload.get("token")
         if FEISHU_VERIFICATION_TOKEN and token != FEISHU_VERIFICATION_TOKEN:
