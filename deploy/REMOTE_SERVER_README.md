@@ -21,6 +21,17 @@ PR 合并后把 `--branch feat/server-eval-deployment-config` 改为
 
 首次执行会生成 `/opt/memory-eval-web/server.env` 并退出。填写以下配置后再次执行：
 
+部署脚本同时安装只读 Codex 监控入口：
+
+```bash
+codex --version
+codex-monitor <任务ID>
+```
+
+Codex 只读取任务、Docker 和结果证据，不修改 EchoMem、PR、测试配置或容器。
+配置 `OPENAI_API_KEY` 后才能执行模型分析；没有 Key 时 `codex-monitor` 仍会
+输出本地任务摘要。详情见 [CODEX_SERVER_README.md](CODEX_SERVER_README.md)。
+
 ```dotenv
 DEFAULT_LLM_API_KEY=你的DeepSeekKey
 DEFAULT_EMBEDDING_API_KEY=你的DashScopeEmbeddingKey

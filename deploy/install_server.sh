@@ -19,10 +19,13 @@ command -v docker >/dev/null || { echo "未找到 Docker"; exit 1; }
 docker info >/dev/null || { echo "Docker daemon 不可用"; exit 1; }
 
 mkdir -p "$INSTALL_ROOT" "$WEB_ROOT/data" "$WEB_ROOT/cache/recall" "$SOURCE_ROOT" \
-  "$INSTALL_ROOT/results/_archives"
+  "$INSTALL_ROOT/results/_archives" /opt/codex-server
 if [[ "$ROOT" != "$INSTALL_ROOT" ]]; then
   cp -a "$ROOT/." "$INSTALL_ROOT/"
 fi
+install -m 0755 "$ROOT/deploy/codex-monitor.sh" /opt/codex-server/codex-monitor
+install -m 0644 "$ROOT/deploy/CODEX_SERVER_README.md" /opt/codex-server/README.md
+ln -sf /opt/codex-server/codex-monitor /usr/local/bin/codex-monitor
 if [[ ! -f "$ENV_FILE" ]]; then
   cp "$ROOT/deploy/server.env.example" "$ENV_FILE"
   chmod 600 "$ENV_FILE"
