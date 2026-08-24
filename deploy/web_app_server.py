@@ -25,8 +25,6 @@ from urllib.parse import urlparse
 import docker
 from docker.errors import DockerException, ImageNotFound
 import requests
-from cryptography.hazmat.primitives import padding
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, session, url_for
 
 
@@ -2830,19 +2828,26 @@ def decrypt_feishu_payload(payload: dict[str, Any]) -> dict[str, Any]:
         )
         raise RuntimeError("服务器缺少 FEISHU_ENCRYPT_KEY，无法处理加密飞书事件")
     try:
-        import base64
-
         key = hashlib.sha256(FEISHU_ENCRYPT_KEY.encode("utf-8")).digest()
-        ciphertext = base64.b64decode(str(encrypted), validate=True)
-        if len(ciphertext) == 0 or len(ciphertext) % 16:
-            raise ValueError("ciphertext length is not an AES block multiple")
-        decryptor = Cipher(
-            algorithms.AES(key),
-            modes.CBC(key[:16]),
-        ).decryptor()
-        padded = decryptor.update(ciphertext) + decryptor.finalize()
-        unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
-        plaintext = unpadder.update(padded) + unpadder.finalize()
+        result = subprocess.run(
+            [
+                "openssl",
+                "enc",
+                "-d",
+                "-aes-256-cbc",
+                "-K",
+                key.hex(),
+                "-iv",
+                key[:16].hex(),
+                "-a",
+                "-A",
+            ],
+            input=str(encrypted).encode("ascii"),
+            capture_output=True,
+            check=True,
+            timeout=5,
+        )
+        plaintext = result.stdout
         decoded = json.loads(plaintext.decode("utf-8"))
     except Exception as exc:
         app.logger.exception("failed to decrypt Feishu event envelope")
