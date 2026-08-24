@@ -6,14 +6,18 @@
 
 ## 一键部署
 
-Linux 服务器安装 Docker 后：
+Linux 服务器安装 Git、curl 和 Docker 后。PR 26 合并前验证部署分支：
 
 ```bash
-git clone https://github.com/tech-innovation-group/Memory-System-Eval-Harness.git \
+git clone --branch feat/server-eval-deployment-config \
+  https://github.com/tech-innovation-group/Memory-System-Eval-Harness.git \
   /opt/memory-eval-harness
 cd /opt/memory-eval-harness
 sudo deploy/install_server.sh
 ```
+
+PR 合并后把 `--branch feat/server-eval-deployment-config` 改为
+`--branch v3_mcpTool`。
 
 首次执行会生成 `/opt/memory-eval-web/server.env` 并退出。填写以下配置后再次执行：
 
@@ -22,6 +26,10 @@ DEFAULT_LLM_API_KEY=你的DeepSeekKey
 DEFAULT_EMBEDDING_API_KEY=你的DashScopeEmbeddingKey
 SESSION_SECRET=随机长字符串
 PUBLIC_BASE_URL=http://服务器公网IP:8081
+FEISHU_APP_ID=飞书应用ID
+FEISHU_APP_SECRET=飞书应用密钥
+# 飞书启用 Encrypt Key 时再填写：
+FEISHU_ENCRYPT_KEY=
 ```
 
 脚本会构建 runner/Web 镜像、创建数据目录、启动 `memory-eval-web`，并检查
@@ -46,7 +54,7 @@ DeepSeek 只负责 LLM/Judge，DashScope `text-embedding-v3` 只负责 embedding
 [ECHOMEM_EVAL_RUNBOOK.md](ECHOMEM_EVAL_RUNBOOK.md)。
 
 `PUBLIC_BASE_URL` 必须填写飞书能够访问的 IP 或域名，例如
-`http://8.130.75.94:8081`。程序会自动把这个地址的 hostname 加入
+`http://服务器公网IP:8081`。程序会自动把这个地址的 hostname 加入
 `ALLOWED_HOSTS`，否则公网访问和 Feishu 回调会返回 HTTP 400。
 
 ## Feishu callback checklist
@@ -55,7 +63,7 @@ If a group message produces no reply and `jobs.json` has no new task, check the
 Feishu application before debugging the evaluator:
 
 ```text
-[ ] Request URL is http://8.130.75.94:8081/feishu/events
+[ ] Request URL is http://服务器公网IP:8081/feishu/events
     (or the matching PUBLIC_BASE_URL host)
 [ ] Event subscription uses the developer-server callback mode
 [ ] Event `im.message.receive_v1` is subscribed
@@ -122,28 +130,19 @@ returns HTTP 400 and writes an explicit error to the Web log.
 服务器默认目录：
 
 ```text
-/opt/memory-eval-harness-latest/       # 测试平台 Git checkout
+/opt/memory-eval-harness/              # 测试平台 Git checkout
 /opt/memory-eval-web/                  # Web/飞书运行目录
 /opt/memory-eval-sources/              # EchoMem 源码和 commit 缓存
-/opt/memory-eval-web/results/          # 任务结果目录
+/opt/memory-eval-harness/results/      # 任务结果目录
 /opt/memory-eval-web/cache/recall/     # 共享 embedding warm-up files
-/data/skills/echomem-eval-startup/    # 启动故障技能和历史案例
+/opt/memory-eval-web/data/skills/echomem-eval-startup/
+                                      # 宿主机上的启动 Skill 和故障记录
 ```
-
-注意：服务器的 `deploy/` 运行层目前是服务器工作区中的未跟踪文件，不属于
-`54878f3` 这个测试平台 Git commit。复核时必须同时检查 Git checkout 和
-`deploy/web/app.py`，不能只看 `git log` 就认为线上编排层已经被版本化。
 
 服务器 Web 入口：
 
 ```text
-/opt/memory-eval-harness-latest/deploy/web/app.py
-```
-
-服务器 Harness 启动脚本：
-
-```text
-/opt/memory-eval-harness-update-20260820/deploy/harness/run-harness.sh
+/opt/memory-eval-harness/deploy/web_app_server.py
 ```
 
 常驻 runner 由 `app.py` 管理。依赖没有变化时复用镜像；每个任务仍使用独立的
@@ -161,7 +160,7 @@ returns HTTP 400 and writes an explicit error to the Web log.
 结果 <任务ID>
 ```
 
-飞书固定命令进入 `deploy/web/app.py`，创建任务后由后台 worker 调用：
+飞书固定命令进入 `deploy/web_app_server.py`，创建任务后由后台 worker 调用：
 
 ```text
 benchmarks/locomo/run_eval.py
@@ -273,9 +272,15 @@ Judge 异常按当前规则作为错误计入总题数分母。
 故障经验持久化在：
 
 ```text
-/data/skills/echomem-eval-startup/SKILL.md
-/data/skills/echomem-eval-startup/preflight.sh
-/data/skills/echomem-eval-startup/incidents.jsonl
+/opt/memory-eval-web/data/skills/echomem-eval-startup/SKILL.md
+/opt/memory-eval-web/data/skills/echomem-eval-startup/preflight.sh
+/opt/memory-eval-web/data/skills/echomem-eval-startup/incidents.jsonl
+```
+
+任务失败时平台会自动向 `incidents.jsonl` 追加脱敏记录。提交新任务前执行：
+
+```bash
+/opt/memory-eval-web/data/skills/echomem-eval-startup/preflight.sh --strict
 ```
 
 ## 其他 agent 复核命令
@@ -283,13 +288,12 @@ Judge 异常按当前规则作为错误计入总题数分母。
 在服务器上执行：
 
 ```bash
-cd /opt/memory-eval-harness-latest
+cd /opt/memory-eval-harness
 git rev-parse HEAD
 git status --short
-sed -n '612,660p' deploy/web/app.py
-sed -n '980,1210p' deploy/web/app.py
-sed -n '1317,1450p' deploy/web/app.py
-find /data/skills/echomem-eval-startup -maxdepth 1 -type f -print
+grep -n 'def prepare_echomem_source' deploy/web_app_server.py
+grep -n 'def run_source_job' deploy/web_app_server.py
+find /opt/memory-eval-web/data/skills/echomem-eval-startup -maxdepth 2 -type f -print
 ```
 
 在某个任务结果目录执行：

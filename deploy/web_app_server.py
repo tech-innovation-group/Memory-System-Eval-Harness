@@ -25,11 +25,6 @@ from urllib.parse import urlparse
 import docker
 from docker.errors import DockerException, ImageNotFound
 import requests
-try:
-    from cryptography.hazmat.primitives import padding
-    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-except ImportError:  # Optional unless Feishu encrypted callbacks are enabled.
-    padding = Cipher = algorithms = modes = None
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, session, url_for
 
 
@@ -118,7 +113,7 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "").strip()
 SESSION_SECRET = os.getenv("SESSION_SECRET", "")
 RUN_UID = os.getenv("RUN_UID", "1000")
 RUN_GID = os.getenv("RUN_GID", "1000")
-IMAGE = os.getenv("EVAL_IMAGE", "memory-eval-harness:20260823-auth-fix")
+IMAGE = os.getenv("EVAL_IMAGE", "memory-eval-runner:local")
 FEISHU_APP_ID = os.getenv("FEISHU_APP_ID", "")
 FEISHU_APP_SECRET = os.getenv("FEISHU_APP_SECRET", "")
 FEISHU_VERIFICATION_TOKEN = os.getenv("FEISHU_VERIFICATION_TOKEN", "")
@@ -211,6 +206,12 @@ app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 JOBS_PATH = DATA_DIR / "jobs.json"
+STARTUP_INCIDENTS_PATH = Path(
+    os.getenv(
+        "STARTUP_INCIDENTS_PATH",
+        str(DATA_DIR / "skills" / "echomem-eval-startup" / "incidents.jsonl"),
+    )
+)
 LOCK = threading.Lock()
 JOB_QUEUE: queue.Queue[str] = queue.Queue()
 SECRETS: dict[str, dict[str, str]] = {}
@@ -771,6 +772,35 @@ def append_job_log(job_id: str, line: str) -> None:
     update_progress_from_line(job_id, line)
 
 
+def append_startup_incident(job_id: str, diagnosis: dict[str, Any]) -> None:
+    """Persist a bounded, secret-free failure record for future operators."""
+    job = get_job(job_id) or {}
+    progress = job.get("progress") or {}
+    record = {
+        "recorded_at": now(),
+        "job_id": job_id,
+        "source": job.get("source_label") or job.get("source_ref"),
+        "develop_commit": str(job.get("develop_commit_sha") or "")[:12],
+        "pr_head": str(job.get("pr_head_sha") or "")[:12],
+        "merge_commit": str(job.get("merge_commit_sha") or "")[:12],
+        "phase": progress.get("phase"),
+        "message": str(job.get("message") or "")[:1000],
+        "category": diagnosis.get("category"),
+        "needs_echomem_change": diagnosis.get("needs_echomem_change"),
+        "retryable": diagnosis.get("retryable"),
+        "allowed_actions": diagnosis.get("allowed_actions") or [],
+        "reason": str(diagnosis.get("reason") or "")[:1000],
+        "config_errors": diagnosis.get("config_errors") or [],
+        "result_files": diagnosis.get("result_files") or [],
+    }
+    try:
+        STARTUP_INCIDENTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with STARTUP_INCIDENTS_PATH.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except OSError:
+        app.logger.exception("failed to persist startup incident for %s", job_id)
+
+
 def run_checked(
     args: list[str],
     *,
@@ -907,6 +937,11 @@ def prepare_echomem_source(job: dict[str, Any], secret_values: dict[str, str]) -
             )
             commit_data.raise_for_status()
             commit_payload = commit_data.json()
+            pr_state = str(commit_payload.get("state") or "").strip().lower()
+            if pr_state != "open":
+                raise RuntimeError(
+                    f"PR {pr_number} 当前状态为 {pr_state or 'unknown'}，只测试开放 PR"
+                )
             mergeable = commit_payload.get("mergeable")
             mergeable_state = str(commit_payload.get("mergeable_state") or "")
             if mergeable is None and mergeable_state in {"unknown", "unstable"}:
@@ -939,7 +974,7 @@ def prepare_echomem_source(job: dict[str, Any], secret_values: dict[str, str]) -
                         f"已锁定 PR merge 基线 {develop_commit_sha[:12]}"
                     ),
                 )
-            if mergeable is False or mergeable_state in {"dirty", "blocked"}:
+            if mergeable is False or mergeable_state == "dirty":
                 update_job(
                     job["id"],
                     merge_status="conflict",
@@ -1031,20 +1066,24 @@ def prepare_echomem_source(job: dict[str, Any], secret_values: dict[str, str]) -
             "被测 EchoMem 代码缺少 configs/config.example.json，"
             "不会回退到测试平台配置模板"
         )
-    patch_echomem_config_model(config_example_path, job["id"])
-    config_bytes, api_key_envs = read_echo_config(config_example_path)
+    # Patch a task-owned runtime copy. The EchoMem checkout remains byte-for-byte
+    # identical to the downloaded develop/PR merge snapshot.
+    runtime_config_path = DOCKER_RESULTS_DIR / job["id"] / "echomem.config.json"
+    runtime_config_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(config_example_path, runtime_config_path)
+    patch_echomem_config_model(runtime_config_path, job["id"])
+    config_bytes, api_key_envs = read_echo_config(runtime_config_path)
     # The benchmark always performs its first memory_query through MCP,
     # including no-tool-calling mode. This is a task-local override and does
     # not modify the checked-out EchoMem source.
     config_bytes = enable_eval_mcp(config_bytes)
-    # The dependency image is intentionally cached by commit.  Keep the
+    # The dependency image is intentionally cached by dependency fingerprint.
+    # Keep the
     # task-local endpoint/model configuration outside that image and mount it
     # at runtime, otherwise an old cached image can silently keep stale model
     # URLs (for example an old embedding endpoint).
     # The Web process talks to the host Docker daemon.  Use the host-visible
     # result path for bind sources, even when RESULTS_DIR is a container path.
-    runtime_config_path = DOCKER_RESULTS_DIR / job["id"] / "echomem.config.json"
-    runtime_config_path.parent.mkdir(parents=True, exist_ok=True)
     runtime_config_path.write_bytes(config_bytes)
     update_job(
         job["id"],
@@ -2813,15 +2852,14 @@ def is_all_members_mention(message: dict[str, Any]) -> bool:
                 return True
     content = message.get("content", "")
     raw_text = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
-    return bool(re.search(r"@(?:所有人|all)\b?", raw_text, flags=re.IGNORECASE))
+    # ``\b?`` is invalid because a zero-width boundary cannot be quantified.
+    # Match the broadcast token without swallowing ordinary @bot mentions.
+    return bool(
+        re.search(r"@(?:所有人|all)(?![A-Za-z0-9_])", raw_text, flags=re.IGNORECASE)
+    )
 
 
 def decrypt_feishu_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    if Cipher is None or padding is None or algorithms is None or modes is None:
-        raise RuntimeError(
-            "收到加密 Feishu 事件，但 Web 镜像未安装 cryptography；"
-            "请重新构建 deploy/web-requirements.txt"
-        )
     """Decrypt Feishu event envelopes when an Encrypt Key is configured."""
     encrypted = payload.get("encrypt")
     if not encrypted:
@@ -3564,6 +3602,7 @@ def run_source_job(job_id: str, secret_values: dict[str, str]) -> None:
                 failure_analysis=diagnosis["text"],
                 failure_diagnosis=diagnosis,
             )
+            append_startup_incident(job_id, diagnosis)
         notify_feishu_job(job_id)
     except Exception as exc:
         current = get_job(job_id) or {}
@@ -3590,6 +3629,7 @@ def run_source_job(job_id: str, secret_values: dict[str, str]) -> None:
             failure_diagnosis=diagnosis,
             progress=default_progress("failed"),
         )
+        append_startup_incident(job_id, diagnosis)
         notify_feishu_job(job_id)
     finally:
         if echo_container is not None:

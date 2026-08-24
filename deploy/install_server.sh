@@ -8,6 +8,8 @@ SOURCE_ROOT="${SOURCE_ROOT:-/opt/memory-eval-sources}"
 ENV_FILE="${ENV_FILE:-$WEB_ROOT/server.env}"
 WEB_IMAGE="${WEB_IMAGE:-memory-eval-web:local}"
 RUNNER_IMAGE="${RUNNER_IMAGE:-memory-eval-runner:local}"
+SKILL_SOURCE="$INSTALL_ROOT/deploy/skills/echomem-eval-startup"
+SKILL_TARGET="$WEB_ROOT/data/skills/echomem-eval-startup"
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "请使用 root 运行：sudo $0" >&2
@@ -34,11 +36,33 @@ set +a
 : "${DEFAULT_LLM_API_KEY:?请在 $ENV_FILE 配置 DEFAULT_LLM_API_KEY}"
 : "${DEFAULT_EMBEDDING_API_KEY:?请在 $ENV_FILE 配置 DEFAULT_EMBEDDING_API_KEY}"
 : "${SESSION_SECRET:?请在 $ENV_FILE 配置 SESSION_SECRET}"
+if [[ "$SESSION_SECRET" == "change-this-secret" ]]; then
+  echo "SESSION_SECRET 仍是示例值，请在 $ENV_FILE 改为随机长字符串" >&2
+  exit 1
+fi
+if [[ -n "${FEISHU_APP_ID:-}" || -n "${FEISHU_APP_SECRET:-}" ]]; then
+  : "${FEISHU_APP_ID:?启用飞书时必须配置 FEISHU_APP_ID}"
+  : "${FEISHU_APP_SECRET:?启用飞书时必须配置 FEISHU_APP_SECRET}"
+  : "${PUBLIC_BASE_URL:?启用飞书时必须配置 PUBLIC_BASE_URL}"
+fi
+if [[ -n "${FEISHU_BITABLE_APP_TOKEN:-}" || -n "${FEISHU_BITABLE_TABLE_ID:-}" ]]; then
+  : "${FEISHU_BITABLE_APP_TOKEN:?上传多维表格时必须配置 FEISHU_BITABLE_APP_TOKEN}"
+  : "${FEISHU_BITABLE_TABLE_ID:?上传多维表格时必须配置 FEISHU_BITABLE_TABLE_ID}"
+fi
 
 docker build -f "$INSTALL_ROOT/deploy/Dockerfile.runner" \
   -t "$RUNNER_IMAGE" "$INSTALL_ROOT"
 docker build -f "$INSTALL_ROOT/deploy/Dockerfile.web" \
   -t "$WEB_IMAGE" "$INSTALL_ROOT"
+
+mkdir -p "$SKILL_TARGET"
+install -m 0644 "$SKILL_SOURCE/SKILL.md" "$SKILL_TARGET/SKILL.md"
+install -m 0644 "$SKILL_SOURCE/references/failure-categories.md" \
+  "$SKILL_TARGET/failure-categories.md"
+install -m 0755 "$SKILL_SOURCE/scripts/preflight.sh" \
+  "$SKILL_TARGET/preflight.sh"
+touch "$SKILL_TARGET/incidents.jsonl"
+chmod 0644 "$SKILL_TARGET/incidents.jsonl"
 
 sed -i.bak \
   -e "/^EVAL_IMAGE=/d" \
@@ -47,14 +71,18 @@ sed -i.bak \
   -e "/^SOURCE_ROOT=/d" \
   -e "/^SOURCE_CACHE_ROOT=/d" \
   -e "/^WEB_DATA_DIR=/d" \
+  -e "/^RESULT_ARCHIVE_DIR=/d" \
+  -e "/^ECHOMEM_WORKSPACE_CACHE=/d" \
   "$ENV_FILE"
 cat >>"$ENV_FILE" <<EOF
 EVAL_IMAGE=$RUNNER_IMAGE
 WEB_DATA_DIR=/data
-RESULTS_DIR=/opt/memory-eval-harness/results
-HOST_RESULTS_DIR=/opt/memory-eval-harness/results
-SOURCE_ROOT=/opt/memory-eval-sources
-SOURCE_CACHE_ROOT=/opt/memory-eval-sources/_cache
+RESULTS_DIR=$INSTALL_ROOT/results
+HOST_RESULTS_DIR=$INSTALL_ROOT/results
+RESULT_ARCHIVE_DIR=$INSTALL_ROOT/results/_archives
+SOURCE_ROOT=$SOURCE_ROOT
+SOURCE_CACHE_ROOT=$SOURCE_ROOT/_cache
+ECHOMEM_WORKSPACE_CACHE=$WEB_ROOT/cache
 EOF
 
 docker rm -f memory-eval-web >/dev/null 2>&1 || true
@@ -70,6 +98,8 @@ docker run -d --name memory-eval-web --restart unless-stopped \
 
 for _ in $(seq 1 30); do
   if curl -fsS "http://127.0.0.1:${WEB_PORT:-8081}/" >/dev/null; then
+    ENV_FILE="$ENV_FILE" WEB_PORT="${WEB_PORT:-8081}" \
+      "$SKILL_TARGET/preflight.sh" --strict
     echo "部署成功：http://$(hostname -I | awk '{print $1}'):${WEB_PORT:-8081}"
     exit 0
   fi

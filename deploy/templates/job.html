@@ -1,11 +1,245 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="10"><title>{{ job.id }}</title>
-<style>body{font:14px system-ui;margin:32px;max-width:1100px}pre{white-space:pre-wrap;background:#f5f5f5;padding:12px;overflow:auto}progress{width:100%;height:20px}a{color:#06c}li{margin:5px 0}</style></head>
-<body><p><a href="/">返回任务列表</a></p><h1>{{ job.id }}</h1>
-<p>状态：<b>{{ job.status }}</b>　阶段：<b>{{ progress.label }}</b></p>
-<progress max="100" value="{{ progress.percent }}"></progress><p>{{ progress.percent }}%</p>
-<pre>{{ job.message or '' }}</pre>
-{% if job.summary %}<h2>结果</h2><pre>{{ job.summary|tojson(indent=2) }}</pre>{% endif %}
-{% if eval_details.rows %}<h2>逐题结果</h2><table><tr><th>题目</th><th>QA</th><th>Judge</th></tr>{% for row in eval_details.rows %}<tr><td>{{ row.get('question_id','') }}</td><td>{{ row.get('answer','') }}</td><td>{{ row.get('verdict','') }}</td></tr>{% endfor %}</table>{% endif %}
-<h2>结果文件</h2><ul>{% for file in files %}<li><a href="/jobs/{{ job.id }}/files/{{ file }}">{{ file }}</a></li>{% endfor %}</ul>
-</body></html>
+{% set is_active = job.status in ["queued", "running", "preparing"] %}
+{% set status_class = "status-" ~ (job.status or "unknown") %}
+{% set summary = job.summary or {} %}
+{% set correct = summary.get("judge_correct") %}
+{% set denominator = summary.get("judge_denominator") or summary.get("total_questions") %}
+{% set errors = summary.get("judge_errors", 0) %}
+{% set qa_done = eval_details.qa_count or 0 %}
+{% set judge_done = eval_details.judge_count or 0 %}
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  {% if is_active %}<meta http-equiv="refresh" content="5">{% endif %}
+  <title>{{ job.id }} · Memory Eval</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17202a;
+      --muted: #687582;
+      --line: #dfe5ea;
+      --soft: #f5f7f9;
+      --blue: #2563eb;
+      --blue-soft: #eaf1ff;
+      --green: #0f8a5f;
+      --green-soft: #e7f7ef;
+      --red: #c13b3b;
+      --red-soft: #fff0f0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #f6f8fa;
+      color: var(--ink);
+      font: 14px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .page { width: min(1440px, calc(100% - 40px)); margin: 0 auto; padding: 24px 0 56px; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+    .back { font-weight: 650; }
+    .job-id { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 24px;
+      align-items: end;
+      padding: 26px 28px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    h1 { margin: 0 0 6px; font-size: clamp(24px, 3vw, 34px); letter-spacing: 0; line-height: 1.1; }
+    .subtitle { margin: 0; color: var(--muted); }
+    .status { display: inline-flex; align-items: center; gap: 8px; margin-top: 18px; font-weight: 700; }
+    .status::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: #9aa6b2; }
+    .status-running::before, .status-queued::before, .status-preparing::before { background: var(--blue); box-shadow: 0 0 0 5px var(--blue-soft); }
+    .status-completed::before { background: var(--green); }
+    .status-failed::before, .status-interrupted::before { background: var(--red); }
+    .hero-score { min-width: 190px; text-align: right; }
+    .score-label { color: var(--muted); font-size: 12px; }
+    .score { margin-top: 2px; font-size: 34px; font-weight: 800; line-height: 1.15; }
+    .score-count { color: var(--muted); }
+    .progress-section { grid-column: 1 / -1; padding: 24px 4px 4px; }
+    .progress-head { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 9px; font-weight: 700; }
+    .progress-meta { color: var(--muted); font-weight: 500; white-space: nowrap; }
+    .progress-track { height: 10px; overflow: hidden; background: #e8edf2; border-radius: 999px; }
+    .progress-value { height: 100%; min-width: {% if progress.percent > 0 %}10px{% else %}0{% endif %}; width: {{ progress.percent }}%; background: var(--blue); border-radius: inherit; transition: width .35s ease; }
+    .is-running .progress-value { background: linear-gradient(90deg, #2563eb, #4f8cff, #2563eb); background-size: 200% 100%; animation: progress-shimmer 1.8s linear infinite; }
+    @keyframes progress-shimmer { to { background-position: -200% 0; } }
+    .stages { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 14px; }
+    .stage { color: #8b98a5; font-size: 12px; }
+    .stage::before { content: ""; display: block; height: 3px; margin-bottom: 6px; background: #e3e8ed; border-radius: 3px; }
+    .stage.active, .stage.done { color: var(--blue); font-weight: 700; }
+    .stage.active::before, .stage.done::before { background: var(--blue); }
+    .stage.done { color: var(--green); }
+    .stage.done::before { background: var(--green); }
+    .grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; margin-top: 20px; }
+    .panel { background: #fff; border: 1px solid var(--line); border-radius: 8px; }
+    .panel-header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 18px 20px 14px; border-bottom: 1px solid var(--line); }
+    .panel-header h2 { margin: 0; font-size: 16px; }
+    .panel-header span { color: var(--muted); font-size: 12px; }
+    .panel-body { padding: 18px 20px; }
+    .facts { display: grid; gap: 0; margin: 0; }
+    .fact { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 10px; padding: 9px 0; border-bottom: 1px solid #edf0f2; }
+    .fact:last-child { border-bottom: 0; }
+    dt { color: var(--muted); }
+    dd { margin: 0; overflow-wrap: anywhere; font-weight: 600; }
+    .notice { padding: 14px 16px; border-left: 4px solid var(--red); background: var(--red-soft); color: #7d2424; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; min-width: 820px; border-collapse: collapse; table-layout: fixed; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid #edf0f2; text-align: left; vertical-align: top; }
+    th { color: var(--muted); background: #fbfcfd; font-size: 12px; font-weight: 700; position: sticky; top: 0; }
+    th:nth-child(1) { width: 128px; } th:nth-child(2) { width: 31%; } th:nth-child(3) { width: 31%; } th:nth-child(4) { width: 112px; }
+    .cell-text { max-height: 150px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .qid { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-weight: 700; }
+    .badge { display: inline-block; padding: 2px 7px; border-radius: 999px; background: var(--soft); color: #687582; font-size: 12px; font-weight: 700; }
+    .badge.correct { background: var(--green-soft); color: var(--green); }
+    .badge.wrong, .badge.error { background: var(--red-soft); color: var(--red); }
+    .muted { color: var(--muted); }
+    details { border-top: 1px solid var(--line); }
+    details:first-child { border-top: 0; }
+    summary { cursor: pointer; padding: 14px 20px; font-weight: 700; list-style-position: inside; }
+    details > .detail-content { padding: 0 20px 18px; }
+    pre { margin: 0; max-height: 320px; overflow: auto; padding: 14px; background: #111827; color: #e5edf5; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .file-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+    .file-list a { display: block; padding: 8px 10px; background: var(--soft); border-radius: 5px; overflow-wrap: anywhere; font-size: 12px; }
+    .file-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+    .button { display: inline-flex; align-items: center; min-height: 34px; padding: 0 11px; border: 1px solid #cbd5df; border-radius: 5px; background: #fff; color: var(--ink); font-weight: 650; }
+    .button:hover { background: var(--soft); text-decoration: none; }
+    @media (max-width: 900px) {
+      .page { width: min(100% - 24px, 720px); padding-top: 14px; }
+      .hero, .grid { grid-template-columns: 1fr; }
+      .hero-score { text-align: left; }
+      .grid { gap: 14px; }
+    }
+    @media (max-width: 560px) {
+      .hero { padding: 20px; }
+      .panel-header, .panel-body { padding-left: 14px; padding-right: 14px; }
+      .stages { grid-template-columns: repeat(5, minmax(54px, 1fr)); overflow-x: auto; }
+    }
+  </style>
+</head>
+<body class="{% if is_active %}is-running{% endif %}">
+  <main class="page">
+    <div class="topbar">
+      <a class="back" href="/">← 返回任务列表</a>
+      <span class="job-id">{{ job.id }}</span>
+    </div>
+
+    <section class="hero">
+      <div>
+        <h1>LoCoMo / conv-30</h1>
+        <p class="subtitle">{{ job.source_label or job.source_ref or "未指定代码来源" }} · {{ job.commit_sha[:12] if job.commit_sha else "等待 commit" }}</p>
+        <div class="status {{ status_class }}">{{ job.message or job.status or "未知状态" }}</div>
+      </div>
+      <div class="hero-score">
+        <div class="score-label">当前准确率</div>
+        {% if correct is not none and denominator %}
+          <div class="score">{{ "%.2f"|format((summary.get("accuracy", 0) * 100) if summary.get("accuracy", 0) <= 1 else summary.get("accuracy", 0)) }}%</div>
+          <div class="score-count">{{ correct }}/{{ denominator }} · Judge 异常 {{ errors }} 题</div>
+        {% else %}
+          <div class="score">--</div>
+          <div class="score-count">评测完成后显示</div>
+        {% endif %}
+      </div>
+      <div class="progress-section">
+        <div class="progress-head">
+          <span>{{ progress.label or "等待中" }}</span>
+          <span class="progress-meta">{{ progress.current or 0 }}{% if progress.total %}/{{ progress.total }}{% endif %} · {{ progress.percent or 0 }}%</span>
+        </div>
+        <div class="progress-track"><div class="progress-value"></div></div>
+        <div class="stages">
+          {% set phases = ["prepare", "import", "qa", "judge", "completed"] %}
+          {% set phase_index = phases.index(progress.phase) if progress.phase in phases else 0 %}
+          {% for phase in phases %}
+            <div class="stage {% if phase_index > loop.index0 %}done{% elif phase == progress.phase %}active{% endif %}">{{ {"prepare":"准备", "import":"注入记忆", "qa":"QA", "judge":"Judge", "completed":"完成"}[phase] }}</div>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="panel">
+        <div class="panel-header">
+          <h2>逐题评测</h2>
+          <span>QA {{ qa_done }} 题 · Judge {{ judge_done }} 题</span>
+        </div>
+        {% if eval_details.rows %}
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>题目</th><th>回答</th><th>Judge 依据</th><th>结果</th></tr></thead>
+              <tbody>
+              {% for row in eval_details.rows %}
+                {% set verdict = (row.judge_verdict or "").upper() %}
+                <tr>
+                  <td><div class="qid">{{ row.question_id }}</div><div class="muted">{{ row.qa_status }}</div></td>
+                  <td><div class="cell-text">{{ row.response or row.qa_error or "等待回答" }}</div></td>
+                  <td><div class="cell-text">{{ row.judge_reasoning or row.judge_error or "等待 Judge" }}</div></td>
+                  <td><span class="badge {% if verdict == "CORRECT" %}correct{% elif verdict in ["WRONG", "ERROR"] %}{{ "error" if verdict == "ERROR" else "wrong" }}{% endif %}">{{ row.judge_verdict or "待评测" }}</span></td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="panel-body muted">评测开始后，这里会实时显示每一题的 QA、回答和 Judge 结果。</div>
+        {% endif %}
+      </section>
+
+      <aside>
+        <section class="panel">
+          <div class="panel-header"><h2>任务信息</h2></div>
+          <div class="panel-body">
+            <dl class="facts">
+              <div class="fact"><dt>代码</dt><dd>{{ job.source_label or job.source_ref or "-" }}</dd></div>
+              <div class="fact"><dt>commit</dt><dd>{{ job.commit_sha[:12] if job.commit_sha else "-" }}</dd></div>
+              {% if job.develop_commit_sha %}<div class="fact"><dt>develop 基线</dt><dd>{{ job.develop_commit_sha[:12] }}</dd></div>{% endif %}
+              {% if job.pr_head_sha %}<div class="fact"><dt>PR head</dt><dd>{{ job.pr_head_sha[:12] }}</dd></div>{% endif %}
+              <div class="fact"><dt>工具调用</dt><dd>{{ "开启" if summary.get("tools_enabled") else "关闭" }}</dd></div>
+              <div class="fact"><dt>创建时间</dt><dd>{{ job.created_at or "-" }}</dd></div>
+            </dl>
+          </div>
+        </section>
+        <section class="panel" style="margin-top:14px">
+          <div class="panel-header"><h2>结果文件</h2><span>{{ files|length }} 个</span></div>
+          <div class="panel-body">
+            <div class="file-actions">
+              <a class="button" href="/jobs/{{ job.id }}/download/injected-memory">下载注入记忆</a>
+              <a class="button" href="/jobs/{{ job.id }}/download/retrieved-memory">下载召回记忆</a>
+            </div>
+            {% if files %}
+              <details>
+                <summary>展开全部文件</summary>
+                <div class="detail-content"><ul class="file-list">{% for file in files %}<li><a href="/jobs/{{ job.id }}/files/{{ file }}">{{ file }}</a></li>{% endfor %}</ul></div>
+              </details>
+            {% else %}
+              <p class="muted">结果文件将在任务运行后出现。</p>
+            {% endif %}
+          </div>
+        </section>
+      </aside>
+    </div>
+
+    {% if job.failure_analysis or job.failure_diagnosis %}
+      <section class="panel" style="margin-top:20px">
+        <div class="panel-header"><h2>异常诊断</h2><span>仅依据当前任务证据</span></div>
+        <div class="panel-body"><div class="notice">{{ job.failure_analysis or job.failure_diagnosis }}</div></div>
+      </section>
+    {% elif job.message and job.status in ["failed", "interrupted"] %}
+      <section class="panel" style="margin-top:20px">
+        <div class="panel-header"><h2>运行异常</h2></div>
+        <div class="panel-body"><div class="notice">{{ job.message }}</div></div>
+      </section>
+    {% endif %}
+
+    <section class="panel" style="margin-top:20px">
+      <details>
+        <summary>运行日志</summary>
+        <div class="detail-content"><pre>{{ progress.last_log or "暂无日志" }}</pre></div>
+      </details>
+    </section>
+  </main>
+</body>
+</html>
