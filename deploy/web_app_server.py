@@ -2826,7 +2826,11 @@ def is_all_members_mention(message: dict[str, Any]) -> bool:
                 return True
     content = message.get("content", "")
     raw_text = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
-    return bool(re.search(r"@(?:所有人|all)\b?", raw_text, flags=re.IGNORECASE))
+    # ``\b?`` is invalid because a zero-width boundary cannot be quantified.
+    # Match the broadcast token without swallowing ordinary @bot mentions.
+    return bool(
+        re.search(r"@(?:所有人|all)(?![A-Za-z0-9_])", raw_text, flags=re.IGNORECASE)
+    )
 
 
 def decrypt_feishu_payload(payload: dict[str, Any]) -> dict[str, Any]:
