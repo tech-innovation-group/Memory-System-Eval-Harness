@@ -35,6 +35,7 @@ class EchoMemClient(BaseHTTPMemoryClient):
         max_retries: int = 3,
         retry_backoff_s: float = 1.0,
         log_access_key: str = "",
+        provisioning_auth_key: str = "",
     ):
         super().__init__(
             base_url,
@@ -47,7 +48,9 @@ class EchoMemClient(BaseHTTPMemoryClient):
             retry_backoff_s=retry_backoff_s,
         )
         self.auth_key = auth_key
+        self.bootstrap_auth_key = ""
         self.log_access_key = log_access_key
+        self.provisioning_auth_key = provisioning_auth_key
 
     # -- low-level HTTP -------------------------------------------------
 
@@ -55,6 +58,10 @@ class EchoMemClient(BaseHTTPMemoryClient):
         h = {"Content-Type": "application/json"}
         if self.auth_key:
             h["X-Auth-Key"] = self.auth_key
+        if self.bootstrap_auth_key:
+            h["X-EchoMem-Bootstrap-Key"] = self.bootstrap_auth_key
+        if self.provisioning_auth_key:
+            h["X-EchoMem-Provisioning-Key"] = self.provisioning_auth_key
         return h
 
     # -- commit polling hooks -------------------------------------------
@@ -98,19 +105,27 @@ class EchoMemClient(BaseHTTPMemoryClient):
         if not tenant_id:
             raise RuntimeError(f"tenant provisioning returned no tenant id: {tenant_response}")
 
-        user_response = self._post(f"/api/auth/tenants/{tenant_id}/users", {})
-        user = user_response.get("user", {})
-        user_id = str(user.get("user_id") or "") if isinstance(user, dict) else ""
-        if not user_id:
-            raise RuntimeError(f"user provisioning returned no user id: {user_response}")
+        # Local EchoMem deployments return a short-lived bootstrap capability
+        # when creating a tenant. It is required for the follow-up user/key
+        # provisioning calls, while cluster-shared deployments use the
+        # provisioning header configured by the server.
+        self.bootstrap_auth_key = str(tenant_response.get("bootstrap_key") or "")
+        try:
+            user_response = self._post(f"/api/auth/tenants/{tenant_id}/users", {})
+            user = user_response.get("user", {})
+            user_id = str(user.get("user_id") or "") if isinstance(user, dict) else ""
+            if not user_id:
+                raise RuntimeError(f"user provisioning returned no user id: {user_response}")
 
-        key_response = self._post(
-            f"/api/auth/tenants/{tenant_id}/users/{user_id}/key",
-            {},
-        )
-        auth_key = str(key_response.get("auth_key") or "")
-        if not auth_key:
-            raise RuntimeError(f"key provisioning returned no auth key: {key_response}")
+            key_response = self._post(
+                f"/api/auth/tenants/{tenant_id}/users/{user_id}/key",
+                {},
+            )
+            auth_key = str(key_response.get("auth_key") or "")
+            if not auth_key:
+                raise RuntimeError(f"key provisioning returned no auth key: {key_response}")
+        finally:
+            self.bootstrap_auth_key = ""
 
         self.auth_key = auth_key
         self.account = tenant_id
@@ -361,4 +376,3 @@ class EchoMemClient(BaseHTTPMemoryClient):
             for item in (entries or [])
             if isinstance(item, dict)
         ]
-

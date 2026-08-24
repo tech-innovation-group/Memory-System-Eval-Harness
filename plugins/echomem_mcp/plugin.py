@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -177,6 +178,10 @@ class EchoMemMCPPlugin(AgentPlugin):
     def setup(self, config: dict) -> None:
         self._mcp_url = config.get("mcp_url", "http://127.0.0.1:8001")
         self._auth_key = config.get("mcp_auth_key", "") or config.get("echomem_auth_key", "")
+        provisioning_auth_key = (
+            config.get("echomem_provisioning_auth_key")
+            or os.environ.get("ECHOMEM_PROVISIONING_AUTH_KEY", "")
+        )
         self._max_iterations = config.get("mcp_max_iterations", 50)
         self._tool_calling = config.get("tool_calling", True)
         self._search_in_tools = config.get("search_in_tools", True)
@@ -217,6 +222,7 @@ class EchoMemMCPPlugin(AgentPlugin):
             timeout_s=float(config.get("timeout_s", 60.0)),
             max_retries=int(config.get("max_retries", 3)),
             log_access_key=config.get("echomem_log_access_key", ""),
+            provisioning_auth_key=provisioning_auth_key,
         )
 
         # Identity isolation
@@ -224,7 +230,7 @@ class EchoMemMCPPlugin(AgentPlugin):
         run_id = config.get("run_id", "")
         resume_qa = bool(config.get("resume_qa", ""))
 
-        if benchmark_name and run_id and not resume_qa:
+        if benchmark_name and run_id and not resume_qa and not self._auth_key:
             label = f"eval-{benchmark_name}-{run_id}"[:120]
             self.memory_client.provision_isolated_identity(label)
 
@@ -300,28 +306,59 @@ class EchoMemMCPPlugin(AgentPlugin):
 
         initial_search_enabled = bool(getattr(self, "_initial_search_via_mcp", True))
         if self._manual_search and initial_search_enabled:
-            try:
-                mcp = McpClient(
-                    self._mcp_url,
-                    auth_key=self._auth_key or self.memory_client.auth_key,
-                )
-                mcp.initialize(timeout_s=remaining())
-                initial_search_via_mcp = True
-            except Exception as e:
-                retrieval_error = f"{type(e).__name__}: {e}"
-                logger.warning("Initial MCP search initialize failed: %s", retrieval_error)
-                mcp = None
+            last_error = ""
+            for attempt in range(1, 4):
+                try:
+                    mcp = McpClient(
+                        self._mcp_url,
+                        auth_key=self._auth_key or self.memory_client.auth_key,
+                    )
+                    mcp.initialize(timeout_s=remaining())
+                    initial_search_via_mcp = True
+                    break
+                except Exception as e:
+                    last_error = f"{type(e).__name__}: {e}"
+                    logger.warning(
+                        "Initial MCP search initialize failed (%d/3): %s",
+                        attempt,
+                        last_error,
+                    )
+                    mcp = None
+                    if attempt < 3:
+                        time.sleep(min(1.0 * attempt, remaining() or 1.0))
+            if mcp is None:
+                retrieval_error = last_error
 
         # Phase A: Platform pre-fetch search through MCP memory_query.
         if self._manual_search:
             try:
                 t0 = time.monotonic()
                 if mcp is not None:
-                    raw = mcp.call_tool(
-                        "memory_query",
-                        {"query": message, "limit": self._top_k},
-                        timeout_s=remaining(),
-                    )
+                    try:
+                        raw = mcp.call_tool(
+                            "memory_query",
+                            {"query": message, "limit": self._top_k},
+                            timeout_s=remaining(),
+                        )
+                    except Exception as first_error:
+                        # Streamable HTTP sessions can be reset by the server
+                        # independently of the EchoMem HTTP process. Rebuild
+                        # the MCP session once before declaring retrieval
+                        # unavailable for this question.
+                        logger.warning(
+                            "MCP memory_query failed; reconnecting once: %s",
+                            first_error,
+                        )
+                        mcp = McpClient(
+                            self._mcp_url,
+                            auth_key=self._auth_key or self.memory_client.auth_key,
+                        )
+                        mcp.initialize(timeout_s=remaining())
+                        raw = mcp.call_tool(
+                            "memory_query",
+                            {"query": message, "limit": self._top_k},
+                            timeout_s=remaining(),
+                        )
                     payload = json.loads(raw) if raw else {}
                     raw_items = payload.get("items", []) if isinstance(payload, dict) else []
                     results = [

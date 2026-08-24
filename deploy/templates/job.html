@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="10"><title>{{ job.id }}</title>
+<style>body{font:14px system-ui;margin:32px;max-width:1100px}pre{white-space:pre-wrap;background:#f5f5f5;padding:12px;overflow:auto}progress{width:100%;height:20px}a{color:#06c}li{margin:5px 0}</style></head>
+<body><p><a href="/">返回任务列表</a></p><h1>{{ job.id }}</h1>
+<p>状态：<b>{{ job.status }}</b>　阶段：<b>{{ progress.label }}</b></p>
+<progress max="100" value="{{ progress.percent }}"></progress><p>{{ progress.percent }}%</p>
+<pre>{{ job.message or '' }}</pre>
+{% if job.summary %}<h2>结果</h2><pre>{{ job.summary|tojson(indent=2) }}</pre>{% endif %}
+{% if eval_details.rows %}<h2>逐题结果</h2><table><tr><th>题目</th><th>QA</th><th>Judge</th></tr>{% for row in eval_details.rows %}<tr><td>{{ row.get('question_id','') }}</td><td>{{ row.get('answer','') }}</td><td>{{ row.get('verdict','') }}</td></tr>{% endfor %}</table>{% endif %}
+<h2>结果文件</h2><ul>{% for file in files %}<li><a href="/jobs/{{ job.id }}/files/{{ file }}">{{ file }}</a></li>{% endfor %}</ul>
+</body></html>

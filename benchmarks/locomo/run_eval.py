@@ -372,7 +372,7 @@ def main() -> None:
         ),
         "tenant_id": echomem.account,
         "user_id": echomem.user_id,
-        "auth_key": echomem.auth_key,
+        "auth_key": _redact_secret(echomem.auth_key),
     }
     log.info(
         "Memory identity: %s tenant=%s user=%s",

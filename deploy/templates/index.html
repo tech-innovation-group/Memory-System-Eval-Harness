@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Memory Eval</title>
+<style>body{font:14px system-ui;margin:32px;max-width:1100px}form{display:grid;gap:10px;max-width:620px}input,select,button{padding:8px}table{border-collapse:collapse;width:100%;margin-top:24px}td,th{border-bottom:1px solid #ddd;padding:8px;text-align:left}a{color:#06c}</style></head>
+<body>
+<h1>Memory Evaluation</h1>
+<form action="/jobs" method="post">
+<label>测试类型 <select name="test_type"><option value="full">LoCoMo / conv-30</option></select></label>
+<label>LLM Base URL <input name="llm_base_url" value="{{ config_llm_base_url|default('') }}" required></label>
+<label>LLM 模型 <input name="llm_model" value="{{ config_llm_model|default('') }}" required></label>
+<label>Embedding 模型 <input name="embedding_model" value="{{ config_embedding_model|default('text-embedding-v3') }}" required></label>
+<label>LLM API Key <input name="llm_api_key" type="password" required></label>
+<label>EchoMem HTTP 端口 <input name="echomem_http_port" value="{{ config_echomem_http_port|default(18160) }}"></label>
+<label>MCP 端口 <input name="mcp_port" value="{{ config_mcp_port|default(18161) }}"></label>
+<label>QA 并发 <input name="qa_concurrency" value="1"></label>
+<label>Judge 并发 <input name="judge_concurrency" value="1"></label>
+<button type="submit">创建任务</button>
+</form>
+<p>队列中：{{ queued }}</p>
+<table><tr><th>任务</th><th>代码</th><th>状态</th><th>进度</th></tr>
+{% for job in jobs %}<tr><td><a href="/jobs/{{ job.id }}">{{ job.id }}</a></td><td>{{ job.source_label|default(job.source_ref|default('')) }}</td><td>{{ job.status }}</td><td>{{ (job.progress or {}).get('label','') }} {{ (job.progress or {}).get('percent',0) }}%</td></tr>{% endfor %}
+</table>
+</body></html>
