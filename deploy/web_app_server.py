@@ -667,7 +667,8 @@ def eval_command(job: dict[str, Any], secret_values: dict[str, str]) -> tuple[li
     http_port = job["echomem_http_port"]
     mcp_port = job["mcp_port"]
     command = [
-        "benchmarks/locomo/run_eval.py",
+        "python",
+        "/app/benchmarks/locomo/run_eval.py",
         "--agent-plugin",
         "echomem_mcp",
         "--echomem-url",
