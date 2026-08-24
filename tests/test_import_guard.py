@@ -15,6 +15,18 @@ class ImportGuardTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "conv-30=timeout"):
             require_complete_imports(rows)
 
+    def test_atom_persistence_failure_blocks_qa_with_commit_error(self) -> None:
+        rows = [{
+            "sample_id": "conv-30",
+            "status": "failed",
+            "error": "EchoMem commit contains atom_persistence_failed",
+        }]
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "atom_persistence_failed.*QA was not started",
+        ):
+            require_complete_imports(rows)
+
     def test_allows_explicit_diagnostic_mode(self) -> None:
         rows = [{"sample_id": "conv-30", "status": "timeout"}]
         require_complete_imports(rows, allow_incomplete=True)

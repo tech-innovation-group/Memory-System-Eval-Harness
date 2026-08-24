@@ -324,6 +324,68 @@ class TestExtractCommitError(unittest.TestCase):
 
 
 # ------------------------------------------------------------------ #
+#  completed commit validation                                        #
+# ------------------------------------------------------------------ #
+
+class TestCompletedCommitValidation(unittest.TestCase):
+    def setUp(self) -> None:
+        self.client = EchoMemClient(auth_key="k")
+
+    def test_clean_completed_response_is_valid(self) -> None:
+        response = {
+            "status": {
+                "status": "completed",
+                "outcome_reason": "all_engines_completed",
+            },
+        }
+        self.assertEqual("", self.client._validate_completed_commit(response))
+
+    def test_nested_atom_persistence_failure_is_rejected(self) -> None:
+        response = {
+            "status": {
+                "status": "completed",
+                "engines": {
+                    "atomic_engine": {
+                        "outcome_reason": "atom_persistence_failed",
+                        "stage_errors": {
+                            "atom_storage_batch_write": (
+                                "AtomVersionMismatchError: version conflict"
+                            ),
+                        },
+                    },
+                },
+            },
+        }
+
+        error = self.client._validate_completed_commit(response)
+
+        self.assertIn("atom_persistence_failed", error)
+        self.assertIn("AtomVersionMismatchError", error)
+
+    def test_poll_commit_turns_swallowed_failure_into_failed_result(self) -> None:
+        response = {
+            "status": {
+                "status": "completed",
+                "summary": [{"outcome_reason": "atom_persistence_failed"}],
+            },
+        }
+        self.client._fetch_commit_status = (  # type: ignore[method-assign]
+            lambda session_id, archive_id: response
+        )
+
+        result = self.client.poll_commit(
+            "session-1",
+            "archive-1",
+            timeout_s=1.0,
+            poll_interval_s=0.0,
+        )
+
+        self.assertEqual("failed", result.status)
+        self.assertEqual(1, result.polls)
+        self.assertIn("atom_persistence_failed", result.error)
+
+
+# ------------------------------------------------------------------ #
 #  open_session()  -- body structure & response parsing               #
 # ------------------------------------------------------------------ #
 
