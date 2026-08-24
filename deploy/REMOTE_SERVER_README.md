@@ -56,7 +56,7 @@ DeepSeek 只负责 LLM/Judge，DashScope `text-embedding-v3` 只负责 embedding
 /opt/memory-eval-web/                  # Web/飞书运行目录
 /opt/memory-eval-sources/              # EchoMem 源码和 commit 缓存
 /opt/memory-eval-web/results/          # 任务结果目录
-/opt/memory-eval-web/cache/recall/     # 共享 semantic_embeddings.json
+/opt/memory-eval-web/cache/recall/     # 共享 embedding warm-up files
 /data/skills/echomem-eval-startup/    # 启动故障技能和历史案例
 ```
 
@@ -130,8 +130,9 @@ QA/Judge 并发由任务配置传入，当前服务器单并发队列通常使�
    失败，不回退到测试平台模板。
 7. 根据依赖声明文件指纹复用长期 runner 镜像；依赖变化才重新构建。
 8. 将当前任务源码挂载到 runner，停止旧 EchoMem 进程，创建独立 workspace。
-9. 复用只读的共享 `semantic_embeddings.json`，但 workspace/cache、tenant、session
-   和 memory 状态按任务隔离。
+9. 复用只读的共享 `semantic_embeddings.json` 和（存在时）
+   `template_embeddings.json`，但 workspace/cache、tenant、session 和 memory 状态
+   按任务隔离。
 10. 启动 EchoMem，进行容器内健康检查和网络健康检查。
 11. 依次执行记忆注入、81 题 QA、Judge 和结果汇总。
 12. 保存结果、日志和诊断，回传飞书摘要，并尝试上传结果压缩包。

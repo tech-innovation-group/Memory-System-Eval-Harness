@@ -68,14 +68,15 @@ export ECHOMEM_ATOMIC_EXTRACTION_TEMPERATURE=0.7
 deploy/start_echomem_eval.sh \
   --source /work/source-root/<job_id>/echomem \
   --workspace /work/source-root/<job_id>/workspace \
-  --cache /opt/memory-eval-web/cache/recall/semantic_embeddings.json \
+  --cache-dir /opt/memory-eval-web/cache/recall \
   --port 8010 \
   --mcp-port 8001
 ```
 
 脚本会从当前 checkout 的 `configs/config.example.json` 生成配置，导出该配置声明
-的 `api_key_env`，复用只读 embedding cache，并等待 `/health` 成功后才返回。它
-不会修改 EchoMem checkout。任务结束后执行：
+的 `api_key_env`，复用只读的 `semantic_embeddings.json` 和（存在时）
+`template_embeddings.json`，并等待 `/health` 成功后才返回。它不会修改 EchoMem
+checkout。任务结束后执行：
 
 ```bash
 deploy/stop_echomem_eval.sh /work/source-root/<job_id>/workspace
@@ -90,6 +91,7 @@ shell 退出时，桌面执行器可能主动回收后台子进程，这不代�
 [ ] Docker daemon 可访问
 [ ] 磁盘空间和 Docker 空间足够
 [ ] 共享 cache/recall/semantic_embeddings.json 存在且非空
+[ ] 若 checkout 使用模板检索，共享 cache/recall/template_embeddings.json 存在
 [ ] 没有其他运行中的评测任务
 [ ] 当前 runner 镜像和依赖指纹可复用，或明确需要重建
 ```
@@ -140,7 +142,8 @@ merge_commit
 - 依赖声明文件变化：按新的依赖指纹构建镜像。
 - 每次任务都切换到自己的源码目录。
 - 每次任务都使用新的 workspace、tenant、session、memory 状态和结果目录。
-- 只共享静态 `semantic_embeddings.json`；禁止共享 tenant、session、memory DB、
+- 只共享静态 `semantic_embeddings.json` 和（存在时）`template_embeddings.json`；
+  禁止共享 tenant、session、memory DB、
   traces 或旧任务 workspace。
 - 每个任务生成临时 Registry provisioning capability，只注入 EchoMem/评测容器
   环境；harness 用它完成 tenant/user/key 创建，任务结束后随容器销毁，不写入
@@ -151,7 +154,8 @@ merge_commit
   EchoMem 镜像也按 commit 缓存复用。
 - Web 容器内的 `/results` 与 Docker 宿主机挂载路径分离；创建评测容器时使用
   `HOST_RESULTS_DIR=/opt/memory-eval-harness/results`，避免结果目录权限错误。
-- 任务级 `cache/recall/semantic_embeddings.json` 从共享缓存复制，并按
+- 任务级 `cache/recall/semantic_embeddings.json` 和（存在时）
+  `template_embeddings.json` 从共享缓存复制；semantic cache 按
   `model=text-embedding-v3, dimensions=1024` 校正 fingerprint；不会共享记忆、
   session 或 tenant。
 - 启动新任务前停止旧 EchoMem 进程，确认端口 `8010` 已释放。

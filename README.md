@@ -240,10 +240,11 @@ export DEFAULT_EMBEDDING_API_KEY=YOUR_EMBEDDING_KEY
 deploy/start_echomem_eval.sh \
   --source /path/to/EchoMem \
   --workspace /path/to/job/workspace \
-  --cache /path/to/shared/cache/recall/semantic_embeddings.json
+  --cache-dir /path/to/shared/cache/recall
 ```
 
-每次任务使用新的 workspace 和身份；只复用静态 embedding cache。依赖未变化时
+每次任务使用新的 workspace 和身份；只复用静态 embedding warm-up cache：
+`semantic_embeddings.json`，以及存在时的 `template_embeddings.json`。依赖未变化时
 复用 runner 环境，依赖变化时才重新构建。服务器 Web 入口复用长期评测 runner
 镜像，不会因为测试新的 PR 重建 EchoMem 镜像。每个任务仍创建独立的源码、
 workspace、tenant、session 和结果目录；provisioning 凭据只在任务容器环境中

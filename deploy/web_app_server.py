@@ -65,16 +65,18 @@ def prepare_echomem_job_cache(job_id: str) -> Path:
     # job_cache is mounted at /workspace/cache inside EchoMem.
     recall_cache = job_cache / "recall"
     recall_cache.mkdir(parents=True, exist_ok=True)
-    shared_embedding_cache = (
-        ECHOMEM_WORKSPACE_CACHE / "recall" / "semantic_embeddings.json"
-    )
+    shared_recall_cache = ECHOMEM_WORKSPACE_CACHE / "recall"
+    # Reuse immutable vector warm-ups only; memory state remains task-local.
+    for cache_name in ("semantic_embeddings.json", "template_embeddings.json"):
+        shared_cache = shared_recall_cache / cache_name
+        task_cache = recall_cache / cache_name
+        if (
+            shared_cache.is_file()
+            and shared_cache.stat().st_size > 0
+            and not task_cache.exists()
+        ):
+            shutil.copy2(shared_cache, task_cache)
     task_embedding_cache = recall_cache / "semantic_embeddings.json"
-    if (
-        shared_embedding_cache.is_file()
-        and shared_embedding_cache.stat().st_size > 0
-        and not task_embedding_cache.exists()
-    ):
-        shutil.copy2(shared_embedding_cache, task_embedding_cache)
     if task_embedding_cache.is_file():
         # EchoMem validates the cache against the configured embedding model.
         # Older server caches may contain the same vectors but stale metadata.

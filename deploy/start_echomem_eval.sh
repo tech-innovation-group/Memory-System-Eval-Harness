@@ -10,7 +10,9 @@ Usage:
   start_echomem_eval.sh \
     --source /path/to/EchoMem-checkout \
     --workspace /path/to/job/workspace \
-    [--port 8010] [--mcp-port 8001] [--cache /path/to/semantic_embeddings.json]
+    [--port 8010] [--mcp-port 8001] \
+    [--cache-dir /path/to/cache/recall] \
+    [--cache /path/to/semantic_embeddings.json]
 
 Required environment:
   DEFAULT_LLM_API_KEY
@@ -25,6 +27,10 @@ Optional environment:
   ECHOMEM_ATOMIC_EXTRACTION_TEMPERATURE=0.7
   ECHOMEM_PYTHON=/path/to/python
   ECHOMEM_HEALTH_TIMEOUT_S=300
+
+Cache warm-up:
+  --cache-dir copies semantic_embeddings.json and template_embeddings.json when
+  present. --cache remains a compatibility shortcut for semantic_embeddings.json.
 EOF
 }
 
@@ -33,6 +39,7 @@ workspace=""
 port="8010"
 mcp_port="8001"
 cache_path=""
+cache_dir=""
 host="127.0.0.1"
 mcp_host="127.0.0.1"
 
@@ -43,6 +50,7 @@ while [[ $# -gt 0 ]]; do
     --port) port="${2:?missing value for --port}"; shift 2 ;;
     --mcp-port) mcp_port="${2:?missing value for --mcp-port}"; shift 2 ;;
     --cache) cache_path="${2:?missing value for --cache}"; shift 2 ;;
+    --cache-dir) cache_dir="${2:?missing value for --cache-dir}"; shift 2 ;;
     --host) host="${2:?missing value for --host}"; shift 2 ;;
     --mcp-host) mcp_host="${2:?missing value for --mcp-host}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -137,9 +145,30 @@ if "auto_commit_threshold" in session:
 Path(dst).write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 PY
 
+if [[ -n "$cache_path" && -n "$cache_dir" ]]; then
+  echo "use either --cache or --cache-dir, not both" >&2
+  exit 2
+fi
 if [[ -n "$cache_path" ]]; then
-  [[ -s "$cache_path" ]] || { echo "embedding cache is empty: $cache_path" >&2; exit 1; }
-  cp "$cache_path" "$workspace/cache/recall/semantic_embeddings.json"
+  if [[ -d "$cache_path" ]]; then
+    cache_dir="$cache_path"
+  else
+    [[ -s "$cache_path" ]] || { echo "embedding cache is empty: $cache_path" >&2; exit 1; }
+    cache_dir="$(dirname "$cache_path")"
+  fi
+fi
+if [[ -n "$cache_dir" ]]; then
+  [[ -d "$cache_dir" ]] || { echo "cache directory does not exist: $cache_dir" >&2; exit 1; }
+  semantic_cache="$cache_dir/semantic_embeddings.json"
+  [[ -s "$semantic_cache" ]] || {
+    echo "semantic embedding cache is empty: $semantic_cache" >&2
+    exit 1
+  }
+  cp "$semantic_cache" "$workspace/cache/recall/semantic_embeddings.json"
+  template_cache="$cache_dir/template_embeddings.json"
+  if [[ -s "$template_cache" ]]; then
+    cp "$template_cache" "$workspace/cache/recall/template_embeddings.json"
+  fi
   # The vectors are reusable across checkouts with the same embedding model and
   # dimensions; normalize only the cache metadata expected by this checkout.
   "$ECHOMEM_PYTHON" - "$workspace/config.json" \
