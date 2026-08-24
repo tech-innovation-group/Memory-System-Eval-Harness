@@ -310,6 +310,17 @@ class BaseHTTPMemoryClient(ABC):
             status = self._parse_commit_status(resp)
 
             if status in ("completed", "done", "success"):
+                validation_error = self._validate_completed_commit(resp)
+                if validation_error:
+                    self._log.error(
+                        "commit completed with invalid result: session=%s "
+                        "archive=%s error=%s",
+                        session_id, archive_id, validation_error,
+                    )
+                    return CommitResult(
+                        session_id, archive_id, "failed", elapsed, polls,
+                        error=validation_error,
+                    )
                 self._log.info(
                     "commit completed: session=%s archive=%s (%.1fs, %d polls)",
                     session_id, archive_id, elapsed, polls,
@@ -344,6 +355,10 @@ class BaseHTTPMemoryClient(ABC):
 
     def _commit_failed_statuses(self) -> tuple[str, ...]:
         return ("failed", "error")
+
+    def _validate_completed_commit(self, resp: dict[str, Any]) -> str:
+        """Return an error when a backend's completed response is invalid."""
+        return ""
 
     def _extract_commit_error(self, resp: dict[str, Any], status: str) -> str:
         return resp.get("error", status)

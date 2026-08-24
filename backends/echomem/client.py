@@ -85,6 +85,37 @@ class EchoMemClient(BaseHTTPMemoryClient):
             return raw_status.get("error", status)
         return resp.get("error", status)
 
+    def _validate_completed_commit(self, resp: dict[str, Any]) -> str:
+        """Reject commits whose atomic engine failed to persist its output."""
+        marker = "atom_persistence_failed"
+        stage_errors: list[str] = []
+        marker_found = False
+
+        def walk(value: Any) -> None:
+            nonlocal marker_found
+            if isinstance(value, dict):
+                for child_key, child_value in value.items():
+                    if str(child_key).lower() == "stage_errors" and child_value:
+                        stage_errors.append(str(child_value))
+                    walk(child_value)
+                return
+            if isinstance(value, (list, tuple)):
+                for child_value in value:
+                    walk(child_value)
+                return
+
+            text = str(value or "").strip()
+            if marker in text.lower():
+                marker_found = True
+
+        walk(resp)
+        if not marker_found:
+            return ""
+        detail = stage_errors[0] if stage_errors else ""
+        if detail:
+            return f"EchoMem commit contains {marker}: {detail}"
+        return f"EchoMem commit contains {marker}"
+
     # -- session lifecycle -----------------------------------------------
 
     def health(self) -> dict[str, Any]:

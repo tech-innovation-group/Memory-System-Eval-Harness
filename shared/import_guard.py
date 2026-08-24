@@ -27,12 +27,20 @@ def require_complete_imports(
     failed = incomplete_imports(rows)
     if not failed or allow_incomplete:
         return
-    details = ", ".join(
-        str(row.get("question_id") or row.get("sample_id") or row.get("session_id") or "unknown")
-        + "="
-        + str(row.get("status") or "missing")
-        for row in failed[:8]
-    )
+    details_list = []
+    for row in failed[:8]:
+        identifier = str(
+            row.get("question_id")
+            or row.get("sample_id")
+            or row.get("session_id")
+            or "unknown"
+        )
+        detail = identifier + "=" + str(row.get("status") or "missing")
+        error = str(row.get("error") or "").strip()
+        if error:
+            detail += f" ({error[:300]})"
+        details_list.append(detail)
+    details = ", ".join(details_list)
     if len(failed) > 8:
         details += f", ... (+{len(failed) - 8})"
     raise RuntimeError(
