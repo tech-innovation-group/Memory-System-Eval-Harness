@@ -99,7 +99,7 @@ shell 退出时，桌面执行器可能主动回收后台子进程，这不代�
 服务器预检：
 
 ```bash
-/data/skills/echomem-eval-startup/preflight.sh
+/opt/memory-eval-web/data/skills/echomem-eval-startup/preflight.sh --strict
 ```
 
 ### 2. 固定代码版本
@@ -150,8 +150,8 @@ merge_commit
   环境；harness 用它完成 tenant/user/key 创建，任务结束后随容器销毁，不写入
   jobs、日志或结果文件。若任务显式提供 `--echomem-auth-key`，则直接复用该身份，
   不重复 provision。
-- 评测容器统一复用长期 runner 镜像；当前服务器镜像为
-  `memory-eval-harness:20260823-auth-fix`。依赖指纹未变化时不重建镜像；
+- 评测容器统一复用 `EVAL_IMAGE` 指定的长期 runner 镜像。依赖指纹未变化时
+  不重建镜像；
   EchoMem 运行源码按任务只读挂载，依赖镜像按依赖指纹复用。
 - Web 容器内的 `/results` 与 Docker 宿主机挂载路径分离；创建评测容器时使用
   `HOST_RESULTS_DIR=/opt/memory-eval-harness/results`，避免结果目录权限错误。
@@ -303,8 +303,8 @@ Judge 异常数量
 - 每任务临时 Registry provisioning capability 通过请求 header 传递，用于后续
   user/key 请求；
 - 显式 auth key 任务直接复用身份，不重复 provision；
-- 评测 runner 修复代码固化到 `memory-eval-harness:20260823-auth-fix`，不再只
-  修改常驻 runner 容器；
+- 评测 runner 修复代码必须固化到 `EVAL_IMAGE` 指定的镜像，不得只修改某个
+  正在运行的容器；
 - Docker 评测结果使用宿主机绝对路径挂载，修复 `/app/results/<job_id>` 权限；
   - 启动脚本按当前 embedding model/dimensions 校正共享 cache 元数据；
   - 复用 Python/runner 环境，不重复构建镜像。

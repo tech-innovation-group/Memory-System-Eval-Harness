@@ -13,15 +13,17 @@ Web/飞书编排层，完整线上流程见 [deploy/REMOTE_SERVER_README.md](dep
 ## 服务器一键部署
 
 ```bash
-git clone https://github.com/tech-innovation-group/Memory-System-Eval-Harness.git \
+git clone --branch v3_mcpTool \
+  https://github.com/tech-innovation-group/Memory-System-Eval-Harness.git \
   /opt/memory-eval-harness
 cd /opt/memory-eval-harness
 sudo deploy/install_server.sh
 ```
 
 首次执行会生成 `/opt/memory-eval-web/server.env`。填写
-`DEFAULT_LLM_API_KEY`、`DEFAULT_EMBEDDING_API_KEY` 和 `SESSION_SECRET` 后再次执行
-即可启动 Web/飞书入口，默认端口为 `8081`。完整流程见
+`DEFAULT_LLM_API_KEY`、`DEFAULT_EMBEDDING_API_KEY`、`SESSION_SECRET` 和
+`PUBLIC_BASE_URL`；使用飞书时再填写 `FEISHU_APP_ID`、`FEISHU_APP_SECRET`。
+再次执行即可启动 Web/飞书入口，默认端口为 `8081`。完整流程见
 [deploy/REMOTE_SERVER_README.md](deploy/REMOTE_SERVER_README.md)。
 
 ## 设计目标
