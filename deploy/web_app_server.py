@@ -222,6 +222,7 @@ PHASE_LABELS = {
 FEISHU_TOKEN_CACHE: dict[str, Any] = {"token": "", "expires_at": 0.0}
 FEISHU_EVENT_IDS: set[str] = set()
 FEISHU_LOCK = threading.Lock()
+FEISHU_EVENT_LOG_PATH = DATA_DIR / "feishu-events.jsonl"
 HARNESS_SESSION_MAP_PATH = DATA_DIR / "harness-feishu-sessions.json"
 HARNESS_SESSION_LOCK = threading.Lock()
 
@@ -2186,6 +2187,12 @@ def feishu_access_token() -> str:
 def send_feishu_text(chat_id: str, text: str) -> None:
     token = feishu_access_token()
     if not token or not chat_id:
+        app.logger.error(
+            "cannot send Feishu text: token_configured=%s chat_id_present=%s text=%s",
+            bool(token),
+            bool(chat_id),
+            text[:160],
+        )
         return
     response = requests.post(
         "https://open.feishu.cn/open-apis/im/v1/messages",
@@ -2959,6 +2966,51 @@ def parse_test_command_with_llm(text: str) -> tuple[str, int | None] | None:
     except (ValueError, TypeError, KeyError, json.JSONDecodeError, requests.RequestException):
         app.logger.warning("LLM test-command parsing failed", exc_info=True)
     return None
+
+
+def append_feishu_event_log(
+    *,
+    event_id: str,
+    event_type: str,
+    chat_id: str,
+    text: str,
+    outcome: str,
+    job_id: str = "",
+) -> None:
+    """Persist a redacted callback trace so missing replies are diagnosable."""
+    record = {
+        "received_at": now(),
+        "event_id": event_id,
+        "event_type": event_type,
+        "chat_id": chat_id,
+        "text": text[:500],
+        "outcome": outcome,
+        "job_id": job_id,
+    }
+    try:
+        FEISHU_EVENT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with FEISHU_EVENT_LOG_PATH.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except OSError:
+        app.logger.exception("failed to persist Feishu callback trace")
+
+
+def feishu_message_from_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    """Accept both current and legacy Feishu event envelope shapes."""
+    event = payload.get("event") or {}
+    if not isinstance(event, dict):
+        event = {}
+    message = event.get("message") or payload.get("message") or {}
+    if not isinstance(message, dict):
+        message = {}
+    chat_id = (
+        message.get("chat_id")
+        or event.get("chat_id")
+        or event.get("open_chat_id")
+        or payload.get("chat_id")
+        or ""
+    )
+    return message, str(chat_id)
 
 
 def enqueue_source_job(
@@ -3812,6 +3864,106 @@ def create_job():
     return redirect(url_for("job_detail", job_id=job_id))
 
 
+def process_feishu_message(
+    *,
+    event_id: str,
+    message: dict[str, Any],
+    chat_id: str,
+    text: str,
+) -> None:
+    """Handle a callback after the HTTP acknowledgement has been returned."""
+    try:
+        command = parse_test_command(text)
+        if command is None:
+            # Natural-language classification may take several seconds. It must
+            # never run on the Feishu callback request thread.
+            send_feishu_text(chat_id, "已收到，正在识别测试请求，请稍候。")
+            command = parse_test_command_with_llm(text)
+        if command:
+            source_ref, pr_number = command
+            try:
+                job = enqueue_source_job(
+                    source_ref=source_ref,
+                    pr_number=pr_number,
+                    chat_id=chat_id,
+                )
+                code_source = "分支: develop"
+                if source_ref == "pr" and pr_number is not None:
+                    code_source += f" · PR {pr_number}"
+                send_feishu_text(
+                    chat_id,
+                    f"任务已创建\nLoCoMo / conv-30\n{code_source}\n"
+                    f"任务 ID：{job['id']}\n"
+                    f"实时进度与日志：\n{job_detail_url(job['id'])}\n"
+                    "服务器单并发排队执行，完成后自动回传准确率和结果文件。",
+                )
+                append_feishu_event_log(
+                    event_id=event_id,
+                    event_type="message",
+                    chat_id=chat_id,
+                    text=text,
+                    outcome="job_created",
+                    job_id=str(job["id"]),
+                )
+            except Exception as exc:
+                append_feishu_event_log(
+                    event_id=event_id,
+                    event_type="message",
+                    chat_id=chat_id,
+                    text=text,
+                    outcome=f"job_create_failed:{str(exc)[:200]}",
+                )
+                send_feishu_text(chat_id, f"任务创建失败: {str(exc)[:300]}")
+            return
+
+        # Accept natural variants such as "pr测试 查询 <id>" and answer from
+        # the authoritative job record. Never send an explicit task-id lookup
+        # to LLM, otherwise stale chat context can attribute one task's error
+        # to another task.
+        status_match = re.search(
+            r"(?:状态|status|结果|result|查询|查看|进度)\s*[:：]?\s*([a-f0-9]{12})",
+            text.lower(),
+        )
+        if not status_match:
+            id_match = re.search(r"\b([a-f0-9]{12})\b", text.lower())
+            status_match = id_match
+        if status_match:
+            job = get_job(status_match.group(1))
+            if not job:
+                reply = "找不到这个任务 ID。"
+            else:
+                is_result_request = bool(
+                    re.search(r"^(?:结果|result)\b", text.strip(), flags=re.IGNORECASE)
+                )
+                if is_result_request and job.get("status") == "completed":
+                    send_feishu_text(
+                        chat_id,
+                        f"正在重新上传任务 {job['id']} 的结果文件和多维表格记录，请稍候。",
+                    )
+                    threading.Thread(
+                        target=notify_feishu_job,
+                        args=(job["id"],),
+                        daemon=True,
+                        name=f"feishu-result-retry-{job['id']}",
+                    ).start()
+                    return
+                reply = format_job_status(job)
+            send_feishu_text(chat_id, reply)
+            return
+
+        if HARNESS_ENABLED:
+            send_feishu_text(chat_id, "已交给 Harness 处理，我会在同一群聊里回复。")
+            harness_prompt_and_reply(chat_id, text)
+        else:
+            send_feishu_text(chat_id, answer_feishu_question(chat_id, text))
+    except Exception:
+        app.logger.exception("failed to process Feishu message event=%s", event_id)
+        try:
+            send_feishu_text(chat_id, "机器人处理失败，请稍后重试；也可以发送“查询 <任务ID>”。")
+        except Exception:
+            app.logger.exception("failed to report Feishu message error")
+
+
 @app.post("/feishu/events")
 def feishu_events():
     payload = request.get_json(silent=True) or {}
@@ -3835,91 +3987,60 @@ def feishu_events():
             if len(FEISHU_EVENT_IDS) > 5000:
                 FEISHU_EVENT_IDS.clear()
                 FEISHU_EVENT_IDS.add(event_id)
-    event = payload.get("event") or {}
-    message = event.get("message") or {}
+    event_type = str(header.get("event_type") or payload.get("event_type") or "message")
+    message, chat_id = feishu_message_from_payload(payload)
     if is_all_members_mention(message):
         app.logger.info(
             "Ignoring Feishu all-members mention: chat=%s event=%s",
-            message.get("chat_id", ""),
+            chat_id,
             event_id,
+        )
+        append_feishu_event_log(
+            event_id=event_id,
+            event_type=event_type,
+            chat_id=chat_id,
+            text="",
+            outcome="ignored_all_members_mention",
         )
         return jsonify({"code": 0})
     text = parse_feishu_text(message)
-    chat_id = str(message.get("chat_id", ""))
-    app.logger.info("Feishu event received: chat=%s text=%s", chat_id, text[:160])
-    command = parse_test_command(text)
-    if command is None:
-        command = parse_test_command_with_llm(text)
-    if command:
-        source_ref, pr_number = command
-        try:
-            job = enqueue_source_job(
-                source_ref=source_ref,
-                pr_number=pr_number,
-                chat_id=chat_id,
-            )
-            code_source = "分支: develop"
-            if source_ref == "pr" and pr_number is not None:
-                code_source += f" · PR {pr_number}"
-            send_feishu_text(
-                chat_id,
-                f"任务已创建\nLoCoMo / conv-30\n{code_source}\n"
-                f"任务 ID：{job['id']}\n"
-                f"实时进度与日志：\n{job_detail_url(job['id'])}\n"
-                "服务器单并发排队执行，完成后自动回传准确率和结果文件。",
-            )
-        except Exception as exc:
-            send_feishu_text(chat_id, f"任务创建失败: {str(exc)[:300]}")
-        return jsonify({"code": 0})
-
-    # Accept natural variants such as "pr测试 查询 <id>" and answer from the
-    # authoritative job record. Never send an explicit task-id lookup to LLM,
-    # otherwise stale chat context can cause one task's error to be attributed
-    # to another task.
-    status_match = re.search(
-        r"(?:状态|status|结果|result|查询|查看|进度)\s*[:：]?\s*([a-f0-9]{12})",
-        text.lower(),
+    app.logger.info(
+        "Feishu event received: event=%s type=%s chat=%s text=%s",
+        event_id,
+        event_type,
+        chat_id,
+        text[:160],
     )
-    if not status_match:
-        id_match = re.search(r"\b([a-f0-9]{12})\b", text.lower())
-        status_match = id_match
-    if status_match:
-        job = get_job(status_match.group(1))
-        if not job:
-            reply = "找不到这个任务 ID。"
-        else:
-            is_result_request = bool(
-                re.search(r"^(?:结果|result)\b", text.strip(), flags=re.IGNORECASE)
-            )
-            if is_result_request and job.get("status") == "completed":
-                send_feishu_text(
-                    chat_id,
-                    f"正在重新上传任务 {job['id']} 的结果文件和多维表格记录，请稍候。",
-                )
-                threading.Thread(
-                    target=notify_feishu_job,
-                    args=(job["id"],),
-                    daemon=True,
-                    name=f"feishu-result-retry-{job['id']}",
-                ).start()
-                return jsonify({"code": 0})
-            reply = format_job_status(job)
-        try:
-            send_feishu_text(chat_id, reply)
-        except Exception:
-            app.logger.exception("failed to send direct task lookup reply")
+    if not chat_id:
+        append_feishu_event_log(
+            event_id=event_id,
+            event_type=event_type,
+            chat_id="",
+            text=text,
+            outcome="ignored_missing_chat_id",
+        )
         return jsonify({"code": 0})
 
-    if HARNESS_ENABLED:
-        send_feishu_text(chat_id, "已交给 Harness 处理，我会在同一群聊里回复。")
-        threading.Thread(
-            target=harness_prompt_and_reply,
-            args=(chat_id, text),
-            daemon=True,
-            name=f"harness-feishu-{chat_id[-8:]}",
-        ).start()
-    else:
-        send_feishu_text(chat_id, answer_feishu_question(chat_id, text))
+    append_feishu_event_log(
+        event_id=event_id,
+        event_type=event_type,
+        chat_id=chat_id,
+        text=text,
+        outcome="accepted",
+    )
+    threading.Thread(
+        target=process_feishu_message,
+        kwargs={
+            "event_id": event_id,
+            "message": message,
+            "chat_id": chat_id,
+            "text": text,
+        },
+        daemon=True,
+        name=f"feishu-event-{event_id[-8:] or uuid.uuid4().hex[:8]}",
+    ).start()
+    # Acknowledge immediately. Feishu may retry callbacks that spend time
+    # waiting on an LLM or the Feishu send-message API.
     return jsonify({"code": 0})
 
 

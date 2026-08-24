@@ -79,6 +79,37 @@ An unchanged `jobs.json` together with no `Feishu event received` log means
 the message did not reach this server. In that case, changing evaluator or
 EchoMem code cannot fix the missing reply.
 
+Feishu callbacks are acknowledged immediately. Command parsing, LLM intent
+classification, task creation, and the outgoing bot message run in a
+background worker so a slow model request cannot make Feishu retry the event
+or show no response. Every received event is also recorded (without secrets)
+in:
+
+```text
+/data/feishu-events.jsonl
+```
+
+Inspect the most recent callback records with:
+
+```bash
+tail -n 20 /data/feishu-events.jsonl
+```
+
+Useful outcomes are:
+
+```text
+accepted
+job_created
+job_create_failed:...
+ignored_missing_chat_id
+ignored_all_members_mention
+```
+
+`ignored_missing_chat_id` means Feishu delivered an event without a usable
+conversation ID, so the platform cannot send a reply or attach the task to a
+group. Check that the bot is installed in the group and that the subscribed
+event is `im.message.receive_v1`.
+
 When Feishu encryption is enabled, the request body contains an `encrypt` field.
 The Web service decrypts it with `FEISHU_ENCRYPT_KEY`; a missing or invalid key
 returns HTTP 400 and writes an explicit error to the Web log.
