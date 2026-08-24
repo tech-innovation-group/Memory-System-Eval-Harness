@@ -20,6 +20,7 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import docker
 from docker.errors import DockerException, ImageNotFound
@@ -186,6 +187,12 @@ ALLOWED_HOSTS = {
     if item.strip()
 }
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
+public_host = urlparse(PUBLIC_BASE_URL).hostname
+if public_host:
+    # PUBLIC_BASE_URL is the operator's externally reachable address. Include
+    # its hostname automatically so Feishu callbacks do not receive HTTP 400
+    # merely because ALLOWED_HOSTS was left at its localhost default.
+    ALLOWED_HOSTS.add(public_host)
 MAX_JOBS = 50
 
 if not SESSION_SECRET:
@@ -3637,6 +3644,7 @@ def reattach_running_jobs() -> None:
 def reject_untrusted_hosts():
     host = request.host.split(":", 1)[0]
     if host not in ALLOWED_HOSTS:
+        app.logger.warning("rejected request with untrusted Host: %s", host)
         abort(400)
 
 

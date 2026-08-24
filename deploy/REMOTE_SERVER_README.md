@@ -21,6 +21,7 @@ sudo deploy/install_server.sh
 DEFAULT_LLM_API_KEY=你的DeepSeekKey
 DEFAULT_EMBEDDING_API_KEY=你的DashScopeEmbeddingKey
 SESSION_SECRET=随机长字符串
+PUBLIC_BASE_URL=http://服务器公网IP:8081
 ```
 
 脚本会构建 runner/Web 镜像、创建数据目录、启动 `memory-eval-web`，并检查
@@ -43,6 +44,10 @@ curl -fsS http://127.0.0.1:8081/
 DeepSeek 只负责 LLM/Judge，DashScope `text-embedding-v3` 只负责 embedding；
 两个 API Key 和 endpoint 不要混用。完整故障处理见
 [ECHOMEM_EVAL_RUNBOOK.md](ECHOMEM_EVAL_RUNBOOK.md)。
+
+`PUBLIC_BASE_URL` 必须填写飞书能够访问的 IP 或域名，例如
+`http://8.130.75.94:8081`。程序会自动把这个地址的 hostname 加入
+`ALLOWED_HOSTS`，否则公网访问和 Feishu 回调会返回 HTTP 400。
 
 固定执行清单见 [ECHOMEM_EVAL_RUNBOOK.md](ECHOMEM_EVAL_RUNBOOK.md)。本文档保留
 服务器目录、入口和复核命令；实际执行时先读 runbook，再按本文档定位文件。
