@@ -96,24 +96,50 @@ def response_summary(response: httpx.Response) -> dict[str, Any]:
     return {"status": response.status_code, "body": body}
 
 
-def retry_after_seconds(response: httpx.Response) -> float | None:
-    """Read Retry-After from seconds or an HTTP-date response header."""
-    value = response.headers.get("Retry-After")
-    if not value:
+def _nested_number(payload: Any, keys: tuple[str, ...]) -> float | None:
+    if not isinstance(payload, dict):
         return None
-    try:
-        return max(0.0, float(value))
-    except ValueError:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, (int, float)):
+            return max(0.0, float(value))
+        if isinstance(value, str):
+            try:
+                return max(0.0, float(value))
+            except ValueError:
+                pass
+    for key in ("result", "data", "commit", "error", "detail"):
+        found = _nested_number(payload.get(key), keys)
+        if found is not None:
+            return found
+    return None
+
+
+def retry_after_seconds(response: httpx.Response) -> float | None:
+    """Read retry delay from Retry-After or a structured JSON response."""
+    value = response.headers.get("Retry-After")
+    if value:
         try:
-            retry_at = parsedate_to_datetime(value)
-            if retry_at.tzinfo is None:
-                retry_at = retry_at.replace(tzinfo=timezone.utc)
-            return max(
-                0.0,
-                (retry_at - datetime.now(timezone.utc)).total_seconds(),
-            )
-        except (TypeError, ValueError, OverflowError):
-            return None
+            return max(0.0, float(value))
+        except ValueError:
+            try:
+                retry_at = parsedate_to_datetime(value)
+                if retry_at.tzinfo is None:
+                    retry_at = retry_at.replace(tzinfo=timezone.utc)
+                return max(
+                    0.0,
+                    (retry_at - datetime.now(timezone.utc)).total_seconds(),
+                )
+            except (TypeError, ValueError, OverflowError):
+                pass
+    try:
+        payload: Any = response.json()
+    except ValueError:
+        return None
+    return _nested_number(
+        payload,
+        ("retry_after_s", "retry_after_seconds", "retry_after"),
+    )
 
 
 def classify_workflow(row: dict[str, Any]) -> str:
@@ -123,8 +149,12 @@ def classify_workflow(row: dict[str, Any]) -> str:
         return f"http:open:{row.get('open_status')}"
     if row.get("message_status") not in EXPECTED_MESSAGE:
         return f"http:message:{row.get('message_status')}"
-    if row.get("commit_status") not in EXPECTED_COMMIT:
-        return f"http:commit:{row.get('commit_status')}"
+    commit_mode = row.get("commit_mode", "explicit")
+    if commit_mode == "explicit":
+        if row.get("commit_status") not in EXPECTED_COMMIT:
+            return f"http:commit:{row.get('commit_status')}"
+    elif row.get("commit_poll_requested") and not row.get("archive_id"):
+        return "auto_commit:missing_archive_id"
     if row.get("commit_poll_state") == "failed":
         return "commit:failed"
     if row.get("commit_poll_state") == "timeout":
@@ -154,6 +184,7 @@ async def post_commit_with_retry(
     headers: dict[str, str],
     max_retries: int,
     retry_backoff_s: float,
+    idempotency_key: str,
 ) -> tuple[httpx.Response, float, dict[str, Any]]:
     """Submit commit and retry only queue-pressure responses."""
     started = time.perf_counter()
@@ -162,9 +193,10 @@ async def post_commit_with_retry(
     first_status: int | None = None
     response: httpx.Response | None = None
     max_attempts = max(1, max_retries + 1)
+    commit_headers = {**headers, "Idempotency-Key": idempotency_key}
     while attempts < max_attempts:
         attempts += 1
-        response = await client.post(path, json=payload, headers=headers)
+        response = await client.post(path, json=payload, headers=commit_headers)
         if first_status is None:
             first_status = response.status_code
         if response.status_code != 429 or attempts >= max_attempts:
@@ -183,6 +215,7 @@ async def post_commit_with_retry(
         "commit_retries": max(0, attempts - 1),
         "commit_retry_delays_s": retry_delays,
         "commit_retry_exhausted": response.status_code == 429,
+        "commit_idempotency_key": idempotency_key,
     }
 
 
@@ -289,8 +322,10 @@ async def run_workflow(
     *,
     index: int,
     stage: int,
-    agent_id: str,
+    tenant: dict[str, str],
     message_size: int,
+    messages_per_session: int,
+    commit_mode: str,
     headers: dict[str, str],
     poll_commits: bool,
     poll_timeout_s: float,
@@ -300,21 +335,37 @@ async def run_workflow(
     poll_retries: int,
     poll_backoff_s: float,
     run_id: str,
+    deferred_polling: bool,
+    scheduled_at: float | None = None,
 ) -> dict[str, Any]:
+    agent_id = tenant["agent_id"]
+    tenant_name = tenant["name"]
+    tenant_headers = dict(headers)
+    if tenant.get("auth_key"):
+        tenant_headers["X-Auth-Key"] = tenant["auth_key"]
     session_id = f"incident-{run_id}-{stage}-{index}"
     started = time.perf_counter()
     row: dict[str, Any] = {
         "index": index,
         "stage": stage,
         "session_id": session_id,
+        "tenant": tenant_name,
+        "agent_id": agent_id,
+        "commit_mode": commit_mode,
         "started_at": time.time(),
     }
+    if scheduled_at is not None:
+        row["scheduled_at"] = scheduled_at
+        row["arrival_lag_ms"] = round(
+            max(0.0, row["started_at"] - scheduled_at) * 1000,
+            3,
+        )
     try:
         response, elapsed = await post_step(
             client,
             "/api/sessions/open",
             payload={"agent_id": agent_id, "session_id": session_id},
-            headers=headers,
+            headers=tenant_headers,
         )
         row["open_ms"] = elapsed
         row["open_status"] = response.status_code
@@ -322,45 +373,70 @@ async def run_workflow(
         if response.status_code not in EXPECTED_OPEN:
             return row
 
-        response, elapsed = await post_step(
-            client,
-            f"/api/sessions/{session_id}/messages",
-            payload={
-                "role": "user",
-                "content": (
-                    f"Incident load test stage {stage} item {index}. "
-                    + ("x" * max(0, message_size - 42))
-                ),
-            },
-            headers=headers,
-        )
-        row["message_ms"] = elapsed
-        row["message_status"] = response.status_code
-        row["message_body"] = response_summary(response)["body"]
-        if response.status_code not in EXPECTED_MESSAGE:
-            return row
+        message_total_ms = 0.0
+        message_bodies: list[Any] = []
+        archive_id = ""
+        for message_index in range(messages_per_session):
+            response, elapsed = await post_step(
+                client,
+                f"/api/sessions/{session_id}/messages",
+                payload={
+                    "role": "user",
+                    "content": (
+                        f"Incident load test stage {stage} item {index} "
+                        f"message {message_index}. "
+                        + ("x" * max(0, message_size - 52))
+                    ),
+                },
+                headers=tenant_headers,
+            )
+            message_total_ms += elapsed
+            message_body = response_summary(response)["body"]
+            message_bodies.append(message_body)
+            row["message_status"] = response.status_code
+            if response.status_code not in EXPECTED_MESSAGE:
+                row["message_ms"] = round(message_total_ms, 3)
+                row["message_body"] = message_body
+                return row
+            archive_id = extract_archive_id(message_body) or archive_id
+        row["message_ms"] = round(message_total_ms, 3)
+        row["message_count"] = messages_per_session
+        row["message_body"] = message_bodies[-1] if message_bodies else None
 
-        response, elapsed, retry_info = await post_commit_with_retry(
-            client,
-            f"/api/sessions/{session_id}/commit",
-            payload={},
-            headers=headers,
-            max_retries=commit_retries,
-            retry_backoff_s=retry_backoff_s,
-        )
-        commit_response = response_summary(response)
-        row["commit_ms"] = elapsed
-        row["commit_status"] = response.status_code
-        row.update(retry_info)
-        row["commit_body"] = commit_response["body"]
-        row["archive_id"] = extract_archive_id(commit_response["body"])
+        if commit_mode == "explicit":
+            idempotency_key = f"{run_id}:{session_id}:commit"
+            response, elapsed, retry_info = await post_commit_with_retry(
+                client,
+                f"/api/sessions/{session_id}/commit",
+                payload={},
+                headers=tenant_headers,
+                max_retries=commit_retries,
+                retry_backoff_s=retry_backoff_s,
+                idempotency_key=idempotency_key,
+            )
+            commit_response = response_summary(response)
+            row["commit_ms"] = elapsed
+            row["commit_status"] = response.status_code
+            row.update(retry_info)
+            row["commit_body"] = commit_response["body"]
+            archive_id = extract_archive_id(commit_response["body"])
+        else:
+            row["commit_ms"] = 0.0
+            row["commit_status"] = None
+            row["commit_body"] = None
+        row["archive_id"] = archive_id
         row["commit_poll_requested"] = poll_commits
         row["request_duration_ms"] = round(
             (time.perf_counter() - started) * 1000, 3
         )
+        row["request_completed_at"] = time.time()
         if (
             poll_commits
-            and response.status_code in EXPECTED_COMMIT
+            and not deferred_polling
+            and (
+                commit_mode == "auto"
+                or row.get("commit_status") in EXPECTED_COMMIT
+            )
             and row["archive_id"]
         ):
             row.update(
@@ -368,7 +444,7 @@ async def run_workflow(
                     client,
                     session_id=session_id,
                     archive_id=row["archive_id"],
-                    headers=headers,
+                    headers=tenant_headers,
                     timeout_s=poll_timeout_s,
                     interval_s=poll_interval_s,
                     max_retries=poll_retries,
@@ -376,10 +452,10 @@ async def run_workflow(
                 )
             )
             row["commit_completion_ms"] = round(
-                row["request_duration_ms"]
-                + float(row.get("commit_poll_elapsed_ms") or 0.0),
+                (time.time() - float(row["started_at"])) * 1000,
                 3,
             )
+        row["window_commit_poll_state"] = row.get("commit_poll_state")
     except Exception as exc:
         row["exception"] = type(exc).__name__
         row["error"] = str(exc)[:500]
@@ -432,6 +508,7 @@ def build_metrics(
     requested_workflows: int,
     concurrency: int,
     stage: int,
+    arrival_rate: float = 0.0,
 ) -> dict[str, Any]:
     durations = [
         float(row["duration_ms"])
@@ -454,12 +531,31 @@ def build_metrics(
         if "commit_completion_ms" in row
     ]
     accepted = sum(
-        row.get("commit_status") in EXPECTED_COMMIT
+        int(
+            row.get("commit_status") in EXPECTED_COMMIT
+            or (
+                row.get("commit_mode") == "auto"
+                and bool(row.get("archive_id"))
+            )
+        )
         for row in workflows
     )
     polled = any("commit_poll_state" in row for row in workflows)
     completed = sum(
         row.get("commit_poll_state") == "completed"
+        for row in workflows
+    )
+    window_completed = sum(
+        row.get("window_commit_poll_state") == "completed"
+        for row in workflows
+    )
+    window_timeouts = sum(
+        row.get("window_commit_poll_state") == "timeout"
+        for row in workflows
+    )
+    window_deferred = sum(
+        bool(row.get("archive_id"))
+        and row.get("window_commit_poll_state") is None
         for row in workflows
     )
     failed = sum(row.get("result") != "ok" for row in workflows)
@@ -490,13 +586,38 @@ def build_metrics(
         row.get("result") == "commit:missing_archive_id"
         for row in workflows
     )
+    auto_commit_missing_id = sum(
+        row.get("result") == "auto_commit:missing_archive_id"
+        for row in workflows
+    )
     poll_http_counts: Counter[str] = Counter()
     for row in workflows:
         poll_http_counts.update(row.get("commit_poll_http_counts") or {})
     elapsed_s = elapsed_ms / 1000
+    request_started = [
+        float(row["started_at"])
+        for row in workflows
+        if "started_at" in row
+    ]
+    request_completed = [
+        float(row["request_completed_at"])
+        for row in workflows
+        if "request_completed_at" in row
+    ]
+    request_submission_elapsed_s = (
+        max(request_completed) - min(request_started)
+        if request_started and request_completed
+        else 0.0
+    )
+    arrival_lags = [
+        float(row["arrival_lag_ms"])
+        for row in workflows
+        if "arrival_lag_ms" in row
+    ]
     return {
         "stage": stage,
         "concurrency": concurrency,
+        "target_arrival_rate": arrival_rate or None,
         "requested_workflows": requested_workflows,
         "finished_workflows": len(workflows),
         "accepted_commits": accepted,
@@ -505,7 +626,12 @@ def build_metrics(
         "commit_final_429": final_429,
         "commit_total_retries": total_commit_retries,
         "completed_commits": completed if polled else None,
+        "window_completed_commits": window_completed if polled else None,
+        "window_commit_timeouts": window_timeouts if polled else None,
+        "window_deferred_commits": window_deferred if polled else None,
+        "final_completed_commits": completed if polled else None,
         "commit_poll_missing_archive_id": commit_poll_missing_id,
+        "auto_commit_missing_archive_id": auto_commit_missing_id,
         "commit_poll_http_counts": dict(poll_http_counts),
         "failed_workflows": failed,
         "workflow_success_rate": round(
@@ -517,6 +643,19 @@ def build_metrics(
             len(workflows) / elapsed_s,
             3,
         ) if elapsed_s > 0 else 0,
+        "request_submission_elapsed_ms": round(
+            request_submission_elapsed_s * 1000,
+            3,
+        ),
+        "requests_completed_per_second": round(
+            len(request_completed) / request_submission_elapsed_s,
+            3,
+        ) if request_submission_elapsed_s > 0 else 0,
+        "arrival_lag_ms": {
+            "p50": percentile(arrival_lags, 50),
+            "p95": percentile(arrival_lags, 95),
+            "p99": percentile(arrival_lags, 99),
+        },
         "workflow_latency_ms": {
             "p50": percentile(durations, 50),
             "p95": percentile(durations, 95),
@@ -545,10 +684,64 @@ def build_metrics(
                 f"{step}:{row.get(f'{step}_status')}"
                 for row in workflows
                 for step in ("open", "message", "commit")
-                if f"{step}_status" in row
+                if row.get(f"{step}_status") is not None
             )
         ),
     }
+
+
+def build_tenant_metrics(workflows: list[dict[str, Any]]) -> dict[str, Any]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in workflows:
+        grouped.setdefault(str(row.get("tenant") or "default"), []).append(row)
+    metrics: dict[str, Any] = {}
+    for tenant_name, rows in sorted(grouped.items()):
+        completion_durations = [
+            float(row["commit_completion_ms"])
+            for row in rows
+            if "commit_completion_ms" in row
+        ]
+        accepted = sum(
+            int(
+                row.get("commit_status") in EXPECTED_COMMIT
+                or (
+                    row.get("commit_mode") == "auto"
+                    and bool(row.get("archive_id"))
+                )
+            )
+            for row in rows
+        )
+        completed = sum(
+            row.get("commit_poll_state") == "completed"
+            for row in rows
+        )
+        metrics[tenant_name] = {
+            "workflows": len(rows),
+            "accepted_commits": accepted,
+            "window_completed_commits": sum(
+                row.get("window_commit_poll_state") == "completed"
+                for row in rows
+            ),
+            "final_completed_commits": completed,
+            "initial_429": sum(
+                row.get("commit_initial_status") == 429
+                for row in rows
+            ),
+            "final_429": sum(
+                row.get("commit_status") == 429
+                for row in rows
+            ),
+            "failed_workflows": sum(
+                row.get("result") != "ok"
+                for row in rows
+            ),
+            "completion_latency_ms": {
+                "p50": percentile(completion_durations, 50),
+                "p95": percentile(completion_durations, 95),
+                "p99": percentile(completion_durations, 99),
+            },
+        }
+    return metrics
 
 
 async def run_stage(
@@ -557,46 +750,71 @@ async def run_stage(
     stage: int,
     workflows_count: int,
     concurrency: int,
+    arrival_rate: float,
     args: argparse.Namespace,
     headers: dict[str, str],
 ) -> dict[str, Any]:
-    queue: asyncio.Queue[int] = asyncio.Queue()
-    for index in range(workflows_count):
-        queue.put_nowait(index)
     results: list[dict[str, Any]] = []
 
-    async def worker() -> None:
-        while True:
-            try:
-                index = queue.get_nowait()
-            except asyncio.QueueEmpty:
-                return
-            try:
-                results.append(
-                    await run_workflow(
-                        client,
-                        index=index,
-                        stage=stage,
-                        agent_id=args.agent_id,
-                        message_size=args.message_size,
-                        headers=headers,
-                        poll_commits=args.poll_commits,
-                        poll_timeout_s=args.poll_timeout,
-                        poll_interval_s=args.poll_interval,
-                        commit_retries=args.commit_retries,
-                        retry_backoff_s=args.retry_backoff,
-                        poll_retries=args.poll_retries,
-                        poll_backoff_s=args.poll_backoff,
-                        run_id=args.run_id,
-                    )
-                )
-            finally:
-                queue.task_done()
+    async def execute(index: int, scheduled_at: float | None = None) -> None:
+        results.append(
+            await run_workflow(
+                client,
+                index=index,
+                stage=stage,
+                tenant=args.tenants[index % len(args.tenants)],
+                message_size=args.message_size,
+                messages_per_session=args.messages_per_session,
+                commit_mode=args.commit_mode,
+                headers=headers,
+                poll_commits=args.poll_commits,
+                poll_timeout_s=args.poll_timeout,
+                poll_interval_s=args.poll_interval,
+                commit_retries=args.commit_retries,
+                retry_backoff_s=args.retry_backoff,
+                poll_retries=args.poll_retries,
+                poll_backoff_s=args.poll_backoff,
+                run_id=args.run_id,
+                deferred_polling=args.deferred_polling,
+                scheduled_at=scheduled_at,
+            )
+        )
 
     started = time.perf_counter()
-    await asyncio.gather(
-        *(worker() for _ in range(min(concurrency, workflows_count)))
-    )
+    if arrival_rate > 0:
+        stage_epoch = time.time()
+        semaphore = asyncio.Semaphore(min(concurrency, workflows_count))
+
+        async def scheduled_workflow(index: int) -> None:
+            target_offset = index / arrival_rate
+            delay = started + target_offset - time.perf_counter()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            async with semaphore:
+                await execute(index, stage_epoch + target_offset)
+
+        await asyncio.gather(
+            *(scheduled_workflow(index) for index in range(workflows_count))
+        )
+    else:
+        queue: asyncio.Queue[int] = asyncio.Queue()
+        for index in range(workflows_count):
+            queue.put_nowait(index)
+
+        async def worker() -> None:
+            while True:
+                try:
+                    index = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    return
+                try:
+                    await execute(index)
+                finally:
+                    queue.task_done()
+
+        await asyncio.gather(
+            *(worker() for _ in range(min(concurrency, workflows_count)))
+        )
     elapsed_ms = (time.perf_counter() - started) * 1000
     results.sort(key=lambda row: row["index"])
     return {
@@ -607,8 +825,10 @@ async def run_stage(
             requested_workflows=workflows_count,
             concurrency=concurrency,
             stage=stage,
+            arrival_rate=arrival_rate,
         ),
         "workflows": results,
+        "tenant_metrics": build_tenant_metrics(results),
     }
 
 
@@ -622,6 +842,7 @@ async def drain_commits(
     poll_concurrency: int,
     poll_retries: int,
     poll_backoff_s: float,
+    tenants: list[dict[str, str]],
 ) -> dict[str, int]:
     """Continue polling accepted commits after stage workers finish."""
     pending = [
@@ -631,6 +852,7 @@ async def drain_commits(
     ]
     deadline = time.perf_counter() + timeout_s
     semaphore = asyncio.Semaphore(max(1, poll_concurrency))
+    tenant_by_name = {tenant["name"]: tenant for tenant in tenants}
 
     async def drain_one(row: dict[str, Any]) -> None:
         async with semaphore:
@@ -639,11 +861,15 @@ async def drain_commits(
                 return
             previous_count = int(row.get("commit_poll_count") or 0)
             previous_elapsed = float(row.get("commit_poll_elapsed_ms") or 0.0)
+            tenant = tenant_by_name.get(str(row.get("tenant") or ""), {})
+            row_headers = dict(headers)
+            if tenant.get("auth_key"):
+                row_headers["X-Auth-Key"] = tenant["auth_key"]
             update = await poll_commit(
                 client,
                 session_id=str(row["session_id"]),
                 archive_id=str(row["archive_id"]),
-                headers=headers,
+                headers=row_headers,
                 timeout_s=remaining,
                 interval_s=interval_s,
                 max_retries=poll_retries,
@@ -659,8 +885,10 @@ async def drain_commits(
                 3,
             )
             row["commit_completion_ms"] = round(
-                float(row.get("request_duration_ms") or row.get("duration_ms") or 0)
-                + float(row.get("commit_poll_elapsed_ms") or 0),
+                (
+                    time.time()
+                    - float(row.get("started_at") or time.time())
+                ) * 1000,
                 3,
             )
             row["result"] = classify_workflow(row)
@@ -687,8 +915,44 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer.writerows(rows)
 
 
+def load_tenants(args: argparse.Namespace) -> list[dict[str, str]]:
+    if args.tenant_config:
+        path = Path(args.tenant_config).expanduser().resolve()
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, list) or not payload:
+            raise ValueError("--tenant-config must contain a non-empty JSON list")
+        tenants: list[dict[str, str]] = []
+        for index, item in enumerate(payload):
+            if not isinstance(item, dict):
+                raise ValueError(f"tenant config item {index} must be an object")
+            agent_id = str(item.get("agent_id") or "").strip()
+            if not agent_id:
+                raise ValueError(f"tenant config item {index} is missing agent_id")
+            tenants.append(
+                {
+                    "name": str(item.get("name") or agent_id).strip(),
+                    "agent_id": agent_id,
+                    "auth_key": str(item.get("auth_key") or "").strip(),
+                }
+            )
+        return tenants
+    agent_ids = args.agent_ids or [args.agent_id]
+    return [
+        {"name": agent_id, "agent_id": agent_id, "auth_key": ""}
+        for agent_id in agent_ids
+    ]
+
+
 async def run(args: argparse.Namespace) -> None:
+    if args.tenant_config and args.agent_ids:
+        raise ValueError("--tenant-config and --agent-ids are mutually exclusive")
+    if args.messages_per_session < 1:
+        raise ValueError("--messages-per-session must be at least 1")
     args.run_id = args.run_id or uuid4().hex[:12]
+    args.tenants = load_tenants(args)
+    tenant_names = [tenant["name"] for tenant in args.tenants]
+    if len(set(tenant_names)) != len(tenant_names):
+        raise ValueError("tenant names must be unique")
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     timeout = httpx.Timeout(
@@ -703,29 +967,59 @@ async def run(args: argparse.Namespace) -> None:
     )
     headers = {"X-Auth-Key": args.auth_key} if args.auth_key else {}
     stages = args.stages or [args.concurrency]
+    rates = args.rates or [0.0] * len(stages)
+    if len(rates) == 1 and len(stages) > 1:
+        rates = rates * len(stages)
+    if len(rates) != len(stages):
+        raise ValueError("--rates must contain one value or match --stages")
+    if any(rate < 0 for rate in rates):
+        raise ValueError("--rates values must be non-negative")
     workflows_count = args.workflows or args.concurrency
     all_stages: list[dict[str, Any]] = []
+    stage_drains: list[dict[str, int]] = []
     async with httpx.AsyncClient(
         base_url=args.url.rstrip("/"),
         timeout=timeout,
         limits=limits,
     ) as client:
-        for stage, concurrency in enumerate(stages, start=1):
-            all_stages.append(
-                await run_stage(
-                    client,
-                    stage=stage,
-                    workflows_count=workflows_count,
-                    concurrency=concurrency,
-                    args=args,
-                    headers=headers,
-                )
+        for stage, (concurrency, arrival_rate) in enumerate(
+            zip(stages, rates),
+            start=1,
+        ):
+            stage_result = await run_stage(
+                client,
+                stage=stage,
+                workflows_count=workflows_count,
+                concurrency=concurrency,
+                arrival_rate=arrival_rate,
+                args=args,
+                headers=headers,
             )
+            all_stages.append(stage_result)
+            if (
+                args.drain_between_stages
+                and args.poll_commits
+                and args.drain_timeout > 0
+            ):
+                stage_drain = await drain_commits(
+                    client,
+                    stage_result["workflows"],
+                    headers=headers,
+                    timeout_s=args.drain_timeout,
+                    interval_s=args.poll_interval,
+                    poll_concurrency=args.poll_concurrency,
+                    poll_retries=args.poll_retries,
+                    poll_backoff_s=args.poll_backoff,
+                    tenants=args.tenants,
+                )
+                stage_drains.append({"stage": stage, **stage_drain})
+            if args.stage_cooldown > 0 and stage < len(stages):
+                await asyncio.sleep(args.stage_cooldown)
 
         probes: list[dict[str, Any]] = []
         if args.context_probes and all_stages:
             sessions = [
-                row["session_id"]
+                row
                 for row in all_stages[-1]["workflows"]
                 if row.get("open_status") == 200
             ][: args.context_probes]
@@ -733,12 +1027,21 @@ async def run(args: argparse.Namespace) -> None:
                 *(
                     run_context_probe(
                         client,
-                        session_id=session_id,
+                        session_id=str(row["session_id"]),
                         index=index,
-                        agent_id=args.agent_id,
-                        headers=headers,
+                        agent_id=str(row["agent_id"]),
+                        headers={
+                            **headers,
+                            **(
+                                {"X-Auth-Key": tenant["auth_key"]}
+                                if tenant.get("auth_key")
+                                else {}
+                            ),
+                        },
                     )
-                    for index, session_id in enumerate(sessions)
+                    for index, row in enumerate(sessions)
+                    for tenant in args.tenants
+                    if tenant["name"] == row["tenant"]
                 )
             )
 
@@ -748,7 +1051,11 @@ async def run(args: argparse.Namespace) -> None:
             "failed": 0,
             "remaining": 0,
         }
-        if args.poll_commits and args.drain_timeout > 0:
+        if (
+            args.poll_commits
+            and args.drain_timeout > 0
+            and not args.drain_between_stages
+        ):
             workflows = [
                 row
                 for stage in all_stages
@@ -763,6 +1070,7 @@ async def run(args: argparse.Namespace) -> None:
                 poll_concurrency=args.poll_concurrency,
                 poll_retries=args.poll_retries,
                 poll_backoff_s=args.poll_backoff,
+                tenants=args.tenants,
             )
 
         for stage in all_stages:
@@ -772,25 +1080,54 @@ async def run(args: argparse.Namespace) -> None:
                 requested_workflows=workflows_count,
                 concurrency=stage["metrics"]["concurrency"],
                 stage=stage["metrics"]["stage"],
+                arrival_rate=float(
+                    stage["metrics"].get("target_arrival_rate") or 0.0
+                ),
             )
+            stage["tenant_metrics"] = build_tenant_metrics(stage["workflows"])
 
     payload = {
         "url": args.url,
         "run_id": args.run_id,
         "stages": [stage["metrics"] for stage in all_stages],
+        "tenant_metrics": {
+            str(stage["metrics"]["stage"]): stage["tenant_metrics"]
+            for stage in all_stages
+        },
+        "overall_tenant_metrics": build_tenant_metrics(
+            [
+                row
+                for stage in all_stages
+                for row in stage["workflows"]
+            ]
+        ),
         "context_probe_count": len(probes),
         "context_statuses": dict(
             Counter(str(row.get("status")) for row in probes)
         ),
         "drain": drain,
+        "stage_drains": stage_drains,
         "config": {
             "workflows": workflows_count,
             "stages": stages,
+            "rates": rates,
             "max_connections": args.max_connections,
             "message_size": args.message_size,
+            "messages_per_session": args.messages_per_session,
+            "commit_mode": args.commit_mode,
+            "tenants": [
+                {"name": tenant["name"], "agent_id": tenant["agent_id"]}
+                for tenant in args.tenants
+            ],
             "poll_commits": args.poll_commits,
             "poll_timeout": args.poll_timeout,
             "poll_interval": args.poll_interval,
+            "poll_retries": args.poll_retries,
+            "poll_backoff": args.poll_backoff,
+            "poll_concurrency": args.poll_concurrency,
+            "deferred_polling": args.deferred_polling,
+            "drain_between_stages": args.drain_between_stages,
+            "stage_cooldown": args.stage_cooldown,
             "commit_retries": args.commit_retries,
             "retry_backoff": args.retry_backoff,
             "drain_timeout": args.drain_timeout,
@@ -812,8 +1149,11 @@ async def run(args: argparse.Namespace) -> None:
                 "url": args.url,
                 "run_id": args.run_id,
                 "drain": payload["drain"],
+                "stage_drains": payload["stage_drains"],
                 "config": payload["config"],
                 "stages": payload["stages"],
+                "tenant_metrics": payload["tenant_metrics"],
+                "overall_tenant_metrics": payload["overall_tenant_metrics"],
                 "context_statuses": payload["context_statuses"],
             },
             ensure_ascii=False,
@@ -840,15 +1180,48 @@ def parse_args() -> argparse.Namespace:
         help="Concurrency stages, e.g. --stages 10 50 100 300",
     )
     parser.add_argument(
+        "--rates",
+        type=float,
+        nargs="+",
+        help=(
+            "Open-loop workflow arrival rates per second; provide one value "
+            "for all stages or one per stage"
+        ),
+    )
+    parser.add_argument(
         "--workflows",
         type=int,
         default=0,
         help="Workflows per stage; defaults to the first concurrency value",
     )
     parser.add_argument("--agent-id", default="incident-load")
-    parser.add_argument("--run-id", default="", help="Unique run id; generated when omitted")
+    parser.add_argument(
+        "--agent-ids",
+        nargs="+",
+        help="Round-robin workflows across multiple agent ids",
+    )
+    parser.add_argument(
+        "--tenant-config",
+        default="",
+        help=(
+            "JSON list of {name, agent_id, auth_key}; auth keys are never "
+            "written to results"
+        ),
+    )
+    parser.add_argument(
+        "--run-id",
+        default="",
+        help="Unique run id; generated when omitted",
+    )
     parser.add_argument("--context-probes", type=int, default=0)
     parser.add_argument("--message-size", type=int, default=128)
+    parser.add_argument("--messages-per-session", type=int, default=1)
+    parser.add_argument(
+        "--commit-mode",
+        choices=("explicit", "auto"),
+        default="explicit",
+        help="Explicitly POST commit, or rely on server auto-commit",
+    )
     parser.add_argument("--auth-key", default="")
     parser.add_argument("--poll-commits", action="store_true")
     parser.add_argument("--poll-timeout", type=float, default=120.0)
@@ -856,6 +1229,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--poll-retries", type=int, default=DEFAULT_POLL_RETRIES)
     parser.add_argument("--poll-backoff", type=float, default=DEFAULT_POLL_BACKOFF)
     parser.add_argument("--poll-concurrency", type=int, default=32)
+    parser.add_argument(
+        "--deferred-polling",
+        action="store_true",
+        help="Submit all workflows first and resolve commit states in drain",
+    )
     parser.add_argument(
         "--commit-retries",
         type=int,
@@ -873,6 +1251,17 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=300.0,
         help="Extra seconds to poll accepted commits after all stages finish",
+    )
+    parser.add_argument(
+        "--drain-between-stages",
+        action="store_true",
+        help="Drain accepted commits before starting the next concurrency stage",
+    )
+    parser.add_argument(
+        "--stage-cooldown",
+        type=float,
+        default=0.0,
+        help="Idle seconds between concurrency stages",
     )
     parser.add_argument("--max-connections", type=int, default=1000)
     parser.add_argument("--connect-timeout", type=float, default=30.0)

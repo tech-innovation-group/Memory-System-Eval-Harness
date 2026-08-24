@@ -4,10 +4,12 @@ import httpx
 
 from scripts.stress_echomem_incident import (
     build_metrics,
+    build_tenant_metrics,
     classify_workflow,
     extract_archive_id,
     extract_commit_state,
     poll_commit,
+    post_commit_with_retry,
     percentile,
     retry_after_seconds,
 )
@@ -81,6 +83,13 @@ class StressIncidentHelpersTest(unittest.TestCase):
         )
         self.assertIsNone(retry_after_seconds(response))
 
+    def test_retry_after_seconds_reads_nested_json_body(self):
+        response = httpx.Response(
+            429,
+            json={"error": {"retry_after_s": 5}},
+        )
+        self.assertEqual(retry_after_seconds(response), 5.0)
+
     def test_retry_after_seconds_reads_http_date_header(self):
         from datetime import datetime, timedelta, timezone
         from email.utils import format_datetime
@@ -119,6 +128,102 @@ class StressIncidentHelpersTest(unittest.TestCase):
             metrics["commit_completion_latency_ms"]["p50"],
             120,
         )
+
+    def test_metrics_keep_window_and_final_completion_separate(self):
+        metrics = build_metrics(
+            [
+                {
+                    "result": "ok",
+                    "duration_ms": 120,
+                    "request_duration_ms": 20,
+                    "request_completed_at": 2,
+                    "started_at": 1,
+                    "commit_completion_ms": 120,
+                    "commit_ms": 5,
+                    "commit_status": 202,
+                    "window_commit_poll_state": "timeout",
+                    "commit_poll_state": "completed",
+                }
+            ],
+            elapsed_ms=120,
+            requested_workflows=1,
+            concurrency=1,
+            stage=1,
+        )
+        self.assertEqual(metrics["window_completed_commits"], 0)
+        self.assertEqual(metrics["window_commit_timeouts"], 1)
+        self.assertEqual(metrics["final_completed_commits"], 1)
+
+    def test_tenant_metrics_are_separated(self):
+        metrics = build_tenant_metrics(
+            [
+                {
+                    "tenant": "a",
+                    "result": "ok",
+                    "commit_status": 202,
+                    "commit_poll_state": "completed",
+                    "window_commit_poll_state": "completed",
+                    "commit_completion_ms": 10,
+                },
+                {
+                    "tenant": "b",
+                    "result": "http:commit:429",
+                    "commit_status": 429,
+                    "commit_initial_status": 429,
+                },
+            ]
+        )
+        self.assertEqual(metrics["a"]["final_completed_commits"], 1)
+        self.assertEqual(metrics["b"]["initial_429"], 1)
+        self.assertEqual(metrics["b"]["failed_workflows"], 1)
+
+    def test_auto_commit_requires_archive_when_polling(self):
+        self.assertEqual(
+            classify_workflow(
+                {
+                    "commit_mode": "auto",
+                    "open_status": 200,
+                    "message_status": 200,
+                    "commit_poll_requested": True,
+                }
+            ),
+            "auto_commit:missing_archive_id",
+        )
+
+    def test_commit_retry_reuses_idempotency_key_and_json_delay(self):
+        async def run():
+            requests = []
+
+            def handler(request):
+                requests.append(request)
+                if len(requests) == 1:
+                    return httpx.Response(429, json={"retry_after_s": 0})
+                return httpx.Response(202, json={"archive_id": "a1"})
+
+            transport = httpx.MockTransport(handler)
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://test",
+            ) as client:
+                result = await post_commit_with_retry(
+                    client,
+                    "/commit",
+                    payload={},
+                    headers={},
+                    max_retries=1,
+                    retry_backoff_s=0,
+                    idempotency_key="run:session:commit",
+                )
+            return requests, result
+
+        requests, (_, _, info) = asyncio.run(run())
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(
+            [request.headers["Idempotency-Key"] for request in requests],
+            ["run:session:commit", "run:session:commit"],
+        )
+        self.assertEqual(info["commit_initial_status"], 429)
+        self.assertEqual(info["commit_attempts"], 2)
 
     def test_poll_404_is_immediate_failure(self):
         async def run():

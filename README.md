@@ -377,12 +377,16 @@ python scripts/stress_echomem_incident.py \
 export ECHOMEM_AUTO_COMMIT_THRESHOLD=20000
 python scripts/stress_echomem_incident.py \
   --url http://127.0.0.1:18101 \
-  --stages 10 50 100 300 \
+  --stages 1 2 4 8 16 32 64 96 128 \
   --workflows 1000 \
   --message-size 512 \
   --poll-commits \
-  --poll-timeout 120 \
+  --deferred-polling \
+  --poll-timeout 600 \
   --poll-interval 1 \
+  --drain-timeout 600 \
+  --drain-between-stages \
+  --stage-cooldown 10 \
   --context-probes 10 \
   --output /tmp/echomem-stress-$(date +%Y%m%d_%H%M%S)
 ```
@@ -398,7 +402,9 @@ python scripts/stress_echomem_incident.py \
 覆盖请求结束到 commit 终态的完整耗时。
 
 脚本默认会对 commit 的 `429` 按服务端 `Retry-After` 和指数退避重试最多 3 次，
-同时保留第一次响应和最终响应。可使用以下参数调整：
+也支持响应 JSON 中的 `retry_after_s`、`retry_after_seconds`，并为同一 workflow
+的全部 commit 尝试发送稳定的 `Idempotency-Key`。脚本同时保留第一次响应和最终
+响应。可使用以下参数调整：
 
 ```bash
   --commit-retries 3 \
@@ -414,6 +420,33 @@ python scripts/stress_echomem_incident.py \
 `401/403/404` 会立即归类为查询失败，`429` 和 `5xx` 按
 `--poll-retries`、`--poll-backoff` 有限重试，避免把接口错误误报为普通超时。
 
+推荐使用 `--deferred-polling` 将“提交压力”和“等待后台完成”解耦：workflow
+先完成 open/message/commit 请求，所有 archive 在 drain 阶段统一核对终态。
+结果同时记录 `window_completed_commits` 和 `final_completed_commits`，不再把
+初始轮询窗口超时直接等同于最终失败。需要隔离不同并发档位时，增加
+`--drain-between-stages`；`--stage-cooldown` 可在档位之间留出空闲时间。
+
+默认模式按固定并发尽可能快地执行 workflow。需要模拟固定到达率时，使用
+`--rates` 开环调度；一个值会应用到全部阶段，也可以为每个 `--stages` 档位
+分别提供一个值：
+
+```bash
+python scripts/stress_echomem_incident.py \
+  --url http://127.0.0.1:18101 \
+  --stages 64 64 64 \
+  --rates 5 10 20 \
+  --workflows 300 \
+  --poll-commits \
+  --deferred-polling \
+  --drain-between-stages \
+  --drain-timeout 600 \
+  --output /tmp/echomem-open-loop
+```
+
+此时 `target_arrival_rate` 是目标 workflows/s，`arrival_lag_ms` 表示客户端因
+并发上限或本机负载无法按计划发起请求的延迟；如果该值明显升高，说明压力发生器
+自身已成为瓶颈，不能直接把吞吐下降归因到 EchoMem。
+
 commit 返回 `202` 只代表请求已接收，不代表记忆已经处理完成；使用
 `--poll-commits` 才会按返回的 `archive_id` 轮询异步状态，并分别统计：
 
@@ -426,9 +459,62 @@ commit 返回 `202` 只代表请求已接收，不代表记忆已经处理完成
 - `commit:failed` / `commit:timeout`：后台处理失败或超过轮询时限；
 - `commit:missing_archive_id`：服务接受了请求但没有返回可轮询的任务 ID。
 
+#### 多租户公平性
+
+只需要多个 agent id 时：
+
+```bash
+python scripts/stress_echomem_incident.py \
+  --url http://127.0.0.1:18101 \
+  --agent-ids tenant-a tenant-b tenant-c tenant-d \
+  --stages 32 64 128 \
+  --workflows 400 \
+  --poll-commits \
+  --deferred-polling \
+  --drain-timeout 600 \
+  --output /tmp/echomem-multi-tenant
+```
+
+如果不同租户使用不同 auth key，创建一个不提交到 Git 的 JSON 文件：
+
+```json
+[
+  {"name": "tenant-a", "agent_id": "agent-a", "auth_key": "KEY_A"},
+  {"name": "tenant-b", "agent_id": "agent-b", "auth_key": "KEY_B"}
+]
+```
+
+然后传入 `--tenant-config /secure/path/tenants.json`。auth key 只用于请求，不会
+写入 `summary.json`、`client_results.json` 或 CSV。结果按租户输出 accepted、
+窗口内完成、最终完成、429 和完成延迟 P50/P95/P99，用于比较公平性。
+
+#### 自动 commit
+
+显式 commit 和阈值自动 commit 应分开测试。自动 commit 场景示例：
+
+```bash
+python scripts/stress_echomem_incident.py \
+  --url http://127.0.0.1:18101 \
+  --commit-mode auto \
+  --messages-per-session 4 \
+  --message-size 512 \
+  --stages 8 32 64 \
+  --workflows 200 \
+  --poll-commits \
+  --deferred-polling \
+  --drain-timeout 600 \
+  --output /tmp/echomem-auto-commit
+```
+
+`--commit-mode auto` 不调用显式 commit，而是从 message 响应中提取 archive id。
+如果服务触发了自动 commit 但没有在响应中返回可查询 id，结果会明确标记
+`auto_commit:missing_archive_id`；这代表自动 commit 缺少客户端可观测性，不应
+静默算作成功。
+
 结果目录包含 `summary.json`（阶段指标）、`client_results.json`（逐工作流和响应
 体）以及 `workflows.csv`（便于表格分析）。每个阶段会记录 workflow 成功率、
-workflows/s、HTTP 状态码、异常分类，以及 workflow 和 commit 延迟的 P50/P95/P99。
+请求提交吞吐、HTTP 状态码、异常分类、窗口内/最终完成数，以及请求和 commit
+延迟的 P50/P95/P99。
 该脚本适合压测 PR345 这类异步 commit、队列满时拒绝、失败恢复和并发公平性场景；
 它本身不判断业务准确率，精度仍应通过上面的 LoCoMo 评测命令单独验证。
 
