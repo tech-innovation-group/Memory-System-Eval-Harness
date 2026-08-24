@@ -568,6 +568,7 @@ class TestModuleImports(unittest.TestCase):
         allowed = (
             "from __future__",
             "import logging",
+            "import time",
             "import urllib",
             "from typing",
             "from backends.memory_types",

@@ -88,6 +88,15 @@ def _write_tool_audits(path: Path, results: list[QAResult]) -> None:
     )
 
 
+def write_tool_audits(result_dir: Path, results: list[QAResult]) -> None:
+    """Write tool_audits.jsonl/.json for the given results.
+
+    Called after resume trace restoration so the resumed result directory
+    carries tool audits for reused questions too (equivalent to from-scratch).
+    """
+    _write_tool_audits(result_dir / "tool_audits.jsonl", results)
+
+
 def _write_qa_results(path: Path, results: list[QAResult]) -> None:
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=QA_FIELDS)

@@ -190,6 +190,9 @@ def _make_plugin(**overrides) -> VikingBotPlugin:
     plugin._tool_query_dedup_scope = None
     plugin._retrieval_uri_dedup = None
     plugin._search_tool_target_uri_schema = None
+    plugin._documents_mode = False
+    plugin.path_title_map = {}
+    plugin._docs_memory_budget_chars = 8000
     for key, val in overrides.items():
         setattr(plugin, key, val)
     return plugin
@@ -674,7 +677,11 @@ class VikingBotSendMessageTests(unittest.TestCase):
             "system_prompt_append_source": "test",
         })
         kwargs = mock_answer.call_args.kwargs
-        self.assertEqual("extra instructions", kwargs["system_prompt_append"])
+        self.assertIn("extra instructions", kwargs["system_prompt_append"])
+        self.assertIn(
+            "answer with only the exact answer",
+            kwargs["system_prompt_append"],
+        )
         self.assertEqual("abc123", kwargs["system_prompt_append_sha256"])
         self.assertEqual("test", kwargs["system_prompt_append_source"])
 
@@ -717,6 +724,137 @@ class VikingBotSendMessageTests(unittest.TestCase):
         plugin.send_message("s1", "")
         kwargs = mock_answer.call_args.kwargs
         self.assertEqual("", kwargs["question"])
+
+    def test_documents_mode_builds_full_trace(self):
+        class _FakeLLMWithChat:
+            base_url = "https://example.test/v1"
+            model = "test-model"
+            max_tokens = 1024
+            timeout_s = 120.0
+
+            def chat(self, messages, timeout_s=None):
+                return MagicMock(
+                    content="Paris",
+                    prompt_tokens=50,
+                    completion_tokens=5,
+                    error=None,
+                )
+
+        plugin = _make_plugin(
+            _documents_mode=True,
+            _tools_enabled=False,
+            path_title_map={"hotpotqa/D1-abc12345": "D1"},
+            _docs_memory_budget_chars=8000,
+            _top_k=10,
+            _question_timeout_s=600.0,
+        )
+        plugin.memory_client.search_resources = MagicMock(return_value=[{
+            "path": "user/hotpotqa/D1-abc12345",
+            "source_uri": "viking://user/resources/hotpotqa/D1-abc12345",
+            "score": 0.9,
+            "text": "The Eiffel Tower is in Paris.",
+        }])
+        plugin._llm = _FakeLLMWithChat()
+        resp = plugin.send_message("s1", "Where is the tower?", extra={
+            "question_id": "q1",
+            "question": "Where is the tower?",
+            "answer": "Paris",
+            "question_time": "2024-01-01",
+            "sample_id": "s1",
+            "category": "comparison",
+        })
+        trace = resp.extra["trace"]
+        self.assertEqual("vikingbot_docs", trace["qa_profile"])
+        self.assertEqual("q1", trace["question_id"])
+        self.assertEqual("Paris", trace["gold_answer"])
+        self.assertEqual("Where is the tower?", trace["question"])
+        # 检索链完整记录：检索到的证据带 title/uri/score/content
+        items = trace["initial_retrieval"]["items"]
+        self.assertEqual(1, len(items))
+        self.assertEqual("D1", items[0]["hotpotqa_title"])
+        self.assertEqual(0.9, items[0]["score"])
+        # 发给 LLM 的完整 prompt（system + user）与模型身份
+        self.assertEqual(2, len(trace["initial_messages"]))
+        self.assertEqual("test-model", trace["model_request"]["model"])
+        self.assertEqual("Paris", trace["final_response"])
+        # documents 模式无工具循环：iterations 与 tool_audit 为空
+        self.assertEqual([], trace["iterations"])
+        self.assertEqual([], trace["tool_audit"]["tools_used"])
+        self.assertEqual([], trace["tool_audit"]["tool_calls"])
+
+    @patch("plugins.vikingbot.plugin.answer_one_vikingbot_question")
+    def test_documents_mode_with_tools_routes_to_runtime(self, mock_answer):
+        mock_answer.return_value = _make_qa_result()
+        plugin = _make_plugin(
+            _documents_mode=True,
+            _tools_enabled=True,
+            path_title_map={"hotpotqa/D1": "D1"},
+            _docs_memory_budget_chars=8000,
+            _top_k=10,
+        )
+        resp = plugin.send_message("s1", "Q", extra={
+            "question_id": "q1",
+            "question": "Q",
+            "answer": "A",
+            "question_time": "2024-01-01",
+        })
+        kwargs = mock_answer.call_args.kwargs
+        self.assertTrue(kwargs["search_resources_mode"])
+        self.assertEqual({"hotpotqa/D1": "D1"}, kwargs["path_title_map"])
+        self.assertTrue(kwargs["tools_enabled"])
+        self.assertEqual(8000, kwargs["user_memory_budget_chars"])
+        self.assertEqual(8000, kwargs["agent_memory_budget_chars"])
+        self.assertEqual(10, kwargs["top_k"])
+        # 工具循环固定注入 concise 指令（F1/EM 评测要求简短精确回答）
+        self.assertIn(
+            "answer with only the exact answer",
+            kwargs["system_prompt_append"],
+        )
+        # 响应带 runtime 指标与 trace
+        self.assertEqual(1, resp.extra["tool_call_count"])
+        self.assertEqual(2, resp.extra["iterations"])
+        self.assertEqual({"key": "value"}, resp.extra["trace"])
+
+    @patch("plugins.vikingbot.plugin.answer_one_vikingbot_question")
+    def test_documents_with_tools_merges_incoming_system_prompt_append(self, mock_answer):
+        mock_answer.return_value = _make_qa_result()
+        plugin = _make_plugin(
+            _documents_mode=True,
+            _tools_enabled=True,
+            path_title_map={"hotpotqa/D1": "D1"},
+            _docs_memory_budget_chars=8000,
+            _top_k=10,
+        )
+        plugin.send_message("s1", "Q", extra={
+            "question_id": "q1",
+            "question": "Q",
+            "answer": "A",
+            "system_prompt_append": "keep this",
+        })
+        kwargs = mock_answer.call_args.kwargs
+        self.assertIn("keep this", kwargs["system_prompt_append"])
+        self.assertIn(
+            "answer with only the exact answer",
+            kwargs["system_prompt_append"],
+        )
+
+    @patch("plugins.vikingbot.plugin.answer_one_vikingbot_question")
+    def test_benchmark_answer_append_injected_in_non_documents_mode(self, mock_answer):
+        mock_answer.return_value = _make_qa_result()
+        plugin = _make_plugin()
+        plugin.send_message("s1", "Q", extra={
+            "question_id": "q1",
+            "question": "Q",
+            "answer": "A",
+            "system_prompt_append": "keep this",
+        })
+        kwargs = mock_answer.call_args.kwargs
+        # 非 documents 模式同样注入 concise 指令，且保留外部 append
+        self.assertIn("keep this", kwargs["system_prompt_append"])
+        self.assertIn(
+            "answer with only the exact answer",
+            kwargs["system_prompt_append"],
+        )
 
 
 # ------------------------------------------------------------------ #
@@ -1890,6 +2028,43 @@ class ExecuteToolTests(unittest.TestCase):
             tool_min_score=0.0, timeout_s=30,
         )
         self.assertIn("BOUGHT", text)
+
+    def test_memory_search_resource_mode_uses_search_resources(self):
+        class ResourceMem:
+            def __init__(self):
+                self.last_tags = None
+
+            def search_resources(self, query, limit=None, tags=None, timeout_s=None):
+                self.last_tags = tags
+                return [
+                    {
+                        "uri": "viking://user/resources/hotpotqa/D1-abc",
+                        "path": "hotpotqa/D1-abc",
+                        "score": 0.9,
+                        "text": "body one",
+                    },
+                    {
+                        "uri": "viking://user/resources/hotpotqa/D2-def",
+                        "path": "hotpotqa/D2-def",
+                        "score": 0.3,
+                        "text": "body two",
+                    },
+                ]
+
+        mem = ResourceMem()
+        _, items = execute_tool(
+            mem, MEMORY_SEARCH_TOOL, {"query": "q"}, {},
+            top_k=25, tool_search_limit=25, tool_search_pool_multiplier=1,
+            tool_min_score=0.5, timeout_s=30,
+            search_resources=True,
+            path_title_map={"hotpotqa/D1-abc": "D1"},
+        )
+        self.assertEqual(["hotpotqa"], mem.last_tags)
+        # min_score 0.5 过滤掉低分项
+        self.assertEqual(1, len(items))
+        self.assertEqual("viking://user/resources/hotpotqa/D1-abc", items[0].uri)
+        # title 从 path_title_map 解析进 metadata，供 supporting-fact 评测使用
+        self.assertEqual("D1", items[0].metadata["hotpotqa_title"])
 
 
 # ------------------------------------------------------------------ #

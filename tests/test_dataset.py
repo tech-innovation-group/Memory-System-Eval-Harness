@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import unittest
 
 from unittest.mock import patch
@@ -68,29 +69,45 @@ class LongMemEvalDateTests(unittest.TestCase):
         self.assertEqual("2023-01-02T09:00:01", messages[1]["created_at"])
 
 
+class _DownloadResponse(io.BytesIO):
+    status = 200
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+
+def _fake_urlopen(responses: dict[str, bytes]):
+    """Build a urlopen mock that serves responses by URL substring match."""
+
+    def _urlopen(request, timeout=120):
+        url = request.full_url
+        for key, payload in responses.items():
+            if key in url:
+                return _DownloadResponse(payload)
+        raise AssertionError(f"unexpected URL: {url}")
+
+    return _urlopen
+
+
 class DatasetDownloadTests(unittest.TestCase):
     def test_failed_download_does_not_leave_partial_dataset(self) -> None:
-        import io
         import tempfile
         from pathlib import Path
 
-        class _Response(io.BytesIO):
-            status = 200
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *args):
-                self.close()
-
         with tempfile.TemporaryDirectory() as directory:
             local_path = Path(directory) / "locomo10.json"
-            source = {"filename": str(local_path), "url": "https://example.test/data.json"}
+            source = {
+                "filename": str(local_path),
+                "urls": ["https://example.test/data.json"],
+            }
             with (
                 patch("shared.dataset_io.DATASET_SOURCES", {"locomo": source}),
                 patch(
                     "shared.dataset_io.urllib.request.urlopen",
-                    return_value=_Response(b"{broken"),
+                    return_value=_DownloadResponse(b"{broken"),
                 ),
             ):
                 with self.assertRaisesRegex(RuntimeError, "无法自动获取"):
@@ -98,6 +115,84 @@ class DatasetDownloadTests(unittest.TestCase):
 
             self.assertFalse(local_path.exists())
             self.assertFalse(local_path.with_suffix(".json.part").exists())
+
+    def test_fallback_tries_next_url_when_primary_fails(self) -> None:
+        import json
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as directory:
+            local_path = Path(directory) / "locomo10.json"
+            source = {
+                "filename": str(local_path),
+                "urls": [
+                    "https://primary.example/data.json",
+                    "https://fallback.example/data.json",
+                ],
+            }
+            with (
+                patch("shared.dataset_io.DATASET_SOURCES", {"locomo": source}),
+                patch(
+                    "shared.dataset_io.urllib.request.urlopen",
+                    side_effect=_fake_urlopen({
+                        "primary": b"{broken",
+                        "fallback": json.dumps([{"a": 1}]).encode(),
+                    }),
+                ),
+            ):
+                resolved = resolve_dataset_path("locomo")
+
+            self.assertEqual(str(local_path), resolved)
+            self.assertTrue(local_path.exists())
+
+    def test_large_dataset_uses_light_validation(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        # 超过 _FULL_JSON_VALIDATION_MAX_BYTES 时只做轻量结构校验；
+        # 该 payload 无法被完整 JSON 解析（尾部有垃圾字节），但仍能通过轻量校验。
+        payload = b'[{"a": 1}]x]'
+        with tempfile.TemporaryDirectory() as directory:
+            local_path = Path(directory) / "locomo10.json"
+            source = {
+                "filename": str(local_path),
+                "urls": ["https://example.test/data.json"],
+            }
+            with (
+                patch("shared.dataset_io.DATASET_SOURCES", {"locomo": source}),
+                patch("shared.dataset_io._FULL_JSON_VALIDATION_MAX_BYTES", 1),
+                patch(
+                    "shared.dataset_io.urllib.request.urlopen",
+                    return_value=_DownloadResponse(payload),
+                ),
+            ):
+                resolved = resolve_dataset_path("locomo")
+
+            self.assertEqual(str(local_path), resolved)
+            self.assertTrue(local_path.exists())
+
+    def test_large_dataset_rejects_non_json_download(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as directory:
+            local_path = Path(directory) / "locomo10.json"
+            source = {
+                "filename": str(local_path),
+                "urls": ["https://example.test/data.json"],
+            }
+            with (
+                patch("shared.dataset_io.DATASET_SOURCES", {"locomo": source}),
+                patch("shared.dataset_io._FULL_JSON_VALIDATION_MAX_BYTES", 1),
+                patch(
+                    "shared.dataset_io.urllib.request.urlopen",
+                    return_value=_DownloadResponse(b"<html>not json</html>"),
+                ),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "无法自动获取"):
+                    resolve_dataset_path("locomo")
+
+            self.assertFalse(local_path.exists())
 
 
 if __name__ == "__main__":

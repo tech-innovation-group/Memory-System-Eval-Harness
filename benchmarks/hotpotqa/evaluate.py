@@ -22,6 +22,7 @@ EVAL_FIELDS = (
     "question",
     "answer",
     "response",
+    "answer_extracted",
     "answer_em",
     "answer_f1",
     "answer_precision",
@@ -75,6 +76,61 @@ def answer_metrics(prediction: str, gold: str) -> dict[str, float]:
         "f1": 2 * precision * recall / (precision + recall),
         "em": em,
     }
+
+
+_ANSWER_LEAD_IN = re.compile(
+    r"^\s*(?:"
+    r"(?:the\s+)?(?:correct\s+)?answer\s+is|"
+    r"it\s+(?:is|s|was)|"
+    r"based\s+on\s+(?:the\s+)?(?:retrieved\s+)?documents|"
+    r"according\s+to\s+[^,.:;]+[,.:;]|"
+    r"i\s+(?:think|believe|would\s+say|found\s+that)|"
+    r"yes\s*[,:]|no\s*[,:]"
+    r")\s*",
+    flags=re.IGNORECASE,
+)
+
+
+def extract_answer(response: str, gold: str) -> str:
+    """Extract a concise answer from a verbose LLM response before scoring.
+
+    HotpotQA gold answers are short exact strings, but models often reply in
+    full sentences, which exact-match scoring cannot credit. Tiers, in order:
+    1. yes/no/noanswer as the response's first word (only when the gold is a
+       yes/no-style answer, so a leading "Yes" on a normal question does not
+       zero a possibly-correct verbose answer);
+    2. gold tokens appearing as a contiguous run inside the response tokens
+       (contiguous-run check, not raw substring, so a single-token gold like
+       "no" cannot match inside "know");
+    3. strip common lead-in phrases and take the first clause;
+    4. fall back to the response unchanged.
+    """
+    normalized_response = normalize_answer(response)
+    if not normalized_response:
+        return response or ""
+    first_word = normalized_response.split()[0]
+    if first_word in {"yes", "no", "noanswer"} and normalize_answer(gold) in {
+        "yes",
+        "no",
+        "noanswer",
+    }:
+        return first_word
+    gold_tokens = normalize_answer(gold).split()
+    response_tokens = normalized_response.split()
+    if gold_tokens and len(response_tokens) >= len(gold_tokens):
+        for start in range(len(response_tokens) - len(gold_tokens) + 1):
+            if response_tokens[start:start + len(gold_tokens)] == gold_tokens:
+                return gold
+    body = response
+    for _ in range(3):
+        stripped = _ANSWER_LEAD_IN.sub("", body).strip()
+        if stripped == body:
+            break
+        body = stripped
+    clause = re.split(r"[,.;!?]", body, maxsplit=1)[0].strip()
+    if clause:
+        return normalize_answer(clause)
+    return response
 
 
 def _normalize_blob(value: Any) -> str:
@@ -244,7 +300,8 @@ def evaluate_hotpotqa(
     rows: list[dict[str, Any]] = []
     for result in tqdm(qa_results, desc="评测", unit="q"):
         reference = references.get(result.question_id, {})
-        answer = answer_metrics(result.response, result.answer)
+        extracted_answer = extract_answer(result.response, result.answer)
+        answer = answer_metrics(extracted_answer, result.answer)
         support = supporting_fact_metrics(
             predict_supporting_facts(result.retrieval_items, reference),
             _gold_supporting_facts(reference),
@@ -262,6 +319,7 @@ def evaluate_hotpotqa(
             "question": result.question,
             "answer": result.answer,
             "response": result.response,
+            "answer_extracted": extracted_answer,
             "answer_em": answer["em"],
             "answer_f1": round(answer["f1"], 4),
             "answer_precision": round(answer["precision"], 4),

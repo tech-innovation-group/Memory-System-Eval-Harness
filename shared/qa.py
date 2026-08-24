@@ -130,6 +130,10 @@ class QAResult:
             evidence_origin = "echomem_mcp"
             retrieval_source_mode = "mcp_tools" if self.tool_call_count else "mcp_only_no_retrieval"
             platform_evidence_injection_enabled = "false"
+        elif self.qa_profile in ("vikingbot_docs", "echomem_mcp_documents"):
+            evidence_origin = "echomemory_http_api"
+            retrieval_source_mode = "resource_search"
+            platform_evidence_injection_enabled = "false"
         else:
             evidence_origin = "echomemory_http_api"
             retrieval_source_mode = "echo_http_native"

@@ -97,6 +97,7 @@ def import_locomo_memory(
 ) -> ImportReport:
     rows: list[dict[str, Any]] = []
     sample_to_session_ids: dict[str, list[str]] = {}
+    output_path = result_dir / "import_results.csv"
 
     # Build a map of previously completed batches for resume-qa
     completed_map: dict[tuple[str, str], str] = {}
@@ -237,7 +238,10 @@ def import_locomo_memory(
                     "error": str(exc),
                 })
 
-    output_path = result_dir / "import_results.csv"
+            # 增量落盘：每完成一个 batch 就写一次，导入中断后 source 目录
+            # 仍留有已完成部分，--resume 可据此跳过、只补缺失的 batch。
+            _write_results(output_path, rows)
+
     _write_results(output_path, rows)
     log.info("导入结果已保存: %s", output_path)
 

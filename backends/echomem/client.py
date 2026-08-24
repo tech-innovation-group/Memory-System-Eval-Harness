@@ -6,9 +6,10 @@ Moved from plugins/echomem_mcp/memory_client.py.
 from __future__ import annotations
 
 import logging
+import time
 import urllib.parse
 import urllib.request
-from typing import Any
+from typing import Any, Callable
 
 from backends.memory_types import BaseHTTPMemoryClient, SearchResult
 
@@ -105,13 +106,15 @@ class EchoMemClient(BaseHTTPMemoryClient):
         if not tenant_id:
             raise RuntimeError(f"tenant provisioning returned no tenant id: {tenant_response}")
 
-        # Local EchoMem deployments return a short-lived bootstrap capability
-        # when creating a tenant. It is required for the follow-up user/key
-        # provisioning calls, while cluster-shared deployments use the
-        # provisioning header configured by the server.
+        # Newer local EchoMem servers issue a short-lived tenant bootstrap
+        # capability when the tenant is created. Cluster-shared deployments
+        # may instead require the configured provisioning capability.
         self.bootstrap_auth_key = str(tenant_response.get("bootstrap_key") or "")
         try:
-            user_response = self._post(f"/api/auth/tenants/{tenant_id}/users", {})
+            user_response = self._post(
+                f"/api/auth/tenants/{tenant_id}/users",
+                {},
+            )
             user = user_response.get("user", {})
             user_id = str(user.get("user_id") or "") if isinstance(user, dict) else ""
             if not user_id:
@@ -237,6 +240,100 @@ class EchoMemClient(BaseHTTPMemoryClient):
         resp = self._post("/api/retrieval/search", body, timeout_s=timeout_s)
         items = resp.get("result", {}).get("items", []) if "result" in resp else resp.get("items", [])
         return [SearchResult.from_dict(item) for item in items]
+
+    # -- document resources (resource_engine) -----------------------------
+
+    def add_resource(
+        self,
+        path: str,
+        content: str,
+        *,
+        name: str = "",
+        content_type: str = "text/markdown",
+        tags: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Add one document resource; indexing is triggered by reindex_all.
+
+        Writes the resource under ``echo://resources/user/<path>`` for the
+        client's tenant/user identity.
+        """
+        body: dict[str, Any] = {
+            "content": content,
+            "name": name or path.rsplit("/", 1)[-1],
+            "content_type": content_type,
+            "tags": list(tags or []),
+            "metadata": dict(metadata or {}),
+            "path": path,
+        }
+        return self._post("/api/resources", body)
+
+    def reindex_all_resources(self) -> dict[str, Any]:
+        """Force-reindex every resource file under the client's tenant."""
+        return self._post("/api/resources/reindex_all", {})
+
+    def resource_index_status(self, path: str) -> dict[str, Any]:
+        """Return the indexing status of one resource path."""
+        return self._get("/api/resources/index", {"path": path})
+
+    def wait_for_resource_index(
+        self,
+        paths: list[str],
+        *,
+        timeout_s: float = 3600.0,
+        poll_interval_s: float = 2.0,
+        progress: Callable[[int, int], None] | None = None,
+    ) -> dict[str, Any]:
+        """Wait until every resource path is indexed (or failed).
+
+        Indexing runs asynchronously after ``add_resource``; this polls
+        ``/api/resources/index`` until all paths reach a terminal status.
+        ``progress(done, total)`` is invoked after each poll pass with the
+        number of paths that reached a terminal status, for progress bars.
+        """
+        done_statuses = {"completed", "degraded", "empty"}
+        failed_statuses = {"failed", "error"}
+        deadline = time.monotonic() + timeout_s
+        pending = list(paths)
+        failures: dict[str, str] = {}
+        while pending:
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"resource indexing not finished after {timeout_s:g}s "
+                    f"({len(pending)} pending: {pending[:5]})"
+                )
+            still_pending: list[str] = []
+            for path in pending:
+                status = self.resource_index_status(path)
+                current = str(status.get("status") or "").lower()
+                if current in failed_statuses:
+                    failures[path] = str(status.get("detail") or status)
+                elif current not in done_statuses:
+                    still_pending.append(path)
+            pending = still_pending
+            if progress is not None:
+                progress(len(paths) - len(pending), len(paths))
+            if pending:
+                time.sleep(poll_interval_s)
+        return {"indexed": len(paths) - len(failures), "failed": failures}
+
+    def search_resources(
+        self,
+        query: str,
+        limit: int = 8,
+        tags: list[str] | None = None,
+        paths: list[str] | None = None,
+        timeout_s: float | None = None,
+    ) -> list[dict[str, Any]]:
+        """Search the document resource index; returns raw result items."""
+        body: dict[str, Any] = {"query": query, "limit": limit}
+        if tags:
+            body["tags"] = list(tags)
+        if paths:
+            body["paths"] = list(paths)
+        resp = self._post("/api/resources/search", body, timeout_s=timeout_s)
+        return list(resp.get("results", []) or [])
+
 
     def fetch_logs(
         self,

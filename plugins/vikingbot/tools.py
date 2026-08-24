@@ -19,6 +19,30 @@ SESSIONS_ROOT = "echo://sessions"
 SESSION_FILE = "current/messages.jsonl"
 
 
+def _resource_search_result(
+    item: dict[str, Any],
+    path_title_map: dict[str, str] | None = None,
+) -> SearchResult:
+    """Convert a ``search_resources`` item into a SearchResult with title metadata.
+
+    The resource dict carries a relative ``path`` (e.g. ``hotpotqa/<slug>-<hash>``);
+    the corpus map (keyed without the ``user/`` prefix) resolves the title so the
+    HotpotQA supporting-fact evaluation can match evidence by ``hotpotqa_title``.
+    """
+    path = str(item.get("path") or "")
+    title = str(
+        item.get("hotpotqa_title")
+        or (path_title_map or {}).get(path)
+        or ""
+    ).strip()
+    return SearchResult(
+        uri=str(item.get("uri") or ""),
+        score=float(item.get("score") or 0.0),
+        content=str(item.get("text") or ""),
+        metadata={"hotpotqa_title": title} if title else {},
+    )
+
+
 def tool_definitions(
     tool_set: str = "search_read",
     *,
@@ -268,17 +292,32 @@ def execute_tool(
     tool_min_score: float,
     timeout_s: float,
     tool_set: str = "",
+    search_resources: bool = False,
+    path_title_map: dict[str, str] | None = None,
 ) -> tuple[str, list[SearchResult]]:
     echo_native = tool_set == "vikingbot_echo_native"
     if name == MEMORY_SEARCH_TOOL:
         query = str(arguments.get("query") or "").strip()
         if not query:
             return "No results found for empty query", []
-        items = echomem.search(
-            query,
-            top_k=max(top_k, tool_search_limit * tool_search_pool_multiplier),
-            timeout_s=timeout_s,
-        )
+        if search_resources:
+            raw_items = echomem.search_resources(
+                query,
+                limit=max(top_k, tool_search_limit * tool_search_pool_multiplier),
+                tags=["hotpotqa"],
+                timeout_s=timeout_s,
+            )
+            items = [
+                _resource_search_result(item, path_title_map)
+                for item in raw_items
+                if str(item.get("uri") or "").strip()
+            ]
+        else:
+            items = echomem.search(
+                query,
+                top_k=max(top_k, tool_search_limit * tool_search_pool_multiplier),
+                timeout_s=timeout_s,
+            )
         requested_min_score = arguments.get("min_score")
         effective_min_score = tool_min_score
         if requested_min_score is not None:

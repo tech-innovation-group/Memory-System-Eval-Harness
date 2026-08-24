@@ -294,13 +294,13 @@ class KimiCodeSendMessageTests(unittest.TestCase):
 
     def test_non_empty_session_id_creates_lock(self):
         """Non-empty session_id: a per-session lock is created."""
-        plugin = _make_plugin()
+        plugin = _make_plugin(runner=_FakeRunner())
         plugin.send_message("s1", "hi")
         self.assertIn("s1", plugin._session_locks)
 
     def test_empty_session_id_no_lock_created(self):
         """Empty session_id: no per-session lock is created."""
-        plugin = _make_plugin()
+        plugin = _make_plugin(runner=_FakeRunner())
         plugin.send_message("", "hi")
         self.assertNotIn("", plugin._session_locks)
 

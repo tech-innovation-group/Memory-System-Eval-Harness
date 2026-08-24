@@ -67,9 +67,12 @@ class LocomoCliDefaultsTests(unittest.TestCase):
         )
 
         self.assertTrue(dataset.is_file())
+        # Normalize line endings so the fingerprint is stable across checkouts
+        # (Windows autocrlf checks the file out as CRLF, git stores it as LF).
+        normalized = dataset.read_bytes().replace(b"\r\n", b"\n")
         self.assertEqual(
             "79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4",
-            hashlib.sha256(dataset.read_bytes()).hexdigest(),
+            hashlib.sha256(normalized).hexdigest(),
         )
 
 

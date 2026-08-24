@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from benchmarks.locomo.profiles import profile_source
-from benchmarks.locomo.qa import QAOptions
+from benchmarks.locomo.qa import QAOptions, _safe_question_id
 from shared.csv_io import read_dict_rows
 from shared.eval_base import EvalConfig
 from shared.qa import QAResult
@@ -184,6 +184,44 @@ def _resolve_resume_csv(source: str | Path) -> Path:
         "QA resume directory contains neither qa_results.csv nor "
         f"qa_results.checkpoint.csv: {path}"
     )
+
+
+def find_qa_resume_csv(source: str | Path) -> Path | None:
+    """Return a prior run's QA results CSV if one exists, else None.
+
+    Used to decide whether QA resume applies: a source run interrupted during
+    the import phase has no qa_results.csv yet, in which case resume should
+    run the full QA instead of failing.
+    """
+    path = Path(source).expanduser().resolve()
+    if path.is_file():
+        return path
+    if not path.is_dir():
+        return None
+    for filename in ("qa_results.csv", "qa_results.checkpoint.csv"):
+        candidate = path / filename
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def find_judge_resume_csv(source: str | Path) -> Path | None:
+    """Return a prior run's judge results CSV if one exists, else None.
+
+    Mirrors ``find_qa_resume_csv`` for the judge phase: a source run with no
+    judge_results.csv yet (import-only or QA-only interruption) should run
+    the full judge instead of failing.
+    """
+    path = Path(source).expanduser().resolve()
+    if path.is_file():
+        return path
+    if not path.is_dir():
+        return None
+    for filename in ("judge_results.csv", "judge_results.checkpoint.csv"):
+        candidate = path / filename
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def _parse_int(value: Any, default: int = 0) -> int:
@@ -453,20 +491,59 @@ def copy_resume_traces(
     state: QAResumeState,
     result_dir: Path,
 ) -> int:
+    """Copy trace files for reused questions into the new result directory.
+
+    Trace files are named ``<sanitized question_id>.json`` (see qa.py
+    ``_write_trace``) and their content does NOT carry a ``question_id``
+    field, so matching is done on the filename stem rather than the payload.
+    This keeps the resumed result directory equivalent to a from-scratch run:
+    every reused question keeps its agent trace.
+    """
     source = state.source_dir / "agent_traces"
     if not source.is_dir():
         return 0
     destination = result_dir / "agent_traces"
     destination.mkdir(parents=True, exist_ok=True)
+    reusable_safe_ids = {
+        _safe_question_id(result.question_id)
+        for result in state.results
+    }
     copied = 0
-    reusable_ids = {result.question_id for result in state.results}
     for path in source.glob("*.json"):
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if str(payload.get("question_id") or "") not in reusable_ids:
+        if path.stem not in reusable_safe_ids:
             continue
         shutil.copy2(path, destination / path.name)
         copied += 1
     return copied
+
+
+def restore_resume_traces(
+    results: list[QAResult],
+    result_dir: Path,
+) -> int:
+    """Read per-question traces back into reused QAResult objects.
+
+    Reused results are loaded from a prior run's CSV, which carries no
+    trace; ``copy_resume_traces`` copies the trace files into the new
+    result_dir, and this function loads them so trace-dependent summary
+    fields (served models, tool protocol hashes, transcript reads) are
+    computed over the whole run instead of only this segment.
+    """
+    trace_dir = result_dir / "agent_traces"
+    if not trace_dir.is_dir():
+        return 0
+    restored = 0
+    for result in results:
+        if result.trace:
+            continue
+        path = trace_dir / f"{_safe_question_id(result.question_id)}.json"
+        if not path.is_file():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict):
+            result.trace = payload
+            restored += 1
+    return restored
