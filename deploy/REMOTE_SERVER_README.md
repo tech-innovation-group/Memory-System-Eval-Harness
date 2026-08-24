@@ -49,6 +49,35 @@ DeepSeek 只负责 LLM/Judge，DashScope `text-embedding-v3` 只负责 embedding
 `http://8.130.75.94:8081`。程序会自动把这个地址的 hostname 加入
 `ALLOWED_HOSTS`，否则公网访问和 Feishu 回调会返回 HTTP 400。
 
+## Feishu callback checklist
+
+If a group message produces no reply and `jobs.json` has no new task, check the
+Feishu application before debugging the evaluator:
+
+```text
+[ ] Request URL is http://8.130.75.94:8081/feishu/events
+    (or the matching PUBLIC_BASE_URL host)
+[ ] Event subscription uses the developer-server callback mode
+[ ] Event `im.message.receive_v1` is subscribed
+[ ] The latest application version is published after changing events or URL
+[ ] The bot is installed in the target group and the message @mentions the bot
+[ ] The app has permission to receive messages and send messages as the bot
+```
+
+The server-side smoke checks are:
+
+```bash
+curl -fsS http://127.0.0.1:8081/
+curl -fsS -X POST http://127.0.0.1:8081/feishu/events \
+  -H 'Content-Type: application/json' \
+  --data '{"type":"url_verification","challenge":"probe","token":"probe"}'
+docker logs --since 10m memory-eval-web
+```
+
+An unchanged `jobs.json` together with no `Feishu event received` log means
+the message did not reach this server. In that case, changing evaluator or
+EchoMem code cannot fix the missing reply.
+
 固定执行清单见 [ECHOMEM_EVAL_RUNBOOK.md](ECHOMEM_EVAL_RUNBOOK.md)。本文档保留
 服务器目录、入口和复核命令；实际执行时先读 runbook，再按本文档定位文件。
 
