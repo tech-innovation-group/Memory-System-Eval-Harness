@@ -345,6 +345,188 @@ python benchmarks/longmemeval/run_eval.py \
 `judge_results.csv`、`summary.json`、`config.json`、`agent_traces/`、
 `backend_logs.json`。
 
+### EchoMem Incident API 压测
+
+PR #12 的 `scripts/stress_echomem_incident.py` 用真实 HTTP API 压测
+EchoMem 的 `open -> message -> commit` 链路。它不会自动启动 EchoMem，也不会
+伪造记忆后端；运行前请先启动目标服务，并确认服务暴露以下接口：
+
+```text
+POST /api/sessions/open
+POST /api/sessions/{session_id}/messages
+POST /api/sessions/{session_id}/commit
+GET  /api/sessions/{session_id}/commits/{archive_id}  # 可选，异步 commit 查询
+POST /api/retrieval/build_context                         # 可选探针
+```
+
+最小验证命令：
+
+```bash
+python scripts/stress_echomem_incident.py \
+  --url http://127.0.0.1:18101 \
+  --stages 2 5 \
+  --workflows 5 \
+  --poll-commits \
+  --poll-timeout 30 \
+  --output /tmp/echomem-stress-smoke
+```
+
+多阶段压测示例：
+
+```bash
+export ECHOMEM_AUTO_COMMIT_THRESHOLD=20000
+python scripts/stress_echomem_incident.py \
+  --url http://127.0.0.1:18101 \
+  --stages 1 2 4 8 16 32 64 96 128 \
+  --workflows 1000 \
+  --message-size 512 \
+  --poll-commits \
+  --deferred-polling \
+  --poll-timeout 600 \
+  --poll-interval 1 \
+  --drain-timeout 600 \
+  --drain-between-stages \
+  --stage-cooldown 10 \
+  --context-probes 10 \
+  --output /tmp/echomem-stress-$(date +%Y%m%d_%H%M%S)
+```
+
+`--stages` 是每阶段的并发 worker 数，`--workflows` 是每阶段提交的完整工作流
+数量。每个工作流使用独立的 `session_id`，因此适合观察单租户高频提交和服务
+队列行为。`--max-connections`、`--connect-timeout`、`--read-timeout` 可以按
+目标服务和机器配置调整；如服务需要鉴权，使用 `--auth-key`。
+
+每次运行会自动生成唯一 `run_id` 并写入结果，避免不同压测进程重复使用
+`session_id`。也可以显式传入 `--run-id`。结果同时区分请求阶段和异步完成阶段：
+`request_latency_ms` 只覆盖 open/message/commit 请求，`commit_completion_latency_ms`
+覆盖请求结束到 commit 终态的完整耗时。
+
+脚本默认会对 commit 的 `429` 按服务端 `Retry-After` 和指数退避重试最多 3 次，
+也支持响应 JSON 中的 `retry_after_s`、`retry_after_seconds`，并为同一 workflow
+的全部 commit 尝试发送稳定的 `Idempotency-Key`。脚本同时保留第一次响应和最终
+响应。可使用以下参数调整：
+
+```bash
+  --commit-retries 3 \
+  --retry-backoff 1 \
+  --drain-timeout 300
+```
+
+`--drain-timeout` 用于所有阶段结束后继续轮询已接受但仍在后台处理的 commit，
+避免把排队中的任务直接误判为最终失败。将 `--commit-retries 0 --drain-timeout 0`
+即可恢复只观察初始压力响应的模式。
+
+排空阶段默认最多 32 路并发轮询，可用 `--poll-concurrency` 调整。状态查询中的
+`401/403/404` 会立即归类为查询失败，`429` 和 `5xx` 按
+`--poll-retries`、`--poll-backoff` 有限重试，避免把接口错误误报为普通超时。
+
+推荐使用 `--deferred-polling` 将“提交压力”和“等待后台完成”解耦：workflow
+先完成 open/message/commit 请求，所有 archive 在 drain 阶段统一核对终态。
+结果同时记录 `window_completed_commits` 和 `final_completed_commits`，不再把
+初始轮询窗口超时直接等同于最终失败。需要隔离不同并发档位时，增加
+`--drain-between-stages`；`--stage-cooldown` 可在档位之间留出空闲时间。
+
+默认模式按固定并发尽可能快地执行 workflow。需要模拟固定到达率时，使用
+`--rates` 开环调度；一个值会应用到全部阶段，也可以为每个 `--stages` 档位
+分别提供一个值：
+
+```bash
+python scripts/stress_echomem_incident.py \
+  --url http://127.0.0.1:18101 \
+  --stages 64 64 64 \
+  --rates 5 10 20 \
+  --workflows 300 \
+  --poll-commits \
+  --deferred-polling \
+  --drain-between-stages \
+  --drain-timeout 600 \
+  --output /tmp/echomem-open-loop
+```
+
+此时 `target_arrival_rate` 是目标 workflows/s，`arrival_lag_ms` 表示客户端因
+并发上限或本机负载无法按计划发起请求的延迟；如果该值明显升高，说明压力发生器
+自身已成为瓶颈，不能直接把吞吐下降归因到 EchoMem。
+
+commit 返回 `202` 只代表请求已接收，不代表记忆已经处理完成；使用
+`--poll-commits` 才会按返回的 `archive_id` 轮询异步状态，并分别统计：
+
+- `accepted_commits`：commit HTTP 请求被接受的数量；
+- `completed_commits`：异步处理最终完成的数量；
+- `commit_initial_status` / `commit_attempts`：第一次响应和实际提交尝试次数；
+- `commit_initial_429` / `commit_recovered_after_429`：
+  首次被限流的数量，以及重试后接受的数量；
+- `commit_final_429` / `commit_total_retries`：最终仍被限流的数量和总重试次数；
+- `commit:failed` / `commit:timeout`：后台处理失败或超过轮询时限；
+- `commit:missing_archive_id`：服务接受了请求但没有返回可轮询的任务 ID。
+
+#### 多租户公平性
+
+只需要多个 agent id 时：
+
+```bash
+python scripts/stress_echomem_incident.py \
+  --url http://127.0.0.1:18101 \
+  --agent-ids tenant-a tenant-b tenant-c tenant-d \
+  --stages 32 64 128 \
+  --workflows 400 \
+  --poll-commits \
+  --deferred-polling \
+  --drain-timeout 600 \
+  --output /tmp/echomem-multi-tenant
+```
+
+如果不同租户使用不同 auth key，创建一个不提交到 Git 的 JSON 文件：
+
+```json
+[
+  {"name": "tenant-a", "agent_id": "agent-a", "auth_key": "KEY_A"},
+  {"name": "tenant-b", "agent_id": "agent-b", "auth_key": "KEY_B"}
+]
+```
+
+然后传入 `--tenant-config /secure/path/tenants.json`。auth key 只用于请求，不会
+写入 `summary.json`、`client_results.json` 或 CSV。结果按租户输出 accepted、
+窗口内完成、最终完成、429 和完成延迟 P50/P95/P99，用于比较公平性。
+
+#### 自动 commit
+
+显式 commit 和阈值自动 commit 应分开测试。自动 commit 场景示例：
+
+```bash
+python scripts/stress_echomem_incident.py \
+  --url http://127.0.0.1:18101 \
+  --commit-mode auto \
+  --messages-per-session 4 \
+  --message-size 512 \
+  --stages 8 32 64 \
+  --workflows 200 \
+  --poll-commits \
+  --deferred-polling \
+  --drain-timeout 600 \
+  --output /tmp/echomem-auto-commit
+```
+
+`--commit-mode auto` 不调用显式 commit，而是从 message 响应中提取 archive id。
+如果服务触发了自动 commit 但没有在响应中返回可查询 id，结果会明确标记
+`auto_commit:missing_archive_id`；这代表自动 commit 缺少客户端可观测性，不应
+静默算作成功。
+
+结果目录包含 `summary.json`（阶段指标）、`client_results.json`（逐工作流和响应
+体）以及 `workflows.csv`（便于表格分析）。每个阶段会记录 workflow 成功率、
+请求提交吞吐、HTTP 状态码、异常分类、窗口内/最终完成数，以及请求和 commit
+延迟的 P50/P95/P99。
+该脚本适合压测 PR345 这类异步 commit、队列满时拒绝、失败恢复和并发公平性场景；
+它本身不判断业务准确率，精度仍应通过上面的 LoCoMo 评测命令单独验证。
+
+可将结果目录生成一个可直接用浏览器打开的 HTML 报告，报告包含阶段表格、
+成功率/最终完成数/吞吐/P95 延迟图表和结构化失败原因：
+
+```bash
+python scripts/build_stress_report.py \
+  /tmp/echomem-stress-20260825 \
+  --output /tmp/echomem-stress-20260825/report.html
+```
+
 ### 动态评测
 
 直接调用 `dynamic/run_eval.py`。需先启动 EchoAgent Backend（端口 31020）和
