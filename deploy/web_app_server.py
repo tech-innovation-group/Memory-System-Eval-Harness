@@ -125,6 +125,10 @@ FEISHU_UPLOAD_NOTE = os.getenv("FEISHU_UPLOAD_NOTE", "").strip()
 DEFAULT_LLM_BASE_URL = os.getenv("DEFAULT_LLM_BASE_URL", "")
 DEFAULT_LLM_MODEL = os.getenv("DEFAULT_LLM_MODEL", "")
 DEFAULT_LLM_API_KEY = os.getenv("DEFAULT_LLM_API_KEY", "")
+PRIMARY_LLM_BASE_URL = os.getenv("PRIMARY_LLM_BASE_URL", "").strip()
+PRIMARY_LLM_MODEL = os.getenv("PRIMARY_LLM_MODEL", "gpt-5.5").strip()
+PRIMARY_LLM_API_KEY = os.getenv("PRIMARY_LLM_API_KEY", "").strip()
+PRIMARY_LLM_TIMEOUT_S = float(os.getenv("PRIMARY_LLM_TIMEOUT_S", "20"))
 DEFAULT_EMBEDDING_API_KEY = os.getenv(
     "DEFAULT_EMBEDDING_API_KEY",
     "",
@@ -2141,11 +2145,104 @@ def format_job_status(job: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _llm_text_from_payload(payload: dict[str, Any]) -> str:
+    """Extract text from Chat Completions and Responses API payloads."""
+    choices = payload.get("choices") or []
+    if choices:
+        message = choices[0].get("message") or {}
+        content = message.get("content") or ""
+        if isinstance(content, list):
+            return "".join(
+                str(item.get("text") or "")
+                for item in content
+                if isinstance(item, dict)
+            ).strip()
+        return str(content).strip()
+
+    output_text = payload.get("output_text")
+    if output_text:
+        return str(output_text).strip()
+    parts: list[str] = []
+    for item in payload.get("output") or []:
+        if not isinstance(item, dict):
+            continue
+        for content in item.get("content") or []:
+            if isinstance(content, dict) and content.get("text"):
+                parts.append(str(content["text"]))
+    return "".join(parts).strip()
+
+
+def call_feishu_llm(
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int,
+    timeout: float,
+    purpose: str,
+) -> str:
+    """Call gpt-5.5 first, then fall back to the existing DeepSeek endpoint."""
+    if PRIMARY_LLM_BASE_URL and PRIMARY_LLM_API_KEY and PRIMARY_LLM_MODEL:
+        try:
+            response = requests.post(
+                PRIMARY_LLM_BASE_URL.rstrip("/") + "/responses",
+                headers={
+                    "Authorization": f"Bearer {PRIMARY_LLM_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": PRIMARY_LLM_MODEL,
+                    "instructions": system_prompt,
+                    "input": user_prompt,
+                    "max_output_tokens": max_tokens,
+                },
+                timeout=min(timeout, PRIMARY_LLM_TIMEOUT_S),
+            )
+            response.raise_for_status()
+            answer = _llm_text_from_payload(response.json())
+            if answer:
+                app.logger.info("Feishu LLM primary succeeded: purpose=%s model=%s", purpose, PRIMARY_LLM_MODEL)
+                return answer
+            raise RuntimeError("Responses API returned empty text")
+        except Exception:
+            app.logger.warning(
+                "Feishu LLM primary unavailable; falling back to default: purpose=%s model=%s",
+                purpose,
+                PRIMARY_LLM_MODEL,
+                exc_info=True,
+            )
+
+    if DEFAULT_LLM_BASE_URL and DEFAULT_LLM_MODEL and DEFAULT_LLM_API_KEY:
+        try:
+            response = requests.post(
+                DEFAULT_LLM_BASE_URL.rstrip("/") + "/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {DEFAULT_LLM_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": DEFAULT_LLM_MODEL,
+                    "temperature": 0.1,
+                    "max_tokens": max_tokens,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                },
+                timeout=timeout,
+            )
+            response.raise_for_status()
+            answer = _llm_text_from_payload(response.json())
+            if answer:
+                app.logger.info("Feishu LLM fallback succeeded: purpose=%s model=%s", purpose, DEFAULT_LLM_MODEL)
+                return answer
+        except Exception:
+            app.logger.exception("Feishu LLM fallback failed: purpose=%s", purpose)
+    return ""
+
+
 def answer_feishu_question(chat_id: str, question: str) -> str:
     job = latest_chat_job(chat_id)
     context = job_context(chat_id, question)
-    if not DEFAULT_LLM_BASE_URL or not DEFAULT_LLM_MODEL or not DEFAULT_LLM_API_KEY:
-        return fallback_assistant_reply(question, job)
     prompt = (
         "你是一个接入了 Memory Eval 任务系统的中文智能助手，像正常聊天助手一样理解用户。"
         "你可以回答评测进度、解释异常、解释准确率、说明如何发起 develop 或 PR 测试，"
@@ -2159,36 +2256,18 @@ def answer_feishu_question(chat_id: str, question: str) -> str:
         + "\n\n任务上下文：\n"
         + context
     )
-    try:
-        response = requests.post(
-            DEFAULT_LLM_BASE_URL.rstrip("/") + "/chat/completions",
-            headers={
-                "Authorization": f"Bearer {DEFAULT_LLM_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": DEFAULT_LLM_MODEL,
-                "temperature": 0.1,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "你是 Memory Eval 的智能任务助手。任务数据是唯一事实来源；"
-                            "不能臆测、不能把旧任务错误归因给新任务。"
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-            },
-            timeout=20,
-        )
-        response.raise_for_status()
-        data = response.json()
-        answer = str(((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
-        if answer:
-            return answer[:1800]
-    except Exception:
-        app.logger.exception("Feishu assistant LLM request failed")
+    answer = call_feishu_llm(
+        system_prompt=(
+            "你是 Memory Eval 的智能任务助手。任务数据是唯一事实来源；"
+            "不能臆测、不能把旧任务错误归因给新任务。"
+        ),
+        user_prompt=prompt,
+        max_tokens=900,
+        timeout=20,
+        purpose="chat",
+    )
+    if answer:
+        return answer[:1800]
     return fallback_assistant_reply(question, job)
 
 
@@ -2695,8 +2774,6 @@ def send_feishu_file(chat_id: str, file_key: str, file_name: str) -> None:
 
 def analyze_failure_with_llm(job_id: str, error_message: str) -> str:
     """Produce a short operator-facing diagnosis without changing job status."""
-    if not DEFAULT_LLM_BASE_URL or not DEFAULT_LLM_MODEL or not DEFAULT_LLM_API_KEY:
-        return ""
     evidence = job_observability(job_id, log_lines=180)
     runtime = evidence["runtime"]
     inspect_json = json.dumps(
@@ -2722,45 +2799,16 @@ def analyze_failure_with_llm(job_id: str, error_message: str) -> str:
         f"测试平台日志：\n{platform_log[-14000:]}\n"
         f"EchoMem docker logs：\n{docker_log[-18000:]}"
     )
-    try:
-        response = requests.post(
-            DEFAULT_LLM_BASE_URL.rstrip("/") + "/chat/completions",
-            headers={
-                "Authorization": f"Bearer {DEFAULT_LLM_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": DEFAULT_LLM_MODEL,
-                "temperature": 0,
-                "max_tokens": 300,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "你只输出简短、准确、可执行的运维诊断。"
-                            "不要建议修改 EchoMem，除非证据明确来自 EchoMem 自身代码。"
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-            },
-            timeout=45,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        content = ((payload.get("choices") or [{}])[0].get("message") or {}).get(
-            "content"
-        )
-        if isinstance(content, list):
-            content = "".join(
-                str(item.get("text") or "")
-                for item in content
-                if isinstance(item, dict)
-            )
-        return str(content or "").strip()[:1200]
-    except Exception:
-        app.logger.exception("failure analysis failed for job %s", job_id)
-        return ""
+    return call_feishu_llm(
+        system_prompt=(
+            "你只输出简短、准确、可执行的运维诊断。"
+            "不要建议修改 EchoMem，除非证据明确来自 EchoMem 自身代码。"
+        ),
+        user_prompt=prompt,
+        max_tokens=300,
+        timeout=45,
+        purpose=f"failure-analysis:{job_id}",
+    )[:1200]
 
 
 def notify_feishu_job(job_id: str) -> None:
@@ -2989,8 +3037,6 @@ def parse_test_command(text: str) -> tuple[str, int | None] | None:
 
 def parse_test_command_with_llm(text: str) -> tuple[str, int | None] | None:
     """Understand natural-language test requests without letting the model act."""
-    if not DEFAULT_LLM_BASE_URL or not DEFAULT_LLM_MODEL or not DEFAULT_LLM_API_KEY:
-        return None
     prompt = (
         "判断用户是否想发起 EchoMem 记忆评测任务。只返回一个 JSON 对象，"
         "不得输出 Markdown 或解释。格式必须是："
@@ -3001,41 +3047,13 @@ def parse_test_command_with_llm(text: str) -> tuple[str, int | None] | None:
         f"\n用户消息：{text[:1000]}"
     )
     try:
-        response = requests.post(
-            DEFAULT_LLM_BASE_URL.rstrip("/") + "/chat/completions",
-            headers={
-                "Authorization": f"Bearer {DEFAULT_LLM_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": DEFAULT_LLM_MODEL,
-                "temperature": 0,
-                "max_tokens": 160,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": "你是严格的意图分类器，只输出合法 JSON。",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-            },
+        content = call_feishu_llm(
+            system_prompt="你是严格的意图分类器，只输出合法 JSON。",
+            user_prompt=prompt,
+            max_tokens=160,
             timeout=8,
+            purpose="test-command",
         )
-        response.raise_for_status()
-        raw_content = (
-            ((response.json().get("choices") or [{}])[0].get("message") or {}).get(
-                "content"
-            )
-            or ""
-        )
-        if isinstance(raw_content, list):
-            content = "".join(
-                str(item.get("text") or "")
-                for item in raw_content
-                if isinstance(item, dict)
-            ).strip()
-        else:
-            content = str(raw_content).strip()
         content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content).strip()
         json_match = re.search(r"\{.*\}", content, flags=re.DOTALL)
         if not json_match:

@@ -236,6 +236,20 @@ DEFAULT_EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 DEFAULT_EMBEDDING_MODEL=text-embedding-v3
 ```
 
+飞书机器人对话配置为主模型优先、DeepSeek 兜底：
+
+```text
+PRIMARY_LLM_BASE_URL=https://api.toskaxy.xyz/v1
+PRIMARY_LLM_MODEL=gpt-5.5
+PRIMARY_LLM_API_KEY=服务器上的主模型 Key
+PRIMARY_LLM_TIMEOUT_S=20
+```
+
+飞书普通对话、自然语言测试命令识别和异常分析会优先调用
+`PRIMARY_LLM_*` 的 Responses API。主模型超时、连接失败、HTTP 错误或返回空内容时，
+自动回退到 `DEFAULT_LLM_*` 的 DeepSeek Chat Completions API。评测任务本身仍使用
+`DEFAULT_LLM_*` 配置，不会因为切换飞书对话模型而改变 EchoMem 的测试模型。
+
 模型覆盖只作用于服务器任务环境；EchoMem 源码本身不修改。embedding、rerank、engine
 开关和旧/新配置字段应以被测 checkout 的 `config.example.json` 为准。API Key 只通过
 环境变量传递，不写入 Git、配置结果或日志。
