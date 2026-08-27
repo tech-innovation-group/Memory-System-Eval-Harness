@@ -214,7 +214,7 @@ li{{margin:7px 0}}.note{{border-left:3px solid #286aa6;padding-left:12px}}
 <div class="card"><small>排队中</small><strong>{queued}</strong></div>
 <div class="card"><small>失败/中断</small><strong>{failed}</strong></div>
 </div>
-<section class="panel"><p class="note">本页只统计本轮正式 PR 服务端观测任务：不使用 FIFO、Search 优先、双通道或租户公平等客户端策略。
+<section class="panel"><p class="note">本页只统计本轮正式 PR 服务端观测任务：客户端调度器已关闭，平台不替 EchoMem 做业务排队或调度。
 请求由多个真实租户直接发往 EchoMem；调度、公平性和队列结论必须有服务端时间戳或服务端日志支持。
 没有足够证据的项目标记为 <b>INCONCLUSIVE</b>。</p></section>
 <section class="panel"><h2>PR 结果</h2><div class="scroll"><table>
