@@ -90,10 +90,8 @@ SCENARIOS: dict[str, dict[str, Any]] = {
 }
 
 
-def selected_policies(compare_client_policies: bool) -> list[str]:
-    """Formal runs always use the production-faithful observation mode."""
-    # Keep the old argument for CLI compatibility, but never add a client-side
-    # scheduler to the formal test platform.
+def selected_policies() -> list[str]:
+    """Return the only supported formal execution mode."""
     return [SERVER_OBSERVE_POLICY]
 
 
@@ -156,17 +154,6 @@ def run_case(
         "--out-dir",
         str(output),
     ]
-    if policy != SERVER_OBSERVE_POLICY:
-        command += [
-            "--scheduler-policy",
-            policy,
-            "--search-admission-capacity",
-            str(args.search_admission_capacity),
-            "--commit-admission-capacity",
-            str(args.commit_admission_capacity),
-            "--admission-capacity",
-            str(args.admission_capacity),
-        ]
     if args.auth_header:
         command += ["--auth-header", args.auth_header]
     if args.pid:
@@ -700,24 +687,6 @@ def main() -> int:
         action="store_true",
         help="Observe EchoMem queueing without client-side admission scheduling.",
     )
-    parser.add_argument(
-        "--compare-client-policies",
-        action="store_true",
-        help=argparse.SUPPRESS,
-    )
-    parser.add_argument("--admission-capacity", type=int, default=1, help=argparse.SUPPRESS)
-    parser.add_argument(
-        "--search-admission-capacity",
-        type=int,
-        default=8,
-        help=argparse.SUPPRESS,
-    )
-    parser.add_argument(
-        "--commit-admission-capacity",
-        type=int,
-        default=1,
-        help=argparse.SUPPRESS,
-    )
     parser.add_argument("--pid", type=int, default=0)
     parser.add_argument("--reset-command", default="", help="Optional command run before every case")
     parser.add_argument("--no-server-metrics", action="store_true")
@@ -747,9 +716,8 @@ def main() -> int:
         config_paths[count] = config_dir / f"tenants-{count}.json"
         write_subset(config_paths[count], all_tenants[:count])
 
-    policies = selected_policies(args.compare_client_policies)
+    policies = selected_policies()
     # Formal suite never enables the load generator's admission controller.
-    # The legacy flag is accepted only so older automation does not break.
     client_admission_enabled = False
     manifest: dict[str, Any] = {
         "created_at": now_iso(),

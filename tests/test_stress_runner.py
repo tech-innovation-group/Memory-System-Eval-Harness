@@ -53,7 +53,7 @@ class StressRunnerTests(unittest.TestCase):
         self.assertEqual(512, sizing["requested"])
 
     def test_formal_suite_defaults_to_server_observe(self) -> None:
-        self.assertEqual([SERVER_OBSERVE_POLICY], selected_policies(False))
+        self.assertEqual([SERVER_OBSERVE_POLICY], selected_policies())
 
     def test_runner_server_observe_is_a_real_scheduler_mode(self) -> None:
         from stress.echomem import runner
@@ -78,9 +78,6 @@ class StressRunnerTests(unittest.TestCase):
                 runner.parse_args()
         finally:
             sys.argv = original_argv
-
-    def test_formal_suite_ignores_legacy_client_policy_flag(self) -> None:
-        self.assertEqual([SERVER_OBSERVE_POLICY], selected_policies(True))
 
     def test_final_report_excludes_legacy_stress_jobs(self) -> None:
         from scripts.pr_stress_final_report import is_formal_server_observe_job
