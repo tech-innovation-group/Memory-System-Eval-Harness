@@ -96,14 +96,21 @@ def monitor_span_hours(path):
         for line in path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
-            payload = json.loads(line)
+            try:
+                payload = json.loads(line)
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(payload, dict):
+                continue
             parsed = parse_timestamp(payload.get("timestamp"))
             if parsed is not None:
                 timestamps.append(parsed)
         if len(timestamps) < 2:
             return 0.0
-        return max(0.0, (max(timestamps) - min(timestamps)).total_seconds() / 3600)
-    except (OSError, ValueError, TypeError):
+        return max(
+            0.0, (max(timestamps) - min(timestamps)).total_seconds() / 3600
+        )
+    except OSError:
         return 0.0
 
 
