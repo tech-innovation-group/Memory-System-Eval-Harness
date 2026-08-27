@@ -653,12 +653,29 @@ def _is_json_log_fragment(line: str) -> bool:
     return bool(re.match(r"^[A-Za-z_][A-Za-z0-9_-]*\s*:", text))
 
 
+def _is_formal_progress_line(line: str) -> bool:
+    """Return whether a formal-suite line belongs to the progress protocol."""
+    return bool(
+        re.search(r"FORMAL_PROGRESS\s+\d+/\d+", line)
+        or re.search(r"FORMAL_HEARTBEAT\s+", line)
+    )
+
+
 def update_progress_from_line(job_id: str, line: str) -> None:
     job = get_job(job_id)
     if not job:
         return
     progress = dict(job.get("progress") or default_progress("import"))
     changed = False
+    is_formal_suite = (
+        job.get("test_type") == "stress"
+        and bool((job.get("stress_config") or {}).get("formal_suite"))
+    )
+    # The formal suite emits its own stable progress protocol. Its child
+    # runner also prints CSV/JSON and ordinary diagnostic lines; parsing those
+    # as generic QA progress can reset or overwrite the real 15-case counter.
+    if is_formal_suite and not _is_formal_progress_line(line):
+        return
     if not _is_json_log_fragment(line):
         changed |= _set_progress(progress, last_log=line)
 
