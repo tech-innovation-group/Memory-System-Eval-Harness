@@ -661,6 +661,16 @@ def _is_formal_progress_line(line: str) -> bool:
     )
 
 
+def _split_log_chunk(chunk: bytes, pending: str) -> tuple[list[str], str]:
+    """Decode one Docker log chunk while preserving a possible partial line."""
+    lines = (pending + chunk.decode("utf-8", errors="replace")).splitlines(
+        keepends=True
+    )
+    if lines and not lines[-1].endswith(("\n", "\r")):
+        return [line.rstrip("\r\n") for line in lines[:-1]], lines[-1]
+    return [line.rstrip("\r\n") for line in lines], ""
+
+
 def final_stress_progress(job: dict[str, Any], status: str) -> dict[str, Any]:
     """Keep useful progress counters visible after a failed or finished run."""
     formal_suite = (
@@ -3871,11 +3881,15 @@ def bridge_retry_job(job_id: str):
 def monitor_container(job_id: str, container, log_path: Path) -> None:
     try:
         with log_path.open("ab") as log_file:
+            pending = ""
             for chunk in container.logs(stream=True, follow=True):
                 log_file.write(chunk)
                 log_file.flush()
-                for line in chunk.decode("utf-8", errors="replace").splitlines():
+                lines, pending = _split_log_chunk(chunk, pending)
+                for line in lines:
                     update_progress_from_line(job_id, line)
+            if pending:
+                update_progress_from_line(job_id, pending)
         result = container.wait()
         exit_code = int(result.get("StatusCode", 1))
         status = "completed" if exit_code == 0 else "failed"
@@ -4592,11 +4606,15 @@ def run_stress_job(job_id: str) -> None:
             run_kwargs["entrypoint"] = entrypoint
         runner = client.containers.run(**run_kwargs)
         with log_path.open("ab") as log_file:
+            pending = ""
             for chunk in runner.logs(stream=True, follow=True):
                 log_file.write(chunk)
                 log_file.flush()
-                for line in chunk.decode("utf-8", errors="replace").splitlines():
+                lines, pending = _split_log_chunk(chunk, pending)
+                for line in lines:
                     update_progress_from_line(job_id, line)
+            if pending:
+                update_progress_from_line(job_id, pending)
         exit_code = int(runner.wait().get("StatusCode", 1))
         summary_path = stress_summary_path(job_id, formal_suite)
         summary = {}

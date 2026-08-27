@@ -14,7 +14,7 @@ HAS_WEB_RUNTIME = importlib.util.find_spec("docker") is not None
 )
 class FormalProgressTests(unittest.TestCase):
     def test_formal_progress_protocol_is_distinguished_from_child_output(self) -> None:
-        from deploy.web_app_server import _is_formal_progress_line
+        from deploy.web_app_server import _is_formal_progress_line, _split_log_chunk
 
         self.assertTrue(
             _is_formal_progress_line(
@@ -32,6 +32,28 @@ class FormalProgressTests(unittest.TestCase):
             _is_formal_progress_line(
                 "HTTP request completed method=POST status_code=200"
             )
+        )
+        chunks = [
+            b"FORMAL_HEART",
+            b"BEAT scenario=mixed repeat=1 policy=server-observe ",
+            b"elapsed_s=600\nFORMAL_PROGRESS 4/",
+            b"15 scenario=mixed repeat=1 policy=server-observe\n",
+        ]
+        pending = ""
+        decoded = []
+        for chunk in chunks:
+            lines, pending = _split_log_chunk(chunk, pending)
+            decoded.extend(lines)
+        if pending:
+            decoded.append(pending)
+        self.assertEqual(
+            [
+                "FORMAL_HEARTBEAT scenario=mixed repeat=1 "
+                "policy=server-observe elapsed_s=600",
+                "FORMAL_PROGRESS 4/15 scenario=mixed repeat=1 "
+                "policy=server-observe",
+            ],
+            decoded,
         )
 
     def test_formal_suite_does_not_overwrite_case_progress_with_json(self) -> None:
