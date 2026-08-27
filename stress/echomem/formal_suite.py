@@ -210,6 +210,7 @@ def run_case(
                     heartbeat = (
                         f"FORMAL_HEARTBEAT scenario={scenario} "
                         f"repeat={repetition} policy={policy} "
+                        f"completed={completed_runs} total={total_runs} "
                         f"elapsed_s={elapsed:.0f}"
                     )
                     streamed_lines.append(heartbeat + "\n")
