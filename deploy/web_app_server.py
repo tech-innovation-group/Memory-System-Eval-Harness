@@ -643,12 +643,24 @@ def _set_progress(
     return changed
 
 
+def _is_json_log_fragment(line: str) -> bool:
+    """Do not show one line of a streamed JSON report as the latest log."""
+    text = line.strip()
+    if not text:
+        return True
+    if text[0] in '{[}"':
+        return True
+    return bool(re.match(r"^[A-Za-z_][A-Za-z0-9_-]*\s*:", text))
+
+
 def update_progress_from_line(job_id: str, line: str) -> None:
     job = get_job(job_id)
     if not job:
         return
     progress = dict(job.get("progress") or default_progress("import"))
-    changed = _set_progress(progress, last_log=line)
+    changed = False
+    if not _is_json_log_fragment(line):
+        changed |= _set_progress(progress, last_log=line)
 
     if "阶段 1:" in line:
         changed |= _set_progress(progress, phase="import")
