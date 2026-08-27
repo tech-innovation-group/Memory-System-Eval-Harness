@@ -41,6 +41,31 @@ PASS = "PASS"
 FAIL = "FAIL"
 INCONCLUSIVE = "INCONCLUSIVE"
 ENVIRONMENT_ERROR = "ENVIRONMENT_ERROR"
+WORKER_HEADROOM = 1.25
+
+
+def autosize_workers(
+    requested: int,
+    arrival_rate: float,
+    request_timeout_s: float,
+    *,
+    headroom: float = WORKER_HEADROOM,
+) -> tuple[int, dict[str, Any]]:
+    """Prevent the load generator from becoming an accidental bottleneck."""
+    requested_value = max(1, int(requested))
+    rate = max(0.0, float(arrival_rate))
+    timeout = max(0.0, float(request_timeout_s))
+    multiplier = max(1.0, float(headroom))
+    required = max(1, math.ceil(rate * timeout * multiplier))
+    effective = max(requested_value, required)
+    return effective, {
+        "requested": requested_value,
+        "effective": effective,
+        "required_for_offered_concurrency": required,
+        "arrival_rate": rate,
+        "request_timeout_s": timeout,
+        "headroom": multiplier,
+    }
 
 
 def now_iso() -> str:
@@ -3052,6 +3077,7 @@ def main() -> int:
     args = parse_args()
     if args.scheduler_policy == "server-observe":
         args.no_client_admission = True
+    args.worker_sizing = {}
     out_dir = Path(args.out_dir or f"results/stress/echomem_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
     out_dir.mkdir(parents=True, exist_ok=True)
     clients: EchoMemHTTP | dict[str, EchoMemHTTP]
@@ -3194,6 +3220,31 @@ def main() -> int:
             markers_per_tenant=args.isolation_markers_per_tenant,
         )
         sessions = provision_sessions(clients, tenants, args.sessions_per_tenant)
+        if args.no_client_admission:
+            args.search_workers, search_sizing = autosize_workers(
+                args.search_workers,
+                args.search_rps,
+                args.search_timeout_s,
+            )
+            commit_arrival_rate = (
+                len(tenants) * args.commit_rpm / 60.0
+                if args.commit_rpm > 0
+                else 0.0
+            )
+            args.commit_workers, commit_sizing = autosize_workers(
+                args.commit_workers,
+                commit_arrival_rate,
+                args.commit_timeout_s,
+            )
+            if args.commit_rpm <= 0:
+                args.commit_workers = max(args.commit_workers, len(sessions))
+                commit_sizing["effective"] = args.commit_workers
+                commit_sizing["burst_sessions"] = len(sessions)
+            args.worker_sizing = {
+                "mode": "server-observe",
+                "search": search_sizing,
+                "commit": commit_sizing,
+            }
         workload_started = time.monotonic()
         if args.scenario in {"baseline", "commit-storm", "all"}:
             commit_records, search_records = run_parallel_workload(

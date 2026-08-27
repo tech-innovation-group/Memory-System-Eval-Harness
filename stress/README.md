@@ -264,6 +264,11 @@ python3 stress/echomem/runner.py \
 `--no-client-admission` removes client-side gating from the runner. The executor
 worker pool can still become a client-side bottleneck, so its queue wait remains
 recorded and its worker count must be sized above the expected in-flight load.
+In `server-observe` mode the runner automatically raises each worker pool to at
+least `arrival rate × request timeout × 1.25`, while preserving a larger
+explicit value, and records the requested/effective values in `summary.json`.
+This is capacity sizing, not a scheduling policy: it prevents the load
+generator from silently throttling the offered traffic.
 历史上的 FIFO、Search-priority、dual-lane、tenant-fair 和
 dual-lane-tenant-fair 实现仅为读取旧结果和开发者本地诊断保留；它们不属于
 线上真实流量模型，不被正式 runner 接受，也不会通过 Web 或飞书入口暴露。

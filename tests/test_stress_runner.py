@@ -21,6 +21,7 @@ from stress.echomem.runner import (
     linear_slope_per_minute,
     workload_metrics,
     percentile,
+    autosize_workers,
     scenario_status,
     commit_delivery_status,
     search_latency_status,
@@ -40,6 +41,17 @@ from stress.echomem.formal_suite import (
 
 
 class StressRunnerTests(unittest.TestCase):
+    def test_server_observe_autosizes_workers_for_offered_concurrency(self) -> None:
+        effective, sizing = autosize_workers(64, 8.0, 40.0)
+        self.assertEqual(400, effective)
+        self.assertEqual(64, sizing["requested"])
+        self.assertEqual(400, sizing["required_for_offered_concurrency"])
+
+    def test_worker_autosizing_never_reduces_explicit_capacity(self) -> None:
+        effective, sizing = autosize_workers(512, 1.0, 1.0)
+        self.assertEqual(512, effective)
+        self.assertEqual(512, sizing["requested"])
+
     def test_formal_suite_defaults_to_server_observe(self) -> None:
         self.assertEqual([SERVER_OBSERVE_POLICY], selected_policies(False))
 
