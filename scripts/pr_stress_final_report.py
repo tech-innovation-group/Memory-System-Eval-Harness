@@ -90,6 +90,23 @@ def monitor_sample_count(path):
         return 0
 
 
+def monitor_span_hours(path):
+    try:
+        timestamps = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            payload = json.loads(line)
+            parsed = parse_timestamp(payload.get("timestamp"))
+            if parsed is not None:
+                timestamps.append(parsed)
+        if len(timestamps) < 2:
+            return 0.0
+        return max(0.0, (max(timestamps) - min(timestamps)).total_seconds() / 3600)
+    except (OSError, ValueError, TypeError):
+        return 0.0
+
+
 def find_monitor_path(results_root):
     for candidate in (
         results_root / "pr-stress-monitor-v2.jsonl",
@@ -183,6 +200,13 @@ def render(jobs, results_root, public_base_url):
     findings.extend(stalled_jobs)
 
     now = datetime.now(timezone.utc).isoformat()
+    monitor_path = find_monitor_path(results_root)
+    monitor_hours = monitor_span_hours(monitor_path)
+    monitor_gate = (
+        f"已达到 8 小时"
+        if monitor_hours >= 8
+        else f"未达到 8 小时（当前 {monitor_hours:.2f} 小时）"
+    )
     return f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -224,7 +248,8 @@ li{{margin:7px 0}}.note{{border-left:3px solid #286aa6;padding-left:12px}}
 <section class="panel"><h2>当前发现</h2><ul>{''.join(f'<li>{text(item)}</li>' for item in findings)}</ul></section>
 <section class="panel"><h2>审计说明</h2>
 <p>每个 PR 的详情页保留原始日志、请求 CSV、资源采样、服务端 metrics 和独立 HTML。
-服务器长时间监控样本数：{monitor_sample_count(find_monitor_path(results_root))}。
+服务器长时间监控样本数：{monitor_sample_count(monitor_path)}；
+首末采样覆盖：{monitor_hours:.2f} 小时（{monitor_gate}）。
 监控会把运行任务超过 15 分钟没有阶段进度更新标记为“疑似停滞”，但不会仅凭这一项自动判定失败。
 如果某个 PR 仍在运行，当前页只展示已生成的结果，不代表该 PR 已完成。</p></section>
 </main></body></html>"""
