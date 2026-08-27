@@ -27,6 +27,7 @@ import docker
 from docker.errors import DockerException, ImageNotFound
 import requests
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, session, url_for
+from stress.echomem.formal_progress import progress_position
 
 
 DATA_DIR = Path(os.getenv("WEB_DATA_DIR", "/data"))
@@ -706,6 +707,29 @@ def update_progress_from_line(job_id: str, line: str) -> None:
     # runner also prints CSV/JSON and ordinary diagnostic lines; parsing those
     # as generic QA progress can reset or overwrite the real 15-case counter.
     if is_formal_suite and not _is_formal_progress_line(line):
+        return
+    if is_formal_suite:
+        total = int(progress.get("total") or 0)
+        current = int(progress.get("current") or 0)
+        position = progress_position(
+            line,
+            total=total,
+        )
+        if position is None:
+            return
+        line_current, line_total = position
+        if line_current < current:
+            return
+        changed |= _set_progress(
+            progress,
+            phase="qa",
+            current=max(current, line_current),
+            total=max(total, line_total),
+            last_log=line,
+        )
+        progress["label"] = "正式多租户矩阵压测"
+        if changed:
+            update_job(job_id, progress=progress, message=progress["label"])
         return
     if not _is_json_log_fragment(line):
         changed |= _set_progress(progress, last_log=line)

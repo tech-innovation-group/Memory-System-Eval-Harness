@@ -31,6 +31,7 @@ from stress.echomem.runner import (
     retrieval_contains,
     scheduling_observation,
 )
+from stress.echomem.formal_progress import progress_position
 from stress.echomem.audit_matrix_report import render as render_audit_matrix_report
 from stress.echomem.executive_report import render as render_executive_report
 from stress.echomem.formal_suite import (
@@ -41,6 +42,21 @@ from stress.echomem.formal_suite import (
 
 
 class StressRunnerTests(unittest.TestCase):
+    def test_formal_heartbeat_maps_to_completed_case_position(self) -> None:
+        position = progress_position(
+            "FORMAL_HEARTBEAT scenario=search-storm repeat=2 policy=server-observe elapsed_s=10",
+            total=15,
+        )
+        self.assertEqual((10, 15), position)
+
+    def test_formal_stale_heartbeat_can_be_rejected_by_position(self) -> None:
+        position = progress_position(
+            "FORMAL_HEARTBEAT scenario=mixed repeat=1 policy=server-observe elapsed_s=901",
+            total=15,
+        )
+        self.assertIsNotNone(position)
+        self.assertLess(position[0], 9)
+
     def test_server_observe_autosizes_workers_for_offered_concurrency(self) -> None:
         effective, sizing = autosize_workers(64, 8.0, 40.0)
         self.assertEqual(400, effective)
