@@ -1909,6 +1909,47 @@ def stress_summary_path(job_id: str, formal_suite: bool = False) -> Path:
     return root / f"stress_{job_id}" / "summary.json"
 
 
+def monitor_formal_suite_logs(job_id: str, stop_event: threading.Event) -> None:
+    """Backfill live formal progress when Docker stdout is delayed or lost.
+
+    formal_suite.py writes a per-case ``suite_runner.stdout.log`` before
+    forwarding the same progress to its parent stdout. Reading only the
+    structured progress lines from those files keeps the Web status current
+    without treating streamed request JSON as a progress update.
+    """
+    root = RESULTS_DIR / job_id
+    offsets: dict[Path, int] = {}
+    pending: dict[Path, str] = {}
+    while not stop_event.is_set():
+        try:
+            paths = sorted(root.rglob("suite_runner.stdout.log"))
+        except OSError:
+            paths = []
+        for path in paths:
+            try:
+                size = path.stat().st_size
+                offset = offsets.get(path, 0)
+                if size < offset:
+                    offset = 0
+                    pending.pop(path, None)
+                with path.open("rb") as handle:
+                    handle.seek(offset)
+                    chunk = handle.read()
+                offsets[path] = offset + len(chunk)
+            except OSError:
+                continue
+            if not chunk:
+                continue
+            text = pending.get(path, "") + chunk.decode("utf-8", errors="replace")
+            lines = text.splitlines(keepends=True)
+            pending[path] = lines.pop() if lines and not lines[-1].endswith(("\n", "\r")) else ""
+            for line in lines:
+                stripped = line.rstrip("\r\n")
+                if _is_formal_progress_line(stripped):
+                    update_progress_from_line(job_id, stripped)
+        stop_event.wait(2.0)
+
+
 def load_stress_summary(job: dict[str, Any]) -> dict[str, Any]:
     formal_suite = bool((job.get("stress_config") or {}).get("formal_suite"))
     path = stress_summary_path(str(job["id"]), formal_suite)
@@ -3886,6 +3927,20 @@ def monitor_container(
     tail: str | int = "all",
     since: int | None = None,
 ) -> None:
+    formal_log_stop = threading.Event()
+    formal_log_thread: threading.Thread | None = None
+    current_job = get_job(job_id) or {}
+    if (
+        current_job.get("test_type") == "stress"
+        and (current_job.get("stress_config") or {}).get("formal_suite")
+    ):
+        formal_log_thread = threading.Thread(
+            target=monitor_formal_suite_logs,
+            args=(job_id, formal_log_stop),
+            name=f"formal-progress-{job_id}",
+            daemon=True,
+        )
+        formal_log_thread.start()
     try:
         with log_path.open("ab") as log_file:
             pending = ""
@@ -3958,6 +4013,9 @@ def monitor_container(
     except Exception as exc:
         update_job(job_id, status="failed", finished_at=now(), message=f"运行错误: {exc}")
     finally:
+        formal_log_stop.set()
+        if formal_log_thread is not None:
+            formal_log_thread.join(timeout=3)
         try:
             container.remove(force=True)
         except Exception:
@@ -4619,6 +4677,16 @@ def run_stress_job(job_id: str) -> None:
         if entrypoint:
             run_kwargs["entrypoint"] = entrypoint
         runner = client.containers.run(**run_kwargs)
+        formal_log_stop = threading.Event()
+        formal_log_thread: threading.Thread | None = None
+        if formal_suite:
+            formal_log_thread = threading.Thread(
+                target=monitor_formal_suite_logs,
+                args=(job_id, formal_log_stop),
+                name=f"formal-progress-{job_id}",
+                daemon=True,
+            )
+            formal_log_thread.start()
         with log_path.open("ab") as log_file:
             pending = ""
             for chunk in runner.logs(stream=True, follow=True):
@@ -4629,6 +4697,9 @@ def run_stress_job(job_id: str) -> None:
                     update_progress_from_line(job_id, line)
             if pending:
                 update_progress_from_line(job_id, pending)
+        formal_log_stop.set()
+        if formal_log_thread is not None:
+            formal_log_thread.join(timeout=3)
         exit_code = int(runner.wait().get("StatusCode", 1))
         summary_path = stress_summary_path(job_id, formal_suite)
         summary = {}
@@ -4671,6 +4742,10 @@ def run_stress_job(job_id: str) -> None:
         )
         notify_feishu_job(job_id)
     finally:
+        if "formal_log_stop" in locals():
+            formal_log_stop.set()
+        if "formal_log_thread" in locals() and formal_log_thread is not None:
+            formal_log_thread.join(timeout=3)
         if runner is not None:
             try:
                 runner.remove(force=True)
