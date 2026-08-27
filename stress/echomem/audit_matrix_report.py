@@ -713,11 +713,11 @@ h1{{margin:0;font-size:25px;line-height:1.2;letter-spacing:0}}h2{{margin:0;font-
 details.raw{{border-top:1px solid var(--line);padding-top:10px;margin-top:14px}}summary{{cursor:pointer;font-weight:700}}pre{{max-height:420px;overflow:auto;background:#f7f9fa;padding:12px;font-size:11px;white-space:pre-wrap}}a{{color:var(--blue)}}
 @media(max-width:1050px){{.facts,.compact-facts{{grid-template-columns:repeat(3,1fr)}}.metric-columns{{grid-template-columns:repeat(3,1fr)}}}}@media(max-width:700px){{main{{padding:20px 12px 44px}}.summary{{grid-template-columns:1fr 1fr}}.facts,.compact-facts,.metric-columns,.callout{{grid-template-columns:1fr 1fr}}.chart-row{{grid-template-columns:105px 1fr 76px}}.chart-label{{font-size:12px}}}}
 </style></head><body><main>
-<header class="top">{icon}<div><h1>EchoMem 多租户压测审计报告</h1><div class="sub">策略矩阵 · 先看结论，再展开证据 · {esc(first.get('finished_at'))}</div></div></header>
+<header class="top">{icon}<div><h1>EchoMem 多租户压测审计报告</h1><div class="sub">服务端观测 · 先看结论，再展开证据 · {esc(first.get('finished_at'))}</div></div></header>
 <div class="banner {identity_class}"><b>证据等级：{'真实多租户' if real_multi else '性能对照，不能作为多租户结论'}</b><br>{esc(identity_text)}
  服务地址：<code>{esc(first.get('base_url'))}</code>，认证模式：<code>{esc(identity_mode)}</code>。</div>
 <div class="summary">
-  <div><span>策略数</span><b>{len(policies)}</b><small>{valid_count} 个通过 · {inconclusive_count} 个样本不足</small></div>
+  <div><span>运行结果数</span><b>{len(policies)}</b><small>{valid_count} 个通过 · {inconclusive_count} 个样本不足</small></div>
   <div><span>租户 / 正式时长</span><b>{esc(first_params.get('tenants'))} / {esc(first_params.get('duration_s'))}s</b><small>不含预热和排空</small></div>
   <div><span>Search 目标</span><b>{esc(first_params.get('search_rps'))} RPS</b><small>实际吞吐按完成请求计算</small></div>
   <div><span>隔离探针</span><b>{'PASS' if real_multi and (first_details.get('isolation') or {}).get('status') == 'PASS' else '需谨慎'}</b><small>{esc((first_details.get('isolation') or {}).get('probe_count', 0))} / {esc((first_details.get('isolation') or {}).get('expected_probe_count', 0))} 条</small></div>
@@ -730,11 +730,11 @@ details.raw{{border-top:1px solid var(--line);padding-top:10px;margin-top:14px}}
 <div class="legend"><span><i class="c"></i>Commit P95</span><span><i class="s"></i>Search P95</span></div>
 {''.join(chart_rows)}
 </section>
-<section class="panel"><div class="panel-head"><h2>策略对比</h2><span class="muted">完整 P50 / P95 / P99 和队列数据见下方详情</span></div>
+<section class="panel"><div class="panel-head"><h2>运行结果</h2><span class="muted">完整 P50 / P95 / P99 和队列数据见下方详情</span></div>
 <div class="scroll"><table><thead><tr><th>策略 / 含义</th><th>状态</th><th>Commit 提交/完成</th><th>Commit 平均</th><th>P50</th><th>P95</th><th>P99</th><th>最大</th><th>Search 平均</th><th>Search P95</th><th>Search P99</th><th>Search 最大</th><th>最大队列</th></tr></thead>
 <tbody>{''.join(comparison_rows)}</tbody></table></div></section>
 <section class="panel"><div class="panel-head"><h2>测试边界</h2><span class="muted">避免把压测端数据误读成服务端指标</span></div>
-<p>本矩阵在同一批真实请求负载下比较 FIFO、Search 优先、双通道和租户公平策略。报告里的“准入等待”和“队列深度”主要来自压测端；只有服务端同时提供 request ID、服务端队列深度、429 和 Retry-After，才能确认服务端限流行为。</p>
+<p>正式运行不提供 FIFO、Search 优先、双通道或租户公平等客户端调度选项；请求由压测端直接并发发送，观察 EchoMem 自己的处理表现。报告里的“准入等待”和“队列深度”主要来自压测端；只有服务端同时提供 request ID、服务端队列深度、429 和 Retry-After，才能确认服务端限流行为。历史结果中的旧策略名称仅用于兼容读取，不代表当前线上方案。</p>
 </section>
 {''.join(policy_detail_blocks)}
 <div class="muted" style="margin-top:16px">原始矩阵：{esc(matrix_path)}。本报告不隐藏失败请求；完整请求记录保存在各策略目录的 CSV 中。</div>
