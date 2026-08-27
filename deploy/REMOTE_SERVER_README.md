@@ -167,9 +167,22 @@ returns HTTP 400 and writes an explicit error to the Web log.
 ```text
 测试 develop
 测试 PR 227
+压测
+压测 PR 397
+对 develop 压测
 状态 <任务ID>
 结果 <任务ID>
 ```
+
+`压测` 使用 PR397 的真实服务压测方案：commit 和 search 同时运行，采集
+commit 成功率、search P95/P99、资源曲线，并输出 `summary.json`、
+`report.html` 和 CSV 明细。正式结果使用真实 EchoMem HTTP 服务和真实模型配置，
+不使用 mock；单租户时租户公平性会明确标记为 `INCONCLUSIVE`。
+
+普通 `压测` 命令检查 `STRESS_ECHOMEM_BASE_URL` 指向的已部署 EchoMem 实例，
+适合快速检查服务器上的实例。若要压测某个 PR，应先把该 PR 的 EchoMem 实例
+部署到该地址，再发送 `压测 PR <编号>`；任务记录 PR 编号用于结果标注，压测
+本身不会悄悄把另一个旧实例当成 PR 代码。
 
 飞书固定命令进入 `deploy/web_app_server.py`，创建任务后由后台 worker 调用：
 

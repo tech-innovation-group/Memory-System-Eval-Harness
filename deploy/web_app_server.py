@@ -12,6 +12,7 @@ import re
 import secrets
 import shutil
 import subprocess
+import socket
 import tarfile
 import threading
 import time
@@ -183,6 +184,57 @@ ECHOMEM_HEALTH_TIMEOUT_S = int(os.getenv("ECHOMEM_HEALTH_TIMEOUT_S", "300"))
 ECHOMEM_HEALTH_REQUEST_TIMEOUT_S = float(
     os.getenv("ECHOMEM_HEALTH_REQUEST_TIMEOUT_S", "3")
 )
+STRESS_IMAGE = os.getenv("STRESS_IMAGE", "echomem-stress-runner:20260826")
+STRESS_ECHOMEM_BASE_URL = os.getenv(
+    "STRESS_ECHOMEM_BASE_URL", "http://127.0.0.1:18170"
+).rstrip("/")
+STRESS_ECHOMEM_CONTAINER = os.getenv(
+    "STRESS_ECHOMEM_CONTAINER", "echomem-stress-target"
+).strip()
+STRESS_ECHOMEM_AUTH_KEY = os.getenv("STRESS_ECHOMEM_AUTH_KEY", "").strip()
+STRESS_AUTH_HEADER = os.getenv("STRESS_AUTH_HEADER", "X-API-Key").strip()
+STRESS_TENANT_CONFIG = os.getenv(
+    "STRESS_TENANT_CONFIG",
+    str(DATA_DIR / "stress-tenants.json"),
+).strip()
+STRESS_KEYS_FILE = Path(
+    os.getenv("STRESS_KEYS_FILE", str(DATA_DIR / "stress_keys.env"))
+).expanduser()
+STRESS_ALLOW_SHARED_IDENTITY = os.getenv(
+    "STRESS_ALLOW_SHARED_IDENTITY", "0"
+).lower() not in {"0", "false", "no"}
+STRESS_COMMIT_WORKERS = int(os.getenv("STRESS_COMMIT_WORKERS", "64"))
+STRESS_SEARCH_WORKERS = int(os.getenv("STRESS_SEARCH_WORKERS", "64"))
+STRESS_DURATION_S = float(os.getenv("STRESS_DURATION_S", "300"))
+STRESS_SEARCH_RPS = float(os.getenv("STRESS_SEARCH_RPS", "2"))
+STRESS_TENANTS = int(os.getenv("STRESS_TENANTS", "1"))
+STRESS_SESSIONS_PER_TENANT = int(os.getenv("STRESS_SESSIONS_PER_TENANT", "2"))
+STRESS_MESSAGES_PER_SESSION = int(os.getenv("STRESS_MESSAGES_PER_SESSION", "3"))
+STRESS_COMMIT_TIMEOUT_S = float(os.getenv("STRESS_COMMIT_TIMEOUT_S", "600"))
+STRESS_SAMPLE_INTERVAL_S = float(os.getenv("STRESS_SAMPLE_INTERVAL_S", "10"))
+STRESS_SUITE_SCENARIOS = os.getenv(
+    "STRESS_SUITE_SCENARIOS",
+    "baseline,mixed,commit-storm,search-storm,soak",
+).strip()
+STRESS_SUITE_REPEATS = int(os.getenv("STRESS_SUITE_REPEATS", "3"))
+
+
+def load_stress_secret_env() -> dict[str, str]:
+    """Load stress-only credentials from a mode-600 server-side env file."""
+    values: dict[str, str] = {}
+    try:
+        for raw_line in STRESS_KEYS_FILE.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip("'").strip('"')
+            if re.fullmatch(r"STRESS_TENANT_[A-Z]+_KEY", key) and value:
+                values[key] = value
+    except OSError:
+        pass
+    return values
 ALLOWED_HOSTS = {
     item.strip()
     for item in os.getenv(
@@ -218,6 +270,7 @@ STARTUP_INCIDENTS_PATH = Path(
 )
 LOCK = threading.Lock()
 JOB_QUEUE: queue.Queue[str] = queue.Queue()
+RUN_SLOT = threading.Lock()
 SECRETS: dict[str, dict[str, str]] = {}
 PHASE_LABELS = {
     "queued": "等待执行",
@@ -228,6 +281,9 @@ PHASE_LABELS = {
     "judge": "Judge",
     "completed": "已完成",
     "failed": "执行失败",
+    "stress_prepare": "准备压测",
+    "stress_running": "commit/search 并发压测",
+    "stress_report": "生成压测报告",
 }
 FEISHU_TOKEN_CACHE: dict[str, Any] = {"token": "", "expires_at": 0.0}
 FEISHU_EVENT_IDS: set[str] = set()
@@ -285,7 +341,7 @@ def read_echo_config(
     return config_bytes, sorted(api_key_envs)
 
 
-def enable_eval_mcp(config_bytes: bytes) -> bytes:
+def enable_eval_mcp(config_bytes: bytes, mcp_port: int = 8001) -> bytes:
     """Enable MCP for the task-local EchoMem runtime config."""
     try:
         config = json.loads(config_bytes.decode("utf-8-sig"))
@@ -297,7 +353,7 @@ def enable_eval_mcp(config_bytes: bytes) -> bytes:
         config["mcp"] = mcp
     mcp["enabled"] = True
     mcp["host"] = "0.0.0.0"
-    mcp["port"] = 8001
+    mcp["port"] = int(mcp_port)
     return json.dumps(config, ensure_ascii=False, indent=2).encode("utf-8")
 
 
@@ -635,6 +691,23 @@ def update_progress_from_line(job_id: str, line: str) -> None:
     match = re.search(r"阶段 3:\s*Judge\s*\(共\s*(\d+)\s*题", line)
     if match:
         changed |= _set_progress(progress, phase="judge", current=0, total=int(match.group(1)))
+    match = re.search(r"FORMAL_PROGRESS\s+(\d+)/(\d+)", line)
+    if match:
+        changed |= _set_progress(
+            progress,
+            phase="qa",
+            current=int(match.group(1)),
+            total=int(match.group(2)),
+        )
+        progress["label"] = "正式多租户矩阵压测"
+    match = re.search(
+        r"FORMAL_HEARTBEAT\s+scenario=([^\s]+)\s+repeat=(\d+)\s+"
+        r"policy=([^\s]+)\s+elapsed_s=([0-9.]+)",
+        line,
+    )
+    if match:
+        changed |= _set_progress(progress, phase="qa", last_log=line)
+        progress["label"] = "正式多租户矩阵压测"
     match = re.search(r"Judge (?:checkpoint|latest checkpoint saved):\s*(\d+)/(\d+)", line)
     if match:
         changed |= _set_progress(
@@ -666,6 +739,45 @@ def valid_port(value: str) -> int:
     if not 1 <= port <= 65535:
         raise ValueError("端口必须在 1 到 65535 之间")
     return port
+
+
+def reserve_host_port(
+    preferred: int,
+    *,
+    client=None,
+    attempts: int = 100,
+) -> int:
+    """Pick a currently free host port for a disposable EchoMem stress target."""
+    docker_ports: set[int] = set()
+    if client is not None:
+        try:
+            for container in client.containers.list(all=True):
+                bindings = (
+                    (container.attrs.get("HostConfig") or {}).get("PortBindings")
+                    or {}
+                )
+                for entries in bindings.values():
+                    for entry in entries or []:
+                        try:
+                            docker_ports.add(int(entry.get("HostPort")))
+                        except (AttributeError, TypeError, ValueError):
+                            continue
+        except DockerException:
+            pass
+    for offset in range(max(1, attempts)):
+        candidate = preferred + offset
+        if candidate > 65535:
+            break
+        if candidate in docker_ports:
+            continue
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                probe.bind(("127.0.0.1", candidate))
+            except OSError:
+                continue
+        return candidate
+    raise RuntimeError(f"没有可用的 EchoMem 压测端口: {preferred}-{preferred + attempts - 1}")
 
 
 def require_access():
@@ -774,6 +886,14 @@ def append_job_log(job_id: str, line: str) -> None:
     with log_path.open("a", encoding="utf-8") as handle:
         handle.write(line.rstrip() + "\n")
     update_progress_from_line(job_id, line)
+
+
+def ensure_job_log(job_id: str) -> Path:
+    """Create the platform log before any setup step can fail."""
+    log_path = RESULTS_DIR / job_id / "container.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.touch(exist_ok=True)
+    return log_path
 
 
 def append_startup_incident(job_id: str, diagnosis: dict[str, Any]) -> None:
@@ -1080,7 +1200,9 @@ def prepare_echomem_source(job: dict[str, Any], secret_values: dict[str, str]) -
     # The benchmark always performs its first memory_query through MCP,
     # including no-tool-calling mode. This is a task-local override and does
     # not modify the checked-out EchoMem source.
-    config_bytes = enable_eval_mcp(config_bytes)
+    # The EchoMem process listens on the container-internal MCP port 8001.
+    # Host-side isolation uses Docker's dynamic port mapping separately.
+    config_bytes = enable_eval_mcp(config_bytes, 8001)
     # The dependency image is intentionally cached by dependency fingerprint.
     # Keep the
     # task-local endpoint/model configuration outside that image and mount it
@@ -1447,7 +1569,14 @@ def source_eval_environment(secret_values: dict[str, str]) -> dict[str, str]:
 
 def result_summary(job_id: str) -> dict[str, Any]:
     result_dir = RESULTS_DIR / job_id
-    candidates = list(result_dir.rglob("summary.json")) if result_dir.exists() else []
+    formal_summary = result_dir / f"formal_{job_id}" / "summary.json"
+    candidates = (
+        [formal_summary]
+        if formal_summary.is_file()
+        else list(result_dir.rglob("summary.json"))
+        if result_dir.exists()
+        else []
+    )
     if not candidates:
         return {}
     try:
@@ -1570,6 +1699,57 @@ def evaluation_details(job_id: str) -> dict[str, Any]:
 
 
 def format_result(job: dict[str, Any]) -> str:
+    if job.get("test_type") == "stress":
+        summary = load_stress_summary(job)
+        if (job.get("stress_config") or {}).get("formal_suite"):
+            aggregates = summary.get("aggregates") or []
+            failed = int((summary.get("details") or {}).get("failed_runs") or 0)
+            inconclusive = int(
+                (summary.get("details") or {}).get("inconclusive_runs") or 0
+            )
+            best_commit = min(
+                aggregates,
+                key=lambda item: float(item.get("commit_p95") or 1e9),
+                default=None,
+            )
+            best_search = min(
+                aggregates,
+                key=lambda item: float(item.get("search_p95") or 1e9),
+                default=None,
+            )
+            lines = [
+                "正式多租户压测完成",
+                f"总判定: {summary.get('status', 'UNKNOWN')}",
+                f"场景/策略运行数: {len(aggregates)} 条聚合记录 · "
+                f"失败 {failed} · 证据不足 {inconclusive}",
+            ]
+            if best_commit:
+                lines.append(
+                    f"最低 Commit P95: {best_commit.get('scenario')} / "
+                    f"{best_commit.get('policy')} = {best_commit.get('commit_p95')} 秒"
+                )
+            if best_search:
+                lines.append(
+                    f"最低 Search P95: {best_search.get('scenario')} / "
+                    f"{best_search.get('policy')} = {best_search.get('search_p95')} 秒"
+                )
+            lines.append(f"任务 ID: {job['id']}")
+            return "\n".join(lines)
+        details = summary.get("details") or {}
+        statuses = summary.get("scenario_status") or {}
+        return (
+            f"压测完成\n{job.get('source_label', 'EchoMem')} \n"
+            f"总判定: {summary.get('status', 'UNKNOWN')}\n"
+            f"commit: {statuses.get('commit_delivery', '-')}\n"
+            f"search: {statuses.get('search_priority', '-')}\n"
+            f"commit 成功/总数: "
+            f"{details.get('commit_total', 0) - details.get('commit_failures', 0)}/"
+            f"{details.get('commit_total', 0)}\n"
+            f"search P95: {details.get('search_p95_s', '-') } 秒\n"
+            f"租户公平性: {statuses.get('tenant_fairness', '-')}\n"
+            f"资源观测: {statuses.get('resource_observation', '-')}\n"
+            f"任务 ID: {job['id']}"
+        )
     summary = result_summary(job["id"]) or job.get("summary") or {}
     correct = summary.get("judge_correct")
     denominator = (
@@ -1661,6 +1841,64 @@ def compact_job(job: dict[str, Any]) -> dict[str, Any]:
     return compact
 
 
+def stress_summary_path(job_id: str, formal_suite: bool = False) -> Path:
+    """Return the suite summary without accidentally selecting a child run."""
+    root = RESULTS_DIR / job_id
+    if formal_suite:
+        return root / f"formal_{job_id}" / "summary.json"
+    return root / f"stress_{job_id}" / "summary.json"
+
+
+def load_stress_summary(job: dict[str, Any]) -> dict[str, Any]:
+    formal_suite = bool((job.get("stress_config") or {}).get("formal_suite"))
+    path = stress_summary_path(str(job["id"]), formal_suite)
+    if not path.is_file():
+        return {}
+    try:
+        summary = json.loads(path.read_text(encoding="utf-8"))
+        metrics = summary.get("metrics") or {}
+        events = metrics.get("message_events") or []
+        if not events:
+            event_path = path.parent / "message_events.json"
+            if event_path.is_file():
+                try:
+                    loaded_events = json.loads(event_path.read_text(encoding="utf-8"))
+                    if isinstance(loaded_events, list):
+                        events = loaded_events
+                        metrics["message_events"] = events
+                except (OSError, json.JSONDecodeError):
+                    pass
+        commits = [
+            row for row in (metrics.get("timeline") or [])
+            if row.get("operation") == "commit"
+        ]
+        sessions: dict[tuple[str, str], dict[str, Any]] = {}
+        for event in events:
+            key = (str(event.get("tenant") or "-"), str(event.get("session_id") or "-"))
+            flow = sessions.setdefault(
+                key,
+                {"tenant": key[0], "session_id": key[1], "messages": [], "commit": None},
+            )
+            flow["messages"].append(event)
+        for commit in commits:
+            key = (str(commit.get("tenant") or "-"), str(commit.get("session_id") or "-"))
+            flow = sessions.setdefault(
+                key,
+                {"tenant": key[0], "session_id": key[1], "messages": [], "commit": None},
+            )
+            flow["commit"] = commit
+        for flow in sessions.values():
+            flow["messages"].sort(key=lambda item: item.get("index", 0))
+        metrics["message_flow"] = sorted(
+            sessions.values(),
+            key=lambda item: (item["tenant"], item["session_id"]),
+        )
+        summary["metrics"] = metrics
+        return summary
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
 def job_observability(job_id: str, *, log_lines: int = 120) -> dict[str, Any]:
     """Return bounded, safe evidence for the Harness diagnostic agent."""
     job = get_job(job_id)
@@ -1669,7 +1907,7 @@ def job_observability(job_id: str, *, log_lines: int = 120) -> dict[str, Any]:
     result_dir = RESULTS_DIR / job_id
     platform_logs: list[str] = []
     docker_logs: list[str] = []
-    container_log = result_dir / "container.log"
+    container_log = ensure_job_log(job_id)
     if container_log.is_file():
         try:
             platform_logs.extend(
@@ -3035,6 +3273,35 @@ def parse_test_command(text: str) -> tuple[str, int | None] | None:
     return None
 
 
+def parse_stress_command(text: str) -> tuple[str, int | None] | None:
+    """Parse the deterministic stress-test commands before LLM fallback."""
+    normalized = re.sub(r"\s+", " ", text.strip().lower())
+    normalized = re.sub(r"[，。！？!?,:：]+$", "", normalized).strip()
+    if not re.search(r"(?:压测|压力测试|stress|load test)", normalized):
+        return None
+    pr_match = re.search(
+        r"(?:pr|pull request|pull)\s*#?\s*(\d+)", normalized
+    )
+    if pr_match:
+        return "pr", int(pr_match.group(1))
+    if re.search(r"\bdevelop\b|开发分支|develop 分支", normalized):
+        return "develop", None
+    # Plain “压测” intentionally targets the currently deployed EchoMem
+    # service. This is useful for checking a deployment without rebuilding it.
+    return "deployed", None
+
+
+def is_formal_stress_command(text: str) -> bool:
+    """Recognize the expensive, release-readiness stress suite explicitly."""
+    normalized = re.sub(r"\s+", " ", text.strip().lower())
+    return bool(
+        re.search(
+            r"(?:正式压测|矩阵压测|全量压测|严谨压测|release stress|formal stress)",
+            normalized,
+        )
+    )
+
+
 def parse_test_command_with_llm(text: str) -> tuple[str, int | None] | None:
     """Understand natural-language test requests without letting the model act."""
     prompt = (
@@ -3167,10 +3434,114 @@ def enqueue_source_job(
     return job
 
 
+def enqueue_stress_job(
+    *,
+    source_ref: str = "deployed",
+    pr_number: int | None = None,
+    chat_id: str = "",
+    formal_suite: bool = False,
+) -> dict[str, Any]:
+    """Queue a real EchoMem stress run using the existing single worker."""
+    if source_ref in {"develop", "pr"} and (
+        not DEFAULT_LLM_BASE_URL
+        or not DEFAULT_LLM_MODEL
+        or not DEFAULT_LLM_API_KEY
+    ):
+        raise ValueError(
+            "服务器尚未配置 DEFAULT_LLM_BASE_URL/DEFAULT_LLM_MODEL/DEFAULT_LLM_API_KEY"
+        )
+    job_id = uuid.uuid4().hex[:12]
+    label = (
+        "已部署 EchoMem"
+        if source_ref == "deployed"
+        else source_label(source_ref, pr_number)
+    )
+    job = {
+        "id": job_id,
+        "created_at": now(),
+        "started_at": None,
+        "finished_at": None,
+        "status": "queued",
+        "test_type": "stress",
+        "source_ref": source_ref,
+        "pr_number": pr_number,
+        "source_label": (
+            f"{label} · 正式多租户压测套件"
+            if formal_suite
+            else f"{label} · PR397 压测方案"
+        ),
+        "commit_sha": None,
+        "echomem_http_port": ECHOMEM_HTTP_PORT,
+        "mcp_port": ECHOMEM_MCP_PORT,
+        "message": "等待压测执行",
+        "feishu_chat_id": chat_id,
+        "progress": default_progress("queued"),
+        "stress_config": {
+            "base_url": STRESS_ECHOMEM_BASE_URL,
+            "duration_s": STRESS_DURATION_S,
+            "search_rps": STRESS_SEARCH_RPS,
+            "tenants": STRESS_TENANTS,
+            "sessions_per_tenant": STRESS_SESSIONS_PER_TENANT,
+            "messages_per_session": STRESS_MESSAGES_PER_SESSION,
+            "commit_timeout_s": STRESS_COMMIT_TIMEOUT_S,
+            "sample_interval_s": STRESS_SAMPLE_INTERVAL_S,
+            "scheduler_policy": "server-observe",
+            "client_admission": "disabled",
+            "commit_workers": STRESS_COMMIT_WORKERS,
+            "search_workers": STRESS_SEARCH_WORKERS,
+            "real_model": True,
+            "formal_suite": formal_suite,
+            "suite_scenarios": STRESS_SUITE_SCENARIOS,
+            "suite_repeats": STRESS_SUITE_REPEATS,
+        },
+    }
+    if source_ref in {"develop", "pr"}:
+        SECRETS[job_id] = {
+            "llm_base_url": DEFAULT_LLM_BASE_URL,
+            "llm_model": DEFAULT_LLM_MODEL,
+            "embedding_model": os.getenv(
+                "DEFAULT_EMBEDDING_MODEL", "text-embedding-v3"
+            ),
+            "llm_api_key": DEFAULT_LLM_API_KEY,
+        }
+    with LOCK:
+        jobs = read_jobs()
+        if active_job_count(jobs) >= MAX_JOBS:
+            raise ValueError("任务列表已满")
+        jobs.append(job)
+        write_jobs(jobs)
+    JOB_QUEUE.put(job_id)
+    return job
+
+
 @app.post("/api/bridge/jobs")
 def bridge_create_job():
     payload = request.get_json(silent=True) or {}
     source_ref = str(payload.get("source_ref") or "").strip().lower()
+    if str(payload.get("test_type") or "").strip().lower() == "stress":
+        pr_number = payload.get("pr_number")
+        if source_ref not in {"deployed", "develop", "pr"}:
+            abort(400, "压测 source_ref 必须是 deployed、develop 或 pr")
+        if source_ref == "pr":
+            try:
+                pr_number = int(pr_number)
+            except (TypeError, ValueError):
+                abort(400, "压测 pr_number 必须是整数")
+            if pr_number <= 0:
+                abort(400, "压测 pr_number 必须大于 0")
+        else:
+            pr_number = None
+        chat_id = str(payload.get("chat_id") or "")
+        try:
+            job = enqueue_stress_job(
+                source_ref=source_ref,
+                pr_number=pr_number,
+                chat_id=chat_id,
+                formal_suite=bool(payload.get("formal_suite")),
+            )
+        except (ValueError, RuntimeError) as exc:
+            return jsonify({"message": str(exc)}), 400
+        return jsonify(compact_job(job)), 202
     pr_number = payload.get("pr_number")
     fixed_commit_sha = str(
         payload.get("fixed_commit_sha") or payload.get("commit_sha") or ""
@@ -3394,6 +3765,20 @@ def recover_memory_eval(job_id: str, action: str) -> dict[str, Any]:
     if job.get("status") in {"queued", "running"}:
         raise ValueError("任务仍在执行中，不能重复提交")
     source_ref = str(job.get("source_ref") or "")
+    if job.get("test_type") == "stress":
+        if source_ref not in {"deployed", "develop", "pr"}:
+            raise ValueError("该压测任务不是可恢复的 develop/PR/已部署任务")
+        retried = enqueue_stress_job(
+            source_ref=source_ref,
+            pr_number=job.get("pr_number"),
+            chat_id=str(job.get("feishu_chat_id") or ""),
+            formal_suite=bool((job.get("stress_config") or {}).get("formal_suite")),
+        )
+        return {
+            "retried_from": job_id,
+            "action": action,
+            "job": compact_job(retried),
+        }
     if source_ref not in {"develop", "pr", "commit"}:
         raise ValueError("该任务不是可恢复的 develop/PR 任务")
     retried = enqueue_source_job(
@@ -3444,6 +3829,51 @@ def monitor_container(job_id: str, container, log_path: Path) -> None:
         result = container.wait()
         exit_code = int(result.get("StatusCode", 1))
         status = "completed" if exit_code == 0 else "failed"
+        current_job = get_job(job_id) or {}
+        if current_job.get("test_type") == "stress":
+            summary = {}
+            formal_suite = bool(
+                (current_job.get("stress_config") or {}).get("formal_suite")
+            )
+            summary_path = stress_summary_path(job_id, formal_suite)
+            if summary_path.is_file():
+                try:
+                    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    pass
+            # The stress runner uses exit code 1 for a valid INCONCLUSIVE
+            # result (for example, fairness cannot be judged with one tenant).
+            # This is a completed measurement, not a crashed process.
+            if summary.get("status") in {"PASS", "INCONCLUSIVE"}:
+                status = "completed"
+            update_job(
+                job_id,
+                status=status,
+                finished_at=now(),
+                exit_code=exit_code,
+                summary=summary,
+                message=(
+                    "压测完成"
+                    if status == "completed"
+                    else "压测进程退出异常"
+                ),
+                progress={
+                    **default_progress("completed" if status == "completed" else "failed"),
+                    "label": "压测完成" if status == "completed" else "压测失败",
+                    "current": 1 if status == "completed" else 0,
+                    "total": 1,
+                    "percent": 100 if status == "completed" else 0,
+                },
+            )
+            if status == "failed":
+                diagnosis = build_failure_diagnosis(job_id, "压测进程退出异常")
+                update_job(
+                    job_id,
+                    failure_analysis=diagnosis["text"],
+                    failure_diagnosis=diagnosis,
+                )
+            notify_feishu_job(job_id)
+            return
         progress = default_progress("completed" if exit_code == 0 else "failed")
         update_job(
             job_id,
@@ -3507,6 +3937,7 @@ def run_source_job(job_id: str, secret_values: dict[str, str]) -> None:
         return
     echo_container = None
     eval_container = None
+    ensure_job_log(job_id)
     try:
         update_job(
             job_id,
@@ -3689,7 +4120,29 @@ def run_source_job(job_id: str, secret_values: dict[str, str]) -> None:
             notify_feishu_job(job_id)
             return
         error_message = f"运行错误: {str(exc)[:500]}"
-        diagnosis = build_failure_diagnosis(job_id, error_message)
+        try:
+            diagnosis = build_failure_diagnosis(job_id, error_message)
+        except Exception as diagnosis_error:
+            # Never replace the setup/import error with a secondary diagnostic
+            # failure such as a missing log artifact.
+            app.logger.exception(
+                "failed to build failure diagnosis for %s",
+                job_id,
+            )
+            diagnosis = {
+                "text": (
+                    "异常分析暂不可用："
+                    f"{type(diagnosis_error).__name__}: {diagnosis_error}"
+                ),
+                "category": "test_platform",
+                "category_label": "测试平台配置问题",
+                "needs_echomem_change": False,
+                "retryable": True,
+                "allowed_actions": ["retry"],
+                "reason": error_message,
+                "config_errors": [],
+                "result_files": [],
+            }
         update_job(
             job_id,
             status="failed",
@@ -3734,9 +4187,450 @@ def run_source_job(job_id: str, secret_values: dict[str, str]) -> None:
         shutil.rmtree(SOURCE_ROOT / job_id, ignore_errors=True)
 
 
-def run_job(job_id: str) -> None:
+def run_stress_job(job_id: str) -> None:
+    """Run the PR397 real-service stress plan in a disposable container."""
     job = get_job(job_id)
+    if not job:
+        return
+    ensure_job_log(job_id)
+    runner = None
+    echo_container = None
+    prepared_source = None
+    managed_target_pid = ""
+    log_path = RESULTS_DIR / job_id / "container.log"
+    output_dir = DOCKER_RESULTS_DIR / job_id / "stress"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        config = job.get("stress_config") or {}
+        formal_suite = bool(config.get("formal_suite"))
+        base_url = str(config.get("base_url") or STRESS_ECHOMEM_BASE_URL).rstrip("/")
+        update_job(
+            job_id,
+            status="running",
+            started_at=job.get("started_at") or now(),
+            message="准备压测目标",
+            progress={
+                **default_progress("prepare"),
+                "label": PHASE_LABELS["stress_prepare"],
+            },
+        )
+        client = docker.from_env()
+        source_ref = str(job.get("source_ref") or "deployed")
+        target_is_managed = source_ref in {"develop", "pr"}
+        # A deployed target is intentionally left untouched. Source-backed
+        # stress jobs receive their own ports, workspace and container so the
+        # measured service is actually the requested develop/PR snapshot.
+        if target_is_managed:
+            managed_http_port = reserve_host_port(
+                ECHOMEM_HTTP_PORT + 10,
+                client=client,
+            )
+            managed_mcp_port = reserve_host_port(
+                managed_http_port + 1,
+                client=client,
+            )
+            if managed_mcp_port == managed_http_port:
+                managed_mcp_port = reserve_host_port(
+                    managed_http_port + 2,
+                    client=client,
+                )
+            update_job(
+                job_id,
+                echomem_http_port=managed_http_port,
+                mcp_port=managed_mcp_port,
+                message="准备指定版本 EchoMem 压测实例",
+            )
+            job = get_job(job_id) or job
+            prepared_source = prepare_echomem_source(
+                job,
+                {
+                    "llm_base_url": DEFAULT_LLM_BASE_URL,
+                    "llm_model": DEFAULT_LLM_MODEL,
+                    "embedding_model": os.getenv(
+                        "DEFAULT_EMBEDDING_MODEL", "text-embedding-v3"
+                    ),
+                    "llm_api_key": DEFAULT_LLM_API_KEY,
+                },
+            )
+            job_cache = prepare_echomem_job_cache(job_id)
+            echo_environment = {
+                env_name: (
+                    DEFAULT_EMBEDDING_API_KEY
+                    if "EMBEDDING" in env_name.upper()
+                    or "RERANK" in env_name.upper()
+                    else DEFAULT_LLM_API_KEY
+                )
+                for env_name in prepared_source.get("api_key_envs", [])
+            }
+            echo_environment.update(
+                {
+                    "ECHOMEM_AUTO_COMMIT_THRESHOLD": ECHOMEM_AUTO_COMMIT_THRESHOLD,
+                    "ECHOMEM_ATOMIC_EXTRACTION_TEMPERATURE": (
+                        ECHOMEM_ATOMIC_EXTRACTION_TEMPERATURE
+                    ),
+                    "PYTHONPATH": "/opt/echomem/src",
+                }
+            )
+            echo_container = client.containers.run(
+                prepared_source["image"],
+                detach=True,
+                name=f"memory-eval-stress-echomem-{job_id}",
+                ports={
+                    "8010/tcp": ("127.0.0.1", managed_http_port),
+                    "8001/tcp": ("127.0.0.1", managed_mcp_port),
+                },
+                environment=echo_environment,
+                volumes={
+                    str(prepared_source["source_dir"]): {
+                        "bind": "/opt/echomem",
+                        "mode": "ro",
+                    },
+                    str(job_cache): {
+                        "bind": f"{ECHOMEM_WORKSPACE}/cache",
+                        "mode": "rw",
+                    },
+                    str(prepared_source["config_path"]): {
+                        "bind": f"{ECHOMEM_WORKSPACE}/config.json",
+                        "mode": "ro",
+                    },
+                },
+                labels={
+                    "memory-eval.job": job_id,
+                    "memory-eval.role": "echomem",
+                    "memory-eval.stress-source": source_ref,
+                },
+            )
+            echo_container.reload()
+            managed_target_pid = str(
+                echo_container.attrs.get("State", {}).get("Pid") or ""
+            )
+            echo_network = (
+                echo_container.attrs.get("NetworkSettings", {})
+                .get("Networks", {})
+                .get("bridge", {})
+            )
+            echo_ip = str(echo_network.get("IPAddress") or "")
+            if not echo_ip:
+                raise RuntimeError("无法获取压测 EchoMem 容器的 Docker 内网地址")
+            wait_for_echomem(
+                echo_container,
+                echo_ip,
+                job_id,
+                mcp_port=managed_mcp_port,
+            )
+            base_url = f"http://127.0.0.1:{managed_http_port}"
+            update_job(
+                job_id,
+                target_container=echo_container.name,
+                target_image=prepared_source["image"],
+                base_url=base_url,
+                message=(
+                    f"{source_label(source_ref, job.get('pr_number'))} "
+                    "EchoMem 已启动，开始真实压测"
+                ),
+            )
+        # A stress job targeting a manually deployed service must never be
+        # coupled to source preparation or cleanup.
+        target_pid = managed_target_pid
+        if not target_is_managed and STRESS_ECHOMEM_CONTAINER:
+            try:
+                target = client.containers.get(STRESS_ECHOMEM_CONTAINER)
+                target_pid = str(target.attrs.get("State", {}).get("Pid") or "")
+            except DockerException:
+                app.logger.info("configured stress target container is unavailable")
+        if not target_pid:
+            target_pid = os.getenv("STRESS_ECHOMEM_PID", "")
+        tenant_count = max(1, int(config.get("tenants", STRESS_TENANTS)))
+        entrypoint = None
+        if formal_suite:
+            # Only tenant IDs and environment variable names are written to
+            # the task volume; credentials remain in the runner environment.
+            if tenant_count > 4:
+                raise RuntimeError(
+                    "当前正式压测最多支持 4 个独立认证租户；请增加对应的密钥注入后再扩展"
+                )
+            tenant_config_host = DOCKER_RESULTS_DIR / job_id / "tenants.json"
+            entries: list[dict[str, Any]] = []
+            configured = Path(STRESS_TENANT_CONFIG)
+            if configured.is_file():
+                try:
+                    payload = json.loads(configured.read_text(encoding="utf-8"))
+                    raw_entries = (
+                        payload.get("tenants")
+                        if isinstance(payload, dict)
+                        else payload
+                    )
+                    if isinstance(raw_entries, list):
+                        for item in raw_entries[:tenant_count]:
+                            if isinstance(item, dict):
+                                entries.append(
+                                    {
+                                        "tenant_id": str(
+                                            item.get("tenant_id") or item.get("id") or ""
+                                        ).strip(),
+                                        "user_id": str(item.get("user_id") or "").strip(),
+                                        "account_id": str(
+                                            item.get("account_id") or ""
+                                        ).strip(),
+                                        "agent_id": str(
+                                            item.get("agent_id") or "echomem-stress"
+                                        ).strip(),
+                                        "auth_key_env": str(
+                                            item.get("auth_key_env") or ""
+                                        ).strip(),
+                                    }
+                                )
+                except (OSError, json.JSONDecodeError):
+                    app.logger.exception("failed to read stress tenant config")
+            if len(entries) != tenant_count:
+                entries = [
+                    {
+                        "tenant_id": f"stress-{chr(ord('a') + index)}",
+                        "auth_key_env": (
+                            f"STRESS_TENANT_{chr(ord('A') + index)}_KEY"
+                        ),
+                    }
+                    for index in range(tenant_count)
+                ]
+            if any(
+                not item["tenant_id"] or not item["auth_key_env"] for item in entries
+            ):
+                raise RuntimeError(
+                    "正式多租户租户配置必须包含 tenant_id 和 auth_key_env"
+                )
+            tenant_config_host.parent.mkdir(parents=True, exist_ok=True)
+            tenant_config_host.write_text(
+                json.dumps({"tenants": entries}, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            os.chmod(tenant_config_host, 0o600)
+            command = [
+                "--base-url",
+                base_url,
+                "--tenant-config",
+                "/results/tenants.json",
+                "--out-dir",
+                f"/results/formal_{job_id}",
+                "--scenarios",
+                str(config.get("suite_scenarios", STRESS_SUITE_SCENARIOS)),
+                "--repeats",
+                str(
+                    max(
+                        1,
+                        int(
+                            config.get(
+                                "suite_repeats", STRESS_SUITE_REPEATS
+                            )
+                        ),
+                    )
+                ),
+                "--commit-workers",
+                str(max(1, int(config.get("commit_workers", STRESS_COMMIT_WORKERS)))),
+                "--search-workers",
+                str(max(1, int(config.get("search_workers", STRESS_SEARCH_WORKERS)))),
+                "--auth-header",
+                STRESS_AUTH_HEADER,
+            ]
+            # Formal platform jobs model production traffic: real tenants send
+            # concurrent HTTP requests directly to EchoMem. Client-side
+            # admission policies are intentionally not exposed here because
+            # they would measure the platform's queue, not EchoMem's queue.
+            command.append("--no-client-admission")
+            entrypoint = ["python", "/app/stress/echomem/formal_suite.py"]
+        else:
+            command = [
+                "--base-url",
+                base_url,
+                "--scenario",
+                "all",
+                "--tenants",
+                str(tenant_count),
+                "--sessions-per-tenant",
+                str(
+                    max(
+                        1,
+                        int(
+                            config.get(
+                                "sessions_per_tenant", STRESS_SESSIONS_PER_TENANT
+                            )
+                        ),
+                    )
+                ),
+                "--messages-per-session",
+                str(
+                    max(
+                        1,
+                        int(
+                            config.get(
+                                "messages_per_session", STRESS_MESSAGES_PER_SESSION
+                            )
+                        ),
+                    )
+                ),
+                "--duration-s",
+                str(float(config.get("duration_s", STRESS_DURATION_S))),
+                "--search-rps",
+                str(float(config.get("search_rps", STRESS_SEARCH_RPS))),
+                "--commit-timeout-s",
+                str(float(config.get("commit_timeout_s", STRESS_COMMIT_TIMEOUT_S))),
+                "--sample-interval-s",
+                str(float(config.get("sample_interval_s", STRESS_SAMPLE_INTERVAL_S))),
+                "--commit-workers",
+                str(max(1, int(config.get("commit_workers", STRESS_COMMIT_WORKERS)))),
+                "--search-workers",
+                str(max(1, int(config.get("search_workers", STRESS_SEARCH_WORKERS)))),
+                "--out-dir",
+                f"/results/stress_{job_id}",
+            ]
+            command.append("--no-client-admission")
+            if tenant_count > 1:
+                stress_secrets = load_stress_secret_env()
+                if not stress_secrets:
+                    raise RuntimeError(
+                        f"正式多租户压测缺少独立租户 Key: {STRESS_KEYS_FILE}"
+                    )
+                # The runner is a disposable container. Mount a task-local
+                # copy instead of passing the Web container's path, which is
+                # not visible inside the runner.
+                tenant_config_host = DOCKER_RESULTS_DIR / job_id / "tenants.json"
+                configured = Path(STRESS_TENANT_CONFIG)
+                if not configured.is_file():
+                    raise RuntimeError(
+                        f"正式多租户压测租户配置不存在: {STRESS_TENANT_CONFIG}"
+                    )
+                shutil.copy2(configured, tenant_config_host)
+                os.chmod(tenant_config_host, 0o600)
+                command.extend(["--tenant-config", "/results/tenants.json"])
+                if STRESS_ALLOW_SHARED_IDENTITY:
+                    command.append("--allow-shared-identity")
+            elif STRESS_ECHOMEM_AUTH_KEY:
+                command.extend(["--auth-key", STRESS_ECHOMEM_AUTH_KEY])
+            command.extend(["--auth-header", STRESS_AUTH_HEADER])
+        if target_pid:
+            command.extend(["--pid", target_pid])
+        update_job(
+            job_id,
+            message="commit/search 并发压测",
+            progress={
+                **default_progress("qa"),
+                "label": PHASE_LABELS["stress_running"],
+            },
+        )
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        for path in (log_path.parent, output_dir):
+            try:
+                os.chown(path, int(RUN_UID), int(RUN_GID))
+                os.chmod(path, 0o777)
+            except OSError:
+                pass
+        run_kwargs: dict[str, Any] = {
+            "image": STRESS_IMAGE,
+            "command": command,
+            "network_mode": "host",
+            "pid_mode": "host",
+            "volumes": {
+                str(DOCKER_RESULTS_DIR / job_id): {
+                    "bind": "/results",
+                    "mode": "rw",
+                }
+            },
+            "environment": {
+                key: (
+                    load_stress_secret_env().get(key, "")
+                    or os.getenv(key, "")
+                )
+                for key in (
+                    "STRESS_TENANT_A_KEY",
+                    "STRESS_TENANT_B_KEY",
+                    "STRESS_TENANT_C_KEY",
+                    "STRESS_TENANT_D_KEY",
+                )
+            },
+            "detach": True,
+            "remove": False,
+            "labels": {"memory-eval.job": job_id, "memory-eval.role": "stress"},
+        }
+        if entrypoint:
+            run_kwargs["entrypoint"] = entrypoint
+        runner = client.containers.run(**run_kwargs)
+        with log_path.open("ab") as log_file:
+            for chunk in runner.logs(stream=True, follow=True):
+                log_file.write(chunk)
+                log_file.flush()
+                for line in chunk.decode("utf-8", errors="replace").splitlines():
+                    update_progress_from_line(job_id, line)
+        exit_code = int(runner.wait().get("StatusCode", 1))
+        summary_path = stress_summary_path(job_id, formal_suite)
+        summary = {}
+        if summary_path.is_file():
+            try:
+                summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                pass
+        final_status = "completed" if (
+            exit_code == 0 or summary.get("status") in {"PASS", "INCONCLUSIVE"}
+        ) else "failed"
+        update_job(
+            job_id,
+            status=final_status,
+            finished_at=now(),
+            exit_code=exit_code,
+            summary=summary,
+            message="压测完成" if final_status == "completed" else "压测进程退出异常",
+            progress={
+                **default_progress("completed" if final_status == "completed" else "failed"),
+                "label": "压测完成" if final_status == "completed" else "压测失败",
+                "current": 1 if final_status == "completed" else 0,
+                "total": 1,
+                "percent": 100 if final_status == "completed" else 0,
+            },
+        )
+        if final_status == "failed":
+            diagnosis = build_failure_diagnosis(job_id, "压测进程退出异常")
+            update_job(job_id, failure_analysis=diagnosis["text"], failure_diagnosis=diagnosis)
+        notify_feishu_job(job_id)
+    except Exception as exc:
+        error_message = f"压测运行错误: {str(exc)[:500]}"
+        update_job(
+            job_id,
+            status="failed",
+            finished_at=now(),
+            message=error_message,
+            failure_analysis=error_message,
+            progress={
+                **default_progress("failed"),
+                "label": "压测失败",
+            },
+        )
+        notify_feishu_job(job_id)
+    finally:
+        if runner is not None:
+            try:
+                runner.remove(force=True)
+            except Exception:
+                pass
+        if echo_container is not None:
+            try:
+                capture_echomem_diagnostics(echo_container, job_id, "stress-final")
+            except Exception:
+                pass
+            try:
+                echo_container.remove(force=True)
+            except Exception:
+                pass
+        if prepared_source is not None:
+            shutil.rmtree(SOURCE_ROOT / job_id, ignore_errors=True)
+
+
+def _run_job_unlocked(job_id: str) -> None:
+    job = get_job(job_id)
+    if job and job.get("status") not in {"queued", "running"}:
+        return
+    if job and job.get("test_type") == "stress":
+        run_stress_job(job_id)
+        return
     secret_values = SECRETS.pop(job_id, None)
+    ensure_job_log(job_id)
     if not secret_values and job and job.get("source_ref"):
         # Source jobs use server-side defaults, so they can resume after the
         # Web container restarts and its in-memory secret cache is lost.
@@ -3788,9 +4682,25 @@ def run_job(job_id: str) -> None:
         )
         monitor_container(job_id, container, log_path)
     except DockerException as exc:
-        update_job(job_id, status="failed", finished_at=now(), message=f"Docker 错误: {exc}")
+        update_job(
+            job_id,
+            status="failed",
+            finished_at=now(),
+            message=f"Docker 错误: {exc}",
+        )
     except Exception as exc:
-        update_job(job_id, status="failed", finished_at=now(), message=f"运行错误: {exc}")
+        update_job(
+            job_id,
+            status="failed",
+            finished_at=now(),
+            message=f"运行错误: {exc}",
+        )
+
+
+def run_job(job_id: str) -> None:
+    """Run exactly one job at a time, including after service recovery."""
+    with RUN_SLOT:
+        _run_job_unlocked(job_id)
 
 
 def worker() -> None:
@@ -3802,11 +4712,18 @@ def worker() -> None:
             JOB_QUEUE.task_done()
 
 
+def monitor_reattached_job(job_id: str, container, log_path: Path) -> None:
+    """Keep a recovered task inside the same single-concurrency run slot."""
+    with RUN_SLOT:
+        monitor_container(job_id, container, log_path)
+
+
 def reattach_running_jobs() -> None:
     try:
         client = docker.from_env()
     except DockerException:
         return
+    recovered_one = False
     for job in read_jobs():
         if job.get("status") != "running":
             continue
@@ -3815,6 +4732,41 @@ def reattach_running_jobs() -> None:
             all=True,
             filters={"label": f"memory-eval.job={job_id}"},
         )
+        if job.get("test_type") == "stress":
+            stress_containers = [
+                container
+                for container in containers
+                if (container.labels or {}).get("memory-eval.role") == "stress"
+            ]
+            if stress_containers:
+                if recovered_one:
+                    update_job(
+                        job_id,
+                        status="queued",
+                        started_at=None,
+                        finished_at=None,
+                        message="服务重启后按单并发重新排队",
+                        progress=default_progress("queued"),
+                    )
+                    JOB_QUEUE.put(job_id)
+                    continue
+                recovered_one = True
+                log_path = ensure_job_log(job_id)
+                threading.Thread(
+                    target=monitor_reattached_job,
+                    args=(job_id, stress_containers[0], log_path),
+                    daemon=True,
+                    name=f"monitor-stress-{job_id}",
+                ).start()
+                continue
+            update_job(
+                job_id,
+                status="queued",
+                message="服务重启，压测任务已自动重新排队",
+                progress=default_progress("prepare"),
+            )
+            JOB_QUEUE.put(job_id)
+            continue
         if job.get("source_ref"):
             echo_containers = [
                 container
@@ -3832,13 +4784,19 @@ def reattach_running_jobs() -> None:
             # Never delete a live task container from this recovery path:
             # an older Web worker may still be creating the other half.
             if not echo_containers or not eval_containers:
-                app.logger.warning(
-                    "leaving incomplete live task containers in place during "
-                    "recovery: job=%s echo=%d eval=%d",
+                # The previous Web process is gone during startup recovery;
+                # without both containers there is no live work to monitor.
+                # Requeue instead of leaving a permanently running job that
+                # blocks the single-concurrency queue.
+                update_job(
                     job_id,
-                    len(echo_containers),
-                    len(eval_containers),
+                    status="queued",
+                    started_at=None,
+                    finished_at=None,
+                    message="服务重启后准备阶段任务重新排队",
+                    progress=default_progress("queued"),
                 )
+                JOB_QUEUE.put(job_id)
                 continue
             containers = eval_containers
         if not containers:
@@ -3861,9 +4819,21 @@ def reattach_running_jobs() -> None:
                     message="服务重启时未找到评测容器",
                 )
             continue
+        if recovered_one:
+            update_job(
+                job_id,
+                status="queued",
+                started_at=None,
+                finished_at=None,
+                message="服务重启后按单并发重新排队",
+                progress=default_progress("queued"),
+            )
+            JOB_QUEUE.put(job_id)
+            continue
+        recovered_one = True
         log_path = RESULTS_DIR / job_id / "container.log"
         threading.Thread(
-            target=monitor_container,
+            target=monitor_reattached_job,
             args=(job_id, containers[0], log_path),
             daemon=True,
             name=f"monitor-{job_id}",
@@ -3980,6 +4950,61 @@ def process_feishu_message(
 ) -> None:
     """Handle a callback after the HTTP acknowledgement has been returned."""
     try:
+        stress_command = parse_stress_command(text)
+        if stress_command:
+            source_ref, pr_number = stress_command
+            formal_suite = is_formal_stress_command(text)
+            try:
+                job = enqueue_stress_job(
+                    source_ref=source_ref,
+                    pr_number=pr_number,
+                    chat_id=chat_id,
+                    formal_suite=formal_suite,
+                )
+                target_label = (
+                    "已部署 EchoMem"
+                    if source_ref == "deployed"
+                    else source_label(source_ref, pr_number)
+                )
+                scheme = (
+                    (
+                        "正式多租户服务端观察（5 场景 × "
+                        f"{STRESS_SUITE_REPEATS} 轮）+ 隔离探针 + 资源观测"
+                    )
+                    if formal_suite
+                    else "PR397 commit/search 并发 + 资源观测"
+                )
+                completion_note = (
+                    "服务器单并发排队执行，正式套件预计耗时较长，完成后自动回传数值化报告。"
+                    if formal_suite
+                    else "服务器单并发排队执行，完成后自动回传压测报告。"
+                )
+                send_feishu_text(
+                    chat_id,
+                    f"压测任务已创建\n目标: {target_label}\n"
+                    f"方案: {scheme}\n"
+                    f"任务 ID: {job['id']}\n"
+                    f"实时进度与日志：\n{job_detail_url(job['id'])}\n"
+                    f"{completion_note}",
+                )
+                append_feishu_event_log(
+                    event_id=event_id,
+                    event_type="message",
+                    chat_id=chat_id,
+                    text=text,
+                    outcome="stress_job_created",
+                    job_id=str(job["id"]),
+                )
+            except Exception as exc:
+                append_feishu_event_log(
+                    event_id=event_id,
+                    event_type="message",
+                    chat_id=chat_id,
+                    text=text,
+                    outcome=f"stress_job_create_failed:{str(exc)[:200]}",
+                )
+                send_feishu_text(chat_id, f"压测任务创建失败: {str(exc)[:300]}")
+            return
         command = parse_test_command(text)
         if command is None:
             # Natural-language classification may take several seconds. It must
@@ -4171,6 +5196,33 @@ def job_detail(job_id: str):
             for path in result_dir.rglob("*")
             if path.is_file()
         )
+    stress_report = None
+    stress_suite_report = None
+    if job.get("test_type") == "stress":
+        candidates = [
+            result_dir / f"stress_{job_id}" / "report_executive.html",
+            result_dir / f"stress_{job_id}" / "report.html",
+        ]
+        stress_report = next(
+            (
+                str(path.relative_to(result_dir))
+                for path in candidates
+                if path.is_file()
+            ),
+            None,
+        )
+        suite_candidates = [
+            result_dir / f"formal_{job_id}" / "suite.html",
+            result_dir / f"formal_{job_id}" / "report.html",
+        ]
+        stress_suite_report = next(
+            (
+                str(path.relative_to(result_dir))
+                for path in suite_candidates
+                if path.is_file()
+            ),
+            None,
+        )
     progress = job.get("progress") or default_progress(job.get("status", "queued"))
     return render_template(
         "job.html",
@@ -4178,6 +5230,8 @@ def job_detail(job_id: str):
         progress=progress,
         files=files,
         eval_details=evaluation_details(job_id),
+        stress_report=stress_report,
+        stress_suite_report=stress_suite_report,
     )
 
 
@@ -4189,6 +5243,28 @@ def job_api(job_id: str):
     if not job:
         abort(404)
     return jsonify({**job, "summary": compact_job(job).get("summary") or {}})
+
+
+@app.get("/stress-dashboard")
+def stress_dashboard():
+    if not require_access():
+        abort(403)
+    dashboard = RESULTS_DIR / "pr-stress-dashboard.html"
+    if not dashboard.is_file():
+        abort(404)
+    return send_file(dashboard)
+
+
+@app.get("/stress-final-report")
+def stress_final_report():
+    if not require_access():
+        abort(403)
+    report = RESULTS_DIR / "pr-stress-final-report-current.html"
+    if not report.is_file():
+        report = RESULTS_DIR / "pr-stress-final-report.html"
+    if not report.is_file():
+        abort(404)
+    return send_file(report)
 
 
 @app.get("/api/jobs/<job_id>/evaluation")
@@ -4239,7 +5315,7 @@ def initialize() -> None:
         changed = False
         for job in jobs:
             if job.get("status") == "queued":
-                if job.get("source_ref"):
+                if job.get("source_ref") or job.get("test_type") == "stress":
                     job["message"] = "服务已恢复，任务等待重新执行"
                 else:
                     job["status"] = "interrupted"
@@ -4259,7 +5335,9 @@ def initialize() -> None:
         if changed:
             write_jobs(jobs)
     for job in read_jobs():
-        if job.get("status") == "queued" and job.get("source_ref"):
+        if job.get("status") == "queued" and (
+            job.get("source_ref") or job.get("test_type") == "stress"
+        ):
             JOB_QUEUE.put(job["id"])
     reattach_running_jobs()
     threading.Thread(target=worker, daemon=True, name="memory-eval-worker").start()

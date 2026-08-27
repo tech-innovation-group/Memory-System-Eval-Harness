@@ -31,8 +31,10 @@ from typing import Any
 
 try:
     from .clean_report import render as render_readable_report
+    from .executive_report import render as render_executive_report
 except ImportError:
     from clean_report import render as render_readable_report
+    from executive_report import render as render_executive_report
 
 
 PASS = "PASS"
@@ -94,6 +96,8 @@ class HttpResult:
     server_queue_depth: int | None = None
     server_active_workers: int | None = None
     server_terminal_status: str = ""
+    server_identity: dict[str, Any] = field(default_factory=dict)
+    client_request_id: str = ""
 
     @property
     def request_id(self) -> str:
@@ -104,7 +108,9 @@ class HttpResult:
             value = self.payload.get(key) if isinstance(self.payload, dict) else None
             if value:
                 return str(value)
-        return ""
+        # EchoMem versions that do not echo a request ID still need a stable
+        # client-side correlation key for server logs and raw CSV evidence.
+        return self.client_request_id
 
 
 def _nested_observability(payload: dict[str, Any]) -> dict[str, Any]:
@@ -176,6 +182,36 @@ def _server_observability(
         result[target] = str(value) if target.startswith("server_") and target not in {
             "server_queue_depth", "server_active_workers"
         } else value
+    identity_containers: list[dict[str, Any]] = [payload]
+    for key in ("identity", "server_identity", "scope", "telemetry", "observability", "meta", "metadata"):
+        value = payload.get(key)
+        if isinstance(value, dict):
+            identity_containers.append(value)
+    identity_aliases = {
+        "tenant_id": ("tenant_id", "tenantId", "tenant"),
+        "account_id": ("account_id", "accountId", "account"),
+        "workspace_id": ("workspace_id", "workspaceId", "workspace"),
+        "user_id": ("user_id", "userId", "user"),
+        "organization_id": ("organization_id", "organizationId", "organization", "org_id"),
+    }
+    identity: dict[str, Any] = {}
+    for target, names in identity_aliases.items():
+        for container in identity_containers:
+            for name in names:
+                value = container.get(name)
+                if value not in (None, ""):
+                    identity[target] = value
+                    break
+            if target in identity:
+                break
+        if target not in identity:
+            for name in names:
+                value = headers.get(name.lower())
+                if value not in (None, ""):
+                    identity[target] = value
+                    break
+    if identity:
+        result["server_identity"] = identity
     return result
 
 
@@ -432,6 +468,7 @@ class CommitRecord:
     status: str = ""
     elapsed_s: float = 0.0
     message_ids: list[str] = field(default_factory=list)
+    message_events: list[dict[str, Any]] = field(default_factory=list)
     error: str = ""
     queued_at: str = ""
     started_at: str = ""
@@ -614,7 +651,13 @@ class EchoMemHTTP:
         timeout_s: float | None = None,
     ) -> HttpResult:
         started = time.monotonic()
+        client_request_id = f"stress-{uuid.uuid4().hex}"
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        # Keep the generated ID on every real request so a deployment can
+        # correlate the harness row with access logs/traces even when the
+        # response body has no observability block.
+        headers["X-Request-ID"] = client_request_id
+        headers["X-EchoMem-Stress-Request-ID"] = client_request_id
         if self.auth_key:
             if self.auth_header.lower() == "authorization":
                 headers["Authorization"] = (
@@ -640,7 +683,8 @@ class EchoMemHTTP:
                 observability = _server_observability(payload, headers)
                 return HttpResult(
                     method, path, response.status, time.monotonic() - started,
-                    payload, headers=headers, **observability,
+                    payload, headers=headers, client_request_id=client_request_id,
+                    **observability,
                 )
         except urllib.error.HTTPError as exc:
             raw = exc.read().decode("utf-8", errors="replace")
@@ -661,10 +705,18 @@ class EchoMemHTTP:
             return HttpResult(
                 method, path, exc.code, time.monotonic() - started,
                 payload, f"HTTP {exc.code}", retry_after_value, headers=headers,
-                **observability,
+                client_request_id=client_request_id, **observability,
             )
         except Exception as exc:  # transport errors are environment errors at scenario level
-            return HttpResult(method, path, None, time.monotonic() - started, {}, f"{type(exc).__name__}: {exc}")
+            return HttpResult(
+                method,
+                path,
+                None,
+                time.monotonic() - started,
+                {},
+                f"{type(exc).__name__}: {exc}",
+                client_request_id=client_request_id,
+            )
 
     def request(
         self,
@@ -708,9 +760,6 @@ class EchoMemHTTP:
             "agent_id": self.agent_id,
             "metadata": {
                 "title": session_name,
-                "account_id": self.account_id or tenant,
-                "user_id": self.user_id or f"stress-{tenant}",
-                "tenant_id": self.tenant_id or tenant,
             },
         })
         if result.status_code is None or result.status_code >= 400:
@@ -725,14 +774,13 @@ class EchoMemHTTP:
                 f"{result.error or result.payload}{diagnosis}"
             )
         scope = result.payload.get("scope") or {}
-        identity: dict[str, Any] = {}
+        identity: dict[str, Any] = dict(result.server_identity)
         for key in (
             "tenant_id",
             "account_id",
             "workspace_id",
             "user_id",
             "organization_id",
-            "scope",
         ):
             value = result.payload.get(key)
             if value in (None, ""):
@@ -767,10 +815,17 @@ class EchoMemHTTP:
             operation="commit_poll",
         )
 
-    def search(self, session_id: str, query: str, timeout_s: float) -> HttpResult:
+    def search(
+        self,
+        session_id: str,
+        query: str,
+        timeout_s: float,
+        *,
+        include_debug: bool = True,
+    ) -> HttpResult:
         return self.request("POST", "/api/retrieval/search", {
             "query": query, "agent_id": self.agent_id, "session_id": session_id,
-            "limit": 10, "include_explain": False, "include_debug": True,
+            "limit": 10, "include_explain": False, "include_debug": include_debug,
         }, timeout_s=timeout_s, operation="search")
 
 
@@ -794,12 +849,66 @@ def payload_contains(payload: dict[str, Any], text: str) -> bool:
         return False
 
 
-def isolation_probe_query(writer: str) -> str:
-    """Build a probe query without echoing the secret marker into the request."""
+def retrieval_items(payload: dict[str, Any]) -> list[Any]:
+    """Return retrieval evidence while excluding request/debug metadata."""
+    items: list[Any] = []
+    containers = [payload]
+    for key in ("result", "data"):
+        value = payload.get(key)
+        if isinstance(value, dict):
+            containers.append(value)
+    for container in containers:
+        for key in ("items", "results", "memories", "matches", "evidence"):
+            value = container.get(key)
+            if isinstance(value, list):
+                items.extend(value)
+    return items
+
+
+def retrieval_contains(payload: dict[str, Any], text: str) -> bool:
+    """Check marker presence only in returned retrieval items."""
+    try:
+        return text in json.dumps(
+            retrieval_items(payload),
+            ensure_ascii=False,
+            default=str,
+        )
+    except (TypeError, ValueError):
+        return False
+
+
+def isolation_probe_query(writer: str, marker: str = "") -> str:
+    """Build a precise probe query while keeping debug echo fields disabled."""
+    marker_clause = f" The exact marker is {marker}." if marker else ""
     return (
         f"What private isolation marker did tenant {writer} write? "
         "Return only the matching memory content."
+        f"{marker_clause}"
     )
+
+
+def isolation_probe_counts(probes: list[dict[str, Any]]) -> dict[str, Any]:
+    """Summarize isolation outcomes without collapsing error categories."""
+    same_tenant = [probe for probe in probes if probe.get("same_tenant")]
+    cross_tenant = [probe for probe in probes if not probe.get("same_tenant")]
+    same_hits = sum(bool(probe.get("marker_found")) for probe in same_tenant)
+    cross_false_positives = sum(
+        bool(probe.get("marker_found")) for probe in cross_tenant
+    )
+    return {
+        "same_tenant_probe_count": len(same_tenant),
+        "same_tenant_hit_count": same_hits,
+        "same_tenant_false_negative_count": len(same_tenant) - same_hits,
+        "cross_tenant_probe_count": len(cross_tenant),
+        "cross_tenant_false_positive_count": cross_false_positives,
+        "cross_tenant_clean_count": len(cross_tenant) - cross_false_positives,
+        "same_tenant_hit_rate": (
+            same_hits / len(same_tenant) if same_tenant else None
+        ),
+        "cross_tenant_false_positive_rate": (
+            cross_false_positives / len(cross_tenant) if cross_tenant else None
+        ),
+    }
 
 
 def run_isolation_probe(
@@ -916,13 +1025,14 @@ def run_isolation_probe(
                 for attempt in range(attempt_count):
                     result = reader_client.search(
                         reader_session,
-                        isolation_probe_query(writer),
+                        isolation_probe_query(writer, marker),
                         timeout_s=40.0,
+                        include_debug=False,
                     )
                     found = (
                         result.status_code is not None
                         and 200 <= result.status_code < 300
-                        and payload_contains(result.payload, marker)
+                        and retrieval_contains(result.payload, marker)
                     )
                     attempts.append({
                         "attempt": attempt + 1,
@@ -956,14 +1066,29 @@ def run_isolation_probe(
         probe for probe in probes
         if probe["marker_found"] != probe["expected"]
     ]
+    stable_identity_fields = (
+        "tenant_id",
+        "account_id",
+        "workspace_id",
+        "user_id",
+        "organization_id",
+    )
     identity_mapping_status = (
         "VERIFIED_DISTINCT"
         if len(identity_observations) >= 2
-        and all(identity_observations.values())
-        and len({
-            json.dumps(value, ensure_ascii=False, sort_keys=True)
-            for value in identity_observations.values()
-        }) == len(identity_observations)
+        and all(
+            any(observation.get(field_name) not in (None, "")
+                for field_name in stable_identity_fields)
+            for observation in identity_observations.values()
+        )
+        and any(
+            len({
+                str(observation.get(field_name))
+                for observation in identity_observations.values()
+                if observation.get(field_name) not in (None, "")
+            }) == len(identity_observations)
+            for field_name in stable_identity_fields
+        )
         else "UNVERIFIED"
     )
     if invalid or len(probes) != len(tenants) * len(tenants) * marker_count:
@@ -978,6 +1103,7 @@ def run_isolation_probe(
         "markers_per_tenant": marker_count,
         "expected_probe_count": len(tenants) * len(tenants) * marker_count,
         "invalid_probe_count": len(invalid),
+        **isolation_probe_counts(probes),
         "identity_observations": identity_observations,
         "identity_mapping_status": identity_mapping_status,
         "probes": probes,
@@ -1064,6 +1190,7 @@ def poll_commit(
 ) -> None:
     client = client_for(client_or_clients, record.tenant)
     started = time.monotonic()
+    workload_started: float | None = None
     while time.monotonic() - started <= timeout_s:
         response = client.commit_status(record.session_id, record.archive_id)
         record.admission_wait_s += response.admission_wait_s
@@ -1252,17 +1379,34 @@ def run_commits(
     for tenant, session_id in sessions:
         client = client_for(client_or_clients, tenant)
         message_ids = []
+        message_events: list[dict[str, Any]] = []
         for index in range(messages_per_session):
             message_id = f"stress-{uuid.uuid4().hex}"
-            response = client.add_message(session_id, message_id, f"EchoMem stress message {tenant} {index} " + ("x" * 1200))
+            content = f"EchoMem stress message {tenant} {index} " + ("x" * 1200)
+            sent_at = now_iso()
+            response = client.add_message(session_id, message_id, content)
+            message_events.append({
+                "tenant": tenant,
+                "session_id": session_id,
+                "message_id": message_id,
+                "index": index,
+                "sent_at": sent_at,
+                "content_preview": content[:160],
+                "content_chars": len(content),
+                "status": "sent" if response.status_code is not None and response.status_code < 400 else "failed",
+                "status_code": response.status_code,
+                "request_id": response.request_id,
+                "error": response.error or "",
+            })
             if response.status_code is None or response.status_code >= 400:
-                records.append(CommitRecord(tenant, session_id, "", now_iso(), status="message_failed", error=response.error or str(response.status_code), message_ids=[message_id]))
+                records.append(CommitRecord(tenant, session_id, "", now_iso(), status="message_failed", error=response.error or str(response.status_code), message_ids=[message_id], message_events=message_events[-1:]))
             else:
                 message_ids.append(message_id)
         if message_ids:
             response = client.commit(session_id)
             archive_id = extract_archive(response.payload)
             records.append(CommitRecord(tenant, session_id, archive_id, now_iso(), message_ids=message_ids,
+                                        message_events=message_events,
                                         status="accepted" if response.status_code and response.status_code < 400 and archive_id else "commit_rejected",
                                         error=response.error,
                                         operation_id=f"commit-{uuid.uuid4().hex}"))
@@ -1301,31 +1445,47 @@ def run_parallel_workload(
     Messages are prepared before the timed phase so the measured interval
     contains real commit work and real search work at the same time.
     """
-    prepared: list[tuple[str, str, list[str]]] = []
+    prepared: list[tuple[str, str, list[str], list[dict[str, Any]]]] = []
     for tenant, session_id in sessions:
         message_ids: list[str] = []
+        message_events: list[dict[str, Any]] = []
         for index in range(messages_per_session):
             message_id = f"stress-{uuid.uuid4().hex}"
             client = client_for(client_or_clients, tenant)
+            content = f"EchoMem stress message {tenant} {index} " + ("x" * 1200)
+            sent_at = now_iso()
             response = client.add_message(
                 session_id,
                 message_id,
-                f"EchoMem stress message {tenant} {index} " + ("x" * 1200),
+                content,
             )
+            message_events.append({
+                "tenant": tenant,
+                "session_id": session_id,
+                "message_id": message_id,
+                "index": index,
+                "sent_at": sent_at,
+                "content_preview": content[:160],
+                "content_chars": len(content),
+                "status": "sent" if response.status_code is not None and response.status_code < 400 else "failed",
+                "status_code": response.status_code,
+                "request_id": response.request_id,
+                "error": response.error or "",
+            })
             if response.status_code is None or response.status_code >= 400:
                 raise RuntimeError(
                     f"message preparation failed for {tenant}/{session_id}: "
                     f"{response.error or response.status_code}"
                 )
             message_ids.append(message_id)
-        prepared.append((tenant, session_id, message_ids))
+        prepared.append((tenant, session_id, message_ids, message_events))
 
     def commit_prepared() -> list[CommitRecord]:
         records: list[CommitRecord] = []
         with ThreadPoolExecutor(max_workers=max(1, commit_workers)) as executor:
             accepted: list[CommitRecord] = []
             futures = {}
-            for tenant, session_id, message_ids in prepared:
+            for tenant, session_id, message_ids, message_events in prepared:
                 queued_mono = time.monotonic()
                 queued_at = now_iso()
                 queue_depth = len(futures)
@@ -1342,12 +1502,13 @@ def run_parallel_workload(
                     tenant,
                     session_id,
                     message_ids,
+                    message_events,
                     queued_mono,
                     queued_at,
                     queue_depth,
                 )
             for future in as_completed(futures):
-                tenant, session_id, message_ids, queued_mono, queued_at, queue_depth = futures[future]
+                tenant, session_id, message_ids, message_events, queued_mono, queued_at, queue_depth = futures[future]
                 response, started_mono, started_at = future.result()
                 archive_id = extract_archive(response.payload)
                 record = CommitRecord(
@@ -1356,6 +1517,7 @@ def run_parallel_workload(
                     archive_id,
                     now_iso(),
                     message_ids=message_ids,
+                    message_events=message_events,
                     status="accepted"
                     if response.status_code
                     and response.status_code < 400
@@ -1441,7 +1603,7 @@ def run_commit_stream(
     """
     if duration_s <= 0 or commit_rpm <= 0 or not tenants:
         return []
-    jobs: list[tuple[float, str, str, list[str]]] = []
+    jobs: list[tuple[float, str, str, list[str], list[dict[str, Any]]]] = []
     for tenant in tenants:
         count = max(1, math.ceil(commit_rpm * duration_s / 60.0))
         client = client_for(client_or_clients, tenant)
@@ -1450,14 +1612,32 @@ def run_commit_stream(
                 tenant, f"stress-commit-{tenant}-{index}"
             )[0]
             message_ids: list[str] = []
+            message_events: list[dict[str, Any]] = []
             for message_index in range(messages_per_commit):
                 message_id = f"stress-{uuid.uuid4().hex}"
+                content = (
+                    f"EchoMem fixed-rate commit {tenant} {index} {message_index} "
+                    + ("x" * 1200)
+                )
+                sent_at = now_iso()
                 response = client.add_message(
                     session_id,
                     message_id,
-                    f"EchoMem fixed-rate commit {tenant} {index} {message_index} "
-                    + ("x" * 1200),
+                    content,
                 )
+                message_events.append({
+                    "tenant": tenant,
+                    "session_id": session_id,
+                    "message_id": message_id,
+                    "index": message_index,
+                    "sent_at": sent_at,
+                    "content_preview": content[:160],
+                    "content_chars": len(content),
+                    "status": "sent" if response.status_code is not None and response.status_code < 400 else "failed",
+                    "status_code": response.status_code,
+                    "request_id": response.request_id,
+                    "error": response.error or "",
+                })
                 if response.status_code is None or response.status_code >= 400:
                     raise RuntimeError(
                         f"commit message preparation failed for {tenant}/{session_id}: "
@@ -1465,7 +1645,7 @@ def run_commit_stream(
                     )
                 message_ids.append(message_id)
             offset = index * 60.0 / commit_rpm
-            jobs.append((offset, tenant, session_id, message_ids))
+            jobs.append((offset, tenant, session_id, message_ids, message_events))
     jobs.sort(key=lambda item: item[0])
 
     records: list[CommitRecord] = []
@@ -1474,7 +1654,7 @@ def run_commit_stream(
     with ThreadPoolExecutor(max_workers=max(1, workers)) as commit_executor:
         with ThreadPoolExecutor(max_workers=max(1, workers)) as poll_executor:
             futures = {}
-            for offset, tenant, session_id, message_ids in jobs:
+            for offset, tenant, session_id, message_ids, message_events in jobs:
                 target = start + offset
                 scheduled_at = datetime.fromtimestamp(
                     start_wall + offset, timezone.utc
@@ -1498,6 +1678,7 @@ def run_commit_stream(
                     tenant,
                     session_id,
                     message_ids,
+                    message_events,
                     queued_mono,
                     queued_at,
                     queue_depth,
@@ -1510,6 +1691,7 @@ def run_commit_stream(
                     tenant,
                     session_id,
                     message_ids,
+                    message_events,
                     queued_mono,
                     queued_at,
                     queue_depth,
@@ -1524,6 +1706,7 @@ def run_commit_stream(
                     archive_id,
                     now_iso(),
                     message_ids=message_ids,
+                    message_events=message_events,
                     status=(
                         "accepted"
                         if response.status_code and response.status_code < 400 and archive_id
@@ -1578,41 +1761,110 @@ def scenario_status(
     target_search: int | None = None,
     minimum_target_ratio: float = 0.99,
 ) -> tuple[str, dict[str, Any]]:
-    commit_failures = [r for r in records if r.status not in {"completed", "complete", "transcommit", "succeeded", "success"}]
-    search_latencies = [r.elapsed_s for r in searches if r.status_code and 200 <= r.status_code < 300]
-    search_errors = [r for r in searches if not r.status_code or r.status_code >= 400]
+    commit_status, commit_details = commit_delivery_status(
+        records,
+        target_commit=target_commit,
+        minimum_target_ratio=minimum_target_ratio,
+    )
+    search_status, search_details = search_latency_status(
+        searches,
+        min_samples=min_samples,
+        p95_limit_s=p95_limit_s,
+        target_search=target_search,
+        minimum_target_ratio=minimum_target_ratio,
+    )
+    details = {**commit_details, **search_details}
+    if INCONCLUSIVE in {commit_status, search_status}:
+        return INCONCLUSIVE, details
+    if FAIL in {commit_status, search_status}:
+        return FAIL, details
+    return PASS, details
+
+
+def commit_delivery_status(
+    records: list[CommitRecord],
+    *,
+    target_commit: int | None = None,
+    minimum_target_ratio: float = 0.99,
+) -> tuple[str, dict[str, Any]]:
+    """Evaluate Commit completion without depending on Search samples."""
+    success_states = {"completed", "complete", "transcommit", "succeeded", "success"}
+    failures = [
+        record for record in records if record.status not in success_states
+    ]
     target_gaps: dict[str, int] = {}
     if target_commit is not None:
         target_gaps["commit"] = max(0, target_commit - len(records))
-    if target_search is not None:
-        target_gaps["search"] = max(0, target_search - len(searches))
-    target_invalid = any(
-        target is not None
-        and target > 0
-        and actual < math.ceil(target * minimum_target_ratio)
-        for target, actual in (
-            (target_commit, len(records)),
-            (target_search, len(searches)),
-        )
-    )
-    if not records or len(searches) < min_samples:
-        return INCONCLUSIVE, {
-            "reason": "insufficient samples",
-            "commit_failures": len(commit_failures),
-            "target_gaps": target_gaps,
-        }
-    if target_invalid:
+    if target_commit is not None and target_commit > 0 and (
+        len(records) < math.ceil(target_commit * minimum_target_ratio)
+    ):
         return INCONCLUSIVE, {
             "reason": "offered load target was not reached; latency is not representative",
-            "commit_failures": len(commit_failures),
+            "commit_failures": len(failures),
             "target_gaps": target_gaps,
             "minimum_target_ratio": minimum_target_ratio,
         }
-    p95 = percentile(search_latencies, 95)
-    status = PASS if not commit_failures and p95 is not None and p95 <= p95_limit_s and not search_errors else FAIL
-    return status, {"commit_total": len(records), "commit_failures": len(commit_failures), "search_total": len(searches),
-                    "search_errors": len(search_errors), "search_p95_s": p95, "search_limit_s": p95_limit_s,
-                    "target_gaps": target_gaps}
+    if not records:
+        return INCONCLUSIVE, {
+            "reason": "insufficient Commit samples",
+            "commit_failures": 0,
+            "target_gaps": target_gaps,
+        }
+    return (
+        FAIL if failures else PASS,
+        {
+            "commit_total": len(records),
+            "commit_failures": len(failures),
+            "target_gaps": target_gaps,
+        },
+    )
+
+
+def search_latency_status(
+    searches: list[SearchRecord],
+    *,
+    min_samples: int,
+    p95_limit_s: float,
+    target_search: int | None = None,
+    minimum_target_ratio: float = 0.99,
+) -> tuple[str, dict[str, Any]]:
+    """Evaluate Search success and latency independently from Commit."""
+    search_latencies = [
+        record.elapsed_s
+        for record in searches
+        if record.status_code and 200 <= record.status_code < 300
+    ]
+    search_errors = [
+        record for record in searches if not record.status_code or record.status_code >= 400
+    ]
+    target_gaps = {
+        "search": max(0, target_search - len(searches))
+    } if target_search is not None else {}
+    target_invalid = (
+        target_search is not None
+        and target_search > 0
+        and len(searches) < math.ceil(target_search * minimum_target_ratio)
+    )
+    details = {
+        "search_total": len(searches),
+        "search_errors": len(search_errors),
+        "search_p95_s": percentile(search_latencies, 95),
+        "search_limit_s": p95_limit_s,
+        "target_gaps": target_gaps,
+    }
+    if not searches or len(searches) < min_samples:
+        details["reason"] = "insufficient Search samples"
+        return INCONCLUSIVE, details
+    if target_invalid:
+        details["reason"] = "offered load target was not reached; latency is not representative"
+        details["minimum_target_ratio"] = minimum_target_ratio
+        return INCONCLUSIVE, details
+    if search_errors or details["search_p95_s"] is None:
+        return FAIL, details
+    return (
+        PASS if details["search_p95_s"] <= p95_limit_s else FAIL,
+        details,
+    )
 
 
 def numeric_stats(values: list[float]) -> dict[str, Any]:
@@ -1660,6 +1912,150 @@ def fairness_index(values: list[float]) -> float | None:
     return total * total / (len(usable) * sum(value * value for value in usable))
 
 
+def sequence_stats(values: list[str]) -> dict[str, Any]:
+    """Summarize runs and switches in an observed operation sequence."""
+    if not values:
+        return {
+            "count": 0,
+            "runs": 0,
+            "switches": 0,
+            "max_streak": 0,
+            "first": None,
+            "last": None,
+        }
+    runs = 1
+    switches = 0
+    max_streak = 1
+    current_streak = 1
+    for previous, current in zip(values, values[1:]):
+        if current == previous:
+            current_streak += 1
+        else:
+            runs += 1
+            switches += 1
+            max_streak = max(max_streak, current_streak)
+            current_streak = 1
+    max_streak = max(max_streak, current_streak)
+    return {
+        "count": len(values),
+        "runs": runs,
+        "switches": switches,
+        "max_streak": max_streak,
+        "first": values[0],
+        "last": values[-1],
+    }
+
+
+def scheduling_observation(timeline: list[dict[str, Any]]) -> dict[str, Any]:
+    """Compare request arrival order with the service's execution-start order.
+
+    A client-side timestamp cannot prove server scheduling.  This function
+    only emits server-order metrics for rows that contain the server execution
+    timestamp, and reports coverage separately when the service omits it.
+    """
+    arrival_rows = sorted(
+        timeline,
+        key=lambda item: (
+            parse_iso_timestamp(str(item.get("queued_at") or "")) is None,
+            parse_iso_timestamp(str(item.get("queued_at") or ""))
+            or datetime.max.replace(tzinfo=timezone.utc),
+        ),
+    )
+    server_rows = [
+        item for item in timeline
+        if parse_iso_timestamp(str(item.get("server_execution_started_at") or ""))
+    ]
+    server_rows.sort(
+        key=lambda item: parse_iso_timestamp(
+            str(item.get("server_execution_started_at") or "")
+        )
+        or datetime.max.replace(tzinfo=timezone.utc)
+    )
+    inversions = 0
+    comparable_pairs = 0
+    arrival_position = {
+        id(item): index for index, item in enumerate(arrival_rows)
+    }
+    for left_index, left in enumerate(server_rows):
+        for right in server_rows[left_index + 1:]:
+            left_arrival = arrival_position.get(id(left))
+            right_arrival = arrival_position.get(id(right))
+            if left_arrival is None or right_arrival is None:
+                continue
+            comparable_pairs += 1
+            if left_arrival > right_arrival:
+                inversions += 1
+    arrival_ops = [
+        str(item.get("operation"))
+        for item in arrival_rows
+        if item.get("operation") in {"commit", "search"}
+    ]
+    server_ops = [
+        str(item.get("operation"))
+        for item in server_rows
+        if item.get("operation") in {"commit", "search"}
+    ]
+    operation_start_counts: dict[str, int] = {}
+    for item in server_rows:
+        key = str(item.get("operation") or "-")
+        operation_start_counts[key] = operation_start_counts.get(key, 0) + 1
+    search_started_ahead_of_commit = 0
+    commit_search_pairs = 0
+    for commit in server_rows:
+        if commit.get("operation") != "commit":
+            continue
+        commit_start = parse_iso_timestamp(
+            str(commit.get("server_execution_started_at") or "")
+        )
+        if not commit_start:
+            continue
+        for search in server_rows:
+            if search.get("operation") != "search":
+                continue
+            search_start = parse_iso_timestamp(
+                str(search.get("server_execution_started_at") or "")
+            )
+            if not search_start:
+                continue
+            commit_search_pairs += 1
+            if search_start < commit_start:
+                search_started_ahead_of_commit += 1
+    return {
+        "arrival_order_count": len(arrival_rows),
+        "arrival_operation_sequence": sequence_stats(arrival_ops),
+        "server_start_order_count": len(server_rows),
+        "server_start_coverage": (
+            len(server_rows) / len(timeline) if timeline else None
+        ),
+        "server_start_operation_sequence": sequence_stats(server_ops),
+        "server_start_sequence": [
+            {
+                "order": index,
+                "operation": item.get("operation"),
+                "tenant": item.get("tenant"),
+                "request_id": item.get("request_id"),
+                "server_execution_started_at": item.get(
+                    "server_execution_started_at"
+                ),
+            }
+            for index, item in enumerate(server_rows, start=1)
+        ],
+        "arrival_vs_server_start_inversions": inversions,
+        "arrival_vs_server_start_comparable_pairs": comparable_pairs,
+        "arrival_vs_server_start_inversion_rate": (
+            inversions / comparable_pairs if comparable_pairs else None
+        ),
+        "server_start_counts_by_operation": operation_start_counts,
+        "search_started_ahead_of_commit_count": search_started_ahead_of_commit,
+        "commit_search_comparable_pairs": commit_search_pairs,
+        "server_scheduling_conclusion": (
+            "evidence_available"
+            if server_rows and len(server_rows) == len(timeline)
+            else "insufficient_server_timing"
+        ),
+    }
+
+
 def workload_metrics(
     commits: list[CommitRecord],
     searches: list[SearchRecord],
@@ -1667,6 +2063,7 @@ def workload_metrics(
     duration_s: float,
     commit_delay_threshold_s: float,
     search_delay_threshold_s: float,
+    time_bucket_s: float = 10.0,
 ) -> dict[str, Any]:
     """Build operator-facing timing and per-tenant measurements."""
     commit_success = [
@@ -1799,6 +2196,7 @@ def workload_metrics(
                 "rate_limited_count": sum(
                     record.status_code == 429 for record in tenant_commits
                 ),
+                "retry_after": numeric_stats(retry_after_values(tenant_commits)),
                 "queue_wait": numeric_stats([record.queue_wait_s for record in tenant_commits]),
                 "completion": numeric_stats([record.end_to_end_s for record in tenant_commit_success]),
                 "service": numeric_stats([record.service_s for record in tenant_commit_success]),
@@ -1818,6 +2216,20 @@ def workload_metrics(
                     for record in tenant_commits
                     if record.end_to_end_s >= commit_delay_threshold_s
                 ],
+                "delayed": [
+                    {
+                        "request_id": record.request_id,
+                        "queued_at": record.queued_at,
+                        "started_at": record.started_at,
+                        "completed_at": record.completed_at,
+                        "duration_s": record.end_to_end_s,
+                        "queue_wait_s": record.queue_wait_s,
+                        "status": record.status,
+                        "status_code": record.status_code,
+                    }
+                    for record in tenant_commits
+                    if record.end_to_end_s >= commit_delay_threshold_s
+                ],
             },
             "search": {
                 "submitted": len(tenant_searches),
@@ -1827,6 +2239,7 @@ def workload_metrics(
                 "rate_limited_count": sum(
                     record.status_code == 429 for record in tenant_searches
                 ),
+                "retry_after": numeric_stats(retry_after_values(tenant_searches)),
                 "latency": numeric_stats([record.service_s for record in tenant_search_success]),
                 "server": server_observation(tenant_searches),
                 "admission_wait": numeric_stats(
@@ -1839,6 +2252,20 @@ def workload_metrics(
                     record.service_s >= search_delay_threshold_s
                     for record in tenant_searches
                 ),
+                "delayed": [
+                    {
+                        "request_id": record.request_id,
+                        "queued_at": record.queued_at,
+                        "started_at": record.started_at,
+                        "finished_at": record.finished_at,
+                        "duration_s": record.service_s,
+                        "queue_wait_s": record.queue_wait_s,
+                        "status_code": record.status_code,
+                        "error": record.error,
+                    }
+                    for record in tenant_searches
+                    if record.service_s >= search_delay_threshold_s
+                ],
             },
         }
 
@@ -1983,17 +2410,86 @@ def workload_metrics(
         )
     )
 
-    # Minute buckets expose burst/queue buildup that a single aggregate P95
+    # Quantify the observed arrival/admission order.  With client admission
+    # disabled this describes only the load generator's arrival stream, not
+    # EchoMem's internal scheduler.
+    def sequence_stats(values: list[str]) -> dict[str, Any]:
+        if not values:
+            return {
+                "count": 0,
+                "runs": 0,
+                "switches": 0,
+                "max_streak": 0,
+                "first": None,
+                "last": None,
+            }
+        runs = 1
+        switches = 0
+        max_streak = 1
+        current_streak = 1
+        for previous, current in zip(values, values[1:]):
+            if current == previous:
+                current_streak += 1
+            else:
+                runs += 1
+                switches += 1
+                max_streak = max(max_streak, current_streak)
+                current_streak = 1
+        max_streak = max(max_streak, current_streak)
+        return {
+            "count": len(values),
+            "runs": runs,
+            "switches": switches,
+            "max_streak": max_streak,
+            "first": values[0],
+            "last": values[-1],
+        }
+
+    operation_sequence = [
+        str(item["operation"])
+        for item in timeline
+        if item.get("operation") in {"commit", "search"}
+    ]
+    tenant_sequence = [
+        str(item["tenant"])
+        for item in timeline
+        if item.get("tenant")
+    ]
+    delayed_by_tenant: dict[str, list[dict[str, Any]]] = {}
+    for item in timeline:
+        if item.get("delayed"):
+            delayed_by_tenant.setdefault(str(item.get("tenant") or "-"), []).append(
+                {
+                    "operation": item.get("operation"),
+                    "request_id": item.get("request_id"),
+                    "queued_at": item.get("queued_at"),
+                    "started_at": item.get("started_at"),
+                    "completed_at": item.get("completed_at"),
+                    "duration_s": item.get("duration_s"),
+                    "queue_wait_s": item.get("queue_wait_s"),
+                    "admission_wait_s": item.get("admission_wait_s"),
+                    "queue_depth": item.get("queue_depth"),
+                    "status": item.get("status"),
+                    "status_code": item.get("status_code"),
+                }
+            )
+
+    # Short time buckets expose burst/queue buildup that a single aggregate P95
     # hides.  Buckets are based on request admission time, not completion
     # time, so late completions remain attributable to their arrival period.
+    bucket_width_s = max(1.0, float(time_bucket_s))
     bucket_count = max(
         1,
-        math.ceil(max([item["workload_offset_s"] or 0 for item in timeline] or [0]) / 60.0) + 1,
+        math.ceil(
+            max([item["workload_offset_s"] or 0 for item in timeline] or [0])
+            / bucket_width_s
+        )
+        + 1,
     )
     time_buckets: list[dict[str, Any]] = []
     for bucket_index in range(bucket_count):
-        start_s = bucket_index * 60.0
-        end_s = start_s + 60.0
+        start_s = bucket_index * bucket_width_s
+        end_s = start_s + bucket_width_s
         bucket = [
             item
             for item in timeline
@@ -2007,6 +2503,7 @@ def workload_metrics(
                 "bucket": bucket_index,
                 "start_s": start_s,
                 "end_s": end_s,
+                "window_s": bucket_width_s,
                 "requests": len(bucket),
                 "tenants": sorted({item["tenant"] for item in bucket}),
                 "commit": {
@@ -2186,6 +2683,17 @@ def workload_metrics(
                 tenant: values["commit"]["completed"]
                 for tenant, values in per_tenant.items()
             },
+        },
+        "scheduling": {
+            "operation_sequence": sequence_stats(operation_sequence),
+            "tenant_sequence": sequence_stats(tenant_sequence),
+            "delayed_by_tenant": delayed_by_tenant,
+            "interpretation": (
+                "arrival_order_only_when_no_client_admission"
+                if not any(item.get("admission_order") for item in timeline)
+                else "client_admission_order"
+            ),
+            **scheduling_observation(timeline),
         },
     }
 
@@ -2387,6 +2895,15 @@ code{{background:#f0f3f5;padding:2px 5px;border-radius:4px}} .footer{{font-size:
     out_path.write_text(document, encoding="utf-8")
 
 
+def build_executive_report(summary: dict[str, Any], out_path: Path) -> None:
+    """Write the data-first operator report beside the legacy report."""
+    report_path = out_path.parent / "report_executive.html"
+    report_path.write_text(
+        render_executive_report(summary, out_path.parent),
+        encoding="utf-8",
+    )
+
+
 def build_readable_report(summary: dict[str, Any], out_path: Path) -> None:
     """Write the operator-facing report with detailed evidence sections."""
     request_rows: list[dict[str, Any]] = []
@@ -2485,14 +3002,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--scheduler-policy",
         choices=(
+            "server-observe",
             "search-priority",
             "fifo",
             "tenant-fair",
             "dual-lane",
             "dual-lane-tenant-fair",
         ),
-        default="search-priority",
-        help="Client admission policy used by the workload.",
+        default="server-observe",
+        help=(
+            "Client admission policy used by the workload. "
+            "server-observe disables client admission and observes EchoMem directly."
+        ),
     )
     parser.add_argument(
         "--commit-delay-threshold-s",
@@ -2526,6 +3047,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    if args.scheduler_policy == "server-observe":
+        args.no_client_admission = True
     out_dir = Path(args.out_dir or f"results/stress/echomem_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
     out_dir.mkdir(parents=True, exist_ok=True)
     clients: EchoMemHTTP | dict[str, EchoMemHTTP]
@@ -2636,6 +3159,7 @@ def main() -> int:
                    }}
         (out_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
         build_readable_report(summary, out_dir / "report.html")
+        build_executive_report(summary, out_dir / "report.html")
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 2
     sampler = None if args.no_metrics else ResourceSampler(args.pid, args.sample_interval_s)
@@ -2667,6 +3191,7 @@ def main() -> int:
             markers_per_tenant=args.isolation_markers_per_tenant,
         )
         sessions = provision_sessions(clients, tenants, args.sessions_per_tenant)
+        workload_started = time.monotonic()
         if args.scenario in {"baseline", "commit-storm", "all"}:
             commit_records, search_records = run_parallel_workload(
                 clients,
@@ -2701,6 +3226,7 @@ def main() -> int:
                    }}
         (out_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
         build_readable_report(summary, out_dir / "report.html")
+        build_executive_report(summary, out_dir / "report.html")
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         if sampler:
             sampler.stop()
@@ -2729,7 +3255,7 @@ def main() -> int:
             if args.scenario in {"baseline", "commit-storm", "all"}
             else 0
         )
-    commit_status, commit_details = scenario_status(
+    combined_status, combined_details = scenario_status(
         commit_records,
         search_records,
         args.min_samples,
@@ -2737,7 +3263,16 @@ def main() -> int:
         target_commit=target_commit,
         target_search=target_search,
     )
-    search_status = commit_status
+    commit_status, commit_details = commit_delivery_status(
+        commit_records,
+        target_commit=target_commit,
+    )
+    search_status, search_details = search_latency_status(
+        search_records,
+        min_samples=args.min_samples,
+        p95_limit_s=args.search_p95_limit_s,
+        target_search=target_search,
+    )
     fairness_status = INCONCLUSIVE
     fairness_details: dict[str, Any] = {
         "reason": "requires at least two independently authenticated tenants"
@@ -2801,7 +3336,13 @@ def main() -> int:
         ),
     }
     overall = FAIL if FAIL in statuses.values() else (INCONCLUSIVE if INCONCLUSIVE in statuses.values() else PASS)
-    wall_elapsed_s = time.monotonic() - started
+    finished_monotonic = time.monotonic()
+    total_elapsed_s = finished_monotonic - started
+    workload_elapsed_s = (
+        finished_monotonic - workload_started
+        if workload_started is not None
+        else None
+    )
     metrics = workload_metrics(
         commit_records,
         search_records,
@@ -2810,7 +3351,8 @@ def main() -> int:
         args.commit_delay_threshold_s,
         args.search_delay_threshold_s,
     )
-    metrics["wall_elapsed_s"] = wall_elapsed_s
+    metrics["wall_elapsed_s"] = workload_elapsed_s
+    metrics["total_elapsed_s"] = total_elapsed_s
     metrics["arrival_window_s"] = args.duration_s
     timeline_timestamps = [
         parsed
@@ -2823,6 +3365,17 @@ def main() -> int:
         if len(timeline_timestamps) >= 2
         else None
     )
+    message_events: list[dict[str, Any]] = []
+    seen_message_ids: set[str] = set()
+    for record in commit_records:
+        for event in record.message_events:
+            message_id = str(event.get("message_id") or "")
+            if message_id and message_id in seen_message_ids:
+                continue
+            if message_id:
+                seen_message_ids.add(message_id)
+            message_events.append(event)
+    metrics["message_events"] = message_events
     metrics["targets"] = {
         "commit_submitted": target_commit,
         "search_submitted": target_search,
@@ -2839,6 +3392,8 @@ def main() -> int:
             else 0.0
         ),
     }
+    commit_details = {**combined_details, **commit_details}
+    search_details = {**combined_details, **search_details}
     summary = {"status": overall, "scenario_status": statuses, "base_url": args.base_url, "started_at": datetime.fromtimestamp(time.time() - (time.monotonic() - started), timezone.utc).isoformat(),
                "finished_at": now_iso(), "parameters": vars(args), "details": {**commit_details, **fairness_details, **resource_details,
                                                                                 "identity_mode": identity_mode,
@@ -2849,6 +3404,11 @@ def main() -> int:
                "resource_points": [asdict(sample) for sample in (sampler.samples if sampler else [])]}
     (out_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     write_csv(out_dir / "commit_results.csv", [asdict(record) for record in commit_records])
+    write_csv(out_dir / "message_events.csv", message_events)
+    (out_dir / "message_events.json").write_text(
+        json.dumps(message_events, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     write_csv(out_dir / "search_results.csv", [asdict(record) for record in search_records])
     write_csv(out_dir / "resource_samples.csv", [asdict(record) for record in (sampler.samples if sampler else [])])
     write_csv(
@@ -2873,6 +3433,7 @@ def main() -> int:
         encoding="utf-8",
     )
     build_readable_report(summary, out_dir / "report.html")
+    build_executive_report(summary, out_dir / "report.html")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0 if overall == PASS else 1
 

@@ -8,6 +8,7 @@ SOURCE_ROOT="${SOURCE_ROOT:-/opt/memory-eval-sources}"
 ENV_FILE="${ENV_FILE:-$WEB_ROOT/server.env}"
 WEB_IMAGE="${WEB_IMAGE:-memory-eval-web:local}"
 RUNNER_IMAGE="${RUNNER_IMAGE:-memory-eval-runner:local}"
+STRESS_IMAGE="${STRESS_IMAGE:-echomem-stress-runner:20260826}"
 SKILL_SOURCE="$INSTALL_ROOT/deploy/skills/echomem-eval-startup"
 SKILL_TARGET="$WEB_ROOT/data/skills/echomem-eval-startup"
 
@@ -55,6 +56,8 @@ fi
 
 docker build -f "$INSTALL_ROOT/deploy/Dockerfile.runner" \
   -t "$RUNNER_IMAGE" "$INSTALL_ROOT"
+docker build -f "$INSTALL_ROOT/stress/echomem/Dockerfile" \
+  -t "$STRESS_IMAGE" "$INSTALL_ROOT"
 docker build -f "$INSTALL_ROOT/deploy/Dockerfile.web" \
   -t "$WEB_IMAGE" "$INSTALL_ROOT"
 
@@ -76,6 +79,7 @@ sed -i.bak \
   -e "/^WEB_DATA_DIR=/d" \
   -e "/^RESULT_ARCHIVE_DIR=/d" \
   -e "/^ECHOMEM_WORKSPACE_CACHE=/d" \
+  -e "/^STRESS_IMAGE=/d" \
   "$ENV_FILE"
 cat >>"$ENV_FILE" <<EOF
 EVAL_IMAGE=$RUNNER_IMAGE
@@ -86,6 +90,7 @@ RESULT_ARCHIVE_DIR=$INSTALL_ROOT/results/_archives
 SOURCE_ROOT=$SOURCE_ROOT
 SOURCE_CACHE_ROOT=$SOURCE_ROOT/_cache
 ECHOMEM_WORKSPACE_CACHE=$WEB_ROOT/cache
+STRESS_IMAGE=$STRESS_IMAGE
 EOF
 
 docker rm -f memory-eval-web >/dev/null 2>&1 || true

@@ -229,6 +229,30 @@ benchmarks/locomo/run_eval.py
 -> 汇总准确率
 ```
 
+### 同一份记忆的引擎矩阵
+
+需要比较 EchoMem 引擎开关时，使用
+`scripts/run_locomo_engine_matrix.sh`。它以被测 checkout 的
+`configs/config.example.json` 为基线，生成：
+
+```text
+atomic-only = ["atomic_engine"]
+atomic-base = ["atomic_engine", "base_engine"]
+full        = ["atomic_engine", "episode_engine", "base_engine", "memory_unit_engine"]
+```
+
+`full` 只执行一次记忆注入；`atomic-only` 和 `atomic-base` 必须通过
+`--qa-only-from` 复用同一个注入结果目录，严格跳过
+`open_session/add_message/commit_session`。验收时必须检查：
+
+- 三组 tenant/user 和 19 个 session 映射一致；
+- 每组 `import_ok/import_total` 为 `19/19`；
+- 每题召回数量、平均/P50、最小/最大值和空召回；
+- 81 题准确率、Judge 异常和逐题 CORRECT/WRONG 变化。
+
+只把 import rows 标记为 `reused` 的旧脚本可以复用 session，但不能作为严格
+QA-only 矩阵证据。
+
 ### 7. 结果验收
 
 成功任务必须保留：

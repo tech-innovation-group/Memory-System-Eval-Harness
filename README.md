@@ -357,6 +357,59 @@ CLI 参数可直接传入，也可通过环境变量设默认值：
 
 </div>
 
+#### 一次注入，多组 EchoMem engine 配置 QA
+
+如果要比较 `atomic_engine`、`atomic_engine + base_engine` 和全引擎，
+先用任意一组配置完成一次 LoCoMo `conv-30` 注入。之后复用同一个
+workspace、tenant/user 和注入结果目录，只重启 EchoMem 使新的 `config.json`
+生效，再对每组配置执行 QA/Judge：
+
+```bash
+./.venv/bin/python benchmarks/locomo/run_eval.py \
+  --agent-plugin echomem_mcp \
+  --echomem-url http://127.0.0.1:8010 \
+  --mcp-url http://127.0.0.1:8001 \
+  --sample conv-30 \
+  --qa-only-from /path/to/injection-run \
+  --no-tool-calling \
+  --mcp-read-mode disabled \
+  --concurrency 1 \
+  --judge-concurrency 1 \
+  --top-k 25 \
+  --memory-budget-chars 8000 \
+  --user-memory-budget-chars 4000 \
+  --agent-memory-budget-chars 2000 \
+  --llm-base-url "$LLM_BASE_URL" \
+  --llm-model "$LLM_MODEL" \
+  --llm-api-key "$LLM_API_KEY" \
+  --llm-temperature 0.7 \
+  --question-timeout-s 600 \
+  --llm-timeout-s 600 \
+  --llm-retries 3
+```
+
+`--qa-only-from` 会校验来源目录存在完整的 `import_results.csv` 和
+`qa_resume_manifest.json`，并在日志中明确记录“严格跳过 open/add/commit”。
+三组结果必须分别保存，不能复用旧的 `qa_results.csv` 或 `judge_results.csv`；
+这样比较到的差异才只来自 QA 时的 engine 配置。
+
+仓库提供了可复用脚本：
+
+```bash
+export ENGINE_MATRIX_ROOT=/opt/memory-eval-engine-matrix
+export ENGINE_MATRIX_RESULTS_ROOT=/opt/memory-eval-harness-latest/results
+export ECHOMEM_IMAGE=memory-eval-echomem:<dependency-tag>
+export EVAL_IMAGE=memory-eval-runner:<runner-tag>
+export ECHOMEM_CONFIG_EXAMPLE=/path/to/EchoMem/configs/config.example.json
+export ECHOMEM_REGISTRY_MASTER_KEY=<temporary-key>
+scripts/run_locomo_engine_matrix.sh
+```
+
+脚本从 `configs/config.example.json` 生成三份任务配置：
+`atomic-only`、`atomic-base` 和 `full`。只有 `full` 执行注入；
+另外两组使用 `--qa-only-from`，严格跳过注入 API。完成后生成
+`ENGINE_MATRIX_ROOT/matrix-report.json`。
+
 #### LoCoMo + vikingbot（OpenViking 后端）
 
 ```bash

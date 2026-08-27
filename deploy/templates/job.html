@@ -7,6 +7,27 @@
 {% set errors = summary.get("judge_errors", 0) %}
 {% set qa_done = eval_details.qa_count or 0 %}
 {% set judge_done = eval_details.judge_count or 0 %}
+{% set stress_metrics = summary.get("metrics") or {} %}
+{% set stress_commit = stress_metrics.get("commit") or {} %}
+{% set stress_search = stress_metrics.get("search") or {} %}
+{% set stress_commit_stats = stress_commit.get("completion") or {} %}
+{% set stress_search_stats = stress_search.get("latency") or {} %}
+{% set stress_admission = stress_metrics.get("admission") or {} %}
+{% set stress_isolation = (summary.get("details") or {}).get("isolation") or {} %}
+{% set stress_delayed = stress_commit.get("delayed") or [] %}
+{% set stress_search_delayed = stress_search.get("delayed") or [] %}
+{% set stress_formal = summary.get("aggregates") or [] %}
+{% set stress_gates = summary.get("release_gate_evaluation") or {} %}
+{% set stress_buckets = stress_metrics.get("time_buckets") or [] %}
+{% set stress_timeline = stress_metrics.get("timeline") or [] %}
+{% set stress_message_flow = stress_metrics.get("message_flow") or [] %}
+{% set stress_message_events = stress_metrics.get("message_events") or [] %}
+{% set stress_scheduling = stress_metrics.get("scheduling") or {} %}
+{% set stress_operation_sequence = stress_scheduling.get("operation_sequence") or {} %}
+{% set stress_tenant_sequence = stress_scheduling.get("tenant_sequence") or {} %}
+{% set stress_details = summary.get("details") or {} %}
+{% set stress_server_commit = stress_commit.get("server") or {} %}
+{% set stress_server_search = stress_search.get("server") or {} %}
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
@@ -97,7 +118,18 @@
     .badge { display: inline-block; padding: 2px 7px; border-radius: 999px; background: var(--soft); color: #687582; font-size: 12px; font-weight: 700; }
     .badge.correct { background: var(--green-soft); color: var(--green); }
     .badge.wrong, .badge.error { background: var(--red-soft); color: var(--red); }
+    .danger { color: var(--red); font-weight: 700; }
     .muted { color: var(--muted); }
+    .stress-panel { margin-top: 20px; }
+    .stress-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .stress-card { padding: 14px 15px; border: 1px solid var(--line); background: #fbfcfd; }
+    .stress-card span, .stress-card small { display: block; color: var(--muted); font-size: 12px; }
+    .stress-card strong { display: block; margin-top: 4px; font-size: 22px; line-height: 1.15; }
+    .stress-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; margin-top: 14px; }
+    .stress-facts > div { padding: 9px 0; border-bottom: 1px solid #edf0f2; }
+    .stress-facts b, .stress-facts span { display: block; }
+    .stress-facts span { margin-top: 2px; color: var(--muted); }
+    .stress-table { min-width: 980px; table-layout: auto; }
     details { border-top: 1px solid var(--line); }
     details:first-child { border-top: 0; }
     summary { cursor: pointer; padding: 14px 20px; font-weight: 700; list-style-position: inside; }
@@ -108,16 +140,43 @@
     .file-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
     .button { display: inline-flex; align-items: center; min-height: 34px; padding: 0 11px; border: 1px solid #cbd5df; border-radius: 5px; background: #fff; color: var(--ink); font-weight: 650; }
     .button:hover { background: var(--soft); text-decoration: none; }
+    .flow-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+    .flow-stat { padding: 10px 12px; border: 1px solid var(--line); background: #fbfcfd; }
+    .flow-stat span, .flow-stat small { display: block; color: var(--muted); font-size: 11px; }
+    .flow-stat strong { display: block; margin-top: 2px; font-size: 18px; }
+    .flow-list { display: grid; gap: 8px; }
+    .flow-item { border: 1px solid var(--line); background: #fff; }
+    .flow-item-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; }
+    .flow-item-head strong { font-size: 13px; }
+    .flow-body { padding: 0 12px 10px; }
+    .flow-track { display: grid; grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr); align-items: center; gap: 8px; }
+    .flow-stage { min-width: 0; padding: 9px 10px; border-left: 3px solid var(--blue); background: var(--blue-soft); }
+    .flow-stage.commit { border-left-color: var(--green); background: var(--green-soft); }
+    .flow-stage.pending { border-left-color: #c58a00; background: #fff8df; }
+    .flow-stage.failed { border-left-color: var(--red); background: var(--red-soft); }
+    .flow-stage-title { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; }
+    .flow-stage-meta { margin-top: 2px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+    .flow-arrow { color: var(--muted); text-align: center; }
+    .flow-detail { margin-top: 7px; }
+    .flow-detail summary { padding: 4px 0; color: var(--muted); font-size: 11px; font-weight: 500; }
+    .flow-detail pre { max-height: 150px; margin-top: 4px; padding: 9px; font-size: 11px; }
+    .flow-empty { padding: 10px; color: var(--muted); background: #fbfcfd; }
     @media (max-width: 900px) {
       .page { width: min(100% - 24px, 720px); padding-top: 14px; }
       .hero, .grid { grid-template-columns: 1fr; }
       .hero-score { text-align: left; }
       .grid { gap: 14px; }
+      .stress-cards { grid-template-columns: 1fr 1fr; }
+      .stress-facts { grid-template-columns: 1fr; }
+      .flow-summary { grid-template-columns: 1fr 1fr; }
     }
     @media (max-width: 560px) {
       .hero { padding: 20px; }
       .panel-header, .panel-body { padding-left: 14px; padding-right: 14px; }
       .stages { grid-template-columns: repeat(5, minmax(54px, 1fr)); overflow-x: auto; }
+      .flow-summary { grid-template-columns: 1fr 1fr; }
+      .flow-track { grid-template-columns: 1fr; }
+      .flow-arrow { transform: rotate(90deg); }
     }
   </style>
 </head>
@@ -130,7 +189,7 @@
 
     <section class="hero">
       <div>
-        <h1>LoCoMo / conv-30</h1>
+        <h1>{% if job.test_type == "stress" %}EchoMem 压测{% else %}LoCoMo / conv-30{% endif %}</h1>
         <p class="subtitle">{{ job.source_label or job.source_ref or "未指定代码来源" }} · {{ job.commit_sha[:12] if job.commit_sha else "等待 commit" }}</p>
         <div class="status {{ status_class }}">{{ job.message or job.status or "未知状态" }}</div>
       </div>
@@ -154,11 +213,237 @@
           {% set phases = ["prepare", "import", "qa", "judge", "completed"] %}
           {% set phase_index = phases.index(progress.phase) if progress.phase in phases else 0 %}
           {% for phase in phases %}
-            <div class="stage {% if phase_index > loop.index0 %}done{% elif phase == progress.phase %}active{% endif %}">{{ {"prepare":"准备", "import":"注入记忆", "qa":"QA", "judge":"Judge", "completed":"完成"}[phase] }}</div>
+            <div class="stage {% if phase_index > loop.index0 %}done{% elif phase == progress.phase %}active{% endif %}">{{ ({"prepare":"准备", "import":"注入记忆", "qa":"QA", "judge":"Judge", "completed":"完成"}[phase]) if job.test_type != "stress" else ({"prepare":"准备目标", "import":"准备", "qa":"并发压测", "judge":"资源观测", "completed":"完成"}[phase]) }}</div>
           {% endfor %}
         </div>
       </div>
     </section>
+
+    {% if job.test_type == "stress" and stress_formal %}
+      <section class="panel stress-panel">
+        <div class="panel-header">
+          <h2>正式多租户矩阵数据</h2>
+          <span>{{ (summary.get("details") or {}).get("run_count", 0) }} 次运行 · 原始请求聚合</span>
+        </div>
+        <div class="panel-body table-wrap">
+          <table class="stress-table"><thead><tr>
+            <th>场景</th><th>策略</th><th>轮次</th>
+            <th>Commit 完成/提交</th><th>Commit 平均</th><th>Commit P50</th><th>Commit P90</th><th>Commit P95</th><th>Commit P99</th><th>Commit 最大</th><th>Commit 延迟</th>
+            <th>Search 成功/提交</th><th>Search 平均</th><th>Search P50</th><th>Search P90</th><th>Search P95</th><th>Search P99</th><th>Search 最大</th><th>Search 延迟</th><th>429</th>
+          </tr></thead><tbody>
+          {% for row in stress_formal %}
+            <tr>
+              <td>{{ row.get("scenario", "-") }}</td><td><b>{{ row.get("policy", "-") }}</b></td><td>{{ row.get("repetitions", 0) }}</td>
+              <td>{{ row.get("commit_completed", 0) }} / {{ row.get("commit_submitted", 0) }}</td>
+              <td>{{ "%.3f"|format(row.get("commit_mean", 0) or 0) }}s</td><td>{{ "%.3f"|format(row.get("commit_p50", 0) or 0) }}s</td><td>{{ "%.3f"|format(row.get("commit_p90", 0) or 0) }}s</td><td>{{ "%.3f"|format(row.get("commit_p95", 0) or 0) }}s</td><td>{{ "%.3f"|format(row.get("commit_p99", 0) or 0) }}s</td><td>{{ "%.3f"|format(row.get("commit_max", 0) or 0) }}s</td><td>{{ row.get("commit_delayed", 0) }}</td>
+              <td>{{ row.get("search_succeeded", 0) }} / {{ row.get("search_submitted", 0) }}</td>
+              <td>{{ "%.3f"|format(row.get("search_mean", 0) or 0) }}s</td><td>{{ "%.3f"|format(row.get("search_p50", 0) or 0) }}s</td><td>{{ "%.3f"|format(row.get("search_p90", 0) or 0) }}s</td><td>{{ "%.3f"|format(row.get("search_p95", 0) or 0) }}s</td><td>{{ "%.3f"|format(row.get("search_p99", 0) or 0) }}s</td><td>{{ "%.3f"|format(row.get("search_max", 0) or 0) }}s</td><td>{{ row.get("search_delayed", 0) }}</td><td>{{ row.get("rate_limited", 0) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody></table>
+        </div>
+      </section>
+      {% if stress_message_events or stress_message_flow %}
+      <section class="panel stress-panel">
+        <div class="panel-header"><h2>消息与 Commit</h2><span>按 Session 查看执行结果</span></div>
+        <div class="panel-body table-wrap">
+          <table class="stress-table"><thead><tr><th>租户</th><th>Session</th><th>消息</th><th>Commit</th><th>时间</th><th>错误</th></tr></thead><tbody>
+          {% for flow in stress_message_flow %}
+            {% set commit = flow.get("commit") or {} %}
+            {% set commit_status = (commit.get("status") or "")|lower %}
+            {% set sent_count = flow.get("messages", [])|selectattr("status", "equalto", "sent")|list|length %}
+            <tr>
+              <td><b>{{ flow.get("tenant", "-") }}</b></td>
+              <td class="qid">{{ flow.get("session_id", "-") }}</td>
+              <td>{{ sent_count }}/{{ flow.get("messages", [])|length }} 已发送</td>
+              <td><span class="badge {% if commit_status in ['completed','complete','transcommit','succeeded','success'] %}correct{% elif commit_status in ['failed','error','timeout','transport_error','commit_rejected'] %}error{% endif %}">{{ commit.get("status", "未提交") }}</span></td>
+              <td>{{ commit.get("completed_at") or commit.get("queued_at") or "-" }}</td>
+              <td class="cell-text">{{ commit.get("error") or "-" }}</td>
+            </tr>
+          {% endfor %}
+          </tbody></table>
+        </div>
+      </section>
+      {% endif %}
+      <section class="panel stress-panel">
+        <div class="panel-header">
+          <h2>上线门槛与证据</h2>
+          <span>{{ stress_gates.get("status", "未评估") }}</span>
+        </div>
+        <div class="panel-body">
+          <div class="stress-facts">
+            <div><b>独立认证租户</b><span>{{ stress_gates.get("observed", {}).get("independent_auth", "未采集") }}</span></div>
+            <div><b>隔离探针</b><span>{{ stress_gates.get("observed", {}).get("max_isolation_probe_count", "未采集") }} 次</span></div>
+            <div><b>跨租户误命中</b><span>{{ stress_gates.get("observed", {}).get("max_cross_tenant_false_positive", "未采集") }}</span></div>
+            <div><b>服务端时序覆盖</b><span>{{ stress_gates.get("observed", {}).get("server_timing_coverage", "未采集") }}</span></div>
+          </div>
+          {% if stress_gates.get("failures") %}
+            <div class="notice" style="margin-top:14px">
+              {% for failure in stress_gates.get("failures") %}
+                {{ failure.get("gate", "门槛") }}：{{ failure.get("reason", "未满足") }}{% if not loop.last %}<br>{% endif %}
+              {% endfor %}
+            </div>
+          {% endif %}
+        </div>
+      </section>
+    {% elif job.test_type == "stress" and stress_metrics %}
+      {% if stress_message_events or stress_message_flow %}
+      <section class="panel stress-panel">
+        <div class="panel-header">
+          <h2>消息与 Commit 流程</h2>
+          <span>{{ stress_message_events|length }} 条消息 · {{ stress_message_flow|length }} 个 Session</span>
+        </div>
+        <div class="panel-body">
+          {% set sent_messages = stress_message_events|selectattr("status", "equalto", "sent")|list|length %}
+          {% set failed_messages = stress_message_events|selectattr("status", "equalto", "failed")|list|length %}
+          {% set accepted_commits = stress_commit.get("submitted", 0) - stress_commit.get("failed", 0) %}
+          <div class="flow-summary">
+            <div class="flow-stat"><span>消息发送</span><strong>{{ sent_messages }}/{{ stress_message_events|length }}</strong><small>成功 / 总数</small></div>
+            <div class="flow-stat"><span>Commit 请求</span><strong>{{ stress_commit.get("submitted", 0) }}</strong><small>已提交</small></div>
+            <div class="flow-stat"><span>Commit 完成</span><strong>{{ stress_commit.get("completed", 0) }}/{{ stress_commit.get("submitted", 0) }}</strong><small>完成 / 提交</small></div>
+            <div class="flow-stat"><span>异常</span><strong class="{% if failed_messages or stress_commit.get('failed', 0) %}danger{% endif %}">{{ failed_messages + stress_commit.get("failed", 0) }}</strong><small>消息失败 + Commit 失败</small></div>
+          </div>
+          <div class="flow-list">
+            {% for flow in stress_message_flow %}
+              {% set commit = flow.get("commit") or {} %}
+              {% set commit_status = (commit.get("status") or "")|lower %}
+              <article class="flow-item">
+                <div class="flow-item-head">
+                  <strong>租户 {{ flow.get("tenant", "-") }} · Session {{ flow.get("session_id", "-") }}</strong>
+                  {% if commit %}
+                    <span class="badge {% if commit_status in ['completed','complete','transcommit','succeeded','success'] %}correct{% elif commit_status in ['failed','error','timeout','transport_error','commit_rejected'] %}error{% endif %}">Commit {{ commit.get("status", "未知") }}</span>
+                  {% else %}
+                    <span class="badge">尚未提交 Commit</span>
+                  {% endif %}
+                </div>
+                <div class="flow-body">
+                  <div class="flow-messages">
+                    {% for message in flow.get("messages", []) %}
+                      <div class="flow-message {% if message.get('status') != 'sent' %}failed{% endif %}">
+                        <span class="label">消息 {{ message.get("index", loop.index0) + 1 }}<br>{{ message.get("sent_at", "-") }}</span>
+                        <code>{{ message.get("content_preview", "") }}{% if message.get("content_chars", 0) > 160 %}...{% endif %}</code>
+                        <span class="badge {% if message.get('status') == 'sent' %}correct{% else %}error{% endif %}">{{ message.get("status", "未知") }}{% if message.get("status_code") %} · {{ message.get("status_code") }}{% endif %}</span>
+                      </div>
+                    {% else %}
+                      <div class="flow-empty">没有记录到消息事件。</div>
+                    {% endfor %}
+                  </div>
+                  {% if commit %}
+                    <div class="flow-commit {% if commit_status in ['failed','error','timeout','transport_error','commit_rejected'] %}failed{% elif commit_status not in ['completed','complete','transcommit','succeeded','success'] %}pending{% endif %}">
+                      <strong>Commit</strong>
+                      <span class="badge">{{ commit.get("status", "未知") }}</span>
+                      <span class="meta">提交 {{ commit.get("queued_at", "-") }} · 完成 {{ commit.get("completed_at", "尚未完成") }}</span>
+                      {% if commit.get("request_id") %}<span class="meta">request ID {{ commit.get("request_id") }}</span>{% endif %}
+                      {% if commit.get("error") %}<span class="danger">{{ commit.get("error") }}</span>{% endif %}
+                    </div>
+                  {% endif %}
+                </div>
+              </article>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+      {% endif %}
+      <section class="panel stress-panel">
+        <div class="panel-header">
+          <h2>压测具体数据</h2>
+          <span>真实请求，不隐藏延迟和失败</span>
+        </div>
+        <div class="panel-body">
+          <div class="stress-cards">
+            <div class="stress-card"><span>Commit 平均完成</span><strong>{{ "%.3f"|format(stress_commit_stats.get("mean_s", 0)) }}s</strong><small>P50 {{ "%.3f"|format(stress_commit_stats.get("p50_s", 0)) }}s</small></div>
+            <div class="stress-card"><span>Commit P95 / P99</span><strong>{{ "%.3f"|format(stress_commit_stats.get("p95_s", 0)) }}s</strong><small>P99 {{ "%.3f"|format(stress_commit_stats.get("p99_s", 0)) }}s · 最大 {{ "%.3f"|format(stress_commit_stats.get("max_s", 0)) }}s</small></div>
+            <div class="stress-card"><span>Search 平均延迟</span><strong>{{ "%.3f"|format(stress_search_stats.get("mean_s", 0)) }}s</strong><small>P95 {{ "%.3f"|format(stress_search_stats.get("p95_s", 0)) }}s · P99 {{ "%.3f"|format(stress_search_stats.get("p99_s", 0)) }}s</small></div>
+            <div class="stress-card"><span>429 / 最大准入队列</span><strong>{{ stress_commit.get("rate_limited_count", 0) + stress_search.get("rate_limited_count", 0) }} / {{ stress_admission.get("max_queue_depth", 0) }}</strong><small>Commit {{ stress_commit.get("rate_limited_count", 0) }} · Search {{ stress_search.get("rate_limited_count", 0) }}</small></div>
+          </div>
+          <div class="stress-facts">
+            <div><b>Commit</b><span>完成 {{ stress_commit.get("completed", 0) }} / {{ stress_commit.get("submitted", 0) }} · 失败 {{ stress_commit.get("failed", 0) }} · 超阈值 {{ stress_commit.get("delayed_count", 0) }}</span></div>
+            <div><b>Search</b><span>成功 {{ stress_search.get("succeeded", 0) }} / {{ stress_search.get("submitted", 0) }} · 错误 {{ stress_search.get("errors", 0) }} · 超阈值 {{ stress_search.get("delayed_count", 0) }}</span></div>
+            <div><b>客户端准入</b><span>平均等待 {{ "%.3f"|format((stress_admission.get("wait") or {}).get("mean_s", 0)) }}s · P95 {{ "%.3f"|format((stress_admission.get("wait") or {}).get("p95_s", 0)) }}s · 最大队列 {{ stress_admission.get("max_queue_depth", 0) }}</span></div>
+            <div><b>隔离探针</b><span>{{ stress_isolation.get("status", "未提供") }} · {{ stress_isolation.get("probe_count", 0) }} / {{ stress_isolation.get("expected_probe_count", 0) }} · 异常 {{ stress_isolation.get("invalid_probe_count", 0) }}</span></div>
+          </div>
+        </div>
+      </section>
+      <section class="panel stress-panel">
+        <div class="panel-header">
+          <h2>Commit 延迟事件</h2>
+          <span>默认阈值 {{ "%.3f"|format(stress_commit.get("delayed_threshold_s", 0)) }}s · {{ stress_delayed|length }} 条</span>
+        </div>
+        <div class="panel-body">
+          {% if stress_delayed %}
+            <div class="table-wrap"><table class="stress-table"><thead><tr><th>租户</th><th>开始时间</th><th>完成时间</th><th>端到端</th><th>排队</th><th>HTTP</th><th>状态</th><th>request ID</th></tr></thead><tbody>
+              {% for row in stress_delayed %}
+                <tr><td>{{ row.get("tenant", "-") }}</td><td>{{ row.get("started_at", "-") }}</td><td>{{ row.get("completed_at", "-") }}</td><td>{{ "%.3f"|format(row.get("completion_s", 0)) }}s</td><td>{{ "%.3f"|format(row.get("queue_wait_s", 0)) }}s</td><td>{{ row.get("status_code", "-") }}</td><td>{{ row.get("status", "-") }}</td><td>{{ row.get("request_id", "-") }}</td></tr>
+              {% endfor %}
+            </tbody></table></div>
+          {% else %}
+            <p class="muted">本轮没有超过 Commit 延迟阈值的请求；请结合 P95/P99 和逐租户数据判断，不代表没有排队。</p>
+          {% endif %}
+        </div>
+      </section>
+      <section class="panel stress-panel">
+        <div class="panel-header"><h2>逐租户统计</h2><span>用于判断是否有租户被挤压</span></div>
+        <div class="panel-body table-wrap"><table class="stress-table"><thead><tr><th>租户</th><th>Commit 完成</th><th>Commit 平均</th><th>Commit P95</th><th>Commit P99</th><th>Search 成功</th><th>Search 平均</th><th>Search P95</th><th>Search P99</th></tr></thead><tbody>
+          {% for tenant, data in (stress_metrics.get("per_tenant") or {}).items()|sort %}
+            {% set tc = data.get("commit") or {} %}{% set ts = data.get("search") or {} %}
+            <tr><td><b>{{ tenant }}</b></td><td>{{ tc.get("completed", 0) }} / {{ tc.get("submitted", 0) }}</td><td>{{ "%.3f"|format((tc.get("completion") or {}).get("mean_s", 0)) }}s</td><td>{{ "%.3f"|format((tc.get("completion") or {}).get("p95_s", 0)) }}s</td><td>{{ "%.3f"|format((tc.get("completion") or {}).get("p99_s", 0)) }}s</td><td>{{ ts.get("succeeded", 0) }} / {{ ts.get("submitted", 0) }}</td><td>{{ "%.3f"|format((ts.get("latency") or {}).get("mean_s", 0)) }}s</td><td>{{ "%.3f"|format((ts.get("latency") or {}).get("p95_s", 0)) }}s</td><td>{{ "%.3f"|format((ts.get("latency") or {}).get("p99_s", 0)) }}s</td></tr>
+          {% else %}
+            <tr><td colspan="9">没有逐租户数据</td></tr>
+          {% endfor %}
+        </tbody></table></div>
+      </section>
+      <section class="panel stress-panel">
+        <div class="panel-header"><h2>按时间窗口统计</h2><span>用于定位延迟发生时段</span></div>
+        <div class="panel-body">
+          {% if stress_buckets %}
+            <div class="table-wrap"><table class="stress-table"><thead><tr><th>窗口</th><th>Commit 提交</th><th>Commit 完成</th><th>Commit 慢请求</th><th>Commit 平均</th><th>Commit P95</th><th>Search 提交</th><th>Search 成功</th><th>Search 慢请求</th><th>Search 平均</th><th>Search P95</th></tr></thead><tbody>
+            {% for bucket in stress_buckets %}
+              {% set bc = bucket.get("commit") or {} %}{% set bs = bucket.get("search") or {} %}
+              <tr><td>{{ "%.0f"|format(bucket.get("start_s", 0)) }}-{{ "%.0f"|format(bucket.get("end_s", 0)) }}s</td><td>{{ bc.get("submitted", 0) }}</td><td>{{ bc.get("completed", 0) }}</td><td>{{ bc.get("delayed", 0) }}</td><td>{{ "%.3f"|format((bc.get("latency") or {}).get("mean_s", 0) or 0) }}s</td><td>{{ "%.3f"|format((bc.get("latency") or {}).get("p95_s", 0) or 0) }}s</td><td>{{ bs.get("submitted", 0) }}</td><td>{{ bs.get("succeeded", 0) }}</td><td>{{ bs.get("delayed", 0) }}</td><td>{{ "%.3f"|format((bs.get("latency") or {}).get("mean_s", 0) or 0) }}s</td><td>{{ "%.3f"|format((bs.get("latency") or {}).get("p95_s", 0) or 0) }}s</td></tr>
+            {% endfor %}
+            </tbody></table></div>
+          {% else %}
+            <p class="muted">暂无按时间窗口数据。</p>
+          {% endif %}
+        </div>
+      </section>
+      <section class="panel stress-panel">
+        <div class="panel-header"><h2>调度、限流与服务端证据</h2><span>客户端顺序不等于服务端调度</span></div>
+        <div class="panel-body">
+          <div class="stress-facts">
+            <div><b>客户端操作序列</b><span>{{ stress_operation_sequence.get("count", 0) }} 请求 · {{ stress_operation_sequence.get("runs", 0) }} 段 · 切换 {{ stress_operation_sequence.get("switches", 0) }} 次 · 最大连续 {{ stress_operation_sequence.get("max_streak", 0) }}</span></div>
+            <div><b>客户端租户序列</b><span>{{ stress_tenant_sequence.get("count", 0) }} 请求 · {{ stress_tenant_sequence.get("runs", 0) }} 段 · 切换 {{ stress_tenant_sequence.get("switches", 0) }} 次 · 最大连续 {{ stress_tenant_sequence.get("max_streak", 0) }}</span></div>
+            <div><b>429 / Retry-After</b><span>Commit {{ stress_commit.get("rate_limited_count", 0) }} · Search {{ stress_search.get("rate_limited_count", 0) }} · Retry-After 需结合逐请求记录</span></div>
+            <div><b>服务端时序覆盖</b><span>Commit {{ stress_server_commit.get("observed_count", 0) }} / {{ stress_server_commit.get("total_count", 0) }} · Search {{ stress_server_search.get("observed_count", 0) }} / {{ stress_server_search.get("total_count", 0) }}</span></div>
+            <div><b>服务端队列深度 / 活跃 worker</b><span class="{% if not stress_server_commit.get('queue_depth_observed_count') and not stress_server_search.get('queue_depth_observed_count') %}danger{% endif %}">{{ stress_server_commit.get("queue_depth_observed_count", 0) + stress_server_search.get("queue_depth_observed_count", 0) }} 条有队列深度</span></div>
+            <div><b>身份模式</b><span>{{ stress_details.get("identity_mode", "未采集") }}</span></div>
+            <div><b>隔离命中率</b><span>同租户 {{ stress_isolation.get("same_tenant_hit_count", "未采集") }} / {{ stress_isolation.get("same_tenant_probe_count", "未采集") }} · 跨租户误命中 {{ stress_isolation.get("cross_tenant_false_positive_count", "未采集") }} / {{ stress_isolation.get("cross_tenant_probe_count", "未采集") }}</span></div>
+          </div>
+          {% if stress_timeline %}
+            <details><summary>逐请求时间线（{{ stress_timeline|length }} 条，最多展示前 300 条）</summary>
+              <div class="detail-content table-wrap"><table class="stress-table"><thead><tr><th>负载偏移</th><th>操作</th><th>租户</th><th>入队</th><th>开始</th><th>完成</th><th>总耗时</th><th>客户端排队</th><th>服务端队列</th><th>活跃 worker</th><th>Request ID</th><th>状态</th></tr></thead><tbody>
+              {% for row in stress_timeline[:300] %}
+                <tr><td>{{ "%.3f"|format(row.get("workload_offset_s", 0) or 0) }}s</td><td>{{ row.get("operation", "-") }}</td><td>{{ row.get("tenant", "-") }}</td><td>{{ row.get("queued_at", "-") }}</td><td>{{ row.get("started_at", "-") }}</td><td>{{ row.get("completed_at", "-") }}</td><td>{{ "%.3f"|format(row.get("duration_s", 0) or 0) }}s</td><td>{{ "%.3f"|format(row.get("queue_wait_s", 0) or 0) }}s</td><td>{{ row.get("server_queue_depth", "-") }}</td><td>{{ row.get("server_active_workers", "-") }}</td><td>{{ row.get("request_id", "-") }}</td><td>{% if row.get("delayed") %}<span class="badge wrong">慢</span>{% else %}<span class="badge">正常</span>{% endif %}</td></tr>
+              {% endfor %}
+              </tbody></table></div>
+            </details>
+          {% endif %}
+        </div>
+      </section>
+    {% endif %}
+
+    {% if job.test_type == "stress" and (stress_report or stress_suite_report) %}
+      <section class="panel stress-panel">
+        <div class="panel-header"><h2>完整数据报告</h2><span>可审计明细</span></div>
+        <div class="panel-body">
+          <div class="file-actions">
+            {% if stress_report %}<a class="button" target="_blank" rel="noreferrer" href="/jobs/{{ job.id }}/files/{{ stress_report }}">打开详细报告</a>{% endif %}
+            {% if stress_suite_report %}<a class="button" target="_blank" rel="noreferrer" href="/jobs/{{ job.id }}/files/{{ stress_suite_report }}">打开正式套件报告</a>{% endif %}
+          </div>
+          <p class="muted">报告包含平均、P50/P90/P95/P99/最大耗时、逐租户数据、延迟时间线、调度顺序、429/Retry-After、服务端队列证据和隔离探针。</p>
+        </div>
+      </section>
+    {% endif %}
 
     <div class="grid">
       <section class="panel">
@@ -197,7 +482,13 @@
               <div class="fact"><dt>commit</dt><dd>{{ job.commit_sha[:12] if job.commit_sha else "-" }}</dd></div>
               {% if job.develop_commit_sha %}<div class="fact"><dt>develop 基线</dt><dd>{{ job.develop_commit_sha[:12] }}</dd></div>{% endif %}
               {% if job.pr_head_sha %}<div class="fact"><dt>PR head</dt><dd>{{ job.pr_head_sha[:12] }}</dd></div>{% endif %}
-              <div class="fact"><dt>工具调用</dt><dd>{{ "开启" if summary.get("tools_enabled") else "关闭" }}</dd></div>
+              {% if job.test_type == "stress" %}
+                <div class="fact"><dt>测试方案</dt><dd>PR397 真实 HTTP 压测</dd></div>
+                <div class="fact"><dt>目标地址</dt><dd>{{ (job.stress_config or {}).get("base_url", "-") }}</dd></div>
+                <div class="fact"><dt>真实模型</dt><dd>{{ "是" if (job.stress_config or {}).get("real_model") else "否" }}</dd></div>
+              {% else %}
+                <div class="fact"><dt>工具调用</dt><dd>{{ "开启" if summary.get("tools_enabled") else "关闭" }}</dd></div>
+              {% endif %}
               <div class="fact"><dt>创建时间</dt><dd>{{ job.created_at or "-" }}</dd></div>
             </dl>
           </div>

@@ -58,6 +58,110 @@ def percentile(values: list[float], p: float) -> float | None:
     return ordered[low] + (ordered[high] - ordered[low]) * (index - low)
 
 
+def sequence_stats(values: list[str]) -> dict[str, Any]:
+    """Summarize observed operation/tenant interleaving."""
+    if not values:
+        return {
+            "count": 0,
+            "runs": 0,
+            "switches": 0,
+            "max_streak": 0,
+            "first": None,
+            "last": None,
+        }
+    runs = 1
+    switches = 0
+    max_streak = 1
+    current_streak = 1
+    for previous, current in zip(values, values[1:]):
+        if previous == current:
+            current_streak += 1
+        else:
+            runs += 1
+            switches += 1
+            max_streak = max(max_streak, current_streak)
+            current_streak = 1
+    max_streak = max(max_streak, current_streak)
+    return {
+        "count": len(values),
+        "runs": runs,
+        "switches": switches,
+        "max_streak": max_streak,
+        "first": values[0],
+        "last": values[-1],
+    }
+
+
+def scheduling_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Compare arrival and server execution-start order for one group."""
+    arrival = sorted(
+        [
+            row for row in rows
+            if parse_timestamp(row.get("queued_at")) is not None
+        ],
+        key=lambda row: parse_timestamp(row.get("queued_at"))
+        or datetime.max.replace(tzinfo=timezone.utc),
+    )
+    started = sorted(
+        [
+            row for row in rows
+            if parse_timestamp(row.get("server_execution_started_at")) is not None
+        ],
+        key=lambda row: parse_timestamp(row.get("server_execution_started_at"))
+        or datetime.max.replace(tzinfo=timezone.utc),
+    )
+    positions = {id(row): index for index, row in enumerate(arrival)}
+    inversions = 0
+    pairs = 0
+    for left_index, left in enumerate(started):
+        for right in started[left_index + 1:]:
+            left_position = positions.get(id(left))
+            right_position = positions.get(id(right))
+            if left_position is None or right_position is None:
+                continue
+            pairs += 1
+            if left_position > right_position:
+                inversions += 1
+    commit_started = [
+        row for row in started if row["operation"] == "commit"
+    ]
+    search_started = [
+        row for row in started if row["operation"] == "search"
+    ]
+    search_ahead = 0
+    operation_pairs = 0
+    for commit in commit_started:
+        commit_at = parse_timestamp(commit.get("server_execution_started_at"))
+        if not commit_at:
+            continue
+        for search in search_started:
+            search_at = parse_timestamp(search.get("server_execution_started_at"))
+            if not search_at:
+                continue
+            operation_pairs += 1
+            search_ahead += search_at < commit_at
+    return {
+        "arrival_count": len(arrival),
+        "server_start_count": len(started),
+        "server_start_coverage": len(started) / len(rows) if rows else None,
+        "inversions": inversions,
+        "comparable_pairs": pairs,
+        "inversion_rate": inversions / pairs if pairs else None,
+        "search_started_ahead_of_commit": search_ahead,
+        "commit_search_pairs": operation_pairs,
+        "server_start_sequence": [
+            {
+                "order": index,
+                "operation": row.get("operation"),
+                "tenant": row.get("tenant"),
+                "request_id": row.get("request_id"),
+                "started_at": row.get("server_execution_started_at"),
+            }
+            for index, row in enumerate(started, start=1)
+        ],
+    }
+
+
 def stats(values: list[float]) -> dict[str, Any]:
     return {
         "count": len(values),
@@ -344,6 +448,30 @@ def group_runs(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "server_timed_total": len(all_rows),
                 "delayed": [row for row in all_rows if row["delayed"]],
                 "rate_limited": sum(row["status_code"] == 429 for row in all_rows),
+                "operation_sequence": sequence_stats([
+                    row["operation"]
+                    for row in sorted(
+                        all_rows,
+                        key=lambda item: (
+                            item.get("run_key", ""),
+                            item.get("run_offset_s") is None,
+                            item.get("run_offset_s") or 0,
+                        ),
+                    )
+                ]),
+                "tenant_sequence": sequence_stats([
+                    row["tenant"]
+                    for row in sorted(
+                        all_rows,
+                        key=lambda item: (
+                            item.get("run_key", ""),
+                            item.get("run_offset_s") is None,
+                            item.get("run_offset_s") or 0,
+                        ),
+                    )
+                    if row.get("tenant")
+                ]),
+                "scheduling": scheduling_stats(all_rows),
             }
         )
     return result
@@ -368,6 +496,10 @@ def tenant_groups(group: dict[str, Any]) -> list[dict[str, Any]]:
                     [row["server_queue"] for row in commits if row["server_queue"] is not None]
                 ),
                 "commit_delayed": sum(row["delayed"] for row in commits),
+                "commit_429": sum(row["status_code"] == 429 for row in commits),
+                "commit_retry_after": stats(
+                    [row["retry_after"] for row in commits if row["retry_after"] is not None]
+                ),
                 "search_submitted": len(searches),
                 "search_succeeded": len(s_success),
                 "search_failed": len(searches) - len(s_success),
@@ -377,6 +509,10 @@ def tenant_groups(group: dict[str, Any]) -> list[dict[str, Any]]:
                     [row["server_queue"] for row in searches if row["server_queue"] is not None]
                 ),
                 "search_delayed": sum(row["delayed"] for row in searches),
+                "search_429": sum(row["status_code"] == 429 for row in searches),
+                "search_retry_after": stats(
+                    [row["retry_after"] for row in searches if row["retry_after"] is not None]
+                ),
             }
         )
     return result
@@ -392,8 +528,9 @@ def metric_cells(group: dict[str, Any]) -> str:
         f"<td>{seconds(c['mean'])}</td><td>{seconds(c['p50'])}</td>"
         f"<td>{seconds(c['p95'])}</td><td>{seconds(c['p99'])}</td><td>{seconds(c['max'])}</td>"
         f"<td>{len(group['searches'])}/{len(group['search_success'])}</td>"
-        f"<td>{seconds(s['mean'])}</td><td>{seconds(s['p95'])}</td>"
-        f"<td>{seconds(s['p99'])}</td>"
+        f"<td>{seconds(s['mean'])}</td><td>{seconds(s['p50'])}</td>"
+        f"<td>{seconds(s['p90'])}</td><td>{seconds(s['p95'])}</td>"
+        f"<td>{seconds(s['p99'])}</td><td>{seconds(s['max'])}</td>"
         f"<td>{seconds(cq['p95'])}</td><td>{seconds(sq['p95'])}</td>"
         f"<td>{len(group['delayed'])}</td><td>{group['rate_limited']}</td>"
         f"<td>{group['server_timed_count']}/{group['server_timed_total']}</td>"
@@ -409,18 +546,22 @@ def detail_block(group: dict[str, Any], root: Path) -> str:
         f"<td>{seconds(item['commit_latency']['p95'])}</td><td>{seconds(item['commit_latency']['p99'])}</td>"
         f"<td>{seconds(item['commit_queue']['mean'])}</td><td>{seconds(item['commit_queue']['p95'])}</td>"
         f"<td>{seconds(item['commit_server_queue']['p95'])}</td><td>{item['commit_delayed']}</td>"
+        f"<td>{item['commit_429']} / {seconds(item['commit_retry_after']['mean'])}</td>"
         f"<td>{item['search_submitted']}/{item['search_succeeded']}</td>"
         f"<td>{seconds(item['search_latency']['mean'])}</td><td>{seconds(item['search_latency']['p95'])}</td>"
         f"<td>{seconds(item['search_latency']['p99'])}</td><td>{seconds(item['search_queue']['p95'])}</td>"
-        f"<td>{seconds(item['search_server_queue']['p95'])}</td><td>{item['search_delayed']}</td></tr>"
+        f"<td>{seconds(item['search_server_queue']['p95'])}</td><td>{item['search_delayed']}</td>"
+        f"<td>{item['search_429']} / {seconds(item['search_retry_after']['mean'])}</td></tr>"
         for item in tenants
     )
     delayed_rows = "".join(
         f"<tr><td>{esc(row['operation'])}</td><td>{esc(row['tenant'])}</td>"
         f"<td>{esc(row['request_id'])}</td><td>{esc(row['queued_at'])}</td>"
+        f"<td>{esc(row['started_at'])}</td><td>{esc(row['finished_at'])}</td>"
         f"<td>{seconds(row['duration'])}</td><td>{seconds(row['queue_wait'])}</td>"
         f"<td>{seconds(row['server_queue'])}</td><td>{seconds(row['server_execution'])}</td>"
         f"<td>{esc(row['client_queue_depth'])}</td><td>{esc(row['server_queue_depth'])}</td>"
+        f"<td>{esc(row['status_code'])}</td><td>{seconds(row['retry_after'])}</td>"
         f"<td>{esc(row['status'])}</td><td>{esc(row['error'])}</td></tr>"
         for row in sorted(
             group["delayed"],
@@ -449,6 +590,12 @@ def detail_block(group: dict[str, Any], root: Path) -> str:
         f"<td>{bucket['search_delayed']}</td><td>{bucket['rate_limited']}</td></tr>"
         for bucket in time_buckets(group)
     )
+    server_start_rows = "".join(
+        f"<tr><td>{item.get('order')}</td><td>{esc(item.get('operation'))}</td>"
+        f"<td>{esc(item.get('tenant'))}</td><td>{esc(item.get('request_id'))}</td>"
+        f"<td>{esc(item.get('started_at'))}</td></tr>"
+        for item in group["scheduling"]["server_start_sequence"][:200]
+    ) or "<tr><td colspan=5>没有服务端执行开始时间</td></tr>"
     c_server = group["commit_server_queue"]
     s_server = group["search_server_queue"]
     return (
@@ -458,15 +605,30 @@ def detail_block(group: dict[str, Any], root: Path) -> str:
         f"<div class='detail-intro'>重复轮次：{len(group['items'])}；服务端时序覆盖："
         f"{group['server_timed_count']}/{group['server_timed_total']}。覆盖不足时，"
         f"下面的服务端排队列显示为缺失，不使用客户端时间替代。</div>"
+        f"<div class='metric-grid'>"
+        f"<div><span>操作交替</span><b>{group['operation_sequence']['switches']} 次切换</b>"
+        f"<small>{group['operation_sequence']['runs']} 段，最大连续 {group['operation_sequence']['max_streak']}</small></div>"
+        f"<div><span>租户交替</span><b>{group['tenant_sequence']['switches']} 次切换</b>"
+        f"<small>{group['tenant_sequence']['runs']} 段，最大连续 {group['tenant_sequence']['max_streak']}</small></div>"
+        f"<div><span>服务端开始覆盖</span><b>{group['scheduling']['server_start_count']}/{group['scheduling']['arrival_count']}</b>"
+        f"<small>{percent(group['scheduling']['server_start_coverage'])}</small></div>"
+        f"<div><span>到达顺序反转</span><b>{group['scheduling']['inversions']} 次</b>"
+        f"<small>{group['scheduling']['comparable_pairs']} 对，{percent(group['scheduling']['inversion_rate'])}</small></div>"
+        f"<div><span>Search 先于 Commit</span><b>{group['scheduling']['search_started_ahead_of_commit']} 次</b>"
+        f"<small>可比较 {group['scheduling']['commit_search_pairs']} 对</small></div>"
+        f"<div><span>Commit 429</span><b>{sum(item['commit_429'] for item in tenants)}</b>"
+        f"<small>按租户表查看 Retry-After</small></div>"
+        f"<div><span>Search 429</span><b>{sum(item['search_429'] for item in tenants)}</b>"
+        f"<small>按租户表查看 Retry-After</small></div></div>"
         f"<h3>逐租户数值</h3><div class='scroll'><table><thead><tr>"
         f"<th>租户</th><th>Commit 提交/完成</th><th>Commit 平均</th><th>Commit P50</th>"
         f"<th>Commit P95</th><th>Commit P99</th><th>客户端排队平均</th><th>客户端排队 P95</th>"
-        f"<th>服务端排队 P95</th><th>Commit 延迟数</th><th>Search 提交/成功</th>"
+        f"<th>服务端排队 P95</th><th>Commit 延迟数</th><th>Commit 429 / Retry-After 均值</th><th>Search 提交/成功</th>"
         f"<th>Search 平均</th><th>Search P95</th><th>Search P99</th><th>客户端排队 P95</th>"
-        f"<th>服务端排队 P95</th><th>Search 延迟数</th></tr></thead>"
-        f"<tbody>{tenant_rows or '<tr><td colspan=17>没有请求数据</td></tr>'}</tbody></table></div>"
-        f"<h3>按时间窗口观察延迟</h3><div class='scroll'><table><thead><tr>"
-        f"<th>运行目录</th><th>第几分钟</th><th>Commit 提交/完成</th><th>Commit 平均</th>"
+        f"<th>服务端排队 P95</th><th>Search 延迟数</th><th>Search 429 / Retry-After 均值</th></tr></thead>"
+        f"<tbody>{tenant_rows or '<tr><td colspan=19>没有请求数据</td></tr>'}</tbody></table></div>"
+        f"<h3>按 10 秒窗口观察延迟</h3><div class='scroll'><table><thead><tr>"
+        f"<th>运行目录</th><th>时间窗口</th><th>Commit 提交/完成</th><th>Commit 平均</th>"
         f"<th>Commit P95</th><th>Commit 延迟</th><th>Search 提交/成功</th><th>Search 平均</th>"
         f"<th>Search P95</th><th>Search 延迟</th><th>429</th></tr></thead><tbody>"
         f"{bucket_rows or '<tr><td colspan=11>没有可解析时间戳</td></tr>'}</tbody></table></div>"
@@ -478,10 +640,14 @@ def detail_block(group: dict[str, Any], root: Path) -> str:
         f"<div><span>Commit 延迟阈值</span><b>{seconds(group['commits'][0]['threshold'] if group['commits'] else None)}</b><small>超过阈值 {sum(row['delayed'] for row in group['commits'])} 次</small></div>"
         f"<div><span>Search 延迟阈值</span><b>{seconds(group['searches'][0]['threshold'] if group['searches'] else None)}</b><small>超过阈值 {sum(row['delayed'] for row in group['searches'])} 次</small></div>"
         f"</div><h3>延迟请求逐条记录</h3><div class='scroll'><table><thead><tr>"
-        f"<th>类型</th><th>租户</th><th>Request ID</th><th>进入时间</th><th>端到端</th>"
+        f"<th>类型</th><th>租户</th><th>Request ID</th><th>进入时间</th><th>开始</th><th>完成</th><th>端到端</th>"
         f"<th>客户端排队</th><th>服务端排队</th><th>服务端执行</th><th>客户端队列</th>"
-        f"<th>服务端队列</th><th>状态</th><th>错误</th></tr></thead>"
-        f"<tbody>{delayed_rows or '<tr><td colspan=12>本组没有超过阈值的请求</td></tr>'}</tbody></table></div>"
+        f"<th>服务端队列</th><th>HTTP</th><th>Retry-After</th><th>状态</th><th>错误</th></tr></thead>"
+        f"<tbody>{delayed_rows or '<tr><td colspan=16>本组没有超过阈值的请求</td></tr>'}</tbody></table></div>"
+        f"<h3>服务端执行开始顺序</h3><div class='scroll'><table><thead><tr>"
+        f"<th>顺序</th><th>操作</th><th>租户</th><th>Request ID</th><th>服务端开始时间</th></tr></thead><tbody>"
+        f"{server_start_rows}"
+        f"</tbody></table></div>"
         f"<p class='links'>{' · '.join(raw_links) or '没有原始文件链接'}</p></details>"
     )
 
@@ -537,6 +703,14 @@ def render(manifest_path: Path, output_path: Path) -> None:
         if independent
         else "未能证明所有运行都使用独立认证租户，隔离结论不可用于上线。"
     )
+    gate_evaluation = manifest.get("release_gate_evaluation") or {}
+    gate_failures = gate_evaluation.get("failures") or []
+    gate_rows = "".join(
+        f"<tr><td>{esc(item.get('gate'))}</td><td>{esc(item.get('actual'))}</td>"
+        f"<td>{esc(item.get('expected'))}</td><td>{esc(item.get('reason'))}</td></tr>"
+        for item in gate_failures
+    ) or "<tr><td colspan='4'>当前没有发现门槛失败项</td></tr>"
+    gate_status = str(gate_evaluation.get("status") or "NOT_EVALUATED")
     admission_note = (
         "服务端观察模式：压测端准入已关闭，客户端不替服务端排队。"
         if manifest.get("server_observation_mode")
@@ -568,12 +742,14 @@ details{{border-top:1px solid var(--line);padding:11px 0}}details:first-of-type{
 <div class='kpi'><div class='label'>独立认证</div><div class='value'>{'是' if independent else '未确认'}</div><div class='note'>上线隔离结论的前提</div></div>
 <div class='kpi'><div class='label'>重复轮次</div><div class='value'>{esc(manifest.get('repeats'))}</div><div class='note'>每组数据同时保留原始轮次</div></div>
 </div>
+<section class='section'><h2>上线门槛</h2><div class='notice'><b>门槛判定：{esc(gate_status)}</b>。缺失证据按失败处理，不把“未采集”当成通过。</div>
+<div class='scroll'><table><thead><tr><th>门槛</th><th>实际值</th><th>要求</th><th>原因</th></tr></thead><tbody>{gate_rows}</tbody></table></div></section>
 <section class='section'><h2>数据口径</h2><div class='notice'><b>先看这里：</b>Commit 的端到端时间从请求进入到最终完成；Search 使用请求端到端时间。客户端排队、服务端排队、服务端执行分别统计。服务端字段没有覆盖时显示为 <b>-</b>，不能据此推断服务端没有排队。{esc(admission_note)}</div>
 <p class='muted'>本报告展示均值、P50、P95、P99、最大值、完成率、延迟数、429 数和服务端证据覆盖率；策略只在相同场景、相同租户、相同负载和相同重复轮次之间比较。</p></section>
 <section class='section'><h2>场景 × 策略完整数值</h2><div class='scroll'><table><thead><tr>
 <th>场景</th><th>策略</th><th>轮次</th><th>状态</th><th>Commit 提交/完成</th><th>Commit 平均</th><th>Commit P50</th><th>Commit P95</th><th>Commit P99</th><th>Commit 最大</th>
-<th>Search 提交/成功</th><th>Search 平均</th><th>Search P95</th><th>Search P99</th><th>Commit 客户端排队 P95</th><th>Search 客户端排队 P95</th><th>延迟事件</th><th>429</th><th>服务端时序覆盖</th></tr></thead>
-<tbody>{rows or '<tr><td colspan=19>没有运行数据</td></tr>'}</tbody></table></div></section>
+<th>Search 提交/成功</th><th>Search 平均</th><th>Search P50</th><th>Search P90</th><th>Search P95</th><th>Search P99</th><th>Search 最大</th><th>Commit 客户端排队 P95</th><th>Search 客户端排队 P95</th><th>延迟事件</th><th>429</th><th>服务端时序覆盖</th></tr></thead>
+<tbody>{rows or '<tr><td colspan=22>没有运行数据</td></tr>'}</tbody></table></div></section>
 <section class='section'><h2>逐组详细数据</h2><p class='muted'>点击每一组展开：逐租户分位数、服务端排队/执行、延迟请求绝对时间、队列深度、状态和错误。</p>{detail or '<p>没有详细数据。</p>'}</section>
 <div class='footer'>数据源：<code>{esc(manifest_path)}</code> · 原始请求 CSV 和每轮报告位于同一目录。报告不把 INCONCLUSIVE 当作性能通过。</div>
 </main></body></html>"""

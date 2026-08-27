@@ -101,9 +101,11 @@ def render(summary: dict[str, Any]) -> str:
     admission = metrics.get("admission") or {}
     isolation = details.get("isolation") or {}
     fairness = metrics.get("fairness") or {}
+    scheduling = metrics.get("scheduling") or {}
     targets = metrics.get("targets") or {}
     request_rows = summary.get("_request_rows") or []
     isolation_probes = isolation.get("probes") or []
+    identity_observations = isolation.get("identity_observations") or {}
     delayed_commits = commit.get("delayed") or []
     delayed_searches = search.get("delayed") or []
     time_buckets = metrics.get("time_buckets") or []
@@ -140,6 +142,14 @@ def render(summary: dict[str, Any]) -> str:
         "ENVIRONMENT_ERROR": "环境异常，结果不可用",
         "INCONCLUSIVE": "证据不足，不能下结论",
     }.get(status, "状态未知")
+
+    operation_sequence = scheduling.get("operation_sequence") or {}
+    tenant_sequence = scheduling.get("tenant_sequence") or {}
+    identity_rows = "".join(
+        f"<tr><td><b>{esc(tenant)}</b></td>"
+        f"<td>{esc(json.dumps(observation, ensure_ascii=False, sort_keys=True))}</td></tr>"
+        for tenant, observation in sorted(identity_observations.items())
+    )
 
     commit_status_counts = commit.get("http_status_counts") or {}
     search_status_counts = search.get("http_status_counts") or {}
@@ -356,6 +366,24 @@ details{{border-top:1px solid var(--line);padding-top:12px}} details+details{{ma
 <div class="fact"><span>跨租户误命中</span><span>{esc(sum(1 for p in isolation_probes if not p.get("same_tenant") and p.get("marker_found")))}</span></div></div>
 <details><summary>展开全部隔离探针</summary><div class="scroll"><table><thead><tr><th>写入租户</th><th>读取租户</th><th>期望命中</th><th>实际命中</th><th>HTTP</th><th>耗时</th><th>结果</th></tr></thead>
 <tbody>{''.join(f"<tr><td>{esc(p.get('writer'))}</td><td>{esc(p.get('reader'))}</td><td>{'是' if p.get('expected') else '否'}</td><td>{'是' if p.get('marker_found') else '否'}</td><td>{esc(p.get('status_code'))}</td><td>{seconds(p.get('latency_s'))}</td><td>{'PASS' if p.get('marker_found') == p.get('expected') else 'FAIL'}</td></tr>" for p in isolation_probes) or '<tr><td colspan="7">没有隔离探针数据</td></tr>'}</tbody></table></div></details></section>
+<section class="section"><h2>服务端身份映射</h2>
+<div class="notice">只有服务端返回的稳定身份字段才能证明 API Key 确实映射到不同租户。Session ID、Request ID 等运行时 ID 不计入隔离证明。</div>
+<div class="facts"><div class="fact"><span>身份映射判定</span><span>{esc(isolation.get("identity_mapping_status", "UNVERIFIED"))}</span></div>
+<div class="fact"><span>观测租户数</span><span>{esc(len(identity_observations))} / {esc(params.get("tenants", len(identity_observations)))}</span></div></div>
+<div class="scroll"><table><thead><tr><th>压测租户</th><th>服务端稳定身份字段</th></tr></thead>
+<tbody>{identity_rows or '<tr><td colspan="2">服务端未返回 tenant/account/workspace/user/organization 等稳定身份字段</td></tr>'}</tbody></table></div></section>
+<section class="section"><h2>调度交替与限流数值</h2>
+<div class="notice">这里的“交替”按请求到达/客户端准入顺序统计。若客户端准入已关闭，它只能说明发送流顺序，不能替代 EchoMem 内部调度证据。</div>
+<div class="facts">
+<div class="fact"><span>操作序列</span><span>{esc(operation_sequence.get("count", 0))} 请求 · {esc(operation_sequence.get("runs", 0))} 段 · 切换 {esc(operation_sequence.get("switches", 0))} 次</span></div>
+<div class="fact"><span>连续同类操作最大段长</span><span>{esc(operation_sequence.get("max_streak", 0))}</span></div>
+<div class="fact"><span>首个 / 最后操作</span><span>{esc(operation_sequence.get("first"))} / {esc(operation_sequence.get("last"))}</span></div>
+<div class="fact"><span>租户序列</span><span>{esc(tenant_sequence.get("count", 0))} 请求 · {esc(tenant_sequence.get("runs", 0))} 段 · 切换 {esc(tenant_sequence.get("switches", 0))} 次</span></div>
+<div class="fact"><span>连续同租户最大段长</span><span>{esc(tenant_sequence.get("max_streak", 0))}</span></div>
+<div class="fact"><span>Commit 429 / Retry-After</span><span>{commit_rate_limited} / {seconds((commit.get("retry_after") or {}).get("mean_s"))} 均值</span></div>
+<div class="fact"><span>Search 429 / Retry-After</span><span>{search_rate_limited} / {seconds((search.get("retry_after") or {}).get("mean_s"))} 均值</span></div>
+<div class="fact"><span>证据口径</span><span>{esc(scheduling.get("interpretation", "未记录"))}</span></div>
+</div></section>
 <section class="section"><h2>公平性指标</h2><div class="facts">
 <div class="fact"><span>Search P95 最大 / 最小</span><span>{number(fairness.get("search_latency_p95_max_min_ratio"))} 倍</span></div>
 <div class="fact"><span>Commit P95 最大 / 最小</span><span>{number(fairness.get("commit_completion_p95_max_min_ratio"))} 倍</span></div>

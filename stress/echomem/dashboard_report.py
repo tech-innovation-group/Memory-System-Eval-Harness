@@ -96,9 +96,19 @@ def render(primary: dict[str, Any], matrix: dict[str, Any] | None) -> str:
         f"<td>{sec(((data.get('search') or {}).get('latency') or {}).get('p95_s'))}</td></tr>"
         for name, data in sorted(tenants.items())
     )
+    favicon = (
+        "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E"
+        "%3Crect width='64' height='64' rx='14' fill='%2317324d'/%3E"
+        "%3Cpath d='M14 48V35M25 48V24M36 48V30M47 48V16' "
+        "stroke='%2379d7b7' stroke-width='5' stroke-linecap='round'/%3E"
+        "%3Cpath d='M10 53h44M12 20l10-7 10 8 16-12' fill='none' "
+        "stroke='%23ff9f70' stroke-width='3' stroke-linecap='round' "
+        "stroke-linejoin='round'/%3E%3C/svg%3E"
+    )
     return f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="{favicon}">
 <title>EchoMem 压测看板</title>
 <style>
 :root{{--bg:#f4f6f8;--paper:#fff;--ink:#18232d;--muted:#6f7b86;--line:#e4e9ed;
@@ -146,15 +156,19 @@ details{{margin-top:10px;border-top:1px solid var(--line);padding-top:11px}} sum
 <div class="fact"><span>Commit 超过 10 秒</span><span>{esc(commit.get('delayed_count', 0))} 个</span></div>
 <div class="fact"><span>RSS 增长斜率</span><span>{num(details.get('rss_slope_mb_min'))} MB/min</span></div></div></section>
 {f'<section><h2>策略矩阵</h2><div class="callout">{esc(matrix_note)}</div><div class="scroll"><table><thead><tr><th>策略</th><th>状态</th><th>租户数</th><th>Commit</th><th>Commit P95</th><th>Search P95</th><th>吞吐</th><th>校验</th></tr></thead><tbody>{matrix_rows}</tbody></table></div></section>' if matrix is not None else ''}
-<section><h2>逐租户摘要</h2><div class="scroll"><table><thead><tr><th>租户</th><th>Commit 完成</th><th>Commit P95</th><th>Search P95</th></tr></thead><tbody>{tenant_rows or '<tr><td colspan="4">没有逐租户数据</td></tbody>'}</table></div></section>
+<section><h2>逐租户摘要</h2><div class="scroll"><table><thead><tr><th>租户</th><th>Commit 完成</th><th>Commit P95</th><th>Search P95</th></tr></thead><tbody>{tenant_rows or '<tr><td colspan="4">没有逐租户数据</td></tr>'}</tbody></table></div></section>
 <section><h2>运行配置</h2><div class="facts"><div class="fact"><span>调度策略</span><span>{esc(params.get('scheduler_policy'))}</span></div>
 <div class="fact"><span>准入容量</span><span>{esc(params.get('admission_capacity'))}</span></div>
 <div class="fact"><span>Commit 并发</span><span>{esc(params.get('commit_workers'))}</span></div>
 <div class="fact"><span>Search 并发</span><span>{esc(params.get('search_workers'))}</span></div>
 <div class="fact"><span>租户 / 每租户 Session</span><span>{esc(params.get('tenants'))} / {esc(params.get('sessions_per_tenant'))}</span></div>
 <div class="fact"><span>Mock</span><span>否，真实服务</span></div></div></section>
-<section><h2>原始证据</h2><details><summary>展开查看 JSON 摘要</summary><pre>{esc(json.dumps(primary, ensure_ascii=False, indent=2))}</pre></details></section>
-<div class="footer">报告由压测原始 JSON 生成。矩阵脚本现在会校验每轮实际租户数，避免单租户旧结果混入多租户结论。</div>
+<section><h2>原始证据</h2><div class="facts">
+<div class="fact"><span>摘要</span><span><a href="summary.json" download>下载 summary.json</a></span></div>
+<div class="fact"><span>请求明细</span><span><a href="commit_results.csv" download>Commit CSV</a> · <a href="search_results.csv" download>Search CSV</a></span></div>
+<div class="fact"><span>服务端采样</span><span><a href="server_metrics.csv" download>metrics CSV</a> · <a href="server_metrics.jsonl" download>metrics JSONL</a></span></div>
+</div></section>
+<div class="footer">报告由压测原始 JSON 生成。完整证据文件与本 HTML 位于同一目录，点击上方链接即可下载。</div>
 </main></body></html>"""
 
 

@@ -345,6 +345,7 @@ python benchmarks/locomo/run_eval.py \
 | `--resume` | (空) | **统一续跑**：从先前运行目录或 CSV 恢复——复用身份，跳过已完成 import batch（只补中断/缺失的），恢复健康 QA 答案，复用一致 Judge 判定；只跑缺失/失败部分。summary/blackbox 指标对合并后的整轮累计（token/延迟/精度不会只算本轮） |
 | `--resume-qa` | (空) | 旧参数，语义同 `--resume`（被取代，仅保留兼容） |
 | `--reuse-memory-from` | (空) | 旧参数：只复用身份+已注入记忆、QA/Judge 全量重跑（指标只算本轮；被 `--resume` 取代，仅保留兼容） |
+| `--qa-only-from` | (空) | **严格 QA-only**：从一个已完成注入的运行目录读取 `import_results.csv` 和身份，只执行 QA/Judge；不会调用 `open_session`、`add_message` 或 `commit_session`。适合一次注入、切换 EchoMem engine 配置做对比 |
 | `--concurrency` | `4` | QA 并发数 |
 | `--out-dir` | `results` | 结果目录 |
 | `--allow-diagnostics` | false | 导入未完成或 provenance 不一致仍继续；仅限诊断 |

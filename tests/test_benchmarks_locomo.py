@@ -30,6 +30,7 @@ from benchmarks.locomo.diagnosis import classify_failure
 from benchmarks.locomo.import_memory import (
     ImportOptions,
     import_locomo_memory,
+    load_import_report,
     resolve_session_mode,
     selected_session_batches,
 )
@@ -379,6 +380,32 @@ class SelectedSessionBatchesTests(unittest.TestCase):
 
 class ImportLocomoMemoryTests(unittest.TestCase):
     """Tests for import_locomo_memory injection flow and error handling."""
+
+    def test_load_import_report_is_read_only_and_rejects_incomplete_rows(self):
+        with tempfile.TemporaryDirectory() as d:
+            run_dir = Path(d)
+            (run_dir / "import_results.csv").write_text(
+                "sample_id,session_key,session_id,archive_id,status,"
+                "elapsed_s,message_count,submitted_messages,error\n"
+                "s0,session_1,sess-1,archive-1,completed,1.2,2,2,\n",
+                encoding="utf-8",
+            )
+            (run_dir / "qa_resume_manifest.json").write_text(
+                '{"benchmark": "locomo"}',
+                encoding="utf-8",
+            )
+            report = load_import_report(run_dir)
+            self.assertEqual(1, report.completed)
+            self.assertEqual({"s0": ["sess-1"]}, report.sample_to_session_ids)
+
+            (run_dir / "import_results.csv").write_text(
+                "sample_id,session_key,session_id,archive_id,status,"
+                "elapsed_s,message_count,submitted_messages,error\n"
+                "s0,session_1,sess-1,,error,0,2,0,backend down\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "incomplete import batch"):
+                load_import_report(run_dir)
 
     def test_normal_injection_calls_open_add_commit_poll(self):
         client = MagicMock()
@@ -1433,6 +1460,7 @@ class RunEvalParserTests(unittest.TestCase):
         self.assertEqual("", self.args.qa_prompt_file)
         self.assertEqual(10, self.args.checkpoint_interval)
         self.assertEqual("", self.args.resume_qa)
+        self.assertEqual("", self.args.qa_only_from)
 
     def test_session_mode_choices(self):
         for mode in ("auto", "locomo", "single"):

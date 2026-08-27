@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Run the real EchoMem workload under several admission policies.
+"""Run the real EchoMem workload in production-faithful observation mode.
 
-This compares load-generator admission policies. It does not infer EchoMem's
-internal scheduler unless the service exposes equivalent queue telemetry.
+The load generator does not add a client-side scheduler. It does not infer
+EchoMem's internal scheduler unless the service exposes equivalent queue
+telemetry.
 """
 
 from __future__ import annotations
@@ -25,13 +26,7 @@ except ImportError:
     from audit_matrix_report import render as render_audit_matrix_report
 
 
-POLICIES = (
-    "fifo",
-    "search-priority",
-    "dual-lane",
-    "tenant-fair",
-    "dual-lane-tenant-fair",
-)
+POLICIES = ("server-observe",)
 
 
 def fmt(value: Any, suffix: str = "s") -> str:
@@ -50,9 +45,12 @@ def render_report_safely(renderer: Any, matrix_path: Path, output_path: Path) ->
     try:
         renderer(matrix_path, output_path)
     except Exception as exc:
+        error_text = html.escape(
+            type(exc).__name__ + ": " + str(exc) + "\n\n" + traceback.format_exc()
+        )
         output_path.write_text(
             "<!doctype html><meta charset='utf-8'><title>报告生成异常</title>"
-            f"<h1>报告生成异常</h1><pre>{html.escape(type(exc).__name__ + ': ' + str(exc) + '\\n\\n' + traceback.format_exc())}</pre>"
+            f"<h1>报告生成异常</h1><pre>{error_text}</pre>"
             f"<p>原始数据仍保存在 <code>{html.escape(str(matrix_path.parent))}</code>。</p>",
             encoding="utf-8",
         )
@@ -114,7 +112,7 @@ def render_matrix(summaries: list[dict[str, Any]]) -> str:
     return f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>EchoMem 压测策略矩阵</title>
+<title>EchoMem 服务端观测压测报告</title>
 <style>
 body{{margin:0;background:#f5f7f8;color:#18232d;font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}}
 main{{max-width:1500px;margin:auto;padding:28px 20px 60px}} h1{{margin:0 0 4px;font-size:26px}}
@@ -124,11 +122,11 @@ th,td{{padding:9px 8px;border-bottom:1px solid #e6ebef;text-align:left}} th{{bac
 details{{border-top:1px solid #e6ebef;padding:12px 0}} summary{{cursor:pointer;font-weight:750}}
 pre{{background:#f5f7f8;padding:12px;overflow:auto}} .legend{{padding:12px 14px;border-left:4px solid #b07a18;background:#fff7df;color:#6b5017}}
 </style></head><body><main>
-<h1>EchoMem 压测策略矩阵</h1>
+<h1>EchoMem 服务端观测压测报告</h1>
 <div class="muted">生成时间：{esc(datetime.now().astimezone().isoformat())}</div>
-<section><div class="legend">策略控制的是压测端请求准入，不等同于 EchoMem 服务内部调度。只有服务端提供队列/限流遥测时，才能对内部调度做因果结论。</div></section>
-<section><h2>策略对比</h2><div class="scroll"><table><thead><tr>
-<th>策略</th><th>状态</th><th>Commit</th><th>Commit 平均</th><th>P50</th><th>P95</th><th>P99</th><th>最大</th>
+<section><div class="legend">本报告不引入客户端调度策略。请求按目标速率直接发送到 EchoMem；只有服务端提供队列/限流遥测时，才能对内部调度做因果结论。</div></section>
+<section><h2>服务端观测结果</h2><div class="scroll"><table><thead><tr>
+<th>模式</th><th>状态</th><th>Commit</th><th>Commit 平均</th><th>P50</th><th>P95</th><th>P99</th><th>最大</th>
 <th>Search 平均</th><th>Search P95</th><th>Search 吞吐</th><th>准入等待平均</th><th>最大队列</th>
 </tr></thead><tbody>{''.join(rows) or '<tr><td colspan="13">无结果</td></tr>'}</tbody></table></div></section>
 <section><h2>逐租户与隔离证据</h2>{''.join(detail_blocks) or '<p>无结果</p>'}</section>
@@ -160,14 +158,6 @@ def main() -> int:
     )
     parser.add_argument("--commit-workers", type=int, default=4)
     parser.add_argument("--search-workers", type=int, default=4)
-    parser.add_argument(
-        "--no-client-admission",
-        action="store_true",
-        help="Observe EchoMem queueing without client-side admission scheduling.",
-    )
-    parser.add_argument("--admission-capacity", type=int, default=1)
-    parser.add_argument("--search-admission-capacity", type=int, default=4)
-    parser.add_argument("--commit-admission-capacity", type=int, default=1)
     parser.add_argument("--pid", type=int, default=0)
     args = parser.parse_args()
     root = Path(args.out_dir or f"results/stress/matrix_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
@@ -181,16 +171,8 @@ def main() -> int:
             str(runner),
             "--base-url",
             args.base_url,
-            "--scheduler-policy",
-            policy,
             "--auth-header",
             args.auth_header,
-            "--admission-capacity",
-            str(args.admission_capacity),
-            "--search-admission-capacity",
-            str(args.search_admission_capacity),
-            "--commit-admission-capacity",
-            str(args.commit_admission_capacity),
             "--duration-s",
             str(args.duration_s),
             "--search-rps",
@@ -212,8 +194,7 @@ def main() -> int:
         ]
         if args.allow_shared_identity:
             command.append("--allow-shared-identity")
-        if args.no_client_admission:
-            command.append("--no-client-admission")
+        command.append("--no-client-admission")
         if args.tenant_config:
             command += ["--tenant-config", args.tenant_config]
         elif args.auth_key:

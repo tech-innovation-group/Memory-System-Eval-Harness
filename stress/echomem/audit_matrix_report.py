@@ -633,6 +633,12 @@ def render(matrix_path: Path, output_path: Path) -> None:
         search = metrics.get("search") or {}
         commit_stats = commit.get("completion") or {}
         search_stats = search.get("latency") or {}
+        policy_html = policy_section(
+            policy, summary, directory, include_header=False
+        )
+        policy_body = policy_html.split(
+            '<section class="policy">', 1
+        )[1].rsplit("</section>", 1)[0]
         policy_detail_blocks.append(
             f"<details class='policy'><summary><div class='policy-head'>"
             f"<div><span class='eyebrow'>策略详情</span><h2>{esc(policy)}</h2>"
@@ -642,7 +648,7 @@ def render(matrix_path: Path, output_path: Path) -> None:
             f"Commit {esc(commit.get('completed'))}/{esc(commit.get('submitted'))} · "
             f"Search {esc(search.get('succeeded'))}/{esc(search.get('submitted'))}</div></div>"
             f"<span class='status'>{esc(summary.get('status'))}</span></div></summary>"
-            f"<div class='policy-body'>{policy_section(policy, summary, directory, include_header=False).split('<section class=\"policy\">', 1)[1].rsplit('</section>', 1)[0]}</div></details>"
+            f"<div class='policy-body'>{policy_body}</div></details>"
         )
     icon = """<svg class="icon" viewBox="0 0 56 56" role="img" aria-label="压测报告">
       <rect x="3" y="3" width="50" height="50" rx="13" fill="#17324d"/>

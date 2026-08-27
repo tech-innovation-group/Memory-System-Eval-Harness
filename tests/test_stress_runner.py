@@ -22,13 +22,203 @@ from stress.echomem.runner import (
     workload_metrics,
     percentile,
     scenario_status,
+    commit_delivery_status,
+    search_latency_status,
     scenario_search,
     isolation_probe_query,
+    isolation_probe_counts,
+    retrieval_contains,
+    scheduling_observation,
 )
 from stress.echomem.audit_matrix_report import render as render_audit_matrix_report
+from stress.echomem.executive_report import render as render_executive_report
+from stress.echomem.formal_suite import (
+    SERVER_OBSERVE_POLICY,
+    evaluate_release_gates,
+    selected_policies,
+)
 
 
 class StressRunnerTests(unittest.TestCase):
+    def test_formal_suite_defaults_to_server_observe(self) -> None:
+        self.assertEqual([SERVER_OBSERVE_POLICY], selected_policies(False))
+
+    def test_runner_server_observe_is_a_real_scheduler_mode(self) -> None:
+        from stress.echomem import runner
+        import sys
+
+        original_argv = sys.argv
+        sys.argv = ["runner.py", "--scheduler-policy", "server-observe"]
+        try:
+            args = runner.parse_args()
+        finally:
+            sys.argv = original_argv
+        self.assertEqual("server-observe", args.scheduler_policy)
+
+    def test_formal_suite_ignores_legacy_client_policy_flag(self) -> None:
+        self.assertEqual([SERVER_OBSERVE_POLICY], selected_policies(True))
+
+    def test_release_gates_reject_missing_isolation_and_server_evidence(self) -> None:
+        manifest = {
+            "scenarios": ["baseline"],
+            "runs": [],
+        }
+        result = evaluate_release_gates(manifest, [])
+        self.assertEqual("FAIL", result["status"])
+        failed_gates = {item["gate"] for item in result["failures"]}
+        self.assertIn("required_scenarios", failed_gates)
+        self.assertIn("independent_auth", failed_gates)
+        self.assertIn("isolation_probe_count", failed_gates)
+        self.assertIn("server_timing", failed_gates)
+        self.assertIn("stable_server_identity", failed_gates)
+
+    def test_isolation_result_splits_cross_tenant_and_same_tenant_errors(self) -> None:
+        probes = [
+            {"same_tenant": True, "marker_found": True},
+            {"same_tenant": True, "marker_found": False},
+            {"same_tenant": False, "marker_found": True},
+            {"same_tenant": False, "marker_found": False},
+        ]
+        result = isolation_probe_counts(probes)
+        self.assertEqual(
+            {
+                "same_tenant_probe_count": 2,
+                "same_tenant_hit_count": 1,
+                "same_tenant_false_negative_count": 1,
+                "cross_tenant_probe_count": 2,
+                "cross_tenant_false_positive_count": 1,
+                "cross_tenant_clean_count": 1,
+                "same_tenant_hit_rate": 0.5,
+                "cross_tenant_false_positive_rate": 0.5,
+            },
+            result,
+        )
+
+    def test_commit_target_shortfall_is_inconclusive_not_runner_crash(self) -> None:
+        status, details = commit_delivery_status(
+            [
+                CommitRecord(
+                    "tenant-a", "s1", "a1", "", status="completed",
+                    end_to_end_s=1.0,
+                )
+            ],
+            target_commit=10,
+            minimum_target_ratio=0.99,
+        )
+        self.assertEqual(INCONCLUSIVE, status)
+        self.assertEqual(9, details["target_gaps"]["commit"])
+        self.assertEqual(0, details["commit_failures"])
+
+    def test_executive_report_contains_numeric_multi_tenant_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "commit_results.csv").write_text(
+                "tenant,session_id,started_at,completed_at,elapsed_s,queue_wait_s,status,request_id,error\n"
+                "tenant-a,s-a,2026-08-27T00:00:00Z,2026-08-27T00:00:12Z,12.0,0.2,completed,req-a,\n",
+                encoding="utf-8",
+            )
+            (root / "search_results.csv").write_text(
+                "tenant,session_id,queued_at,started_at,finished_at,elapsed_s,service_s,status_code,request_id,error\n"
+                "tenant-a,s-a,2026-08-27T00:00:00Z,2026-08-27T00:00:01Z,2026-08-27T00:00:02Z,1.0,1.0,200,req-s,\n",
+                encoding="utf-8",
+            )
+            summary = {
+                "status": "PASS",
+                "base_url": "http://127.0.0.1:8010",
+                "parameters": {
+                    "duration_s": 10,
+                    "search_rps": 2,
+                    "tenants": 1,
+                    "sessions_per_tenant": 1,
+                    "commit_workers": 1,
+                    "scheduler_policy": "search-priority",
+                },
+                "details": {
+                    "commit_total": 1,
+                    "commit_failures": 0,
+                    "search_total": 1,
+                    "search_errors": 0,
+                    "rss_start_mb": 100,
+                    "rss_end_mb": 110,
+                    "rss_slope_mb_min": 1,
+                    "identity_mode": "single_auth_key",
+                },
+                "metrics": {
+                    "commit": {
+                        "submitted": 1,
+                        "completed": 1,
+                        "failed": 0,
+                        "completion": {
+                            "min_s": 12,
+                            "mean_s": 12,
+                            "p50_s": 12,
+                            "p90_s": 12,
+                            "p95_s": 12,
+                            "p99_s": 12,
+                            "max_s": 12,
+                        },
+                    },
+                    "search": {
+                        "submitted": 1,
+                        "succeeded": 1,
+                        "errors": 0,
+                        "latency": {
+                            "min_s": 1,
+                            "mean_s": 1,
+                            "p50_s": 1,
+                            "p90_s": 1,
+                            "p95_s": 1,
+                            "p99_s": 1,
+                            "max_s": 1,
+                        },
+                    },
+                    "per_tenant": {
+                        "tenant-a": {
+                            "commit": {
+                                "submitted": 1,
+                                "completed": 1,
+                                "completion": {
+                                    "min_s": 12,
+                                    "mean_s": 12,
+                                    "p50_s": 12,
+                                    "p90_s": 12,
+                                    "p95_s": 12,
+                                    "p99_s": 12,
+                                    "max_s": 12,
+                                },
+                            },
+                            "search": {
+                                "submitted": 1,
+                                "succeeded": 1,
+                                "latency": {
+                                    "min_s": 1,
+                                    "mean_s": 1,
+                                    "p50_s": 1,
+                                    "p90_s": 1,
+                                    "p95_s": 1,
+                                    "p99_s": 1,
+                                    "max_s": 1,
+                                },
+                            },
+                        }
+                    },
+                },
+                "resource_points": [],
+            }
+            output = root / "report.html"
+            output.write_text(render_executive_report(summary, root), encoding="utf-8")
+            document = output.read_text(encoding="utf-8")
+            for marker in (
+                "12.00s",
+                "目标负载对账",
+                "逐租户对比",
+                "调度、交替与限流证据",
+                "真实租户身份与隔离",
+                "服务端队列深度 / 活跃 worker",
+                "req-a",
+            ):
+                self.assertIn(marker, document)
+
     def test_server_observability_accepts_payload_and_headers(self) -> None:
         values = _server_observability(
             {
@@ -45,6 +235,23 @@ class StressRunnerTests(unittest.TestCase):
         self.assertEqual("2026-08-26T00:00:00Z", values["server_received_at"])
         self.assertEqual(4, values["server_queue_depth"])
         self.assertEqual(2, values["server_active_workers"])
+
+    def test_server_observability_extracts_stable_identity_only(self) -> None:
+        values = _server_observability(
+            {
+                "scope": {
+                    "tenant_id": "tenant-a",
+                    "user_id": "user-a",
+                    "session_id": "session-should-not-be-an-identity",
+                },
+                "request_id": "req-1",
+            },
+            {},
+        )
+        self.assertEqual(
+            {"tenant_id": "tenant-a", "user_id": "user-a"},
+            values["server_identity"],
+        )
 
     def test_tenant_config_uses_environment_key_without_exposing_value(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -190,6 +397,9 @@ class StressRunnerTests(unittest.TestCase):
         self.assertEqual(2, len(metrics["per_tenant"]))
         self.assertEqual(10.0, metrics["per_tenant"]["tenant-a"]["commit"]["completion"]["mean_s"])
         self.assertGreater(metrics["fairness"]["search_latency_p95_jain"], 0.0)
+        self.assertIn("operation_sequence", metrics["scheduling"])
+        self.assertIn("delayed_by_tenant", metrics["scheduling"])
+        self.assertEqual(1, len(metrics["per_tenant"]["tenant-b"]["commit"]["delayed"]))
 
     def test_workload_metrics_summarize_rate_limit_responses(self) -> None:
         commits = [
@@ -219,6 +429,9 @@ class StressRunnerTests(unittest.TestCase):
         self.assertEqual({"200": 1, "429": 1}, metrics["search"]["http_status_counts"])
         self.assertEqual(1, metrics["search"]["rate_limited_count"])
         self.assertEqual(1.5, metrics["search"]["retry_after"]["mean_s"])
+        self.assertEqual(1, metrics["per_tenant"]["tenant-a"]["commit"]["rate_limited_count"])
+        self.assertEqual(3.0, metrics["per_tenant"]["tenant-a"]["commit"]["retry_after"]["mean_s"])
+        self.assertEqual(1, metrics["per_tenant"]["tenant-a"]["search"]["rate_limited_count"])
 
     def test_search_throughput_uses_configured_arrival_window(self) -> None:
         searches = [
@@ -238,10 +451,50 @@ class StressRunnerTests(unittest.TestCase):
         self.assertEqual(0.05, metrics["search"]["completed_throughput_rps"])
         self.assertEqual(60, metrics["workload_duration_s"])
 
-    def test_isolation_probe_query_does_not_echo_secret_marker(self) -> None:
-        query = isolation_probe_query("tenant-a")
+    def test_isolation_probe_query_targets_marker_without_using_debug_evidence(self) -> None:
+        marker = "echomem-isolation-secret"
+        query = isolation_probe_query("tenant-a", marker)
         self.assertIn("tenant-a", query)
-        self.assertNotIn("echomem-isolation-", query)
+        self.assertIn(marker, query)
+        self.assertTrue(
+            retrieval_contains(
+                {"query": marker, "debug": {"echo": marker}, "items": [{"content": "private " + marker}]},
+                marker,
+            )
+        )
+        self.assertFalse(
+            retrieval_contains(
+                {"query": marker, "debug": {"echo": marker}, "items": [{"content": "other"}]},
+                marker,
+            )
+        )
+
+    def test_commit_and_search_statuses_are_independent(self) -> None:
+        commit_status, _ = commit_delivery_status(
+            [CommitRecord("tenant-a", "s1", "a1", "", status="timeout")],
+            target_commit=1,
+        )
+        search_status, _ = search_latency_status(
+            [SearchRecord("tenant-a", "s1", "", 0.2, 200, service_s=0.2)],
+            min_samples=1,
+            p95_limit_s=2.5,
+            target_search=1,
+        )
+        self.assertEqual("FAIL", commit_status)
+        self.assertEqual("PASS", search_status)
+
+        commit_status, _ = commit_delivery_status(
+            [CommitRecord("tenant-a", "s1", "a1", "", status="completed")],
+            target_commit=1,
+        )
+        search_status, _ = search_latency_status(
+            [SearchRecord("tenant-a", "s1", "", 3.0, 200, service_s=3.0)],
+            min_samples=1,
+            p95_limit_s=2.5,
+            target_search=1,
+        )
+        self.assertEqual("PASS", commit_status)
+        self.assertEqual("FAIL", search_status)
 
     def test_workload_metrics_include_timeline_and_minute_buckets(self) -> None:
         commits = [
@@ -316,6 +569,36 @@ class StressRunnerTests(unittest.TestCase):
         self.assertEqual(1.9, server["queue_wait"]["mean_s"])
         self.assertEqual(5.0, server["execution"]["mean_s"])
         self.assertEqual(3.0, server["queue_depth"]["mean_s"])
+
+    def test_scheduling_observation_compares_server_start_order(self) -> None:
+        timeline = [
+            {
+                "operation": "commit",
+                "tenant": "tenant-a",
+                "queued_at": "2026-08-26T00:00:00+00:00",
+                "request_id": "commit-1",
+                "server_execution_started_at": "2026-08-26T00:00:02+00:00",
+            },
+            {
+                "operation": "search",
+                "tenant": "tenant-b",
+                "queued_at": "2026-08-26T00:00:01+00:00",
+                "request_id": "search-1",
+                "server_execution_started_at": "2026-08-26T00:00:01+00:00",
+            },
+        ]
+        result = scheduling_observation(timeline)
+        self.assertEqual(1.0, result["server_start_coverage"])
+        self.assertEqual(1, result["arrival_vs_server_start_inversions"])
+        self.assertEqual(1, result["search_started_ahead_of_commit_count"])
+        self.assertEqual(1, result["commit_search_comparable_pairs"])
+        self.assertEqual(
+            ["search", "commit"],
+            result["server_start_operation_sequence"]["first"]
+            and [
+                item["operation"] for item in result["server_start_sequence"]
+            ],
+        )
 
     def test_audit_matrix_report_contains_full_latency_statistics(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
