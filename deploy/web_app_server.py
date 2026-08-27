@@ -661,6 +661,27 @@ def _is_formal_progress_line(line: str) -> bool:
     )
 
 
+def final_stress_progress(job: dict[str, Any], status: str) -> dict[str, Any]:
+    """Keep useful progress counters visible after a failed or finished run."""
+    formal_suite = (
+        job.get("test_type") == "stress"
+        and bool((job.get("stress_config") or {}).get("formal_suite"))
+    )
+    progress = default_progress("completed" if status == "completed" else "failed")
+    # A completed formal suite should retain its 15-case counter when the
+    # suite returns INCONCLUSIVE. For all failed runs, retain the last known
+    # counters so the UI does not collapse a real partial run to 0/1.
+    preserve = status != "completed" or formal_suite
+    if not preserve:
+        return progress
+    previous = job.get("progress") or {}
+    for key in ("current", "total", "percent", "last_log"):
+        if key in previous:
+            progress[key] = previous[key]
+    progress["updated_at"] = now()
+    return progress
+
+
 def update_progress_from_line(job_id: str, line: str) -> None:
     job = get_job(job_id)
     if not job:
@@ -3886,13 +3907,7 @@ def monitor_container(job_id: str, container, log_path: Path) -> None:
                     if status == "completed"
                     else "压测进程退出异常"
                 ),
-                progress={
-                    **default_progress("completed" if status == "completed" else "failed"),
-                    "label": "压测完成" if status == "completed" else "压测失败",
-                    "current": 1 if status == "completed" else 0,
-                    "total": 1,
-                    "percent": 100 if status == "completed" else 0,
-                },
+                progress=final_stress_progress(current_job, status),
             )
             if status == "failed":
                 diagnosis = build_failure_diagnosis(job_id, "压测进程退出异常")
@@ -4103,17 +4118,11 @@ def run_source_job(job_id: str, secret_values: dict[str, str]) -> None:
         exit_code = int(eval_container.wait().get("StatusCode", 1))
         summary = result_summary(job_id)
         status = "completed" if exit_code == 0 else "failed"
-        if exit_code == 0:
-            progress = default_progress("completed")
-        else:
-            # Keep the last observed import/QA/Judge counters so a failed job
-            # remains diagnosable instead of misleadingly showing 0%.
-            previous_progress = dict((get_job(job_id) or {}).get("progress") or {})
-            progress = default_progress("failed")
-            for key in ("current", "total", "percent", "last_log"):
-                if key in previous_progress:
-                    progress[key] = previous_progress[key]
-            progress["updated_at"] = now()
+        current_job = get_job(job_id) or job
+        progress = final_stress_progress(
+            current_job,
+            "completed" if exit_code == 0 else "failed",
+        )
         update_job(
             job_id,
             status=status,
@@ -4606,13 +4615,10 @@ def run_stress_job(job_id: str) -> None:
             exit_code=exit_code,
             summary=summary,
             message="压测完成" if final_status == "completed" else "压测进程退出异常",
-            progress={
-                **default_progress("completed" if final_status == "completed" else "failed"),
-                "label": "压测完成" if final_status == "completed" else "压测失败",
-                "current": 1 if final_status == "completed" else 0,
-                "total": 1,
-                "percent": 100 if final_status == "completed" else 0,
-            },
+            progress=final_stress_progress(
+                get_job(job_id) or {"id": job_id},
+                final_status,
+            ),
         )
         if final_status == "failed":
             diagnosis = build_failure_diagnosis(job_id, "压测进程退出异常")

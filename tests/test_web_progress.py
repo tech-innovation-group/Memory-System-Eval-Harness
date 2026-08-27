@@ -68,6 +68,46 @@ class FormalProgressTests(unittest.TestCase):
                 progress["last_log"],
             )
 
+    def test_final_stress_progress_preserves_partial_formal_run(self) -> None:
+        from deploy import web_app_server as server
+
+        job = {
+            "id": "formal-test",
+            "test_type": "stress",
+            "stress_config": {"formal_suite": True},
+            "progress": {
+                **server.default_progress("qa"),
+                "current": 5,
+                "total": 15,
+                "percent": 33,
+                "last_log": "FORMAL_PROGRESS 5/15 scenario=mixed repeat=2",
+            },
+        }
+        progress = server.final_stress_progress(job, "failed")
+        self.assertEqual(5, progress["current"])
+        self.assertEqual(15, progress["total"])
+        self.assertEqual(33, progress["percent"])
+
+    def test_failed_non_formal_run_also_keeps_diagnostic_progress(self) -> None:
+        from deploy import web_app_server as server
+
+        job = {
+            "id": "stress-test",
+            "test_type": "stress",
+            "stress_config": {"formal_suite": False},
+            "progress": {
+                **server.default_progress("qa"),
+                "current": 7,
+                "total": 81,
+                "percent": 9,
+                "last_log": "QA checkpoint: 7/81",
+            },
+        }
+        progress = server.final_stress_progress(job, "failed")
+        self.assertEqual(7, progress["current"])
+        self.assertEqual(81, progress["total"])
+        self.assertEqual(9, progress["percent"])
+
 
 if __name__ == "__main__":
     unittest.main()
