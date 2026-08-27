@@ -1,0 +1,24 @@
+{
+  "tenants": [
+    {
+      "tenant_id": "stress-a",
+      "user_id": "stress-user-a",
+      "auth_key_env": "STRESS_TENANT_A_KEY"
+    },
+    {
+      "tenant_id": "stress-b",
+      "user_id": "stress-user-b",
+      "auth_key_env": "STRESS_TENANT_B_KEY"
+    },
+    {
+      "tenant_id": "stress-c",
+      "user_id": "stress-user-c",
+      "auth_key_env": "STRESS_TENANT_C_KEY"
+    },
+    {
+      "tenant_id": "stress-d",
+      "user_id": "stress-user-d",
+      "auth_key_env": "STRESS_TENANT_D_KEY"
+    }
+  ]
+}

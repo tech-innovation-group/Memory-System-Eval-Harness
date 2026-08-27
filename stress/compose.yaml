@@ -1,0 +1,45 @@
+services:
+  echomem-stress:
+    build:
+      context: ..
+      dockerfile: stress/echomem/Dockerfile
+    image: echomem-stress-runner:local
+    restart: "no"
+    network_mode: host
+    pid: host
+    environment:
+      ECHOMEM_BASE_URL: ${ECHOMEM_BASE_URL:-http://127.0.0.1:8010}
+      ECHOMEM_AUTH_KEY: ${ECHOMEM_AUTH_KEY:-}
+      STRESS_TENANT_CONFIG: ${STRESS_TENANT_CONFIG:-}
+      STRESS_TENANT_A_KEY: ${STRESS_TENANT_A_KEY:-}
+      STRESS_TENANT_B_KEY: ${STRESS_TENANT_B_KEY:-}
+      STRESS_TENANT_C_KEY: ${STRESS_TENANT_C_KEY:-}
+      STRESS_TENANT_D_KEY: ${STRESS_TENANT_D_KEY:-}
+    volumes:
+      - ${STRESS_OUTPUT_DIR:-./results/stress}:/results
+      - ${STRESS_TENANT_CONFIG:-./stress/echomem/tenants.example.json}:/app/stress/echomem/tenants.json:ro
+    command:
+      - --base-url
+      - ${ECHOMEM_BASE_URL:-http://127.0.0.1:8010}
+      - --auth-key
+      - ${ECHOMEM_AUTH_KEY:-}
+      - --tenant-config
+      - /app/stress/echomem/tenants.json
+      - --scenario
+      - ${STRESS_SCENARIO:-all}
+      - --tenants
+      - ${STRESS_TENANTS:-1}
+      - --sessions-per-tenant
+      - ${STRESS_SESSIONS_PER_TENANT:-2}
+      - --duration-s
+      - ${STRESS_DURATION_S:-300}
+      - --search-rps
+      - ${STRESS_SEARCH_RPS:-2}
+      - --commit-timeout-s
+      - ${STRESS_COMMIT_TIMEOUT_S:-600}
+      - --sample-interval-s
+      - ${STRESS_SAMPLE_INTERVAL_S:-10}
+      - --pid
+      - ${ECHOMEM_PID:-0}
+      - --out-dir
+      - /results/echomem_${RUN_ID:-manual}
