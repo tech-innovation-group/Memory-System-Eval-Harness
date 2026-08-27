@@ -70,6 +70,30 @@ class StressRunnerTests(unittest.TestCase):
     def test_formal_suite_ignores_legacy_client_policy_flag(self) -> None:
         self.assertEqual([SERVER_OBSERVE_POLICY], selected_policies(True))
 
+    def test_final_report_excludes_legacy_stress_jobs(self) -> None:
+        from scripts.pr_stress_final_report import is_formal_server_observe_job
+
+        base = {
+            "test_type": "stress",
+            "source_ref": "pr",
+            "stress_config": {
+                "formal_suite": True,
+                "scheduler_policy": "server-observe",
+                "client_admission": "disabled",
+                "commit_workers": 64,
+                "search_workers": 64,
+            },
+        }
+        self.assertTrue(is_formal_server_observe_job(base))
+        legacy = {
+            **base,
+            "stress_config": {
+                **base["stress_config"],
+                "scheduler_policy": "fifo",
+            },
+        }
+        self.assertFalse(is_formal_server_observe_job(legacy))
+
     def test_release_gates_reject_missing_isolation_and_server_evidence(self) -> None:
         manifest = {
             "scenarios": ["baseline"],

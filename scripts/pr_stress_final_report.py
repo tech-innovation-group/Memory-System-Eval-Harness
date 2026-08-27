@@ -100,8 +100,22 @@ def find_monitor_path(results_root):
     return results_root / "pr-stress-monitor-v2.jsonl"
 
 
+def is_formal_server_observe_job(job):
+    """Keep legacy client-policy runs out of the formal campaign totals."""
+    if job.get("test_type") != "stress" or job.get("source_ref") != "pr":
+        return False
+    config = job.get("stress_config") or {}
+    return (
+        config.get("formal_suite") is True
+        and config.get("scheduler_policy") == "server-observe"
+        and config.get("client_admission") == "disabled"
+        and int(config.get("commit_workers") or 0) >= 64
+        and int(config.get("search_workers") or 0) >= 64
+    )
+
+
 def render(jobs, results_root, public_base_url):
-    stress_jobs = [job for job in jobs if job.get("test_type") == "stress"]
+    stress_jobs = [job for job in jobs if is_formal_server_observe_job(job)]
     completed = sum(job.get("status") == "completed" for job in stress_jobs)
     running = sum(job.get("status") == "running" for job in stress_jobs)
     queued = sum(job.get("status") == "queued" for job in stress_jobs)
@@ -200,7 +214,7 @@ li{{margin:7px 0}}.note{{border-left:3px solid #286aa6;padding-left:12px}}
 <div class="card"><small>排队中</small><strong>{queued}</strong></div>
 <div class="card"><small>失败/中断</small><strong>{failed}</strong></div>
 </div>
-<section class="panel"><p class="note">正式压测不使用 FIFO、Search 优先、双通道或租户公平等客户端策略。
+<section class="panel"><p class="note">本页只统计本轮正式 PR 服务端观测任务：不使用 FIFO、Search 优先、双通道或租户公平等客户端策略。
 请求由多个真实租户直接发往 EchoMem；调度、公平性和队列结论必须有服务端时间戳或服务端日志支持。
 没有足够证据的项目标记为 <b>INCONCLUSIVE</b>。</p></section>
 <section class="panel"><h2>PR 结果</h2><div class="scroll"><table>
