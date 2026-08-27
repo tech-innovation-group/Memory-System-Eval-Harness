@@ -23,6 +23,16 @@ def parse_timestamp(value):
     raw = str(value or "").strip().replace("Z", "+00:00")
     if not raw:
         return None
+    # Python 3.6 (used by the server image) does not accept the colon in
+    # offsets such as "+00:00" for %z.
+    if raw.endswith("+00:00"):
+        for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                return datetime.strptime(raw[:-6], fmt).replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+    if len(raw) >= 6 and raw[-6] in "+-" and raw[-3] == ":":
+        raw = raw[:-3] + raw[-2:]
     for fmt in ("%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S%z"):
         try:
             return datetime.strptime(raw, fmt)
