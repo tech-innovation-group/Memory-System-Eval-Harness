@@ -1399,6 +1399,7 @@ def run_commits(
     commit_timeout_s: float,
     poll_interval_s: float,
     workers: int,
+    poll_workers: int | None = None,
 ) -> list[CommitRecord]:
     records: list[CommitRecord] = []
     for tenant, session_id in sessions:
@@ -1436,7 +1437,7 @@ def run_commits(
                                         error=response.error,
                                         operation_id=f"commit-{uuid.uuid4().hex}"))
     pending = [record for record in records if record.status == "accepted" and record.archive_id]
-    with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
+    with ThreadPoolExecutor(max_workers=max(1, poll_workers or workers)) as executor:
         futures = [
             executor.submit(
                 poll_commit,
@@ -1461,6 +1462,7 @@ def run_parallel_workload(
     commit_timeout_s: float,
     poll_interval_s: float,
     commit_workers: int,
+    commit_poll_workers: int,
     search_timeout_s: float,
     search_workers: int,
     commit_rpm: float = 0.0,
@@ -1508,82 +1510,91 @@ def run_parallel_workload(
     def commit_prepared() -> list[CommitRecord]:
         records: list[CommitRecord] = []
         with ThreadPoolExecutor(max_workers=max(1, commit_workers)) as executor:
-            accepted: list[CommitRecord] = []
-            futures = {}
-            for tenant, session_id, message_ids, message_events in prepared:
-                queued_mono = time.monotonic()
-                queued_at = now_iso()
-                queue_depth = len(futures)
+            with ThreadPoolExecutor(max_workers=max(1, commit_poll_workers)) as poll_executor:
+                accepted: list[CommitRecord] = []
+                futures = {}
+                for tenant, session_id, message_ids, message_events in prepared:
+                    queued_mono = time.monotonic()
+                    queued_at = now_iso()
+                    queue_depth = len(futures)
 
-                def submit_commit(
-                    sid: str = session_id,
-                    tenant_name: str = tenant,
-                ) -> tuple[HttpResult, float, str]:
-                    started_mono = time.monotonic()
-                    response = client_for(client_or_clients, tenant_name).commit(sid)
-                    return response, started_mono, now_iso()
+                    def submit_commit(
+                        sid: str = session_id,
+                        tenant_name: str = tenant,
+                    ) -> tuple[HttpResult, float, str]:
+                        started_mono = time.monotonic()
+                        response = client_for(client_or_clients, tenant_name).commit(sid)
+                        return response, started_mono, now_iso()
 
-                futures[executor.submit(submit_commit)] = (
-                    tenant,
-                    session_id,
-                    message_ids,
-                    message_events,
-                    queued_mono,
-                    queued_at,
-                    queue_depth,
-                )
-            for future in as_completed(futures):
-                tenant, session_id, message_ids, message_events, queued_mono, queued_at, queue_depth = futures[future]
-                response, started_mono, started_at = future.result()
-                archive_id = extract_archive(response.payload)
-                record = CommitRecord(
-                    tenant,
-                    session_id,
-                    archive_id,
-                    now_iso(),
-                    message_ids=message_ids,
-                    message_events=message_events,
-                    status="accepted"
-                    if response.status_code
-                    and response.status_code < 400
-                    and archive_id
-                    else "commit_rejected",
-                    error=response.error,
-                    queued_at=queued_at,
-                    started_at=started_at,
-                    queue_wait_s=max(0.0, started_mono - queued_mono),
-                    service_s=response.elapsed_s,
-                    queue_depth_at_enqueue=queue_depth,
-                    operation_id=f"commit-{uuid.uuid4().hex}",
-                    admission_wait_s=response.admission_wait_s,
-                    admission_queue_depth=response.admission_queue_depth,
-                    admission_order=response.admission_order,
-                    request_id=response.request_id,
-                    status_code=response.status_code,
-                    retry_after_s=response.retry_after_s,
-                    server_received_at=response.server_received_at,
-                    server_queue_entered_at=response.server_queue_entered_at,
-                    server_execution_started_at=response.server_execution_started_at,
-                    server_finished_at=response.server_finished_at,
-                    server_queue_depth=response.server_queue_depth,
-                    server_active_workers=response.server_active_workers,
-                    server_terminal_status=response.server_terminal_status,
-                )
-                records.append(record)
-                if record.status == "accepted":
-                    accepted.append(record)
-            polls = [
-                executor.submit(
-                    poll_commit,
-                    client_or_clients,
-                    record,
-                    commit_timeout_s,
-                    poll_interval_s,
-                )
-                for record in accepted
-            ]
-            for future in as_completed(polls):
-                future.result()
+                    futures[executor.submit(submit_commit)] = (
+                        tenant,
+                        session_id,
+                        message_ids,
+                        message_events,
+                        queued_mono,
+                        queued_at,
+                        queue_depth,
+                    )
+                for future in as_completed(futures):
+                    (
+                        tenant,
+                        session_id,
+                        message_ids,
+                        message_events,
+                        queued_mono,
+                        queued_at,
+                        queue_depth,
+                    ) = futures[future]
+                    response, started_mono, started_at = future.result()
+                    archive_id = extract_archive(response.payload)
+                    record = CommitRecord(
+                        tenant,
+                        session_id,
+                        archive_id,
+                        now_iso(),
+                        message_ids=message_ids,
+                        message_events=message_events,
+                        status="accepted"
+                        if response.status_code
+                        and response.status_code < 400
+                        and archive_id
+                        else "commit_rejected",
+                        error=response.error,
+                        queued_at=queued_at,
+                        started_at=started_at,
+                        queue_wait_s=max(0.0, started_mono - queued_mono),
+                        service_s=response.elapsed_s,
+                        queue_depth_at_enqueue=queue_depth,
+                        operation_id=f"commit-{uuid.uuid4().hex}",
+                        admission_wait_s=response.admission_wait_s,
+                        admission_queue_depth=response.admission_queue_depth,
+                        admission_order=response.admission_order,
+                        request_id=response.request_id,
+                        status_code=response.status_code,
+                        retry_after_s=response.retry_after_s,
+                        server_received_at=response.server_received_at,
+                        server_queue_entered_at=response.server_queue_entered_at,
+                        server_execution_started_at=response.server_execution_started_at,
+                        server_finished_at=response.server_finished_at,
+                        server_queue_depth=response.server_queue_depth,
+                        server_active_workers=response.server_active_workers,
+                        server_terminal_status=response.server_terminal_status,
+                    )
+                    records.append(record)
+                    if record.status == "accepted":
+                        accepted.append(record)
+                polls = [
+                    poll_executor.submit(
+                        poll_commit,
+                        client_or_clients,
+                        record,
+                        commit_timeout_s,
+                        poll_interval_s,
+                    )
+                    for record in accepted
+                ]
+                for future in as_completed(polls):
+                    future.result()
         return records
 
     def commit_stream() -> list[CommitRecord]:
@@ -1596,6 +1607,7 @@ def run_parallel_workload(
             commit_timeout_s,
             poll_interval_s,
             commit_workers,
+            commit_poll_workers,
         )
 
     with ThreadPoolExecutor(max_workers=1) as executor:
@@ -1619,6 +1631,7 @@ def run_commit_stream(
     commit_timeout_s: float,
     poll_interval_s: float,
     workers: int,
+    poll_workers: int,
 ) -> list[CommitRecord]:
     """Submit Commit requests at a fixed per-tenant arrival rate.
 
@@ -1677,7 +1690,7 @@ def run_commit_stream(
     start = time.monotonic()
     start_wall = time.time()
     with ThreadPoolExecutor(max_workers=max(1, workers)) as commit_executor:
-        with ThreadPoolExecutor(max_workers=max(1, workers)) as poll_executor:
+        with ThreadPoolExecutor(max_workers=max(1, poll_workers)) as poll_executor:
             futures = {}
             for offset, tenant, session_id, message_ids, message_events in jobs:
                 target = start + offset
@@ -2910,6 +2923,7 @@ code{{background:#f0f3f5;padding:2px 5px;border-radius:4px}} .footer{{font-size:
 <div class="fact"><span>Search 频率</span><span>{html.escape(text(params.get("search_rps")))} RPS</span></div>
 <div class="fact"><span>租户 / Session</span><span>{html.escape(text(params.get("tenants")))} / {html.escape(text(params.get("sessions_per_tenant")))}</span></div>
 <div class="fact"><span>Commit 并发</span><span>{html.escape(text(params.get("commit_workers")))}</span></div>
+<div class="fact"><span>Commit 状态轮询并发</span><span>{html.escape(text(params.get("commit_poll_workers")))}</span></div>
 <div class="fact"><span>调度策略</span><span>{html.escape(text(params.get("scheduler_policy")))}</span></div>
 <div class="fact"><span>Commit / Search 限流</span><span>{html.escape(text(params.get("commit_delay_threshold_s")))} 秒 / {html.escape(text(params.get("search_delay_threshold_s")))} 秒</span></div>
 <div class="fact"><span>是否使用 Mock</span><span>否，真实 HTTP / 真实模型</span></div>
@@ -3007,6 +3021,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--min-samples", type=int, default=4)
     parser.add_argument("--commit-workers", type=int, default=4)
+    parser.add_argument(
+        "--commit-poll-workers",
+        type=int,
+        default=128,
+        help="Independent worker capacity for Commit status polling; not a service scheduling policy.",
+    )
     parser.add_argument("--search-workers", type=int, default=4)
     parser.add_argument(
         "--search-admission-capacity",
@@ -3256,6 +3276,7 @@ def main() -> int:
                 args.commit_timeout_s,
                 args.commit_poll_interval_s,
                 args.commit_workers,
+                args.commit_poll_workers,
                 args.search_timeout_s,
                 args.search_workers,
                 args.commit_rpm,

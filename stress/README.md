@@ -298,6 +298,11 @@ The suite automatically enables `--no-client-admission` in the default
 `server-observe` mode. Set `--commit-workers` and `--search-workers` high
 enough that the test platform's worker pool is not the intended bottleneck;
 the report still records any client executor wait separately.
+Commit status polling has its own capacity, controlled by
+`--commit-poll-workers` (default `128`). This only prevents the load generator
+from polling hundreds of accepted Commit jobs in small batches; it is not a
+production scheduling policy and is recorded separately from Commit write
+latency.
 
 ```bash
 python3 stress/echomem/formal_suite.py \

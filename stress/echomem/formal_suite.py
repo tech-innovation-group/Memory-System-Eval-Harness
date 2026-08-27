@@ -149,6 +149,8 @@ def run_case(
         str(case["messages_per_session"]),
         "--commit-workers",
         str(args.commit_workers),
+        "--commit-poll-workers",
+        str(args.commit_poll_workers),
         "--search-workers",
         str(args.search_workers),
         "--out-dir",
@@ -686,6 +688,12 @@ def main() -> int:
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--auth-header", default=os.getenv("ECHOMEM_AUTH_HEADER", "X-API-Key"))
     parser.add_argument("--commit-workers", type=int, default=64)
+    parser.add_argument(
+        "--commit-poll-workers",
+        type=int,
+        default=128,
+        help="Independent Commit status polling capacity; not a client scheduling policy.",
+    )
     parser.add_argument("--search-workers", type=int, default=64)
     parser.add_argument(
         "--no-client-admission",
@@ -830,6 +838,7 @@ def main() -> int:
             "client_admission_enabled": client_admission_enabled,
             "server_observation_mode": not client_admission_enabled,
             "commit_workers": args.commit_workers,
+            "commit_poll_workers": args.commit_poll_workers,
             "search_workers": args.search_workers,
             "admission_capacity": args.admission_capacity,
             "search_admission_capacity": args.search_admission_capacity,
