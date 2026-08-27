@@ -437,6 +437,8 @@ details{{border-top:1px solid var(--line);padding-top:12px}} details+details{{ma
 <div class="fact"><span>Search 目标频率</span><span>{esc(params.get("search_rps"))} RPS</span></div>
 <div class="fact"><span>租户 / Session</span><span>{esc(params.get("tenants"))} / {esc(params.get("sessions_per_tenant"))}</span></div>
 <div class="fact"><span>Commit 并发</span><span>{esc(params.get("commit_workers"))}</span></div>
+<div class="fact"><span>Search 并发</span><span>{esc(params.get("search_workers"))}</span></div>
+<div class="fact"><span>Worker 容量校验</span><span>{esc(params.get("worker_sizing") or "未记录")}</span></div>
 <div class="fact"><span>调度策略</span><span>{esc(params.get("scheduler_policy"))}</span></div>
 <div class="fact"><span>Mock</span><span>否，真实 HTTP / 真实模型</span></div></div></section>
 <section class="section"><h2>详细证据</h2>
