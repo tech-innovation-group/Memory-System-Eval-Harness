@@ -55,6 +55,18 @@ class StressRunnerTests(unittest.TestCase):
             sys.argv = original_argv
         self.assertEqual("server-observe", args.scheduler_policy)
 
+    def test_runner_rejects_legacy_client_scheduler_policy(self) -> None:
+        from stress.echomem import runner
+        import sys
+
+        original_argv = sys.argv
+        sys.argv = ["runner.py", "--scheduler-policy", "fifo"]
+        try:
+            with self.assertRaises(SystemExit):
+                runner.parse_args()
+        finally:
+            sys.argv = original_argv
+
     def test_formal_suite_ignores_legacy_client_policy_flag(self) -> None:
         self.assertEqual([SERVER_OBSERVE_POLICY], selected_policies(True))
 

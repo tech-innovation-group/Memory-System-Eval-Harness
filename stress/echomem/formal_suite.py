@@ -695,14 +695,21 @@ def main() -> int:
     parser.add_argument(
         "--compare-client-policies",
         action="store_true",
-        help=(
-            "Deprecated and ignored. Formal runs always use server-observe; "
-            "client-side scheduling is not part of the platform test."
-        ),
+        help=argparse.SUPPRESS,
     )
-    parser.add_argument("--admission-capacity", type=int, default=1)
-    parser.add_argument("--search-admission-capacity", type=int, default=8)
-    parser.add_argument("--commit-admission-capacity", type=int, default=1)
+    parser.add_argument("--admission-capacity", type=int, default=1, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--search-admission-capacity",
+        type=int,
+        default=8,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--commit-admission-capacity",
+        type=int,
+        default=1,
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument("--pid", type=int, default=0)
     parser.add_argument("--reset-command", default="", help="Optional command run before every case")
     parser.add_argument("--no-server-metrics", action="store_true")

@@ -60,8 +60,10 @@ Commit 压力和 Search 压力还要分别做阶梯测试，例如 `2/5/10/20/50
 
 ### 4. 调度和限流必须分开测
 
-`--scheduler-policy` 只控制压测端准入，不代表 EchoMem 服务端调度。
-服务端调度观察要使用 `--no-client-admission`，并通过服务端时间戳验证
+正式平台不提供客户端调度策略选择。`server-observe` 是唯一正式运行口径：
+压测端使用足够大的独立 worker 并发发送请求，并通过
+`--no-client-admission` 关闭平台自己的业务排队。这样才不会把测试平台的
+请求顺序误认为 EchoMem 服务端调度。服务端调度观察要通过服务端时间戳验证
 固定序列，例如：
 
 ```text
@@ -258,11 +260,13 @@ python3 stress/echomem/runner.py \
   --out-dir results/stress/server-observe-$(date +%Y%m%d_%H%M%S)
 ```
 
-`--no-client-admission` removes FIFO/Search-priority/tenant-fair gating from
-the runner. The executor worker pool can still become a client-side bottleneck,
-so its queue wait remains recorded and its worker count must be sized above the
-expected in-flight load. Use this mode for service-side scheduling conclusions;
-use the policy modes above only for comparing client-side request shaping.
+`--no-client-admission` removes client-side gating from the runner. The executor
+worker pool can still become a client-side bottleneck, so its queue wait remains
+recorded and its worker count must be sized above the expected in-flight load.
+The historical FIFO, Search-priority, dual-lane, tenant-fair, and
+dual-lane-tenant-fair implementations are retained only for reading old
+results and developer-side diagnostics; they are not accepted by the formal
+runner and are not exposed through Web or Feishu.
 
 ## Formal release suite
 
@@ -275,12 +279,11 @@ short matrix run. It executes these cases:
 - `search-storm`: four tenants with elevated Search traffic
 - `soak`: four tenants under a longer steady-state load
 
-Each case runs in `server-observe` mode. The load generator does not apply
-FIFO, Search-priority, dual-lane, tenant-fair, or dual-lane-tenant-fair
-admission; it sends concurrent real HTTP requests to EchoMem and records the
-service-side evidence. This matches the production topology, where online users
-do not pass through this test platform's client admission controller. The
-default is three repetitions per case. Every run retains `summary.json`,
+Each case runs in `server-observe` mode. The load generator sends concurrent
+real HTTP requests to EchoMem and records service-side evidence; it does not
+apply a selectable client scheduling policy. This matches the production
+topology, where online users do not pass through this test platform's client
+admission controller. The default is three repetitions per case. Every run retains `summary.json`,
 request CSVs, raw `/metrics`, and its own `report.html`; the suite-level
 `suite.html` contains the numeric comparison table.
 

@@ -2983,13 +2983,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-samples", type=int, default=4)
     parser.add_argument("--commit-workers", type=int, default=4)
     parser.add_argument("--search-workers", type=int, default=4)
-    parser.add_argument("--search-admission-capacity", type=int, default=4)
-    parser.add_argument("--commit-admission-capacity", type=int, default=1)
+    parser.add_argument(
+        "--search-admission-capacity",
+        type=int,
+        default=4,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--commit-admission-capacity",
+        type=int,
+        default=1,
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument(
         "--admission-capacity",
         type=int,
         default=1,
-        help="Shared client-side admission slots for fifo/tenant-fair policies",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--no-client-admission",
@@ -3001,18 +3011,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--scheduler-policy",
-        choices=(
-            "server-observe",
-            "search-priority",
-            "fifo",
-            "tenant-fair",
-            "dual-lane",
-            "dual-lane-tenant-fair",
-        ),
+        choices=("server-observe",),
         default="server-observe",
         help=(
-            "Client admission policy used by the workload. "
-            "server-observe disables client admission and observes EchoMem directly."
+            "Formal platform mode. Requests are sent concurrently without "
+            "client-side admission scheduling so EchoMem controls queueing."
         ),
     )
     parser.add_argument(
