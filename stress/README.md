@@ -60,7 +60,8 @@ Commit 压力和 Search 压力还要分别做阶梯测试，例如 `2/5/10/20/50
 
 ### 4. 调度和限流必须分开测
 
-正式平台不提供客户端调度策略选择。`server-observe` 是唯一正式运行口径：
+正式平台不提供以下五种客户端调度策略选择：FIFO、Search 优先、双通道、
+租户公平、双通道 + 租户公平。`server-observe` 是唯一正式运行口径：
 压测端使用足够大的独立 worker 并发发送请求，并通过
 `--no-client-admission` 关闭平台自己的业务排队。这样才不会把测试平台的
 请求顺序误认为 EchoMem 服务端调度。服务端调度观察要通过服务端时间戳验证
@@ -263,10 +264,11 @@ python3 stress/echomem/runner.py \
 `--no-client-admission` removes client-side gating from the runner. The executor
 worker pool can still become a client-side bottleneck, so its queue wait remains
 recorded and its worker count must be sized above the expected in-flight load.
-The historical FIFO, Search-priority, dual-lane, tenant-fair, and
-dual-lane-tenant-fair implementations are retained only for reading old
-results and developer-side diagnostics; they are not accepted by the formal
-runner and are not exposed through Web or Feishu.
+历史上的 FIFO、Search-priority、dual-lane、tenant-fair 和
+dual-lane-tenant-fair 实现仅为读取旧结果和开发者本地诊断保留；它们不属于
+线上真实流量模型，不被正式 runner 接受，也不会通过 Web 或飞书入口暴露。
+平台层只保留“任务之间单并发排队”，避免多人同时提交测试时互相抢占机器；
+任务内部不再做业务级排队，Commit/Search 请求直接并发发送给 EchoMem。
 
 ## Formal release suite
 
