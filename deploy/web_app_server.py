@@ -3884,11 +3884,19 @@ def monitor_container(
     log_path: Path,
     *,
     tail: str | int = "all",
+    since: int | None = None,
 ) -> None:
     try:
         with log_path.open("ab") as log_file:
             pending = ""
-            for chunk in container.logs(stream=True, follow=True, tail=tail):
+            log_kwargs: dict[str, Any] = {
+                "stream": True,
+                "follow": True,
+                "tail": tail,
+            }
+            if since is not None:
+                log_kwargs["since"] = since
+            for chunk in container.logs(**log_kwargs):
                 log_file.write(chunk)
                 log_file.flush()
                 lines, pending = _split_log_chunk(chunk, pending)
@@ -4777,7 +4785,14 @@ def monitor_reattached_job(job_id: str, container, log_path: Path) -> None:
         # The persisted job progress already covers the old output. Starting
         # at the live tail prevents a large historical JSON report from
         # delaying new heartbeat/progress lines after a Web restart.
-        monitor_container(job_id, container, log_path, tail=0)
+        monitor_container(
+            job_id,
+            container,
+            log_path,
+            # Keep a short overlap because Docker timestamps and the Web
+            # process clock can differ slightly at restart.
+            since=max(0, int(time.time()) - 5),
+        )
 
 
 def reattach_running_jobs() -> None:

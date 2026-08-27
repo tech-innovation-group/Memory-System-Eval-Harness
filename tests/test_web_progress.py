@@ -120,7 +120,7 @@ class FormalProgressTests(unittest.TestCase):
             "formal-test",
             container,
             "job.log",
-            tail=0,
+            since=unittest.mock.ANY,
         )
 
     def test_failed_non_formal_run_also_keeps_diagnostic_progress(self) -> None:
