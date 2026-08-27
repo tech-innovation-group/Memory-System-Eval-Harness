@@ -110,6 +110,19 @@ class FormalProgressTests(unittest.TestCase):
         self.assertEqual(15, progress["total"])
         self.assertEqual(33, progress["percent"])
 
+    def test_reattach_monitor_starts_at_live_log_tail(self) -> None:
+        from deploy import web_app_server as server
+
+        container = object()
+        with patch.object(server, "monitor_container") as monitor:
+            server.monitor_reattached_job("formal-test", container, "job.log")
+        monitor.assert_called_once_with(
+            "formal-test",
+            container,
+            "job.log",
+            tail=0,
+        )
+
     def test_failed_non_formal_run_also_keeps_diagnostic_progress(self) -> None:
         from deploy import web_app_server as server
 

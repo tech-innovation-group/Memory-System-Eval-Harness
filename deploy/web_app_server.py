@@ -3878,11 +3878,17 @@ def bridge_retry_job(job_id: str):
     return jsonify(result), 202
 
 
-def monitor_container(job_id: str, container, log_path: Path) -> None:
+def monitor_container(
+    job_id: str,
+    container,
+    log_path: Path,
+    *,
+    tail: str | int = "all",
+) -> None:
     try:
         with log_path.open("ab") as log_file:
             pending = ""
-            for chunk in container.logs(stream=True, follow=True):
+            for chunk in container.logs(stream=True, follow=True, tail=tail):
                 log_file.write(chunk)
                 log_file.flush()
                 lines, pending = _split_log_chunk(chunk, pending)
@@ -4768,7 +4774,10 @@ def worker() -> None:
 def monitor_reattached_job(job_id: str, container, log_path: Path) -> None:
     """Keep a recovered task inside the same single-concurrency run slot."""
     with RUN_SLOT:
-        monitor_container(job_id, container, log_path)
+        # The persisted job progress already covers the old output. Starting
+        # at the live tail prevents a large historical JSON report from
+        # delaying new heartbeat/progress lines after a Web restart.
+        monitor_container(job_id, container, log_path, tail=0)
 
 
 def reattach_running_jobs() -> None:
