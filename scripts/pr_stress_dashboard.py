@@ -11,7 +11,7 @@ import html
 import json
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def read_json(path, fallback):
@@ -24,6 +24,33 @@ def read_json(path, fallback):
 
 def fmt(value):
     return html.escape(str(value or "-"))
+
+
+def parse_timestamp(value):
+    raw = str(value or "").strip().replace("Z", "+00:00")
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def progress_age_seconds(job, now=None):
+    progress = job.get("progress") or {}
+    parsed = parse_timestamp(progress.get("updated_at") or job.get("started_at"))
+    if parsed is None:
+        return None
+    current = now or datetime.now(timezone.utc)
+    return max(0.0, (current - parsed).total_seconds())
+
+
+def status_label(job, age_s):
+    status = str(job.get("status") or "unknown")
+    if status == "running" and age_s is not None and age_s >= 900:
+        return "运行中 · 疑似停滞"
+    return status
 
 
 def summary_for(job_id, results_root):
@@ -55,10 +82,29 @@ def result_text(summary):
 
 def render(jobs, results_root, public_base_url):
     rows = []
+    current_time = datetime.now(timezone.utc)
     for job in jobs:
         if job.get("test_type") != "stress":
             continue
         progress = job.get("progress") or {}
+        age_s = progress_age_seconds(job, current_time)
+        stalled = (
+            job.get("status") == "running"
+            and age_s is not None
+            and age_s >= 900
+        )
+        state = status_label(job, age_s)
+        progress_detail = "%s%%<br><small>%s / %s" % (
+            fmt(progress.get("percent", 0)),
+            fmt(progress.get("phase")),
+            fmt(progress.get("label")),
+        )
+        if age_s is not None:
+            progress_detail += "<br><small class='%s'>最后进度 %.1f 分钟前</small>" % (
+                "warn" if stalled else "muted",
+                age_s / 60.0,
+            )
+        progress_detail += "</small>"
         summary = summary_for(str(job.get("id") or ""), results_root)
         job_id = str(job.get("id") or "")
         detail = "%s/jobs/%s" % (public_base_url.rstrip("/"), job_id)
@@ -79,11 +125,9 @@ def render(jobs, results_root, public_base_url):
                 fmt(job.get("source_label")),
                 fmt(job.get("pr_head") or job.get("commit_sha") or "-"),
                 html.escape(str(job.get("status") or "unknown")),
-                fmt(job.get("status")),
+                fmt(state),
                 fmt(job.get("message")),
-                fmt(progress.get("percent", 0)),
-                fmt(progress.get("phase")),
-                fmt(progress.get("label")),
+                progress_detail,
                 fmt(job.get("created_at")),
                 fmt(job.get("started_at")),
                 result_text(summary),
@@ -109,7 +153,8 @@ th{background:#fafbfc;color:#6d7b87}a{color:#286aa6}
 .status{display:inline-block;padding:2px 7px;border-radius:4px;font-size:12px}
 .status-running{background:#e5f6ef;color:#176d58}.status-queued{background:#fff5d6;color:#8a6413}
 .status-completed{background:#dff3e8;color:#166b4f}.status-failed{background:#fde8e6;color:#a23a32}
-.status-interrupted{background:#eee;color:#555}code{font-size:12px}
+.status-interrupted{background:#eee;color:#555}.warn{color:#a23a32;font-weight:700}
+.muted{color:#6d7b87}code{font-size:12px}
 </style></head><body><main>
 <header><div><h1>EchoMem PR 压测总览</h1>
 <div class="muted">真实模型 · 服务端观察模式 · 单并发队列</div></div>

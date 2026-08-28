@@ -135,6 +135,15 @@ commit, search, resource, and `/metrics` samples. Raw Prometheus responses are
 also retained in `server_metrics.jsonl`. Transport/startup/authentication
 failures are reported as `ENVIRONMENT_ERROR`.
 
+The live dashboard distinguishes a job's execution status from its heartbeat
+health. A job remains `running` while its process is alive, but is shown as
+`运行中 · 疑似停滞` after 15 minutes without a progress update. This is an
+operational warning, not an automatic failure. A heartbeat field such as
+`elapsed_s=94` means the elapsed time reported by that scenario's runner; it is
+not a global P95, maximum latency, or total wall-clock duration. Latency claims
+must name the statistic and scope, for example `Commit P95=294.23s` or
+`maximum=340.14s`.
+
 For a compact, data-first report from an existing run, generate
 `report_executive.html`:
 
