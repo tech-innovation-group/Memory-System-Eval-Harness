@@ -6,6 +6,7 @@ import csv
 import hashlib
 import hmac
 import json
+import math
 import os
 import queue
 import re
@@ -13,6 +14,7 @@ import secrets
 import shutil
 import subprocess
 import socket
+import sys
 import tarfile
 import threading
 import time
@@ -218,6 +220,24 @@ STRESS_SUITE_SCENARIOS = os.getenv(
     "baseline,mixed,commit-storm,search-storm,soak",
 ).strip()
 STRESS_SUITE_REPEATS = int(os.getenv("STRESS_SUITE_REPEATS", "3"))
+GENERIC_RUNNER_PATH = Path(
+    os.getenv("GENERIC_RUNNER_PATH", "/web/stress/generic/runner.py")
+).expanduser()
+GENERIC_MAX_CONFIG_BYTES = int(
+    os.getenv("GENERIC_MAX_CONFIG_BYTES", str(256 * 1024))
+)
+GENERIC_MAX_SCENARIOS = int(os.getenv("GENERIC_MAX_SCENARIOS", "32"))
+GENERIC_MAX_REQUEST_TEMPLATES = int(
+    os.getenv("GENERIC_MAX_REQUEST_TEMPLATES", "64")
+)
+GENERIC_MAX_REQUESTS = int(os.getenv("GENERIC_MAX_REQUESTS", "100000"))
+GENERIC_MAX_CONCURRENCY = int(os.getenv("GENERIC_MAX_CONCURRENCY", "256"))
+GENERIC_MAX_SCENARIO_DURATION_S = float(
+    os.getenv("GENERIC_MAX_SCENARIO_DURATION_S", "3600")
+)
+GENERIC_MAX_RUNTIME_S = float(
+    os.getenv("GENERIC_MAX_RUNTIME_S", "7200")
+)
 
 
 def load_stress_secret_env() -> dict[str, str]:
@@ -236,6 +256,159 @@ def load_stress_secret_env() -> dict[str, str]:
     except OSError:
         pass
     return values
+
+
+def validate_generic_stress_config(payload: Any) -> dict[str, Any]:
+    """Validate a generic target before placing it on the shared worker queue."""
+    if not isinstance(payload, dict):
+        raise ValueError("通用压测配置必须是 JSON object")
+    encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    if len(encoded) > GENERIC_MAX_CONFIG_BYTES:
+        raise ValueError(
+            f"通用压测配置过大（最多 {GENERIC_MAX_CONFIG_BYTES} 字节）"
+        )
+    target = payload.get("target")
+    if not isinstance(target, dict):
+        raise ValueError("通用压测配置必须包含 target")
+    base_url = str(target.get("base_url") or "").strip()
+    parsed = urlparse(base_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("target.base_url 必须是带主机名的 http:// 或 https:// 地址")
+    if parsed.username or parsed.password:
+        raise ValueError("target.base_url 不允许携带用户名或密码")
+    if target.get("capture_response_body") is True:
+        raise ValueError("服务器任务不允许保存完整响应正文，请使用断言和 CSV 状态字段")
+
+    requests_config = payload.get("requests")
+    if not isinstance(requests_config, dict) or not requests_config:
+        raise ValueError("通用压测配置必须包含 requests")
+    if len(requests_config) > GENERIC_MAX_REQUEST_TEMPLATES:
+        raise ValueError(
+            f"request 模板过多（最多 {GENERIC_MAX_REQUEST_TEMPLATES} 个）"
+        )
+    for name, spec in requests_config.items():
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("request 模板名称不能为空")
+        if not isinstance(spec, dict):
+            raise ValueError(f"request 模板 {name} 必须是 JSON object")
+        method = str(spec.get("method", "GET")).upper()
+        if method not in {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"}:
+            raise ValueError(f"request 模板 {name} 使用了不支持的 HTTP 方法")
+
+    scenarios = payload.get("scenarios")
+    if not isinstance(scenarios, list) or not scenarios:
+        raise ValueError("通用压测配置必须包含 scenarios")
+    if len(scenarios) > GENERIC_MAX_SCENARIOS:
+        raise ValueError(f"场景过多（最多 {GENERIC_MAX_SCENARIOS} 个）")
+    for index, scenario in enumerate(scenarios, start=1):
+        if not isinstance(scenario, dict):
+            raise ValueError(f"场景 {index} 必须是 JSON object")
+        names = scenario.get("requests")
+        if not isinstance(names, list) or not names:
+            raise ValueError(f"场景 {index} 必须包含 requests")
+        missing = [
+            str(name)
+            for name in names
+            if str(name) not in requests_config
+        ]
+        if missing:
+            raise ValueError(
+                f"场景 {index} 引用了不存在的 request 模板: {', '.join(missing)}"
+            )
+        concurrency = int(scenario.get("concurrency", 1))
+        if not 1 <= concurrency <= GENERIC_MAX_CONCURRENCY:
+            raise ValueError(
+                f"场景 {index} 并发必须在 1 到 {GENERIC_MAX_CONCURRENCY} 之间"
+            )
+        duration = float(scenario.get("duration_s", 0) or 0)
+        if (
+            not math.isfinite(duration)
+            or duration < 0
+            or duration > GENERIC_MAX_SCENARIO_DURATION_S
+        ):
+            raise ValueError(
+                f"场景 {index} duration_s 超出限制（最多 {GENERIC_MAX_SCENARIO_DURATION_S:g} 秒）"
+            )
+        total_requests = scenario.get("total_requests")
+        rps = float(scenario.get("rps", 0) or 0)
+        if not math.isfinite(rps) or rps < 0:
+            raise ValueError(f"场景 {index} rps 不能为负数")
+        if total_requests is not None:
+            total_requests = int(total_requests)
+            if not 0 <= total_requests <= GENERIC_MAX_REQUESTS:
+                raise ValueError(
+                    f"场景 {index} total_requests 超出限制（最多 {GENERIC_MAX_REQUESTS}）"
+                )
+        elif duration and rps and math.ceil(duration * rps) > GENERIC_MAX_REQUESTS:
+            raise ValueError(
+                f"场景 {index} 按 duration_s/rps 计算的请求数超过限制"
+            )
+        p95_limit = scenario.get("p95_limit_s")
+        if p95_limit is not None:
+            p95_limit = float(p95_limit)
+            if not math.isfinite(p95_limit) or p95_limit < 0:
+                raise ValueError(f"场景 {index} p95_limit_s 必须是非负有限数")
+    health = payload.get("healthcheck")
+    if health is not None:
+        if not isinstance(health, dict):
+            raise ValueError("healthcheck 必须是 JSON object")
+        health_request = str(health.get("request", "health"))
+        if health_request not in requests_config:
+            raise ValueError(
+                f"healthcheck 引用了不存在的 request 模板: {health_request}"
+            )
+    return payload
+
+
+def generic_result_dir(job_id: str) -> Path:
+    return RESULTS_DIR / job_id / "generic"
+
+
+def generic_report_path(job_id: str) -> Path:
+    return generic_result_dir(job_id) / "report.html"
+
+
+def analyze_generic_failure_with_llm(
+    job_id: str,
+    summary: dict[str, Any],
+    error_message: str,
+) -> str:
+    """Add optional model-assisted interpretation without changing the verdict."""
+    if not (
+        PRIMARY_LLM_API_KEY
+        or (DEFAULT_LLM_API_KEY and DEFAULT_LLM_BASE_URL and DEFAULT_LLM_MODEL)
+    ):
+        return ""
+    result_dir = RESULTS_DIR / job_id
+    log_path = result_dir / "container.log"
+    log_text = ""
+    if log_path.is_file():
+        try:
+            log_text = "\n".join(
+                log_path.read_text(encoding="utf-8", errors="replace")
+                .splitlines()[-120:]
+            )
+        except OSError:
+            pass
+    prompt = (
+        "你是通用 HTTP 压测故障分析助手。只根据给出的压测摘要和日志分析，"
+        "不要编造服务端指标。请区分目标系统故障、业务断言不匹配、压测配置错误、"
+        "网络/鉴权问题和性能门槛不达标。输出 150 字以内，包含根因、证据和建议动作。\n\n"
+        f"任务错误：{error_message}\n"
+        f"压测摘要：{json.dumps(summary, ensure_ascii=False, default=str)[:12000]}\n"
+        f"最近日志：\n{log_text[-12000:]}"
+    )
+    try:
+        return call_feishu_llm(
+            system_prompt="只输出简短、准确、可执行的通用系统压测诊断。",
+            user_prompt=prompt,
+            max_tokens=300,
+            timeout=45,
+            purpose=f"generic-stress-failure:{job_id}",
+        )[:1200]
+    except Exception:
+        app.logger.exception("generic failure model analysis failed for %s", job_id)
+        return ""
 ALLOWED_HOSTS = {
     item.strip()
     for item in os.getenv(
@@ -708,6 +881,25 @@ def update_progress_from_line(job_id: str, line: str) -> None:
     # as generic QA progress can reset or overwrite the real 15-case counter.
     if is_formal_suite and not _is_formal_progress_line(line):
         return
+    if job.get("test_type") == "generic_stress":
+        match = re.search(
+            r"GENERIC_PROGRESS\s+(\d+)/(\d+)\s+scenario=([^\s]+)",
+            line,
+        )
+        if match:
+            changed |= _set_progress(
+                progress,
+                phase="qa",
+                current=int(match.group(1)),
+                total=int(match.group(2)),
+                last_log=line,
+            )
+            progress["label"] = "通用真实 HTTP 压测"
+        elif not _is_json_log_fragment(line):
+            changed |= _set_progress(progress, last_log=line)
+        if changed:
+            update_job(job_id, progress=progress, message=progress["label"])
+        return
     if is_formal_suite:
         total = int(progress.get("total") or 0)
         current = int(progress.get("current") or 0)
@@ -1041,6 +1233,161 @@ def run_checked(
     return subprocess.CompletedProcess(args, return_code, "\n".join(output), "")
 
 
+def _extract_github_archive(
+    archive_content: bytes,
+    destination: Path,
+) -> None:
+    """Extract a GitHub source archive into a clean directory."""
+    staging_dir = destination.with_name(destination.name + ".tmp")
+    shutil.rmtree(staging_dir, ignore_errors=True)
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(fileobj=io.BytesIO(archive_content), mode="r:gz") as tar:
+        tar.extractall(staging_dir)
+    extracted = next(path for path in staging_dir.iterdir() if path.is_dir())
+    shutil.rmtree(destination, ignore_errors=True)
+    extracted.rename(destination)
+    shutil.rmtree(staging_dir, ignore_errors=True)
+
+
+def _prepare_latest_develop_pr_merge(
+    *,
+    job: dict[str, Any],
+    develop_commit_sha: str,
+    pr_number: int,
+    pr_head_sha: str,
+    github_headers: dict[str, str],
+    source_dir: Path,
+    merge_cache_key: str,
+) -> tuple[Path, str]:
+    """Apply a PR patch to the task's latest develop snapshot.
+
+    GitHub's generated ``pull/<number>/merge`` ref can lag behind the current
+    develop branch. Build the tested tree locally from the freshly downloaded
+    develop archive plus the PR patch so a stale merge ref cannot silently
+    change the test baseline.
+    """
+    cached_source = CACHE_ROOT / "pr-merge" / merge_cache_key
+    if cached_source.is_dir() and (cached_source / "pyproject.toml").is_file():
+        shutil.copytree(cached_source, source_dir)
+        return cached_source, merge_cache_key
+
+    develop_cache = CACHE_ROOT / "develop" / develop_commit_sha
+    if not (develop_cache / "pyproject.toml").is_file():
+        develop_url = (
+            ECHOMEM_REPO.removesuffix(".git")
+            + "/archive/"
+            + f"{develop_commit_sha}.tar.gz"
+        )
+        develop_response = requests.get(
+            develop_url,
+            headers=github_headers,
+            timeout=120,
+        )
+        if develop_response.status_code == 404 and not GITHUB_TOKEN:
+            raise RuntimeError(
+                "最新 develop 源码下载返回 404：服务器没有 GitHub 私有仓库访问权限"
+            )
+        develop_response.raise_for_status()
+        develop_cache.parent.mkdir(parents=True, exist_ok=True)
+        _extract_github_archive(develop_response.content, develop_cache)
+
+    patch_url = (
+        ECHOMEM_REPO.removesuffix(".git")
+        + f"/pull/{pr_number}.patch"
+    )
+    patch_response = requests.get(
+        patch_url,
+        headers={
+            **github_headers,
+            "Accept": "application/vnd.github.patch",
+        },
+        timeout=120,
+    )
+    patch_response.raise_for_status()
+    staging_source = cached_source.with_name(cached_source.name + ".tmp")
+    shutil.rmtree(staging_source, ignore_errors=True)
+    shutil.copytree(develop_cache, staging_source)
+    git_env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "memory-eval-harness",
+        "GIT_AUTHOR_EMAIL": "memory-eval-harness@localhost",
+        "GIT_COMMITTER_NAME": "memory-eval-harness",
+        "GIT_COMMITTER_EMAIL": "memory-eval-harness@localhost",
+    }
+    commands = (
+        ["git", "init", "-q"],
+        ["git", "add", "-A"],
+        ["git", "commit", "-qm", f"develop {develop_commit_sha}"],
+    )
+    for command in commands:
+        result = subprocess.run(
+            command,
+            cwd=staging_source,
+            env=git_env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if result.returncode:
+            shutil.rmtree(staging_source, ignore_errors=True)
+            raise RuntimeError(
+                f"准备 PR {pr_number} 的最新 develop 基线失败: "
+                f"{result.stderr.strip()[-500:]}"
+            )
+    check = subprocess.run(
+        ["git", "apply", "--check", "--3way", "-"],
+        cwd=staging_source,
+        env=git_env,
+        input=patch_response.content.decode("utf-8", errors="replace"),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if check.returncode:
+        shutil.rmtree(staging_source, ignore_errors=True)
+        raise RuntimeError(
+            f"PR {pr_number} 与最新 develop {develop_commit_sha[:12]} 存在合并冲突，"
+            f"未开始压测: {check.stderr.strip()[-600:]}"
+        )
+    apply_result = subprocess.run(
+        ["git", "apply", "--3way", "-"],
+        cwd=staging_source,
+        env=git_env,
+        input=patch_response.content.decode("utf-8", errors="replace"),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if apply_result.returncode:
+        shutil.rmtree(staging_source, ignore_errors=True)
+        raise RuntimeError(
+            f"PR {pr_number} 应用到最新 develop 失败: "
+            f"{apply_result.stderr.strip()[-600:]}"
+        )
+    merge_result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=staging_source,
+        env=git_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if merge_result.returncode:
+        shutil.rmtree(staging_source, ignore_errors=True)
+        raise RuntimeError(f"无法记录 PR {pr_number} 的本地合并版本")
+    local_merge_sha = merge_result.stdout.strip()
+    cached_source.parent.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(cached_source, ignore_errors=True)
+    staging_source.rename(cached_source)
+    shutil.copytree(cached_source, source_dir)
+    append_job_log(
+        job["id"],
+        f"PR {pr_number} 已基于最新 develop {develop_commit_sha[:12]} "
+        f"本地合并，PR head={pr_head_sha[:12]} merge={local_merge_sha[:12]}",
+    )
+    return cached_source, local_merge_sha
+
+
 def prepare_echomem_source(job: dict[str, Any], secret_values: dict[str, str]) -> dict[str, Any]:
     """Prepare a dependency-cached image and an isolated source checkout."""
     source_ref = job["source_ref"]
@@ -1169,18 +1516,7 @@ def prepare_echomem_source(job: dict[str, Any], secret_values: dict[str, str]) -
                     job["id"],
                     f"检测到 develop 在合并检查期间更新: "
                     f"{develop_commit_sha[:12]} -> {base_sha[:12]}；"
-                    "锁定 GitHub 当前 PR merge snapshot，不再重试",
-                )
-                # The merge API payload is the authoritative base for the
-                # archive URL used below. Persist it so the result clearly
-                # states which develop commit was actually tested.
-                develop_commit_sha = base_sha
-                update_job(
-                    job["id"],
-                    develop_commit_sha=develop_commit_sha,
-                    message=(
-                        f"已锁定 PR merge 基线 {develop_commit_sha[:12]}"
-                    ),
+                    "继续使用任务启动时最新 develop，不使用旧 merge ref",
                 )
             if mergeable is False or mergeable_state == "dirty":
                 update_job(
@@ -1198,15 +1534,9 @@ def prepare_echomem_source(job: dict[str, Any], secret_values: dict[str, str]) -
             # conflict, so the generated PR merge ref remains testable.
             if mergeable is None:
                 continue
-            merge_commit_sha = str(commit_payload.get("merge_commit_sha") or "")
-            if not re.fullmatch(r"[0-9a-fA-F]{7,64}", merge_commit_sha):
-                merge_commit_sha = hashlib.sha256(
-                    f"{base_sha}:{pr_head_sha}".encode("utf-8")
-                ).hexdigest()
-            archive_url = (
-                ECHOMEM_REPO.removesuffix(".git")
-                + f"/archive/refs/pull/{pr_number}/merge.tar.gz"
-            )
+            merge_commit_sha = hashlib.sha256(
+                f"{develop_commit_sha}:{pr_head_sha}".encode("utf-8")
+            ).hexdigest()
             commit_sha = merge_commit_sha
             update_job(
                 job["id"],
@@ -1214,11 +1544,15 @@ def prepare_echomem_source(job: dict[str, Any], secret_values: dict[str, str]) -
                 merge_base_sha=base_sha,
                 merge_commit_sha=merge_commit_sha,
                 merge_status="clean",
-                message=f"PR {pr_number} 与 develop 无冲突，准备合并结果代码",
+                message=(
+                    f"PR {pr_number} 与最新 develop {develop_commit_sha[:12]} "
+                    "无冲突，准备本地合并结果代码"
+                ),
             )
             append_job_log(
                 job["id"],
-                f"PR 合并检查通过: base={base_sha[:12]} head={pr_head_sha[:12]} merge={merge_commit_sha[:12]}",
+                f"PR 合并检查通过: latest_base={develop_commit_sha[:12]} "
+                f"github_base={base_sha[:12]} head={pr_head_sha[:12]}",
             )
             merge_resolved = True
             break
@@ -1229,11 +1563,29 @@ def prepare_echomem_source(job: dict[str, Any], secret_values: dict[str, str]) -
     cache_namespace = "develop" if source_ref == "develop" else "pr-merge"
     cache_key = commit_sha if re.fullmatch(r"[0-9a-fA-F]{7,64}", commit_sha) else f"{source_ref}-{pr_number or 'unknown'}"
     cached_source = CACHE_ROOT / cache_namespace / cache_key
-    if cached_source.is_dir() and (cached_source / "pyproject.toml").is_file():
+    if source_ref == "pr":
+        cached_source, local_merge_sha = _prepare_latest_develop_pr_merge(
+            job=job,
+            develop_commit_sha=develop_commit_sha,
+            pr_number=int(pr_number),
+            pr_head_sha=pr_head_sha,
+            github_headers=github_headers,
+            source_dir=source_dir,
+            merge_cache_key=cache_key,
+        )
+        commit_sha = local_merge_sha
+        merge_commit_sha = local_merge_sha
+        update_job(
+            job["id"],
+            commit_sha=commit_sha,
+            merge_commit_sha=merge_commit_sha,
+            merge_status="clean",
+        )
+    elif cached_source.is_dir() and (cached_source / "pyproject.toml").is_file():
         shutil.copytree(cached_source, source_dir)
         append_job_log(
             job["id"],
-            f"合并后源码缓存命中: {source_label(source_ref, pr_number)} {commit_sha[:12]}",
+            f"源码缓存命中: {source_label(source_ref, pr_number)} {commit_sha[:12]}",
         )
     else:
         archive = requests.get(
@@ -1783,6 +2135,26 @@ def evaluation_details(job_id: str) -> dict[str, Any]:
 
 
 def format_result(job: dict[str, Any]) -> str:
+    if job.get("test_type") == "generic_stress":
+        summary = job.get("summary") or {}
+        if not summary:
+            summary = result_summary(job["id"]) or {}
+        target = (
+            summary.get("target")
+            or (job.get("generic_config") or {}).get("target")
+            or {}
+        )
+        scenarios = summary.get("scenarios") or []
+        total = sum(int(item.get("submitted") or 0) for item in scenarios)
+        errors = sum(int(item.get("errors") or 0) for item in scenarios)
+        return (
+            "通用真实 HTTP 压测完成\n"
+            f"目标：{target.get('name') or target.get('base_url') or '-'}\n"
+            f"判定：{summary.get('status', 'UNKNOWN')}\n"
+            f"场景：{len(scenarios)} 个 · 请求：{total} · 错误：{errors}\n"
+            f"报告：{job_detail_url(job['id'])}\n"
+            f"任务 ID：{job['id']}"
+        )
     if job.get("test_type") == "stress":
         summary = load_stress_summary(job)
         if (job.get("stress_config") or {}).get("formal_suite"):
@@ -2233,6 +2605,30 @@ def classify_job_failure(job_id: str) -> dict[str, Any]:
             *[str(line) for line in evidence["docker_logs"][-100:]],
         ]
     ).lower()
+    if job.get("test_type") == "generic_stress":
+        summary = (job.get("summary") or {}).get("diagnosis") or {}
+        findings = summary.get("findings") or []
+        if any("健康检查" in str(item.get("finding") or "") for item in findings):
+            reason = "目标系统健康检查失败，压测未进入业务负载阶段。"
+        elif any("断言" in str(item.get("finding") or "") for item in findings):
+            reason = "目标返回了 HTTP 响应，但至少有一条配置的业务 JSON 断言失败。"
+        elif any("P95" in str(item.get("finding") or "") for item in findings):
+            reason = "目标系统响应延迟超过了配置的 P95 门槛。"
+        else:
+            reason = (
+                "通用压测 runner 返回失败；需要结合 summary.json、"
+                "requests.csv 和 report.html 判断目标系统还是压测配置问题。"
+            )
+        return {
+            "category": "generic_stress",
+            "category_label": "通用系统压测异常",
+            "reason": reason,
+            "needs_echomem_change": False,
+            "needs_echomem_change_text": "不适用",
+            "retryable": True,
+            "allowed_actions": ["retry"],
+            "evidence": evidence,
+        }
     merge_status = str(job.get("merge_status") or "").lower()
     explicit_conflict = (
         merge_status == "conflict"
@@ -2688,7 +3084,9 @@ def result_upload_path(job_id: str) -> Path:
     """Create and retain the artifact uploaded to the Feishu group."""
     result_dir = RESULTS_DIR / job_id
     RESULT_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
-    package_path = RESULT_ARCHIVE_DIR / f"locomo-result-{job_id}.zip"
+    job = get_job(job_id) or {}
+    prefix = "generic-result" if job.get("test_type") == "generic_stress" else "locomo-result"
+    package_path = RESULT_ARCHIVE_DIR / f"{prefix}-{job_id}.zip"
     if package_path.is_file() and package_path.stat().st_size > 0:
         return package_path
     if not result_dir.is_dir():
@@ -3211,7 +3609,7 @@ def notify_feishu_job(job_id: str) -> None:
                     app.logger.exception("failed to upload Feishu group file for job %s", job_id)
 
             try:
-                if artifact_path is not None:
+                if artifact_path is not None and job.get("test_type") != "generic_stress":
                     bitable_result = upload_feishu_bitable_result(job_id, artifact_path)
                 else:
                     bitable_result = {"status": "skipped"}
@@ -3639,10 +4037,59 @@ def enqueue_stress_job(
     return job
 
 
+def enqueue_generic_stress_job(
+    *,
+    config: dict[str, Any],
+    chat_id: str = "",
+) -> dict[str, Any]:
+    """Queue a configuration-driven real HTTP stress run."""
+    config = validate_generic_stress_config(config)
+    with LOCK:
+        if active_job_count(read_jobs()) >= MAX_JOBS:
+            raise ValueError("任务列表已满")
+    job_id = uuid.uuid4().hex[:12]
+    target = config.get("target") or {}
+    target_name = str(target.get("name") or urlparse(
+        str(target.get("base_url") or "")
+    ).hostname or "HTTP 目标")
+    job = {
+        "id": job_id,
+        "created_at": now(),
+        "started_at": None,
+        "finished_at": None,
+        "status": "queued",
+        "test_type": "generic_stress",
+        "source_ref": "generic",
+        "source_label": f"{target_name} · 通用真实 HTTP 压测",
+        "message": "等待通用压测执行",
+        "feishu_chat_id": chat_id,
+        "generic_config": config,
+        "progress": default_progress("queued"),
+    }
+    with LOCK:
+        jobs = read_jobs()
+        jobs.append(job)
+        write_jobs(jobs)
+    JOB_QUEUE.put(job_id)
+    return job
+
+
 @app.post("/api/bridge/jobs")
 def bridge_create_job():
     payload = request.get_json(silent=True) or {}
     source_ref = str(payload.get("source_ref") or "").strip().lower()
+    if str(payload.get("test_type") or "").strip().lower() in {
+        "generic_stress",
+        "generic",
+    }:
+        try:
+            job = enqueue_generic_stress_job(
+                config=payload.get("config"),
+                chat_id=str(payload.get("chat_id") or ""),
+            )
+        except (TypeError, ValueError) as exc:
+            return jsonify({"message": str(exc)}), 400
+        return jsonify(compact_job(job)), 202
     if str(payload.get("test_type") or "").strip().lower() == "stress":
         pr_number = payload.get("pr_number")
         if source_ref not in {"deployed", "develop", "pr"}:
@@ -3708,6 +4155,29 @@ def bridge_tools():
     return jsonify({
         "version": 1,
         "tools": [
+            {
+                "name": "create_generic_stress",
+                "description": (
+                    "Create a single-concurrency real HTTP/JSON stress test "
+                    "for an arbitrary system using a supplied configuration."
+                ),
+                "method": "POST",
+                "path": "/api/bridge/jobs",
+                "input": {
+                    "test_type": {
+                        "type": "string",
+                        "enum": ["generic_stress"],
+                    },
+                    "config": {
+                        "type": "object",
+                        "description": (
+                            "Must contain target, requests, and scenarios; "
+                            "use ${ENV_NAME} for secrets."
+                        ),
+                    },
+                    "chat_id": {"type": "string", "optional": True},
+                },
+            },
             {
                 "name": "create_memory_eval",
                 "description": "Create a single-concurrency LoCoMo evaluation for EchoMem develop or a PR.",
@@ -3890,6 +4360,16 @@ def recover_memory_eval(job_id: str, action: str) -> dict[str, Any]:
     if job.get("status") in {"queued", "running"}:
         raise ValueError("任务仍在执行中，不能重复提交")
     source_ref = str(job.get("source_ref") or "")
+    if job.get("test_type") == "generic_stress":
+        retried = enqueue_generic_stress_job(
+            config=job.get("generic_config"),
+            chat_id=str(job.get("feishu_chat_id") or ""),
+        )
+        return {
+            "retried_from": job_id,
+            "action": action,
+            "job": compact_job(retried),
+        }
     if job.get("test_type") == "stress":
         if source_ref not in {"deployed", "develop", "pr"}:
             raise ValueError("该压测任务不是可恢复的 develop/PR/已部署任务")
@@ -4788,12 +5268,193 @@ def run_stress_job(job_id: str) -> None:
             shutil.rmtree(SOURCE_ROOT / job_id, ignore_errors=True)
 
 
+def run_generic_stress_job(job_id: str) -> None:
+    """Run a configuration-driven real HTTP stress test in the Web worker."""
+    job = get_job(job_id)
+    if not job:
+        return
+    ensure_job_log(job_id)
+    result_root = generic_result_dir(job_id)
+    config_path = RESULTS_DIR / job_id / "generic.config.json"
+    log_path = RESULTS_DIR / job_id / "container.log"
+    process: subprocess.Popen[str] | None = None
+    timed_out = threading.Event()
+    try:
+        config = validate_generic_stress_config(job.get("generic_config"))
+        result_root.mkdir(parents=True, exist_ok=True)
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            json.dumps(config, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        scenario_count = len(config.get("scenarios") or [])
+        update_job(
+            job_id,
+            status="running",
+            started_at=job.get("started_at") or now(),
+            message="通用压测健康检查",
+            progress={
+                **default_progress("qa"),
+                "label": "通用真实 HTTP 压测",
+                "current": 0,
+                "total": scenario_count,
+            },
+        )
+        runner_path = GENERIC_RUNNER_PATH
+        if not runner_path.is_file():
+            local_runner = Path(__file__).resolve().parents[1] / "stress" / "generic" / "runner.py"
+            if local_runner.is_file():
+                runner_path = local_runner
+        if not runner_path.is_file():
+            raise RuntimeError(f"找不到通用压测 runner: {runner_path}")
+        command = [
+            sys.executable,
+            str(runner_path),
+            "--config",
+            str(config_path),
+            "--out-dir",
+            str(result_root),
+        ]
+        process = subprocess.Popen(
+            command,
+            cwd=str(runner_path.parent.parent.parent),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+
+        def kill_after_deadline() -> None:
+            if process is None:
+                return
+            try:
+                process.wait(timeout=max(1.0, GENERIC_MAX_RUNTIME_S))
+            except subprocess.TimeoutExpired:
+                timed_out.set()
+                process.kill()
+
+        watchdog = threading.Thread(
+            target=kill_after_deadline,
+            name=f"generic-timeout-{job_id}",
+            daemon=True,
+        )
+        watchdog.start()
+        with log_path.open("a", encoding="utf-8") as log_file:
+            if process.stdout is not None:
+                for line in process.stdout:
+                    line = line.rstrip("\r\n")
+                    log_file.write(line + "\n")
+                    log_file.flush()
+                    update_progress_from_line(job_id, line)
+        return_code = process.wait()
+        watchdog.join(timeout=1)
+        if timed_out.is_set():
+            raise TimeoutError(
+                f"通用压测超过最大运行时间 {GENERIC_MAX_RUNTIME_S:g} 秒"
+            )
+        summary_path = result_root / "summary.json"
+        summary: dict[str, Any] = {}
+        if summary_path.is_file():
+            try:
+                summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                pass
+        final_status = (
+            "completed"
+            if return_code == 0 and summary.get("status") == "PASS"
+            else "failed"
+        )
+        if summary.get("status") == "INCONCLUSIVE":
+            final_status = "completed"
+        update_job(
+            job_id,
+            status=final_status,
+            finished_at=now(),
+            exit_code=return_code,
+            summary=summary,
+            message=(
+                "通用压测完成"
+                if final_status == "completed"
+                else "通用压测失败"
+            ),
+            progress={
+                **default_progress(
+                    "completed" if final_status == "completed" else "failed"
+                ),
+                "label": (
+                    "通用压测完成"
+                    if final_status == "completed"
+                    else "通用压测失败"
+                ),
+                "current": scenario_count,
+                "total": scenario_count,
+                "percent": 100,
+                "last_log": (
+                    f"runner exit={return_code}, status={summary.get('status', 'UNKNOWN')}"
+                ),
+            },
+        )
+        if final_status == "failed":
+            diagnosis = {
+                "category": "generic_stress",
+                "category_label": "通用压测结果异常",
+                "reason": "通用 runner 返回失败；请查看报告中的健康检查、断言和逐请求错误。",
+                "retryable": True,
+                "allowed_actions": ["retry"],
+                "text": (
+                    "分类：通用压测结果异常\n"
+                    "是否需要修改目标系统：未判定\n"
+                    "依据：请结合 generic/report.html 和 requests.csv 判断是可用性、业务断言、"
+                    "延迟还是负载生成问题。\n"
+                    "建议动作：retry 或根据报告排查目标系统"
+                ),
+            }
+            model_analysis = analyze_generic_failure_with_llm(
+                job_id,
+                summary,
+                f"通用 runner exit={return_code}",
+            )
+            if model_analysis:
+                diagnosis["model_analysis"] = model_analysis
+                diagnosis["text"] += f"\n模型分析：{model_analysis}"
+            update_job(job_id, failure_analysis=diagnosis["text"], failure_diagnosis=diagnosis)
+        notify_feishu_job(job_id)
+    except Exception as exc:
+        message = f"通用压测运行错误: {str(exc)[:500]}"
+        model_analysis = analyze_generic_failure_with_llm(
+            job_id,
+            {},
+            message,
+        )
+        if model_analysis:
+            message += f"\n异常分析：{model_analysis}"
+        update_job(
+            job_id,
+            status="failed",
+            finished_at=now(),
+            message=message,
+            failure_analysis=message,
+            progress={
+                **default_progress("failed"),
+                "label": "通用压测失败",
+                "last_log": message,
+            },
+        )
+        notify_feishu_job(job_id)
+    finally:
+        if process is not None and process.poll() is None:
+            process.kill()
+
+
 def _run_job_unlocked(job_id: str) -> None:
     job = get_job(job_id)
     if job and job.get("status") not in {"queued", "running"}:
         return
     if job and job.get("test_type") == "stress":
         run_stress_job(job_id)
+        return
+    if job and job.get("test_type") == "generic_stress":
+        run_generic_stress_job(job_id)
         return
     secret_values = SECRETS.pop(job_id, None)
     ensure_job_log(job_id)
@@ -4940,6 +5601,20 @@ def reattach_running_jobs() -> None:
                 status="queued",
                 message="服务重启，压测任务已自动重新排队",
                 progress=default_progress("prepare"),
+            )
+            JOB_QUEUE.put(job_id)
+            continue
+        if job.get("test_type") == "generic_stress":
+            # The generic runner is a Web-worker subprocess rather than a
+            # Docker container. It cannot be safely reattached after a Web
+            # restart, so rerun it from the persisted task configuration.
+            update_job(
+                job_id,
+                status="queued",
+                started_at=None,
+                finished_at=None,
+                message="服务重启后通用压测重新排队",
+                progress=default_progress("queued"),
             )
             JOB_QUEUE.put(job_id)
             continue
@@ -5374,6 +6049,7 @@ def job_detail(job_id: str):
         )
     stress_report = None
     stress_suite_report = None
+    generic_report = None
     if job.get("test_type") == "stress":
         candidates = [
             result_dir / f"stress_{job_id}" / "report_executive.html",
@@ -5399,6 +6075,10 @@ def job_detail(job_id: str):
             ),
             None,
         )
+    elif job.get("test_type") == "generic_stress":
+        candidate = generic_report_path(job_id)
+        if candidate.is_file():
+            generic_report = str(candidate.relative_to(result_dir))
     progress = job.get("progress") or default_progress(job.get("status", "queued"))
     return render_template(
         "job.html",
@@ -5408,6 +6088,7 @@ def job_detail(job_id: str):
         eval_details=evaluation_details(job_id),
         stress_report=stress_report,
         stress_suite_report=stress_suite_report,
+        generic_report=generic_report,
     )
 
 
@@ -5491,7 +6172,10 @@ def initialize() -> None:
         changed = False
         for job in jobs:
             if job.get("status") == "queued":
-                if job.get("source_ref") or job.get("test_type") == "stress":
+                if (
+                    job.get("source_ref")
+                    or job.get("test_type") in {"stress", "generic_stress"}
+                ):
                     job["message"] = "服务已恢复，任务等待重新执行"
                 else:
                     job["status"] = "interrupted"
@@ -5512,7 +6196,8 @@ def initialize() -> None:
             write_jobs(jobs)
     for job in read_jobs():
         if job.get("status") == "queued" and (
-            job.get("source_ref") or job.get("test_type") == "stress"
+            job.get("source_ref")
+            or job.get("test_type") in {"stress", "generic_stress"}
         ):
             JOB_QUEUE.put(job["id"])
     reattach_running_jobs()

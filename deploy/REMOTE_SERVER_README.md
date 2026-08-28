@@ -179,6 +179,36 @@ commit 成功率、search P95/P99、资源曲线，并输出 `summary.json`、
 `report.html` 和 CSV 明细。正式结果使用真实 EchoMem HTTP 服务和真实模型配置，
 不使用 mock；单租户时租户公平性会明确标记为 `INCONCLUSIVE`。
 
+通用系统压测通过同一个 `/api/bridge/jobs` 入口提交
+`test_type=generic_stress` 和完整 JSON 配置。目标系统只需提供 HTTP/JSON
+健康检查、请求模板、业务断言和负载场景；平台使用同一个单并发 worker，
+但不会启动或修改 EchoMem。任务详情页会展示通用 runner 的阶段、最近日志、
+`summary.json`、`requests.csv`、`resources.csv` 和 HTML 报告。服务器限制配置大小、
+场景数、请求数、并发和最长运行时间，配置中的密钥应使用 `${ENV_NAME}`，
+由 Web 进程环境提供。
+
+示例：
+
+```bash
+curl -X POST http://127.0.0.1:8081/api/bridge/jobs \
+  -H 'Content-Type: application/json' \
+  -d @- <<'JSON'
+{
+  "test_type": "generic_stress",
+  "config": {
+    "target": {"name": "example-api", "base_url": "https://example.com"},
+    "requests": {
+      "health": {"method": "GET", "path": "/health", "expected_status": 200}
+    },
+    "healthcheck": {"request": "health"},
+    "scenarios": [
+      {"name": "smoke", "requests": ["health"], "total_requests": 10, "concurrency": 2}
+    ]
+  }
+}
+JSON
+```
+
 普通 `压测` 命令检查 `STRESS_ECHOMEM_BASE_URL` 指向的已部署 EchoMem 实例，
 适合快速检查服务器上的实例。若要压测某个 PR，应先把该 PR 的 EchoMem 实例
 部署到该地址，再发送 `压测 PR <编号>`；任务记录 PR 编号用于结果标注，压测

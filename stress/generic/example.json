@@ -1,0 +1,62 @@
+{
+  "target": {
+    "name": "example-api",
+    "base_url": "http://127.0.0.1:8080",
+    "timeout_s": 10,
+    "headers": {
+      "Authorization": "Bearer {API_TOKEN}"
+    }
+  },
+  "variables": {
+    "API_TOKEN": "${API_TOKEN}"
+  },
+  "healthcheck": {
+    "request": "health",
+    "expected_status": 200
+  },
+  "requests": {
+    "health": {
+      "method": "GET",
+      "path": "/health",
+      "expected_status": 200,
+      "assertions": [
+        {"path": "$.status", "equals": "ok"}
+      ]
+    },
+    "read": {
+      "method": "GET",
+      "path": "/api/items/{sequence}",
+      "expected_status": 200,
+      "assertions": [
+        {"path": "$.id", "exists": true}
+      ]
+    },
+    "write": {
+      "method": "POST",
+      "path": "/api/items",
+      "body": {
+        "id": "stress-{run_id}-{sequence}",
+        "value": "probe-{sequence}"
+      },
+      "expected_status": [200, 201, 202]
+    }
+  },
+  "scenarios": [
+    {
+      "name": "smoke",
+      "requests": ["read", "write"],
+      "total_requests": 20,
+      "concurrency": 4,
+      "p95_limit_s": 2.0
+    },
+    {
+      "name": "sustained",
+      "requests": ["read"],
+      "duration_s": 60,
+      "rps": 10,
+      "concurrency": 16,
+      "p95_limit_s": 1.0
+    }
+  ],
+  "resource_growth_limit_mb": 200
+}

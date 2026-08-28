@@ -1,5 +1,6 @@
 <!doctype html>
 {% set is_active = job.status in ["queued", "running", "preparing"] %}
+{% set is_generic = job.test_type == "generic_stress" %}
 {% set status_class = "status-" ~ (job.status or "unknown") %}
 {% set summary = job.summary or {} %}
 {% set correct = summary.get("judge_correct") %}
@@ -189,7 +190,7 @@
 
     <section class="hero">
       <div>
-        <h1>{% if job.test_type == "stress" %}EchoMem 压测{% else %}LoCoMo / conv-30{% endif %}</h1>
+        <h1>{% if job.test_type == "stress" %}EchoMem 压测{% elif is_generic %}通用系统压测{% else %}LoCoMo / conv-30{% endif %}</h1>
         <p class="subtitle">{{ job.source_label or job.source_ref or "未指定代码来源" }} · {{ job.commit_sha[:12] if job.commit_sha else "等待 commit" }}</p>
         <div class="status {{ status_class }}">{{ job.message or job.status or "未知状态" }}</div>
       </div>
@@ -444,6 +445,24 @@
         </div>
       </section>
     {% endif %}
+    {% if is_generic %}
+      <section class="panel stress-panel">
+        <div class="panel-header"><h2>通用压测报告</h2><span>真实 HTTP/JSON 结果</span></div>
+        <div class="panel-body">
+          {% if generic_report %}
+            <div class="file-actions">
+              <a class="button" target="_blank" rel="noreferrer" href="/jobs/{{ job.id }}/files/{{ generic_report }}">打开 HTML 报告</a>
+              <a class="button" href="/jobs/{{ job.id }}/files/generic/summary.json">下载 summary.json</a>
+              <a class="button" href="/jobs/{{ job.id }}/files/generic/requests.csv">下载 requests.csv</a>
+              <a class="button" href="/jobs/{{ job.id }}/files/generic/resources.csv">下载 resources.csv</a>
+            </div>
+          {% else %}
+            <p class="muted">压测完成后会生成 HTML、summary.json、逐请求 CSV 和资源采样 CSV。</p>
+          {% endif %}
+          <p class="muted">业务成功由配置中的 JSON 断言决定；HTTP 200 本身不会被当作业务正确。</p>
+        </div>
+      </section>
+    {% endif %}
 
     <div class="grid">
       <section class="panel">
@@ -486,6 +505,10 @@
                 <div class="fact"><dt>测试方案</dt><dd>PR397 真实 HTTP 压测</dd></div>
                 <div class="fact"><dt>目标地址</dt><dd>{{ (job.stress_config or {}).get("base_url", "-") }}</dd></div>
                 <div class="fact"><dt>真实模型</dt><dd>{{ "是" if (job.stress_config or {}).get("real_model") else "否" }}</dd></div>
+              {% elif is_generic %}
+                <div class="fact"><dt>测试方案</dt><dd>配置驱动真实 HTTP/JSON 压测</dd></div>
+                <div class="fact"><dt>目标地址</dt><dd>{{ ((job.generic_config or {}).get("target") or {}).get("base_url", "-") }}</dd></div>
+                <div class="fact"><dt>场景数</dt><dd>{{ (job.generic_config or {}).get("scenarios", [])|length }}</dd></div>
               {% else %}
                 <div class="fact"><dt>工具调用</dt><dd>{{ "开启" if summary.get("tools_enabled") else "关闭" }}</dd></div>
               {% endif %}
@@ -497,8 +520,10 @@
           <div class="panel-header"><h2>结果文件</h2><span>{{ files|length }} 个</span></div>
           <div class="panel-body">
             <div class="file-actions">
-              <a class="button" href="/jobs/{{ job.id }}/download/injected-memory">下载注入记忆</a>
-              <a class="button" href="/jobs/{{ job.id }}/download/retrieved-memory">下载召回记忆</a>
+              {% if job.test_type != "generic_stress" %}
+                <a class="button" href="/jobs/{{ job.id }}/download/injected-memory">下载注入记忆</a>
+                <a class="button" href="/jobs/{{ job.id }}/download/retrieved-memory">下载召回记忆</a>
+              {% endif %}
             </div>
             {% if files %}
               <details>

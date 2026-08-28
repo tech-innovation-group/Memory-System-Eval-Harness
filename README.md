@@ -26,6 +26,25 @@ sudo deploy/install_server.sh
 再次执行即可启动 Web/飞书入口，默认端口为 `8081`。完整流程见
 [deploy/REMOTE_SERVER_README.md](deploy/REMOTE_SERVER_README.md)。
 
+## 通用系统压测
+
+除 EchoMem 专用压测套件外，平台还提供配置驱动的真实 HTTP/JSON 压测入口，
+可用于 REST 服务、网关、Agent API、检索服务和模型代理。通过请求模板、
+健康检查、业务断言和负载场景描述目标系统，不需要修改压测代码：
+
+```bash
+python3 stress/generic/runner.py \
+  --config stress/generic/example.json \
+  --out-dir results/stress/generic_$(date +%Y%m%d_%H%M%S)
+```
+
+使用说明和适用边界见
+[stress/generic/README.md](stress/generic/README.md)。每轮会生成
+`summary.json`、请求/资源 CSV 和可读的 `report.html`，并把异常分为可用性、
+错误率、延迟、负载达成率和资源增长问题。复杂协议如 gRPC、WebSocket 或
+纯 TCP 需要新增 transport 适配器。服务器入口使用 `test_type=generic_stress`
+提交配置后，会复用同一个单并发任务队列，并在任务详情页提供实时日志和报告文件。
+
 ## 设计目标
 
 ### 1. 支撑业界所有 agent 的评测
