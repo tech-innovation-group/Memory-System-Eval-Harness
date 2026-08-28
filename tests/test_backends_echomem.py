@@ -176,6 +176,41 @@ class TestHealth(unittest.TestCase):
         self.assertEqual({"status": "ok", "version": "1.2.3"}, result)
 
 
+class TestEpisodeEndpoints(unittest.TestCase):
+    def test_runtime_calls_runtime_endpoint(self) -> None:
+        client = EchoMemClient(auth_key="k")
+        captured: list[str] = []
+
+        def fake_get(path: str, query=None, **_kw):
+            captured.append(path)
+            return {"engines": []}
+
+        client._get = fake_get  # type: ignore[method-assign]
+        self.assertEqual({"engines": []}, client.runtime())
+        self.assertEqual(["/runtime"], captured)
+
+    def test_generate_episode_sends_post_without_body(self) -> None:
+        client = EchoMemClient(auth_key="k")
+        captured = {}
+
+        def fake_request(req, **_kw):
+            captured["method"] = req.get_method()
+            captured["data"] = req.data
+            captured["url"] = req.full_url
+            captured["max_attempts"] = _kw.get("max_attempts")
+            return {"status": "generated"}
+
+        client._do_request = fake_request  # type: ignore[method-assign]
+        self.assertEqual(
+            {"status": "generated"},
+            client.generate_episode(),
+        )
+        self.assertEqual("POST", captured["method"])
+        self.assertIsNone(captured["data"])
+        self.assertEqual(1, captured["max_attempts"])
+        self.assertTrue(captured["url"].endswith("/api/cognitive/episode/generate"))
+
+
 # ------------------------------------------------------------------ #
 #  delete_current_identity()                                           #
 # ------------------------------------------------------------------ #

@@ -91,6 +91,26 @@ class EchoMemClient(BaseHTTPMemoryClient):
         """Verify that the EchoMem HTTP service is reachable."""
         return self._get("/health")
 
+    def runtime(self) -> dict[str, Any]:
+        """Return the effective EchoMem runtime and engine configuration."""
+        return self._get("/runtime")
+
+    def generate_episode(self) -> dict[str, Any]:
+        """Prepare episodes using EchoMem's effective workspace configuration.
+
+        The endpoint intentionally receives no request body. Episode thresholds,
+        grouping and indexing behavior belong to EchoMem's episode engine.
+        """
+        url = f"{self.base_url}/api/cognitive/episode/generate"
+        req = urllib.request.Request(
+            url,
+            headers=self._headers(),
+            method="POST",
+        )
+        # A timeout can happen after EchoMem has already generated the
+        # episode. Retrying this POST could violate the at-most-once contract.
+        return self._do_request(req, max_attempts=1)
+
     def provision_isolated_identity(self, label: str) -> dict[str, str]:
         """Create a tenant/user/key and switch this client to that identity."""
         tenant_response = self._post("/api/auth/tenants", {"name": label})
