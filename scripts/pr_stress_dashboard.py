@@ -114,8 +114,8 @@ def render(jobs, results_root, public_base_url):
             "<td><b>PR %s</b><br><small>%s</small></td>"
             "<td><code>%s</code></td>"
             "<td><span class='status status-%s'>%s</span><br><small>%s</small></td>"
-            "<td>%s%%<br><small>%s / %s</small></td>"
-        "<td><small>创建 %s<br>开始 %s</small></td>"
+            "<td>%s</td>"
+            "<td><small>创建 %s<br>开始 %s</small></td>"
             "<td>%s</td>"
             "</tr>"
             % (
