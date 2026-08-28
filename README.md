@@ -197,6 +197,25 @@ CLI 参数可直接传入，也可通过环境变量设默认值：
 评测启动时自动执行预检：加载数据集验证非空、调用 `memory_client.health()`
 检查记忆后端连通性。通过后进入正式评测流程。
 
+### Episode Recall 接入
+
+LoCoMo 评测在全部记忆导入并通过完整性校验后、QA 开始前，会读取 EchoMem
+运行时的 `GET /runtime`。平台只依据运行时 `engines` 中
+`engine_id == "episode_engine"` 的实际 `recall_enabled` 判断是否准备 Episode，
+不会只读取工作区配置文件，也不会在平台内复制 Episode 的索引、排序或召回逻辑。
+
+- Episode Engine 未加载：记录 `episode_engine_not_loaded`，跳过生成并继续 QA。
+- Episode Recall 关闭：记录 `episode_recall_disabled`，跳过生成并继续 QA。
+- Episode Recall 开启：只调用一次 `POST /api/cognitive/episode/generate`，不发送
+  请求体；成功返回后才开始 QA。
+- `/runtime` 失败、响应结构非法、生成请求失败或响应非法：评测在 Episode 阶段失败，
+  不进入 QA，避免在 Episode 状态不确定时产生不可解释的结果。
+
+每次运行会生成 `episode_preparation.json`，并在 `summary.json` 的
+`episode_preparation` 字段中保存是否加载、是否开启、是否触发、生成状态、耗时和
+服务端响应。QA 仍统一调用 `/api/retrieval/search`，Episode 命中时由 EchoMem
+返回完整 Episode 证据。
+
 ## 运行评测
 
 ### Benchmark 评测

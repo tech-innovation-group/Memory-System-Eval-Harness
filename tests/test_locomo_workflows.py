@@ -36,7 +36,12 @@ from benchmarks.locomo.resume import (
     write_judge_resume_manifest,
     write_qa_resume_manifest,
 )
-from benchmarks.locomo.run_eval import load_qa_prompt_append
+from benchmarks.locomo.run_eval import (
+    EpisodePreparationError,
+    episode_recall_enabled,
+    prepare_episode_recall,
+    load_qa_prompt_append,
+)
 from shared.eval_base import EvalConfig
 from shared.qa import QAResult
 from plugins.base import AgentResponse
@@ -56,6 +61,107 @@ class LocomoCliDefaultsTests(unittest.TestCase):
             digest,
         )
         self.assertEqual("candidate.txt", source)
+
+    def test_episode_recall_enabled_reads_effective_runtime_flag(self):
+        self.assertTrue(episode_recall_enabled({
+            "engines": [
+                {"engine_id": "atomic_engine", "recall_enabled": True},
+                {"engine_id": "episode_engine", "recall_enabled": True},
+            ],
+        }))
+        self.assertFalse(episode_recall_enabled({
+            "engines": [
+                {"engine_id": "episode_engine", "recall_enabled": False},
+            ],
+        }))
+        self.assertFalse(episode_recall_enabled({"engines": []}))
+
+    def test_episode_preparation_skips_when_engine_not_loaded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            calls = []
+
+            class Client:
+                def runtime(self):
+                    calls.append("runtime")
+                    return {"engines": []}
+
+                def generate_episode(self):
+                    calls.append("generate")
+                    return {}
+
+            result = prepare_episode_recall(Client(), Path(directory), _Log())
+
+            self.assertEqual("skipped", result["generation_status"])
+            self.assertEqual("episode_engine_not_loaded", result["skip_reason"])
+            self.assertEqual(["runtime"], calls)
+            self.assertTrue((Path(directory) / "episode_preparation.json").is_file())
+
+    def test_episode_preparation_generates_once_when_enabled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            calls = []
+
+            class Client:
+                def runtime(self):
+                    calls.append("runtime")
+                    return {
+                        "engines": [
+                            {"engine_id": "episode_engine", "recall_enabled": True},
+                        ],
+                    }
+
+                def generate_episode(self):
+                    calls.append("generate")
+                    return {"status": "generated", "count": 2}
+
+            result = prepare_episode_recall(Client(), Path(directory), _Log())
+
+            self.assertTrue(result["generation_triggered"])
+            self.assertEqual("generated", result["generation_status"])
+            self.assertEqual(["runtime", "generate"], calls)
+
+    def test_episode_preparation_fails_before_qa_when_runtime_probe_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            class Client:
+                def runtime(self):
+                    raise RuntimeError("connection refused")
+
+            with self.assertRaises(EpisodePreparationError) as raised:
+                prepare_episode_recall(Client(), Path(directory), _Log())
+
+            self.assertEqual(
+                "runtime_probe_failed",
+                raised.exception.preparation["generation_status"],
+            )
+
+    def test_episode_preparation_rejects_empty_or_failed_generation_response(self):
+        for response in ({}, {"status": "failed"}):
+            with self.subTest(response=response):
+                with tempfile.TemporaryDirectory() as directory:
+                    class Client:
+                        def runtime(self):
+                            return {
+                                "engines": [
+                                    {
+                                        "engine_id": "episode_engine",
+                                        "recall_enabled": True,
+                                    },
+                                ],
+                            }
+
+                        def generate_episode(self):
+                            return response
+
+                    with self.assertRaises(EpisodePreparationError) as raised:
+                        prepare_episode_recall(
+                            Client(),
+                            Path(directory),
+                            _Log(),
+                        )
+
+                    self.assertEqual(
+                        "generation_failed",
+                        raised.exception.preparation["generation_status"],
+                    )
 
     def test_vendored_locomo_dataset_has_expected_hash(self):
         dataset = (

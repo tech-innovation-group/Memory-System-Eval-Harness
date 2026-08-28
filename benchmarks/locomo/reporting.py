@@ -25,6 +25,7 @@ def build_summary(
     qa_options: QAOptions,
     session_mode: str,
     evaluation_identity: dict[str, str],
+    episode_preparation: dict | None = None,
 ) -> dict:
     qa_errors = sum(1 for result in qa_results if result.llm_error)
     retrieval_errors = sum(
@@ -126,6 +127,14 @@ def build_summary(
         "session_mode": session_mode,
         "retrieval_scope": "session" if session_mode == "single" else "account",
         "memory_identity": evaluation_identity,
+        "episode_preparation": episode_preparation or {
+            "engine_loaded": False,
+            "recall_enabled": False,
+            "generation_triggered": False,
+            "generation_status": "not_run",
+            "generation_duration_ms": 0,
+            "skip_reason": "not_recorded",
+        },
         "served_model_ids": served_models,
         "tool_protocol_sha256": tool_protocol_hashes,
         "messages_jsonl_read_questions": transcript_read_questions,

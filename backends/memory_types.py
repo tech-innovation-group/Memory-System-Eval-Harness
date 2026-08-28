@@ -195,11 +195,17 @@ class BaseHTTPMemoryClient(ABC):
         req: urllib.request.Request,
         *,
         timeout_s: float | None = None,
+        max_attempts: int | None = None,
     ) -> dict[str, Any]:
         last_err: Exception | None = None
         request_timeout = self.timeout_s if timeout_s is None else max(0.001, timeout_s)
         deadline = time.monotonic() + request_timeout
-        for attempt in range(1, self.max_retries + 1):
+        attempts = (
+            self.max_retries
+            if max_attempts is None
+            else max(1, int(max_attempts))
+        )
+        for attempt in range(1, attempts + 1):
             try:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -220,9 +226,9 @@ class BaseHTTPMemoryClient(ABC):
                 last_err = e
                 self._log.warning(
                     "HTTP %s %s -> %d %s (attempt %d/%d)",
-                    req.method, req.full_url, e.code, body, attempt, self.max_retries,
+                    req.method, req.full_url, e.code, body, attempt, attempts,
                 )
-                if e.code >= 500 and attempt < self.max_retries:
+                if e.code >= 500 and attempt < attempts:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
                         raise TimeoutError(
@@ -235,9 +241,9 @@ class BaseHTTPMemoryClient(ABC):
                 last_err = e
                 self._log.warning(
                     "Request %s failed: %s (attempt %d/%d)",
-                    req.full_url, e, attempt, self.max_retries,
+                    req.full_url, e, attempt, attempts,
                 )
-                if attempt < self.max_retries:
+                if attempt < attempts:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
                         raise TimeoutError(
@@ -246,7 +252,7 @@ class BaseHTTPMemoryClient(ABC):
                     time.sleep(min(self.retry_backoff_s * attempt, remaining))
                 else:
                     raise
-        raise RuntimeError(f"request failed after {self.max_retries} retries: {last_err}")
+        raise RuntimeError(f"request failed after {attempts} attempts: {last_err}")
 
     # -- commit polling (template method) -------------------------------
 

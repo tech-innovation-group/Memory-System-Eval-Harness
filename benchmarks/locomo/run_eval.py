@@ -17,6 +17,7 @@ import json
 import os
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -90,6 +91,158 @@ def _redact_secret(value: Any) -> str:
     if not text:
         return ""
     return text[:4] + "***" + text[-4:] if len(text) > 8 else "***"
+
+
+class EpisodePreparationError(RuntimeError):
+    """Raised when runtime inspection or episode preparation is inconclusive."""
+
+    def __init__(self, message: str, preparation: dict[str, Any]):
+        super().__init__(message)
+        self.preparation = preparation
+
+
+def episode_recall_enabled(runtime_payload: dict[str, Any]) -> bool:
+    """Read the effective episode flag from the EchoMem runtime response."""
+    engines = runtime_payload.get("engines")
+    if not isinstance(engines, list):
+        raise ValueError("EchoMem /runtime response has no valid engines list")
+    for engine in engines:
+        if (
+            isinstance(engine, dict)
+            and engine.get("engine_id") == "episode_engine"
+        ):
+            return engine.get("recall_enabled") is True
+    return False
+
+
+def _episode_engine_loaded(runtime_payload: dict[str, Any]) -> bool:
+    engines = runtime_payload.get("engines")
+    if not isinstance(engines, list):
+        raise ValueError("EchoMem /runtime response has no valid engines list")
+    return any(
+        isinstance(engine, dict)
+        and engine.get("engine_id") == "episode_engine"
+        for engine in engines
+    )
+
+
+def _episode_generation_status(response: dict[str, Any]) -> str:
+    """Extract a stable status while tolerating small API response variants."""
+    candidates: list[Any] = [
+        response.get("generation_status"),
+        response.get("status"),
+        response.get("state"),
+    ]
+    result = response.get("result")
+    if isinstance(result, dict):
+        candidates.extend(
+            [result.get("generation_status"), result.get("status"), result.get("state")]
+        )
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip().lower()
+    return "generated"
+
+
+def _episode_generation_failed(status: str) -> bool:
+    return status in {
+        "error",
+        "failed",
+        "failure",
+        "rejected",
+        "timeout",
+        "timed_out",
+    }
+
+
+def prepare_episode_recall(memory_client, result_dir: Path, log) -> dict[str, Any]:
+    """Inspect effective runtime state and prepare Episode exactly once."""
+    started = time.perf_counter()
+    preparation: dict[str, Any] = {
+        "engine_loaded": False,
+        "recall_enabled": False,
+        "generation_triggered": False,
+        "generation_status": "",
+        "generation_duration_ms": 0,
+        "skip_reason": "",
+        "response": {},
+    }
+
+    try:
+        runtime_payload = memory_client.runtime()
+        if not isinstance(runtime_payload, dict):
+            raise ValueError("EchoMem /runtime response must be a JSON object")
+        preparation["runtime"] = runtime_payload
+        preparation["engine_loaded"] = _episode_engine_loaded(runtime_payload)
+        preparation["recall_enabled"] = episode_recall_enabled(runtime_payload)
+    except Exception as exc:
+        preparation["generation_status"] = "runtime_probe_failed"
+        preparation["error"] = str(exc)
+        preparation["generation_duration_ms"] = round(
+            (time.perf_counter() - started) * 1000
+        )
+        (result_dir / "episode_preparation.json").write_text(
+            json.dumps(preparation, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        raise EpisodePreparationError(
+            f"Episode runtime 状态探测失败: {exc}",
+            preparation,
+        ) from exc
+
+    if not preparation["engine_loaded"]:
+        preparation["generation_status"] = "skipped"
+        preparation["skip_reason"] = "episode_engine_not_loaded"
+    elif not preparation["recall_enabled"]:
+        preparation["generation_status"] = "skipped"
+        preparation["skip_reason"] = "episode_recall_disabled"
+    else:
+        preparation["generation_triggered"] = True
+        try:
+            response = memory_client.generate_episode()
+            if not isinstance(response, dict) or not response:
+                raise ValueError(
+                    "Episode generate response must be a non-empty JSON object"
+                )
+            preparation["response"] = response
+            preparation["generation_status"] = _episode_generation_status(response)
+            if _episode_generation_failed(preparation["generation_status"]):
+                raise RuntimeError(
+                    "Episode generate returned failure status: "
+                    f"{preparation['generation_status']}"
+                )
+        except Exception as exc:
+            preparation["generation_status"] = "generation_failed"
+            preparation["error"] = str(exc)
+            preparation["generation_duration_ms"] = round(
+                (time.perf_counter() - started) * 1000
+            )
+            (result_dir / "episode_preparation.json").write_text(
+                json.dumps(preparation, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            raise EpisodePreparationError(
+                f"Episode 生成失败: {exc}",
+                preparation,
+            ) from exc
+
+    preparation["generation_duration_ms"] = round(
+        (time.perf_counter() - started) * 1000
+    )
+    log.info(
+        "Episode preparation: loaded=%s recall_enabled=%s triggered=%s "
+        "status=%s skip_reason=%s",
+        preparation["engine_loaded"],
+        preparation["recall_enabled"],
+        preparation["generation_triggered"],
+        preparation["generation_status"],
+        preparation["skip_reason"],
+    )
+    (result_dir / "episode_preparation.json").write_text(
+        json.dumps(preparation, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return preparation
 
 
 def _build_agent_options(args, config) -> dict[str, Any]:
@@ -499,6 +652,29 @@ def main() -> None:
         log.error("%s", message)
         raise SystemExit(2)
 
+    # -- 阶段 1.5: Episode preparation --
+    log.info("=" * 60)
+    log.info("阶段 1.5: Episode preparation")
+    try:
+        episode_preparation = prepare_episode_recall(
+            echomem,
+            run.result_dir,
+            log,
+        )
+    except EpisodePreparationError as exc:
+        run.save_summary({
+            "status": "failed",
+            "phase": "episode_preparation",
+            "dataset": dataset_path,
+            "sample_filter": args.sample,
+            "import_ok": import_report.completed,
+            "import_total": import_report.total,
+            "episode_preparation": exc.preparation,
+            "error": str(exc),
+        })
+        log.error("%s", exc)
+        raise SystemExit(2) from exc
+
     # -- 阶段 2: 逐题 QA --
     log.info("=" * 60)
     log.info("阶段 2: QA (共 %d 题, 并发=%d)", len(jobs), config.concurrency)
@@ -644,6 +820,7 @@ def main() -> None:
         qa_options=qa_options,
         session_mode=session_mode,
         evaluation_identity=evaluation_identity,
+        episode_preparation=episode_preparation,
     )
     summary["diagnosis"] = {
         "path": str(run.result_dir / "diagnosis.json"),
