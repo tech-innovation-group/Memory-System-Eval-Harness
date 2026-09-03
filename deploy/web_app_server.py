@@ -23,7 +23,7 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import docker
 from docker.errors import DockerException, ImageNotFound
@@ -217,7 +217,11 @@ STRESS_COMMIT_TIMEOUT_S = float(os.getenv("STRESS_COMMIT_TIMEOUT_S", "600"))
 STRESS_SAMPLE_INTERVAL_S = float(os.getenv("STRESS_SAMPLE_INTERVAL_S", "10"))
 STRESS_SUITE_SCENARIOS = os.getenv(
     "STRESS_SUITE_SCENARIOS",
-    "baseline,mixed,commit-storm,search-storm,soak",
+    "A-c1,A-c4,A-c16,B-c1,B-c4,B-c16,"
+    "C8-1-c1,C4-1-c1,C1-1-c1,"
+    "C8-1-c4,C4-1-c4,C1-1-c4,"
+    "C8-1-c16,C4-1-c16,C1-1-c16,"
+    "D-c1,D-c4,D-c16",
 ).strip()
 STRESS_SUITE_REPEATS = int(os.getenv("STRESS_SUITE_REPEATS", "3"))
 GENERIC_RUNNER_PATH = Path(
@@ -251,7 +255,7 @@ def load_stress_secret_env() -> dict[str, str]:
             key, value = line.split("=", 1)
             key = key.strip()
             value = value.strip().strip("'").strip('"')
-            if re.fullmatch(r"STRESS_TENANT_[A-Z]+_KEY", key) and value:
+            if re.fullmatch(r"STRESS_TENANT_[A-Z0-9]+_KEY", key) and value:
                 values[key] = value
     except OSError:
         pass
@@ -278,6 +282,12 @@ def validate_generic_stress_config(payload: Any) -> dict[str, Any]:
         raise ValueError("target.base_url 不允许携带用户名或密码")
     if target.get("capture_response_body") is True:
         raise ValueError("服务器任务不允许保存完整响应正文，请使用断言和 CSV 状态字段")
+    try:
+        max_response_bytes = int(target.get("max_response_bytes", 1_048_576) or 0)
+    except (TypeError, ValueError):
+        raise ValueError("target.max_response_bytes 必须是整数") from None
+    if not 0 <= max_response_bytes <= 16 * 1024 * 1024:
+        raise ValueError("target.max_response_bytes 必须在 0 到 16777216 之间")
 
     requests_config = payload.get("requests")
     if not isinstance(requests_config, dict) or not requests_config:
@@ -286,14 +296,75 @@ def validate_generic_stress_config(payload: Any) -> dict[str, Any]:
         raise ValueError(
             f"request 模板过多（最多 {GENERIC_MAX_REQUEST_TEMPLATES} 个）"
         )
+    variables = payload.get("variables") or {}
+    if not isinstance(variables, dict):
+        raise ValueError("variables 必须是 JSON object")
+
+    def safe_secret_reference(value: Any) -> bool:
+        if not isinstance(value, str):
+            return False
+        if re.fullmatch(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}", value.strip()):
+            return True
+        names = re.findall(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", value)
+        return bool(names) and all(
+            re.fullmatch(
+                r"\$\{[A-Za-z_][A-Za-z0-9_]*\}",
+                str(variables.get(name, "")).strip(),
+            )
+            for name in names
+        )
+
+    sensitive_header = re.compile(
+        r"(authorization|proxy-authorization|api[-_]?key|token|secret|cookie)",
+        re.IGNORECASE,
+    )
+
+    def validate_headers(headers: Any, owner: str) -> None:
+        if headers is None:
+            return
+        if not isinstance(headers, dict):
+            raise ValueError(f"{owner}.headers 必须是 JSON object")
+        for header_name, header_value in headers.items():
+            if sensitive_header.search(str(header_name)) and not safe_secret_reference(
+                header_value
+            ):
+                raise ValueError(
+                    f"{owner}.headers 的敏感值必须使用 ${{ENV_NAME}} "
+                    "或引用 variables 中的环境变量"
+                )
+
+    validate_headers(target.get("headers"), "target")
     for name, spec in requests_config.items():
         if not isinstance(name, str) or not name.strip():
             raise ValueError("request 模板名称不能为空")
         if not isinstance(spec, dict):
             raise ValueError(f"request 模板 {name} 必须是 JSON object")
+        if spec.get("capture_response_body") is True:
+            raise ValueError(
+                f"request 模板 {name} 不允许保存完整响应正文，请使用断言和 CSV 状态字段"
+            )
         method = str(spec.get("method", "GET")).upper()
         if method not in {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"}:
             raise ValueError(f"request 模板 {name} 使用了不支持的 HTTP 方法")
+        path = str(spec.get("path", "/"))
+        if not path.startswith("/") or path.startswith("//"):
+            raise ValueError(f"request 模板 {name} 的 path 必须是相对路径")
+        validate_headers(spec.get("headers"), f"request {name}")
+        response_mode = str(spec.get("response", "any")).lower()
+        if response_mode not in {"any", "json"}:
+            raise ValueError(f"request 模板 {name} 的 response 必须是 any 或 json")
+        retries = int(spec.get("retries", 0) or 0)
+        if retries < 0 or retries > 10:
+            raise ValueError(f"request 模板 {name} 的 retries 必须在 0 到 10 之间")
+        retry_backoff_s = float(spec.get("retry_backoff_s", 0.2) or 0)
+        if not math.isfinite(retry_backoff_s) or retry_backoff_s < 0:
+            raise ValueError(f"request 模板 {name} 的 retry_backoff_s 必须是非负有限数")
+        retry_statuses = spec.get("retry_statuses")
+        if retry_statuses is not None:
+            if not isinstance(retry_statuses, list) or any(
+                int(code) < 100 or int(code) > 599 for code in retry_statuses
+            ):
+                raise ValueError(f"request 模板 {name} 的 retry_statuses 必须是 HTTP 状态码列表")
 
     scenarios = payload.get("scenarios")
     if not isinstance(scenarios, list) or not scenarios:
@@ -348,6 +419,18 @@ def validate_generic_stress_config(payload: Any) -> dict[str, Any]:
             p95_limit = float(p95_limit)
             if not math.isfinite(p95_limit) or p95_limit < 0:
                 raise ValueError(f"场景 {index} p95_limit_s 必须是非负有限数")
+        if "max_error_rate" in scenario:
+            max_error_rate = float(scenario["max_error_rate"])
+            if not math.isfinite(max_error_rate) or not 0 <= max_error_rate <= 1:
+                raise ValueError(f"场景 {index} max_error_rate 必须在 0 到 1 之间")
+        for field in ("warmup_requests", "warmup_concurrency", "min_successful_requests"):
+            if field in scenario and int(scenario[field]) < 0:
+                raise ValueError(f"场景 {index} {field} 不能为负数")
+        if "warmup_concurrency" in scenario and int(scenario["warmup_concurrency"]) < 1:
+            raise ValueError(f"场景 {index} warmup_concurrency 必须大于 0")
+    resource_interval_s = float(payload.get("resource_sample_interval_s", 0) or 0)
+    if not math.isfinite(resource_interval_s) or resource_interval_s < 0:
+        raise ValueError("resource_sample_interval_s 必须是非负有限数")
     health = payload.get("healthcheck")
     if health is not None:
         if not isinstance(health, dict):
@@ -1259,17 +1342,99 @@ def _prepare_latest_develop_pr_merge(
     source_dir: Path,
     merge_cache_key: str,
 ) -> tuple[Path, str]:
-    """Apply a PR patch to the task's latest develop snapshot.
+    """Merge the PR head into the task's exact latest develop commit.
 
-    GitHub's generated ``pull/<number>/merge`` ref can lag behind the current
-    develop branch. Build the tested tree locally from the freshly downloaded
-    develop archive plus the PR patch so a stale merge ref cannot silently
-    change the test baseline.
+    A patch generated against an older PR base cannot reliably be applied to a
+    newer develop archive. Fetching both refs from the same Git repository
+    preserves the real merge base and lets Git distinguish an actual conflict
+    from a missing-object or stale-patch problem.
     """
     cached_source = CACHE_ROOT / "pr-merge" / merge_cache_key
     if cached_source.is_dir() and (cached_source / "pyproject.toml").is_file():
         shutil.copytree(cached_source, source_dir)
         return cached_source, merge_cache_key
+
+    staging_source = cached_source.with_name(cached_source.name + ".tmp")
+    shutil.rmtree(staging_source, ignore_errors=True)
+    staging_source.mkdir(parents=True, exist_ok=True)
+    git_env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "memory-eval-harness",
+        "GIT_AUTHOR_EMAIL": "memory-eval-harness@localhost",
+        "GIT_COMMITTER_NAME": "memory-eval-harness",
+        "GIT_COMMITTER_EMAIL": "memory-eval-harness@localhost",
+        "GIT_TERMINAL_PROMPT": "0",
+    }
+    remote_url = ECHOMEM_REPO
+    if GITHUB_TOKEN and remote_url.startswith("https://"):
+        # Git's HTTPS helper is isolated in this image. Use a short-lived
+        # authenticated remote only for fetch, then remove it immediately.
+        remote_url = (
+            "https://x-access-token:"
+            + quote(GITHUB_TOKEN, safe="")
+            + "@"
+            + remote_url.removeprefix("https://")
+        )
+
+    def run_git(args: list[str], *, check: bool = True) -> subprocess.CompletedProcess:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=staging_source,
+            env=git_env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if check and result.returncode:
+            detail = (result.stderr or result.stdout).strip()[-1000:]
+            raise RuntimeError(f"Git 操作失败（{' '.join(args[:4])}）: {detail}")
+        return result
+
+    try:
+        run_git(["init", "-q"])
+        run_git(["remote", "add", "origin", remote_url])
+        run_git([
+            "fetch",
+            "--no-tags",
+            "origin",
+            f"refs/heads/develop:refs/remotes/origin/develop",
+            f"refs/pull/{pr_number}/head:refs/remotes/origin/pr-{pr_number}",
+        ])
+        run_git(["remote", "set-url", "origin", ECHOMEM_REPO])
+        run_git(["checkout", "-q", "-B", "eval-develop", develop_commit_sha])
+        merge_result = run_git(
+            [
+                "merge",
+                "--no-commit",
+                "--no-ff",
+                f"refs/remotes/origin/pr-{pr_number}",
+            ],
+            check=False,
+        )
+        if merge_result.returncode:
+            run_git(["merge", "--abort"], check=False)
+            detail = (merge_result.stderr or merge_result.stdout).strip()[-1000:]
+            shutil.rmtree(staging_source, ignore_errors=True)
+            raise RuntimeError(
+                f"PR {pr_number} 与最新 develop {develop_commit_sha[:12]} 存在真实合并冲突，"
+                f"未开始评测: {detail}"
+            )
+        run_git(["commit", "-qm", f"merge PR {pr_number} into develop {develop_commit_sha}"])
+        merge_result = run_git(["rev-parse", "HEAD"])
+        local_merge_sha = merge_result.stdout.strip()
+        cached_source.parent.mkdir(parents=True, exist_ok=True)
+        shutil.rmtree(cached_source, ignore_errors=True)
+        staging_source.rename(cached_source)
+        shutil.copytree(cached_source, source_dir)
+        append_job_log(
+            job["id"],
+            f"PR {pr_number} 已基于最新 develop {develop_commit_sha[:12]} "
+            f"真实合并，PR head={pr_head_sha[:12]} merge={local_merge_sha[:12]}",
+        )
+        return cached_source, local_merge_sha
+    except Exception:
+        shutil.rmtree(staging_source, ignore_errors=True)
+        raise
 
     develop_cache = CACHE_ROOT / "develop" / develop_commit_sha
     if not (develop_cache / "pyproject.toml").is_file():
@@ -1292,14 +1457,14 @@ def _prepare_latest_develop_pr_merge(
         _extract_github_archive(develop_response.content, develop_cache)
 
     patch_url = (
-        ECHOMEM_REPO.removesuffix(".git")
-        + f"/pull/{pr_number}.patch"
+        "https://api.github.com/repos/tech-innovation-group/EchoMem"
+        f"/pulls/{pr_number}"
     )
     patch_response = requests.get(
         patch_url,
         headers={
             **github_headers,
-            "Accept": "application/vnd.github.patch",
+            "Accept": "application/vnd.github.v3.patch",
         },
         timeout=120,
     )
@@ -1334,11 +1499,17 @@ def _prepare_latest_develop_pr_merge(
                 f"准备 PR {pr_number} 的最新 develop 基线失败: "
                 f"{result.stderr.strip()[-500:]}"
             )
+    patch_text = patch_response.content.decode("utf-8", errors="replace")
+    # The synthetic checkout contains only the develop snapshot. A 3-way
+    # apply needs the PR base blobs in the object database and can therefore
+    # report "repository lacks the necessary blob" even when GitHub says the
+    # PR is mergeable. Prefer a normal patch application first; it is the
+    # correct operation for a clean develop snapshot.
     check = subprocess.run(
-        ["git", "apply", "--check", "--3way", "-"],
+        ["git", "apply", "--check", "-"],
         cwd=staging_source,
         env=git_env,
-        input=patch_response.content.decode("utf-8", errors="replace"),
+        input=patch_text,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -1350,10 +1521,10 @@ def _prepare_latest_develop_pr_merge(
             f"未开始压测: {check.stderr.strip()[-600:]}"
         )
     apply_result = subprocess.run(
-        ["git", "apply", "--3way", "-"],
+        ["git", "apply", "-"],
         cwd=staging_source,
         env=git_env,
-        input=patch_response.content.decode("utf-8", errors="replace"),
+        input=patch_text,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -1780,14 +1951,21 @@ def wait_for_http(url: str, *, timeout_s: int = 300, job_id: str | None = None) 
     raise RuntimeError(f"EchoMem 健康检查超时: {url} ({last_error})")
 
 
-def capture_echomem_diagnostics(container, job_id: str, stage: str) -> list[str]:
-    """Persist inspect/log output before a failed EchoMem container is removed."""
+def capture_container_diagnostics(
+    container,
+    job_id: str,
+    stage: str,
+    *,
+    role: str = "echomem",
+) -> list[str]:
+    """Persist inspect/log output before a task container is removed."""
     result_dir = RESULTS_DIR / job_id
     result_dir.mkdir(parents=True, exist_ok=True)
     suffix = re.sub(r"[^a-zA-Z0-9_.-]+", "_", stage).strip("_") or "health"
+    safe_role = re.sub(r"[^a-zA-Z0-9_.-]+", "_", role).strip("_") or "container"
     paths: list[str] = []
     try:
-        inspect_path = result_dir / f"echomem.inspect.{suffix}.json"
+        inspect_path = result_dir / f"{safe_role}.inspect.{suffix}.json"
         inspect_path.write_text(
             json.dumps(container.attrs, ensure_ascii=False, indent=2, default=str),
             encoding="utf-8",
@@ -1799,14 +1977,23 @@ def capture_echomem_diagnostics(container, job_id: str, stage: str) -> list[str]
         logs = container.logs(tail=300, timestamps=True)
         if isinstance(logs, bytes):
             logs = logs.decode("utf-8", errors="replace")
-        logs_path = result_dir / f"echomem.logs.{suffix}.txt"
+        logs_path = result_dir / f"{safe_role}.logs.{suffix}.txt"
         logs_path.write_text(str(logs), encoding="utf-8")
         paths.append(str(logs_path))
     except Exception:
         app.logger.exception("failed to save EchoMem docker logs for %s", job_id)
     for path in paths:
-        append_job_log(job_id, f"EchoMem 诊断已保存: {path}")
+        append_job_log(job_id, f"{safe_role} 诊断已保存: {path}")
     return paths
+
+
+def capture_echomem_diagnostics(container, job_id: str, stage: str) -> list[str]:
+    return capture_container_diagnostics(
+        container,
+        job_id,
+        stage,
+        role="echomem",
+    )
 
 
 def _container_health(container) -> tuple[bool, str]:
@@ -1914,15 +2101,19 @@ def wait_for_echomem(
             try:
                 container.reload()
                 status = str(container.status or "")
+                # A stopped container cannot become healthy by waiting. Surface
+                # its exit evidence immediately so operators do not lose five
+                # minutes to a misleading network timeout.
+                if status not in {"running", "restarting"}:
+                    last_error = f"容器状态为 {status or 'unknown'}"
+                    append_job_log(job_id, f"EchoMem 健康检查提前终止: {last_error}")
+                    break
                 current_network = (
                     container.attrs.get("NetworkSettings", {})
                     .get("Networks", {})
                     .get("bridge", {})
                 )
                 echo_ip = str(current_network.get("IPAddress") or echo_ip)
-                if status not in {"running", "restarting"}:
-                    last_error = f"容器状态为 {status or 'unknown'}"
-                    break
             except Exception as exc:
                 last_error = str(exc)
 
@@ -1975,9 +2166,18 @@ def wait_for_echomem(
 
         capture_echomem_diagnostics(container, job_id, f"health-attempt-{attempt + 1}")
         if attempt == 0:
+            try:
+                container.reload()
+                status = str(container.status or "")
+            except Exception:
+                status = ""
             update_job(
                 job_id,
-                message="EchoMem 健康检查超时，正在自动重启容器",
+                message=(
+                    "EchoMem 容器已退出，正在自动重启容器"
+                    if status not in {"", "running", "restarting"}
+                    else "EchoMem 健康检查超时，正在自动重启容器"
+                ),
             )
             append_job_log(job_id, "EchoMem 健康检查失败，自动重启容器（1/1）")
             try:
@@ -1989,9 +2189,28 @@ def wait_for_echomem(
             continue
         else:
             capture_echomem_diagnostics(container, job_id, "health-final")
+    # The diagnostics are persisted in the result directory and included in
+    # the failure diagnosis. Keep the exception concise but distinguish an
+    # exited process from a service that is merely still starting.
+    try:
+        container.reload()
+        final_status = str(container.status or "")
+        state = container.attrs.get("State", {})
+        exit_code = state.get("ExitCode")
+        error = str(state.get("Error") or "").strip()
+        oom_killed = bool(state.get("OOMKilled"))
+        details = (
+            f"状态={final_status or 'unknown'}, "
+            f"退出码={exit_code if exit_code is not None else 'unknown'}, "
+            f"OOMKilled={'是' if oom_killed else '否'}"
+        )
+        if error:
+            details += f", Docker错误={error[:240]}"
+    except Exception:
+        details = f"状态未知，最后错误={last_error[:300]}"
     raise RuntimeError(
-        "EchoMem 健康检查超时（每次尝试 300 秒，已自动重启 1 次）: "
-        f"{last_error[:400]}"
+        "EchoMem 健康检查失败（已尝试 2 次，自动重启 1 次）: "
+        f"{details}; 最后错误={last_error[:300]}"
     )
 
 
@@ -2004,19 +2223,39 @@ def source_eval_environment(secret_values: dict[str, str]) -> dict[str, str]:
 
 
 def result_summary(job_id: str) -> dict[str, Any]:
-    result_dir = RESULTS_DIR / job_id
-    formal_summary = result_dir / f"formal_{job_id}" / "summary.json"
-    candidates = (
-        [formal_summary]
-        if formal_summary.is_file()
-        else list(result_dir.rglob("summary.json"))
-        if result_dir.exists()
-        else []
-    )
+    # The evaluator writes through the Docker host bind path while the Web
+    # process normally reads its /results mount. During container teardown
+    # those paths can briefly differ, so search both before declaring a
+    # successful process result missing.
+    result_dirs: list[Path] = []
+    for root in (RESULTS_DIR, DOCKER_RESULTS_DIR):
+        candidate = root / job_id
+        if candidate not in result_dirs and candidate.exists():
+            result_dirs.append(candidate)
+    candidates: list[Path] = []
+    for result_dir in result_dirs:
+        formal_summary = result_dir / f"formal_{job_id}" / "summary.json"
+        if formal_summary.is_file():
+            candidates.append(formal_summary)
+        else:
+            candidates.extend(
+                path for path in result_dir.rglob("summary.json") if path.is_file()
+            )
     if not candidates:
         return {}
+    summary_path = max(candidates, key=lambda path: path.stat().st_mtime_ns)
+    result_dir = summary_path.parent
     try:
-        summary = json.loads(candidates[0].read_text(encoding="utf-8"))
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        if not isinstance(summary, dict):
+            return {}
+    except (OSError, json.JSONDecodeError, TypeError):
+        return {}
+
+    # The summary is the authoritative result. CSV enrichment is optional:
+    # a truncated/partially-written judge checkpoint must never make an
+    # otherwise valid summary look as if it does not exist.
+    try:
         judge_path = next(result_dir.rglob("judge_results.csv"), None)
         if judge_path:
             with judge_path.open(encoding="utf-8", newline="") as handle:
@@ -2044,9 +2283,13 @@ def result_summary(job_id: str) -> dict[str, Any]:
                 if str(row.get("judge_error") or "").strip()
                 or str(row.get("verdict") or "").upper() == "ERROR"
             ]
+    except (OSError, UnicodeError, csv.Error, TypeError, ValueError):
+        app.logger.warning(
+            "summary.json loaded but judge CSV enrichment failed: %s",
+            judge_path if "judge_path" in locals() else result_dir,
+        )
         return summary
-    except (OSError, json.JSONDecodeError):
-        return {}
+    return summary
 
 
 def _latest_result_csv(result_dir: Path, name: str) -> Path | None:
@@ -2414,8 +2657,8 @@ def job_observability(job_id: str, *, log_lines: int = 120) -> dict[str, Any]:
             )
         except OSError:
             pass
-    echo_logs = sorted(result_dir.glob("echomem.logs.*.txt"))
-    for path in echo_logs[-3:]:
+    diagnostic_logs = sorted(result_dir.glob("*.logs.*.txt"))
+    for path in diagnostic_logs[-6:]:
         try:
             docker_logs.extend(
                 f"[{path.name}] {line}"
@@ -2425,7 +2668,7 @@ def job_observability(job_id: str, *, log_lines: int = 120) -> dict[str, Any]:
             )
         except OSError:
             continue
-    inspect_files = sorted(result_dir.glob("echomem.inspect.*.json"))
+    inspect_files = sorted(result_dir.glob("*.inspect.*.json"))
     inspect_summaries: list[dict[str, Any]] = []
     for path in inspect_files[-3:]:
         try:
@@ -2439,6 +2682,7 @@ def job_observability(job_id: str, *, log_lines: int = 120) -> dict[str, Any]:
             inspect_summaries.append(
                 {
                     "file": path.name,
+                    "role": path.name.split(".inspect.", 1)[0],
                     "status": state.get("Status"),
                     "exit_code": state.get("ExitCode"),
                     "oom_killed": bool(state.get("OOMKilled")),
@@ -2642,6 +2886,15 @@ def classify_job_failure(job_id: str) -> dict[str, Any]:
         reason = "PR 与当前 develop 无法无冲突合并，未进入有效评测。"
         retryable = False
         actions = ["resolve_conflict", "resubmit"]
+    elif runtime["exit_code"] == 137 and not runtime["oom_killed"]:
+        category = "docker_or_server"
+        category_label = "评测进程被外部终止"
+        reason = (
+            "评测 runner 收到 SIGKILL（退出码 137），但 Docker 未标记 OOM。"
+            "任务在记忆注入阶段被外部终止，尚未进入 QA/Judge；不是模型鉴权失败。"
+        )
+        retryable = True
+        actions = ["retry"]
     elif runtime["oom_killed"] or runtime["signals"]["docker_daemon"] or runtime["docker_error"]:
         category = "docker_or_server"
         category_label = "Docker/服务器问题"
@@ -4706,12 +4959,27 @@ def run_source_job(job_id: str, secret_values: dict[str, str]) -> None:
                 for line in chunk.decode("utf-8", errors="replace").splitlines():
                     update_progress_from_line(job_id, line)
         exit_code = int(eval_container.wait().get("StatusCode", 1))
+        if exit_code != 0:
+            capture_container_diagnostics(
+                eval_container,
+                job_id,
+                "final",
+                role="eval-runner",
+            )
         summary = result_summary(job_id)
-        status = "completed" if exit_code == 0 else "failed"
+        result_missing = exit_code == 0 and not summary
+        status = "failed" if exit_code != 0 or result_missing else "completed"
+        message = (
+            "评测进程退出码为 0，但未发现 summary.json，正式结果无效"
+            if result_missing
+            else "完成"
+            if exit_code == 0
+            else "评测进程退出异常"
+        )
         current_job = get_job(job_id) or job
         progress = final_stress_progress(
             current_job,
-            "completed" if exit_code == 0 else "failed",
+            status,
         )
         update_job(
             job_id,
@@ -4719,12 +4987,12 @@ def run_source_job(job_id: str, secret_values: dict[str, str]) -> None:
             finished_at=now(),
             exit_code=exit_code,
             summary=summary,
-            message="完成" if exit_code == 0 else "评测进程退出异常",
+            message=message,
             progress=progress,
         )
         if status == "failed":
             diagnosis = build_failure_diagnosis(
-                job_id, "评测进程退出异常"
+                job_id, message
             )
             update_job(
                 job_id,
@@ -4783,6 +5051,21 @@ def run_source_job(job_id: str, secret_values: dict[str, str]) -> None:
         append_startup_incident(job_id, diagnosis)
         notify_feishu_job(job_id)
     finally:
+        if eval_container is not None:
+            try:
+                current = get_job(job_id) or {}
+                if current.get("status") in {"failed", "interrupted"}:
+                    capture_container_diagnostics(
+                        eval_container,
+                        job_id,
+                        "final",
+                        role="eval-runner",
+                    )
+            except Exception:
+                app.logger.exception(
+                    "failed to capture final eval runner diagnostics for %s",
+                    job_id,
+                )
         if echo_container is not None:
             try:
                 current = get_job(job_id) or {}
@@ -5039,6 +5322,8 @@ def run_stress_job(job_id: str) -> None:
                 "/results/tenants.json",
                 "--out-dir",
                 f"/results/formal_{job_id}",
+                "--profile",
+                "report4",
                 "--scenarios",
                 str(config.get("suite_scenarios", STRESS_SUITE_SCENARIOS)),
                 "--repeats",
@@ -5059,11 +5344,10 @@ def run_stress_job(job_id: str) -> None:
                 "--auth-header",
                 STRESS_AUTH_HEADER,
             ]
-            # Formal platform jobs model production traffic: real tenants send
-            # concurrent HTTP requests directly to EchoMem. Client-side
-            # admission policies are intentionally not exposed here because
-            # they would measure the platform's queue, not EchoMem's queue.
-            command.append("--no-client-admission")
+            # ``formal_suite.py`` owns the runner command and adds
+            # ``--no-client-admission`` to each underlying runner invocation.
+            # Passing it here would make the suite parser reject the job
+            # before any stress case starts.
             entrypoint = ["python", "/app/stress/echomem/formal_suite.py"]
         else:
             command = [
@@ -5421,6 +5705,35 @@ def run_generic_stress_job(job_id: str) -> None:
         notify_feishu_job(job_id)
     except Exception as exc:
         message = f"通用压测运行错误: {str(exc)[:500]}"
+        error_text = str(exc)
+        if isinstance(exc, TimeoutError):
+            category = "timeout"
+            category_label = "压测超时"
+            reason = "压测进程超过服务器允许的最长运行时间，未能形成完整结果。"
+        elif isinstance(exc, (OSError, ConnectionError)):
+            category = "runner_or_platform"
+            category_label = "压测平台运行错误"
+            reason = "通用压测 runner 或其运行环境发生 I/O/连接异常，未能形成完整结果。"
+        else:
+            category = "runner_or_config"
+            category_label = "压测配置或 runner 错误"
+            reason = "通用压测 runner 在生成完整结果前异常退出，不能将其解释为目标系统通过或失败。"
+        diagnosis = {
+            "category": category,
+            "category_label": category_label,
+            "reason": reason,
+            "needs_target_change": False,
+            "retryable": True,
+            "allowed_actions": ["retry"],
+            "error": error_text[:1200],
+            "text": (
+                f"分类：{category_label}\n"
+                "是否需要修改目标系统：未判定\n"
+                f"依据：{reason}\n"
+                "建议动作：先检查 runner 日志和服务器资源，再 retry；"
+                "本次没有完整结果，不能据此判定目标系统功能异常。"
+            ),
+        }
         model_analysis = analyze_generic_failure_with_llm(
             job_id,
             {},
@@ -5428,12 +5741,15 @@ def run_generic_stress_job(job_id: str) -> None:
         )
         if model_analysis:
             message += f"\n异常分析：{model_analysis}"
+            diagnosis["model_analysis"] = model_analysis
+            diagnosis["text"] += f"\n模型分析：{model_analysis}"
         update_job(
             job_id,
             status="failed",
             finished_at=now(),
             message=message,
-            failure_analysis=message,
+            failure_analysis=diagnosis["text"],
+            failure_diagnosis=diagnosis,
             progress={
                 **default_progress("failed"),
                 "label": "通用压测失败",
