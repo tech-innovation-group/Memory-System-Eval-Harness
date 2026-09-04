@@ -9,8 +9,10 @@ ENV_FILE="${ENV_FILE:-$WEB_ROOT/server.env}"
 WEB_IMAGE="${WEB_IMAGE:-memory-eval-web:local}"
 RUNNER_IMAGE="${RUNNER_IMAGE:-}"
 STRESS_IMAGE="${STRESS_IMAGE:-echomem-stress-runner:20260826}"
+BUILD_IMAGES="${BUILD_IMAGES:-1}"
 SKILL_SOURCE="$INSTALL_ROOT/deploy/skills/echomem-eval-startup"
 SKILL_TARGET="$WEB_ROOT/data/skills/echomem-eval-startup"
+DEPLOY_LOCK_DIR="${DEPLOY_LOCK_DIR:-$WEB_ROOT/.deploy.lock.d}"
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "请使用 root 运行：sudo $0" >&2
@@ -18,6 +20,24 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 command -v docker >/dev/null || { echo "未找到 Docker"; exit 1; }
 docker info >/dev/null || { echo "Docker daemon 不可用"; exit 1; }
+
+# Prevent two deploy commands from racing on the shared container name and
+# port. mkdir is atomic and is available even on minimal server images.
+if ! mkdir "$DEPLOY_LOCK_DIR" 2>/dev/null; then
+  stale_pid=""
+  if [[ -f "$DEPLOY_LOCK_DIR/pid" ]]; then
+    stale_pid="$(cat "$DEPLOY_LOCK_DIR/pid" 2>/dev/null || true)"
+  fi
+  if [[ -n "$stale_pid" ]] && ! kill -0 "$stale_pid" 2>/dev/null; then
+    rm -rf "$DEPLOY_LOCK_DIR"
+    mkdir "$DEPLOY_LOCK_DIR"
+  else
+    echo "已有另一个部署正在执行，退出以保护线上 Web 服务" >&2
+    exit 1
+  fi
+fi
+printf '%s\n' "$$" >"$DEPLOY_LOCK_DIR/pid"
+trap 'rm -rf "$DEPLOY_LOCK_DIR"' EXIT
 
 # The runner contains the harness source itself. Give every source revision a
 # distinct tag so a restart cannot silently keep an incompatible cached image.
@@ -67,13 +87,27 @@ if [[ -n "${FEISHU_BITABLE_APP_TOKEN:-}" || -n "${FEISHU_BITABLE_TABLE_ID:-}" ]]
   : "${FEISHU_BITABLE_TABLE_ID:?上传多维表格时必须配置 FEISHU_BITABLE_TABLE_ID}"
 fi
 
-docker build -f "$INSTALL_ROOT/deploy/Dockerfile.runner" \
-  --build-arg "RUNNER_SOURCE_FINGERPRINT=${RUNNER_FINGERPRINT:-unknown}" \
-  -t "$RUNNER_IMAGE" "$INSTALL_ROOT"
-docker build -f "$INSTALL_ROOT/stress/echomem/Dockerfile" \
-  -t "$STRESS_IMAGE" "$INSTALL_ROOT"
-docker build -f "$INSTALL_ROOT/deploy/Dockerfile.web" \
-  -t "$WEB_IMAGE" "$INSTALL_ROOT"
+build_or_reuse_image() {
+  local image="$1"
+  shift
+  if [[ "$BUILD_IMAGES" == "0" ]]; then
+    docker image inspect "$image" >/dev/null 2>&1 || {
+      echo "BUILD_IMAGES=0 但镜像不存在：$image" >&2
+      exit 1
+    }
+    echo "复用已有镜像：$image"
+    return
+  fi
+  docker build "$@" -t "$image" "$INSTALL_ROOT"
+}
+
+build_or_reuse_image "$RUNNER_IMAGE" \
+  -f "$INSTALL_ROOT/deploy/Dockerfile.runner" \
+  --build-arg "RUNNER_SOURCE_FINGERPRINT=${RUNNER_FINGERPRINT:-unknown}"
+build_or_reuse_image "$STRESS_IMAGE" \
+  -f "$INSTALL_ROOT/stress/echomem/Dockerfile"
+build_or_reuse_image "$WEB_IMAGE" \
+  -f "$INSTALL_ROOT/deploy/Dockerfile.web"
 
 mkdir -p "$SKILL_TARGET"
 install -m 0644 "$SKILL_SOURCE/SKILL.md" "$SKILL_TARGET/SKILL.md"
@@ -123,38 +157,80 @@ if docker inspect memory-eval-web >/dev/null 2>&1; then
   )"
 fi
 
+web_healthz_ok() {
+  curl --silent --show-error --fail --max-time 3 \
+    "http://127.0.0.1:${WEB_PORT:-8081}/healthz" >/dev/null
+}
+
+restore_previous_web() {
+  local backup_name="$1"
+  echo "新 Web 未通过健康检查，开始回滚" >&2
+  docker rm -f memory-eval-web >/dev/null 2>&1 || true
+  if [[ -n "$backup_name" ]] && docker inspect "$backup_name" >/dev/null 2>&1; then
+    docker rename "$backup_name" memory-eval-web >/dev/null 2>&1 || true
+    docker start memory-eval-web >/dev/null 2>&1 || true
+  fi
+}
+
 if [[ "$running_image_id" == "$desired_image_id" ]] \
   && [[ "$running_env_fingerprint" == "$desired_env_fingerprint" ]] \
-  && [[ "$(docker inspect memory-eval-web --format '{{.State.Status}}' 2>/dev/null || true)" == "running" ]]; then
+  && [[ "$(docker inspect memory-eval-web --format '{{.State.Status}}' 2>/dev/null || true)" == "running" ]] \
+  && web_healthz_ok; then
   echo "复用已运行的 Web 容器：镜像未变化，不中断飞书回调"
 else
-  # Recreate only when the built image really changed. Re-running deployment
-  # with the same image must not create an avoidable callback outage.
-  docker rm -f memory-eval-web >/dev/null 2>&1 || true
-  docker run -d --name memory-eval-web --restart unless-stopped \
-    --env-file "$ENV_FILE" \
-    -e LD_LIBRARY_PATH=/lib64:/usr/lib64 \
-    -p "${WEB_PORT:-8081}:8081" \
-    -v /lib64/libcrypto.so.1.1.1k:/lib64/libcrypto.so.1.1:ro \
-    -v "$WEB_ROOT/data:/data" \
-    -v "$SOURCE_ROOT:$SOURCE_ROOT" \
-    -v "$WEB_ROOT/cache:$WEB_ROOT/cache" \
-    -v "$INSTALL_ROOT/results:$INSTALL_ROOT/results" \
-    -v /var/run/docker.sock:/var/run/docker.sock \
-    --label "memory-eval.env-fingerprint=$desired_env_fingerprint" \
-    "$WEB_IMAGE" >/dev/null
+  # Keep the old container stopped but intact until the replacement passes
+  # healthz and preflight. This makes a bad image/configuration reversible.
+  backup_name=""
+  if docker inspect memory-eval-web >/dev/null 2>&1; then
+    backup_name="memory-eval-web-backup-$(date +%Y%m%d%H%M%S)"
+    docker rename memory-eval-web "$backup_name"
+    docker stop "$backup_name" >/dev/null 2>&1 || true
+  fi
+  if ! docker run -d --name memory-eval-web --restart unless-stopped \
+      --env-file "$ENV_FILE" \
+      -e LD_LIBRARY_PATH=/lib64:/usr/lib64 \
+      -p "${WEB_PORT:-8081}:8081" \
+      -v /lib64/libcrypto.so.1.1.1k:/lib64/libcrypto.so.1.1:ro \
+      -v "$WEB_ROOT/data:/data" \
+      -v "$SOURCE_ROOT:$SOURCE_ROOT" \
+      -v "$WEB_ROOT/cache:$WEB_ROOT/cache" \
+      -v "$INSTALL_ROOT/results:$INSTALL_ROOT/results" \
+      -v /var/run/docker.sock:/var/run/docker.sock \
+      --label "memory-eval.env-fingerprint=$desired_env_fingerprint" \
+      "$WEB_IMAGE" >/dev/null; then
+    restore_previous_web "$backup_name"
+    exit 1
+  fi
 fi
 
 echo "EVAL_IMAGE=$RUNNER_IMAGE"
 
-for _ in $(seq 1 30); do
-  if curl -fsS "http://127.0.0.1:${WEB_PORT:-8081}/" >/dev/null; then
-    ENV_FILE="$ENV_FILE" WEB_PORT="${WEB_PORT:-8081}" \
-      "$SKILL_TARGET/preflight.sh" --strict
-    echo "部署成功：http://$(hostname -I | awk '{print $1}'):${WEB_PORT:-8081}"
-    exit 0
+if [[ -n "${backup_name:-}" ]]; then
+  for _ in $(seq 1 30); do
+    if web_healthz_ok; then
+      break
+    fi
+    sleep 2
+  done
+  if ! web_healthz_ok; then
+    docker logs --tail 100 memory-eval-web >&2 || true
+    restore_previous_web "$backup_name"
+    exit 1
   fi
-  sleep 2
-done
-docker logs --tail 100 memory-eval-web >&2 || true
-exit 1
+  allow_low_disk=0
+  [[ "$BUILD_IMAGES" == "0" ]] && allow_low_disk=1
+  if ! ENV_FILE="$ENV_FILE" WEB_PORT="${WEB_PORT:-8081}" \
+      PREFLIGHT_ALLOW_LOW_DISK="$allow_low_disk" \
+      "$SKILL_TARGET/preflight.sh" --strict; then
+    docker logs --tail 100 memory-eval-web >&2 || true
+    restore_previous_web "$backup_name"
+    exit 1
+  fi
+fi
+
+if ! curl -fsS "http://127.0.0.1:${WEB_PORT:-8081}/" >/dev/null; then
+  docker logs --tail 100 memory-eval-web >&2 || true
+  restore_previous_web "${backup_name:-}"
+  exit 1
+fi
+echo "部署成功：http://$(hostname -I | awk '{print $1}'):${WEB_PORT:-8081}"

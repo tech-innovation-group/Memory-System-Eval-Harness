@@ -12,6 +12,7 @@ fi
 ENV_FILE="${ENV_FILE:-/opt/memory-eval-web/server.env}"
 WEB_CONTAINER="${WEB_CONTAINER:-memory-eval-web}"
 WEB_PORT="${WEB_PORT:-8081}"
+ALLOW_LOW_DISK="${PREFLIGHT_ALLOW_LOW_DISK:-0}"
 failures=0
 
 ok() { printf '[OK] %s\n' "$*"; }
@@ -60,7 +61,11 @@ if [[ "$available_kb" =~ ^[0-9]+$ ]] && (( available_kb >= 10 * 1024 * 1024 )); 
   ok "disk space >= 10 GiB"
 else
   warn "available disk under /opt is below 10 GiB or unknown"
-  (( strict == 0 )) || failures=$((failures + 1))
+  if (( strict == 1 && ALLOW_LOW_DISK != 1 )); then
+    failures=$((failures + 1))
+  elif (( strict == 1 )); then
+    warn "低磁盘仅被允许用于复用已有镜像的 Web 部署，禁止据此启动压测"
+  fi
 fi
 
 cache="${ECHOMEM_WORKSPACE_CACHE:-/opt/memory-eval-web/cache}/recall/semantic_embeddings.json"

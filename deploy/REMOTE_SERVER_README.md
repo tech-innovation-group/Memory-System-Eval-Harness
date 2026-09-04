@@ -60,6 +60,21 @@ docker ps
 curl -fsS http://127.0.0.1:8081/
 ```
 
+部署稳定性：脚本带部署锁，并在切换前保留旧 Web 容器；新容器必须通过
+`/healthz` 和严格 preflight 才会完成切换，失败会自动回滚。服务器只想复用
+已有镜像、避免因磁盘不足重复构建时，可显式指定镜像并执行：
+
+```bash
+BUILD_IMAGES=0 \
+WEB_IMAGE=memory-eval-web:<已有标签> \
+RUNNER_IMAGE=memory-eval-runner:<已有标签> \
+STRESS_IMAGE=echomem-stress-runner:<已有标签> \
+deploy/install_server.sh
+```
+
+低磁盘只允许上述“复用已有镜像”的 Web 部署，不能据此启动新的压测；正式
+压测前仍需先释放磁盘并通过严格 preflight。
+
 DeepSeek 只负责 LLM/Judge，DashScope `text-embedding-v3` 只负责 embedding；
 两个 API Key 和 endpoint 不要混用。完整故障处理见
 [ECHOMEM_EVAL_RUNBOOK.md](ECHOMEM_EVAL_RUNBOOK.md)。
