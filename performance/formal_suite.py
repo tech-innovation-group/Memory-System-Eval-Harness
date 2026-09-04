@@ -977,6 +977,9 @@ def _build_case_command(
         cmd += ["--tenant-config", str(config_path)]
     if getattr(args, "skip_seed", False) or getattr(args, "reuse_existing_data", False):
         cmd += ["--skip-seed"]
+        # Keep real Search load running when seed evidence is unavailable.
+        # run_stress records hot-memory evidence as INCONCLUSIVE.
+        cmd += ["--allow-unverified-search"]
     if case.get("search_rps"):
         cmd += ["--mode", "fixed-rps", "--rps", str(case["search_rps"])]
     if case.get("search_rps_per_tenant"):

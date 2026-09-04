@@ -221,6 +221,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     g.add_argument(
+        "--allow-unverified-search",
+        action="store_true",
+        help=(
+            "无可验证记忆时仍执行真实 Search 负载；仅用于容量/调度/指标等黑盒观测，"
+            "召回质量和热缓存结论会标记 INCONCLUSIVE"
+        ),
+    )
+    g.add_argument(
         "--seed-concurrency",
         type=int,
         default=4,
@@ -1248,9 +1256,16 @@ def main() -> None:
                     and args.search_recall_ratio > 0
                 )
                 if requires_recall and not recall_queries:
-                    raise RuntimeError(
-                        "没有可验证命中的 recall query；已完成 Commit 但无法证明记忆可召回。"
-                        f" tenant={tenant.idx} probe={recall_probe}"
+                    if not args.allow_unverified_search:
+                        raise RuntimeError(
+                            "没有可验证命中的 recall query；已完成 Commit 但无法证明记忆可召回。"
+                            f" tenant={tenant.idx} probe={recall_probe}"
+                        )
+                    logger.warning(
+                        "tenant_idx=%d 无可验证记忆，降级为 unverified Search 负载；"
+                        " recall/热缓存结论将为 INCONCLUSIVE probe=%s",
+                        tenant.idx,
+                        recall_probe,
                     )
                 queries, query_kinds = build_search_query_pool(
                     recall_queries=recall_queries,
@@ -1441,6 +1456,15 @@ def main() -> None:
                     ),
                     "query_profile": args.search_query_profile,
                     "search_recall_ratio": args.search_recall_ratio,
+                    "search_evidence_status": (
+                        "inconclusive_unverified"
+                        if args.allow_unverified_search
+                        and not any(
+                            tenant.recall_probe.get("verified", 0)
+                            for tenant in tenants
+                        )
+                        else "verified_or_not_applicable"
+                    ),
                     "tenant_details": [tenant.to_dict() for tenant in tenants],
                 },
                 "server": server_info,

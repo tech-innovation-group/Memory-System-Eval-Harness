@@ -483,6 +483,7 @@ class FormalSuiteAdapterTests(unittest.TestCase):
                 15.0,
             )
             self.assertIn("--skip-seed", command)
+            self.assertIn("--allow-unverified-search", command)
 
     def test_build_case_command_explicit_skip_seed_without_legacy_alias(self) -> None:
         case = {

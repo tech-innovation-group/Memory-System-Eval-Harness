@@ -918,6 +918,9 @@ echo $! >"$STRESS_OUTPUT_DIR/launcher.pid"
 16/32 个租户。seed 失败时，平台仍会执行容量、调度、恢复和 `/metrics` 等
 不依赖预置记忆的真实黑盒场景；相关热缓存/记忆质量结论记录为 `INCONCLUSIVE`，
 不会把零请求包装成“成功”，也不会把 seed 故障连带成整套 `BLOCKED`。
+在这种无 seed 的运行里，正式 case 会自动给 `run_stress` 增加
+`--allow-unverified-search`，让真实 Search 请求继续执行；空结果不会被当作
+召回成功，`data_scale.search_evidence_status` 会保留证据缺口。
 
 服务器系统 Python 低于 3.9，或没有 Harness 依赖时，必须使用 runner 镜像。
 该镜像的默认 entrypoint 是旧版 `runner.py`，执行 PR29 的完整套件时要显式覆盖
