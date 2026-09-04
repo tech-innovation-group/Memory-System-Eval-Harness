@@ -132,7 +132,9 @@ def main() -> int:
     artifact_paths = (
         (root / "objective-suite.json", "objective-suite.json"),
         (formal / "suite.json", "4U8G/formal/suite.json"),
+        (formal / "acceptance.json", "4U8G/formal/acceptance.json"),
         (root / "4U8G" / "capability-probe.json", "capability-probe.json"),
+        (root / "4U8G" / "blackbox-contract-probe.json", "blackbox-contract-probe.json"),
         (root / "4U8G" / "commit-recovery.json", "commit-recovery.json"),
         (formal / "fairness-bounded/repeat-01/server-observe/search_results.csv",
          "fairness Search CSV"),
@@ -296,6 +298,14 @@ table{{width:100%;border-collapse:collapse}}th,td{{padding:8px;border-bottom:1px
 <tbody>{module_html}</tbody></table>
 <div class="callout"><b>归因原则：</b>没有真实故障控制、热记忆命中或指标样本时，只能说明测试前提/证据缺失；
 不能直接写成 EchoMem 内部未实现。只有 HTTP 404 或真实服务行为明确违反契约时，才建议修改 EchoMem。</div></section>
+<section><h2>EchoMem PR449 对接状态</h2>
+<table><thead><tr><th>能力</th><th>代码/接口证据</th><th>本轮结论</th></tr></thead>
+<tbody>
+<tr><td>Commit 状态与 202 恢复</td><td>commit status、history、archive、cursor 对账路径已存在</td><td>{status("PASS")}</td></tr>
+<tr><td>Search lane / fan-out 指标</td><td>/metrics 已定义 lane 四元组和 engine fan-out 指标</td><td>{status("INCONCLUSIVE")}：本轮服务器未采到完整实样本</td></tr>
+<tr><td>单租户故障控制</td><td>PR449 代码未提供可直接由黑盒调用的故障注入控制面</td><td>{status("INCONCLUSIVE")}：需要部署侧提供控制接口</td></tr>
+</tbody></table>
+<p class="muted">本轮没有新增 PR449 提交：现有证据不足以证明 EchoMem 内部行为违反契约，先修复部署/测试前提后再复测。</p></section>
 <section><h2>原始证据</h2><ul>{artifacts}</ul>
 <p class="muted">报告只引用运行目录内存在的文件，不写入 API key、密码或环境变量值。</p></section>
 </main></body></html>"""
