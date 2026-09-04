@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import unittest
 import importlib.util
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 
@@ -13,6 +15,39 @@ HAS_WEB_RUNTIME = importlib.util.find_spec("docker") is not None
     "Web service tests require the docker Python package",
 )
 class FormalProgressTests(unittest.TestCase):
+    def test_deterministic_startup_trace_is_not_retried(self) -> None:
+        from deploy import web_app_server as server
+
+        class Container:
+            def logs(self, **kwargs):
+                return (
+                    b"Traceback (most recent call last):\n"
+                    b"ValueError: mutable default is not allowed\n"
+                )
+
+        detail = server._deterministic_startup_error(Container())
+        self.assertIn("ValueError", detail)
+
+    def test_feishu_inbox_survives_restart_and_is_marked_done(self) -> None:
+        from deploy import web_app_server as server
+
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "feishu-inbox.jsonl"
+            with patch.object(server, "FEISHU_INBOX_PATH", path):
+                server._append_feishu_inbox(
+                    event_id="event-1",
+                    event_type="message",
+                    chat_id="chat-1",
+                    message={"chat_id": "chat-1", "content": "{}"},
+                    text="压测 develop",
+                )
+                self.assertEqual(
+                    "event-1",
+                    server._pending_feishu_events()[0]["event_id"],
+                )
+                server._mark_feishu_inbox_done("event-1")
+                self.assertEqual([], server._pending_feishu_events())
+
     def test_formal_progress_protocol_is_distinguished_from_child_output(self) -> None:
         from deploy.web_app_server import _is_formal_progress_line, _split_log_chunk
 

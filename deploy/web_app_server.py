@@ -546,6 +546,8 @@ FEISHU_TOKEN_CACHE: dict[str, Any] = {"token": "", "expires_at": 0.0}
 FEISHU_EVENT_IDS: set[str] = set()
 FEISHU_LOCK = threading.Lock()
 FEISHU_EVENT_LOG_PATH = DATA_DIR / "feishu-events.jsonl"
+FEISHU_INBOX_PATH = DATA_DIR / "feishu-inbox.jsonl"
+FEISHU_INBOX_LOCK = threading.Lock()
 HARNESS_SESSION_MAP_PATH = DATA_DIR / "harness-feishu-sessions.json"
 HARNESS_SESSION_LOCK = threading.Lock()
 
@@ -2020,6 +2022,38 @@ def _container_health(container) -> tuple[bool, str]:
         return False, str(exc)[-300:]
 
 
+def _deterministic_startup_error(container) -> str:
+    """Return a short code/config failure marker from startup logs.
+
+    A traceback raised while importing EchoMem cannot be fixed by waiting or
+    restarting the same image. Detect it before the generic retry path so a
+    bad checkout is reported once, with its actual root cause.
+    """
+    markers = (
+        "traceback (most recent call last)",
+        "valueerror:",
+        "typeerror:",
+        "attributeerror:",
+        "importerror:",
+        "modulenotfounderror:",
+        "syntaxerror:",
+        "configurationerror:",
+        "config error",
+    )
+    try:
+        logs = container.logs(tail=160, timestamps=False)
+        if isinstance(logs, bytes):
+            logs = logs.decode("utf-8", errors="replace")
+        text = str(logs)
+    except Exception:
+        return ""
+    lowered = text.lower()
+    if any(marker in lowered for marker in markers):
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        return "\n".join(lines[-8:])[:1600]
+    return ""
+
+
 def _mcp_probe(base_url: str) -> tuple[bool, str]:
     """Complete an MCP handshake and tools/list before QA starts."""
     url = f"{base_url.rstrip('/')}/mcp"
@@ -2166,6 +2200,18 @@ def wait_for_echomem(
 
         capture_echomem_diagnostics(container, job_id, f"health-attempt-{attempt + 1}")
         if attempt == 0:
+            deterministic_error = _deterministic_startup_error(container)
+            if deterministic_error:
+                append_job_log(
+                    job_id,
+                    "EchoMem 检测到确定性启动错误，停止无效重试:\n"
+                    + deterministic_error,
+                )
+                capture_echomem_diagnostics(container, job_id, "startup-code-error")
+                raise RuntimeError(
+                    "EchoMem 代码/配置启动失败，未进入压测；"
+                    "同一镜像不再自动重试。详见 startup-code-error 日志。"
+                )
             try:
                 container.reload()
                 status = str(container.status or "")
@@ -4143,6 +4189,118 @@ def append_feishu_event_log(
         app.logger.exception("failed to persist Feishu callback trace")
 
 
+def _append_feishu_inbox(
+    *,
+    event_id: str,
+    event_type: str,
+    chat_id: str,
+    message: dict[str, Any],
+    text: str,
+) -> None:
+    """Durably enqueue a callback before acknowledging it to Feishu.
+
+    Feishu retries are expected, but an in-memory daemon thread is not a
+    durable queue: a Web restart after the HTTP 200 could otherwise lose the
+    message. Store only the parsed message envelope needed by the handler;
+    credentials and raw encrypted payloads never enter this file.
+    """
+    if not event_id:
+        raise RuntimeError("飞书事件缺少 event_id，拒绝进入异步处理队列")
+    record = {
+        "kind": "pending",
+        "recorded_at": now(),
+        "event_id": event_id,
+        "event_type": event_type,
+        "chat_id": chat_id,
+        "message": message,
+        "text": text[:1000],
+    }
+    FEISHU_INBOX_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with FEISHU_INBOX_LOCK:
+        with FEISHU_INBOX_PATH.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+
+
+def _mark_feishu_inbox_done(event_id: str) -> None:
+    if not event_id:
+        return
+    record = {
+        "kind": "done",
+        "recorded_at": now(),
+        "event_id": event_id,
+    }
+    try:
+        with FEISHU_INBOX_LOCK:
+            with FEISHU_INBOX_PATH.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+    except OSError:
+        app.logger.exception("failed to mark Feishu event done: %s", event_id)
+
+
+def _pending_feishu_events() -> list[dict[str, Any]]:
+    """Return pending callbacks, preserving first-seen order."""
+    if not FEISHU_INBOX_PATH.is_file():
+        return []
+    latest: dict[str, dict[str, Any]] = {}
+    try:
+        with FEISHU_INBOX_LOCK:
+            for raw_line in FEISHU_INBOX_PATH.read_text(
+                encoding="utf-8", errors="replace"
+            ).splitlines():
+                try:
+                    record = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    continue
+                event_id = str(record.get("event_id") or "")
+                if not event_id:
+                    continue
+                if record.get("kind") == "done":
+                    latest.pop(event_id, None)
+                elif record.get("kind") == "pending" and event_id not in latest:
+                    latest[event_id] = record
+    except OSError:
+        app.logger.exception("failed to read Feishu inbox")
+    return list(latest.values())
+
+
+def _feishu_event_has_terminal_log(event_id: str) -> bool:
+    """Avoid creating a duplicate job after a crash at the final hand-off."""
+    if not event_id or not FEISHU_EVENT_LOG_PATH.is_file():
+        return False
+    terminal = {
+        "job_created",
+        "stress_job_created",
+        "stress_job_create_failed",
+        "job_create_failed",
+        "ignored_all_members_mention",
+        "ignored_missing_chat_id",
+    }
+    try:
+        with FEISHU_LOCK:
+            for raw_line in FEISHU_EVENT_LOG_PATH.read_text(
+                encoding="utf-8", errors="replace"
+            ).splitlines():
+                try:
+                    record = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    continue
+                if str(record.get("event_id") or "") != event_id:
+                    continue
+                outcome = str(record.get("outcome") or "")
+                if outcome in terminal or any(
+                    outcome.startswith(prefix + ":")
+                    for prefix in terminal
+                ):
+                    return True
+    except OSError:
+        app.logger.exception("failed to inspect Feishu event log: %s", event_id)
+    return False
+
+
 def feishu_message_from_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
     """Accept both current and legacy Feishu event envelope shapes."""
     event = payload.get("event") or {}
@@ -6015,6 +6173,22 @@ def reject_untrusted_hosts():
         abort(400)
 
 
+@app.get("/healthz")
+def healthz():
+    """Lightweight process/liveness endpoint for Docker and operators."""
+    return jsonify(
+        {
+            "status": "ok",
+            "service": "memory-eval-web",
+            "queue_depth": JOB_QUEUE.qsize(),
+            "worker_alive": any(
+                thread.name == "memory-eval-worker" and thread.is_alive()
+                for thread in threading.enumerate()
+            ),
+        }
+    )
+
+
 @app.get("/")
 def index():
     if not require_access():
@@ -6261,6 +6435,10 @@ def process_feishu_message(
             send_feishu_text(chat_id, "机器人处理失败，请稍后重试；也可以发送“查询 <任务ID>”。")
         except Exception:
             app.logger.exception("failed to report Feishu message error")
+    finally:
+        # The inbox record is the durable hand-off point. Once this handler
+        # returns, a later Web restart must not replay the same event.
+        _mark_feishu_inbox_done(event_id)
 
 
 @app.post("/feishu/events")
@@ -6320,6 +6498,21 @@ def feishu_events():
         )
         return jsonify({"code": 0})
 
+    try:
+        _append_feishu_inbox(
+            event_id=event_id,
+            event_type=event_type,
+            chat_id=chat_id,
+            message=message,
+            text=text,
+        )
+    except Exception:
+        # Do not leave a failed event in the in-memory dedup set. Returning a
+        # non-2xx response lets Feishu retry after the durable inbox recovers.
+        with FEISHU_LOCK:
+            FEISHU_EVENT_IDS.discard(event_id)
+        app.logger.exception("failed to persist Feishu callback before ack")
+        return jsonify({"code": 1, "msg": "callback persistence failed"}), 503
     append_feishu_event_log(
         event_id=event_id,
         event_type=event_type,
@@ -6341,6 +6534,45 @@ def feishu_events():
     # Acknowledge immediately. Feishu may retry callbacks that spend time
     # waiting on an LLM or the Feishu send-message API.
     return jsonify({"code": 0})
+
+
+def replay_pending_feishu_events() -> None:
+    """Re-submit durable callbacks left unfinished by a Web restart."""
+    time.sleep(1)
+    for record in _pending_feishu_events():
+        event_id = str(record.get("event_id") or "")
+        chat_id = str(record.get("chat_id") or "")
+        if not event_id or not chat_id:
+            continue
+        if _feishu_event_has_terminal_log(event_id):
+            _mark_feishu_inbox_done(event_id)
+            continue
+        with FEISHU_LOCK:
+            if event_id in FEISHU_EVENT_IDS:
+                continue
+            FEISHU_EVENT_IDS.add(event_id)
+        message = record.get("message")
+        if not isinstance(message, dict):
+            message = {"chat_id": chat_id, "content": record.get("text", "")}
+        text = str(record.get("text") or parse_feishu_text(message))
+        append_feishu_event_log(
+            event_id=event_id,
+            event_type=str(record.get("event_type") or "message"),
+            chat_id=chat_id,
+            text=text,
+            outcome="replayed_after_restart",
+        )
+        threading.Thread(
+            target=process_feishu_message,
+            kwargs={
+                "event_id": event_id,
+                "message": message,
+                "chat_id": chat_id,
+                "text": text,
+            },
+            daemon=True,
+            name=f"feishu-replay-{event_id[-8:]}",
+        ).start()
 
 
 
@@ -6518,6 +6750,11 @@ def initialize() -> None:
             JOB_QUEUE.put(job["id"])
     reattach_running_jobs()
     threading.Thread(target=worker, daemon=True, name="memory-eval-worker").start()
+    threading.Thread(
+        target=replay_pending_feishu_events,
+        daemon=True,
+        name="feishu-inbox-replay",
+    ).start()
     threading.Thread(
         target=result_cleanup_worker,
         daemon=True,

@@ -7,7 +7,7 @@ WEB_ROOT="${WEB_ROOT:-/opt/memory-eval-web}"
 SOURCE_ROOT="${SOURCE_ROOT:-/opt/memory-eval-sources}"
 ENV_FILE="${ENV_FILE:-$WEB_ROOT/server.env}"
 WEB_IMAGE="${WEB_IMAGE:-memory-eval-web:local}"
-RUNNER_IMAGE="${RUNNER_IMAGE:-memory-eval-runner:local}"
+RUNNER_IMAGE="${RUNNER_IMAGE:-}"
 STRESS_IMAGE="${STRESS_IMAGE:-echomem-stress-runner:20260826}"
 SKILL_SOURCE="$INSTALL_ROOT/deploy/skills/echomem-eval-startup"
 SKILL_TARGET="$WEB_ROOT/data/skills/echomem-eval-startup"
@@ -18,6 +18,19 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 command -v docker >/dev/null || { echo "未找到 Docker"; exit 1; }
 docker info >/dev/null || { echo "Docker daemon 不可用"; exit 1; }
+
+# The runner contains the harness source itself. Give every source revision a
+# distinct tag so a restart cannot silently keep an incompatible cached image.
+if [[ -z "$RUNNER_IMAGE" ]]; then
+  RUNNER_FINGERPRINT="$(
+    {
+      find "$ROOT/backends" "$ROOT/plugins" "$ROOT/benchmarks" \
+        -type f -print0 2>/dev/null
+      printf '%s\0' "$ROOT/deploy/Dockerfile.runner" "$ROOT/requirements.txt"
+    } | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16
+  )"
+  RUNNER_IMAGE="memory-eval-runner:${RUNNER_FINGERPRINT}"
+fi
 
 mkdir -p "$INSTALL_ROOT" "$WEB_ROOT/data" "$WEB_ROOT/cache/recall" "$SOURCE_ROOT" \
   "$INSTALL_ROOT/results/_archives" /opt/codex-server
@@ -55,6 +68,7 @@ if [[ -n "${FEISHU_BITABLE_APP_TOKEN:-}" || -n "${FEISHU_BITABLE_TABLE_ID:-}" ]]
 fi
 
 docker build -f "$INSTALL_ROOT/deploy/Dockerfile.runner" \
+  --build-arg "RUNNER_SOURCE_FINGERPRINT=${RUNNER_FINGERPRINT:-unknown}" \
   -t "$RUNNER_IMAGE" "$INSTALL_ROOT"
 docker build -f "$INSTALL_ROOT/stress/echomem/Dockerfile" \
   -t "$STRESS_IMAGE" "$INSTALL_ROOT"
@@ -93,16 +107,45 @@ ECHOMEM_WORKSPACE_CACHE=$WEB_ROOT/cache
 STRESS_IMAGE=$STRESS_IMAGE
 EOF
 
-docker rm -f memory-eval-web >/dev/null 2>&1 || true
-docker run -d --name memory-eval-web --restart unless-stopped \
-  --env-file "$ENV_FILE" \
-  -p "${WEB_PORT:-8081}:8081" \
-  -v "$WEB_ROOT/data:/data" \
-  -v "$SOURCE_ROOT:$SOURCE_ROOT" \
-  -v "$WEB_ROOT/cache:$WEB_ROOT/cache" \
-  -v "$INSTALL_ROOT/results:$INSTALL_ROOT/results" \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  "$WEB_IMAGE" >/dev/null
+desired_image_id="$(docker image inspect "$WEB_IMAGE" --format '{{.Id}}')"
+running_image_id=""
+desired_env_fingerprint="$(
+  sed -E '/(KEY|SECRET|TOKEN|PASSWORD)=/d' "$ENV_FILE" \
+    | sha256sum | cut -c1-16
+)"
+running_env_fingerprint=""
+if docker inspect memory-eval-web >/dev/null 2>&1; then
+  running_image_id="$(docker inspect memory-eval-web --format '{{.Image}}')"
+  running_env_fingerprint="$(
+    docker inspect memory-eval-web \
+      --format '{{index .Config.Labels "memory-eval.env-fingerprint"}}' \
+      2>/dev/null || true
+  )"
+fi
+
+if [[ "$running_image_id" == "$desired_image_id" ]] \
+  && [[ "$running_env_fingerprint" == "$desired_env_fingerprint" ]] \
+  && [[ "$(docker inspect memory-eval-web --format '{{.State.Status}}' 2>/dev/null || true)" == "running" ]]; then
+  echo "复用已运行的 Web 容器：镜像未变化，不中断飞书回调"
+else
+  # Recreate only when the built image really changed. Re-running deployment
+  # with the same image must not create an avoidable callback outage.
+  docker rm -f memory-eval-web >/dev/null 2>&1 || true
+  docker run -d --name memory-eval-web --restart unless-stopped \
+    --env-file "$ENV_FILE" \
+    -e LD_LIBRARY_PATH=/lib64:/usr/lib64 \
+    -p "${WEB_PORT:-8081}:8081" \
+    -v /lib64/libcrypto.so.1.1.1k:/lib64/libcrypto.so.1.1:ro \
+    -v "$WEB_ROOT/data:/data" \
+    -v "$SOURCE_ROOT:$SOURCE_ROOT" \
+    -v "$WEB_ROOT/cache:$WEB_ROOT/cache" \
+    -v "$INSTALL_ROOT/results:$INSTALL_ROOT/results" \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    --label "memory-eval.env-fingerprint=$desired_env_fingerprint" \
+    "$WEB_IMAGE" >/dev/null
+fi
+
+echo "EVAL_IMAGE=$RUNNER_IMAGE"
 
 for _ in $(seq 1 30); do
   if curl -fsS "http://127.0.0.1:${WEB_PORT:-8081}/" >/dev/null; then

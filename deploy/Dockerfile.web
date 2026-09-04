@@ -5,11 +5,18 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_DEFAULT_TIMEOUT=120
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY deploy/web-requirements.txt /tmp/web-requirements.txt
 RUN python -m pip install --no-cache-dir -r /tmp/web-requirements.txt
 COPY deploy/web_app_server.py /web/app.py
 COPY deploy/templates /web/templates
 COPY stress/generic /web/stress/generic
 COPY stress/echomem/formal_progress.py /web/stress/echomem/formal_progress.py
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=3 \
+  CMD python -c "import json,urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8081/healthz', timeout=2); data=json.load(r); raise SystemExit(0 if data.get('status') == 'ok' else 1)"
 
 CMD ["waitress-serve", "--host=0.0.0.0", "--port=8081", "app:app"]
