@@ -1073,6 +1073,17 @@ O4 会在 `search-priority-blackbox`、`tenant-skew` 等候选负载中选择租
 的一轮计算公平性，避免 quick 模式的小 barrier 结果遮蔽更完整的真实证据；如果
 该轮仍有租户没有 Commit 或 Search 样本，结果仍会保留为 `FAIL` 或 `INCONCLUSIVE`。
 报告输出 `objective-suite.json` 和 `objective-suite.html`，不会把缺失证据算成通过。
+如需把已有运行结果整理成更适合评审的六项指标页面，可执行：
+
+```bash
+python3 scripts/build_pr29_six_metric_report.py \
+  results/objective-suite-20260904 \
+  --output results/objective-suite-20260904/pr29-six-metric-report.html
+```
+
+该报告会区分“已配置场景”“实际发出请求”和“证据足够的结论”，并链接
+`objective-suite.json`、能力/恢复探针以及公平性和优先级场景的原始 Search/Commit
+CSV。找不到的证据不会生成伪造链接，也不会被提升为 PASS。
  profile 中配置 `capability_probe`、`commit_recovery`、`fault_plan` 后，入口会自动
 执行真实 HTTP 能力探针、Commit 中途 kill-9 恢复探针和故障套件，并把每个检查项写入
 HTML 明细。可从 `performance/instance-profiles.example.json` 与
