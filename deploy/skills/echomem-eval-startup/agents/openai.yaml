@@ -1,0 +1,4 @@
+interface:
+  display_name: "EchoMem Eval Startup"
+  short_description: "Preflight and recover the EchoMem evaluation server"
+  default_prompt: "Use $echomem-eval-startup to preflight and recover this EchoMem evaluation server without changing EchoMem source."

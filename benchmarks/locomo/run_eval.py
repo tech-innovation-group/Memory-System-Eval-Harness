@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,7 @@ from benchmarks.locomo.blackbox import write_artifacts as write_blackbox_artifac
 from benchmarks.locomo.import_memory import (
     ImportOptions,
     import_locomo_memory,
+    load_import_report,
     resolve_session_mode,
 )
 from benchmarks.locomo.judge import (
@@ -216,6 +218,16 @@ def build_parser() -> argparse.ArgumentParser:
             "(superseded by --resume)"
         ),
     )
+    qa.add_argument(
+        "--qa-only-from",
+        default="",
+        help=(
+            "Run QA/Judge only against a completed injection result directory. "
+            "The source import_results.csv and qa_resume_manifest.json are "
+            "validated, the prior tenant/user identity is reused, and no "
+            "open_session/add_message/commit_session calls are made."
+        ),
+    )
     # judge 参数 (三个基础参数由共享 helper 声明, locomo 额外参数在此声明)
     add_judge_args(parser)
     g = parser.add_argument_group("Judge")
@@ -274,6 +286,13 @@ def _load_prior_import_rows(resume_source: str) -> list[dict]:
 
 def main() -> None:
     args = build_parser().parse_args()
+    if args.qa_only_from and (
+        args.resume or args.resume_qa or args.reuse_memory_from
+    ):
+        raise ValueError(
+            "--qa-only-from cannot be combined with --resume, --resume-qa, "
+            "or --reuse-memory-from"
+        )
     config = build_config_from_args(args)
     (
         system_prompt_append,
@@ -336,21 +355,26 @@ def main() -> None:
     # 加载 agent 插件 (在记忆操作之前, setup 内部创建 memory_client)
     agent_config = {**vars(args), "benchmark_name": "locomo", "run_id": run.result_dir.name}
     # 统一 --resume 与 --resume-qa 都跳过身份隔离（插件读 config["resume_qa"]）
-    agent_config["resume_qa"] = (
-        args.resume or args.resume_qa or args.reuse_memory_from
+    memory_reuse_source = (
+        args.qa_only_from
+        or args.resume
+        or args.resume_qa
+        or args.reuse_memory_from
     )
+    agent_config["resume_qa"] = memory_reuse_source
     agent_plugin = load_agent_plugin(args.agent_plugin, agent_config)
     agent_options["qa_profile"] = agent_plugin.qa_profile
     _write_agent_options_to_config(run.result_dir, agent_options)
     echomem = agent_plugin.memory_client
     raw_echomem = echomem
     echomem.health()
-    memory_reuse_source = args.resume or args.resume_qa or args.reuse_memory_from
     if memory_reuse_source:
         apply_resume_memory_identity(echomem, memory_reuse_source, log)
     evaluation_identity = {
         "mode": (
-            "resumed"
+            "qa_only"
+            if args.qa_only_from
+            else "resumed"
             if (args.resume or args.resume_qa)
             else "reused"
             if args.reuse_memory_from
@@ -358,7 +382,7 @@ def main() -> None:
         ),
         "tenant_id": echomem.account,
         "user_id": echomem.user_id,
-        "auth_key": echomem.auth_key,
+        "auth_key": _redact_secret(echomem.auth_key),
     }
     log.info(
         "Memory identity: %s tenant=%s user=%s",
@@ -367,7 +391,7 @@ def main() -> None:
         evaluation_identity.get("user_id", ""),
     )
     memory_session_prefix = ""
-    if memory_reuse_source:
+    if memory_reuse_source and not args.qa_only_from:
         sample = str(args.sample or "").strip()
         if re.fullmatch(r"conv-\d+", sample):
             memory_session_prefix = f"echomem-locomo-{sample}-"
@@ -414,28 +438,51 @@ def main() -> None:
     log.info("=" * 60)
     prior_import_rows = (
         _load_prior_import_rows(memory_reuse_source)
-        if memory_reuse_source
+        if memory_reuse_source and not args.qa_only_from
         else None
     )
-    if prior_import_rows is not None:
+    if args.qa_only_from:
+        log.info(
+            "阶段 1: 导入记忆 (QA-only，严格跳过 open/add/commit): %s",
+            args.qa_only_from,
+        )
+        import_report = load_import_report(args.qa_only_from)
+        shutil.copy2(
+            Path(args.qa_only_from).expanduser().resolve() / "import_results.csv",
+            run.result_dir / "import_results.csv",
+        )
+    elif prior_import_rows is not None:
         log.info("阶段 1: 导入记忆 (resume, 跳过已完成 batches)")
+        import_report = import_locomo_memory(
+            plans,
+            echomem,
+            config,
+            ImportOptions(
+                session_mode=session_mode,
+                max_sessions=args.max_sessions,
+                resume_qa=True,
+                sample_filter=args.sample,
+                prior_import_rows=prior_import_rows,
+            ),
+            run.result_dir,
+            log,
+        )
     else:
         log.info("阶段 1: 导入记忆 (共 %d 个 sample)", len(plans))
-
-    import_report = import_locomo_memory(
-        plans,
-        echomem,
-        config,
-        ImportOptions(
-            session_mode=session_mode,
-            max_sessions=args.max_sessions,
-            resume_qa=bool(memory_reuse_source),
-            sample_filter=args.sample,
-            prior_import_rows=prior_import_rows,
-        ),
-        run.result_dir,
-        log,
-    )
+        import_report = import_locomo_memory(
+            plans,
+            echomem,
+            config,
+            ImportOptions(
+                session_mode=session_mode,
+                max_sessions=args.max_sessions,
+                resume_qa=False,
+                sample_filter=args.sample,
+                prior_import_rows=None,
+            ),
+            run.result_dir,
+            log,
+        )
     log.info(
         "导入完成: %d/%d 成功",
         import_report.completed,
@@ -511,7 +558,7 @@ def main() -> None:
         agent_id=echomem.agent_id,
     )
     qa_resume_state = None
-    if args.resume or args.resume_qa:
+    if (args.resume or args.resume_qa) and not args.qa_only_from:
         qa_resume_source = args.resume or args.resume_qa
         prior_qa_csv = find_qa_resume_csv(qa_resume_source)
         if prior_qa_csv is None:
@@ -690,8 +737,10 @@ def main() -> None:
         ),
     }
     summary["memory_reuse"] = {
-        "enabled": bool(args.reuse_memory_from),
-        "source": str(args.reuse_memory_from or ""),
+        "enabled": bool(memory_reuse_source),
+        "source": str(memory_reuse_source or ""),
+        "mode": "qa_only" if args.qa_only_from else "resume_or_reuse",
+        "injection_skipped": bool(args.qa_only_from),
     }
     summary["judge_parallelism"] = args.judge_concurrency
     summary["judge_checkpoint_interval"] = args.judge_checkpoint_interval

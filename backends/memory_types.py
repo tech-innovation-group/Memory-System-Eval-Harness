@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 import urllib.error
 import urllib.parse
@@ -196,6 +197,24 @@ class BaseHTTPMemoryClient(ABC):
         *,
         timeout_s: float | None = None,
     ) -> dict[str, Any]:
+        trace_dir = os.getenv("ECHOMEM_HTTP_TRACE_DIR", "").strip()
+        trace_path = (
+            os.path.join(trace_dir, "echomem_http_trace.jsonl")
+            if trace_dir
+            else ""
+        )
+        method = req.get_method()
+
+        def write_trace(record: dict[str, Any]) -> None:
+            if not trace_path:
+                return
+            try:
+                os.makedirs(os.path.dirname(trace_path), exist_ok=True)
+                with open(trace_path, "a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+            except OSError:
+                self._log.exception("failed to write EchoMem HTTP trace")
+
         last_err: Exception | None = None
         request_timeout = self.timeout_s if timeout_s is None else max(0.001, timeout_s)
         deadline = time.monotonic() + request_timeout
@@ -206,6 +225,15 @@ class BaseHTTPMemoryClient(ABC):
                     raise TimeoutError(f"request deadline exceeded after {request_timeout:g}s")
                 with urllib.request.urlopen(req, timeout=min(self.timeout_s, remaining)) as resp:
                     raw = resp.read().decode("utf-8")
+                    write_trace(
+                        {
+                            "ts": time.time(),
+                            "method": method,
+                            "url": req.full_url,
+                            "status": resp.status,
+                            "response_body": raw,
+                        }
+                    )
                     if not raw:
                         return {}
                     return json.loads(raw)
@@ -217,6 +245,16 @@ class BaseHTTPMemoryClient(ABC):
                     pass
                 finally:
                     e.close()
+                write_trace(
+                    {
+                        "ts": time.time(),
+                        "method": method,
+                        "url": req.full_url,
+                        "status": e.code,
+                        "response_body": body,
+                        "error": "HTTPError",
+                    }
+                )
                 last_err = e
                 self._log.warning(
                     "HTTP %s %s -> %d %s (attempt %d/%d)",
@@ -232,6 +270,16 @@ class BaseHTTPMemoryClient(ABC):
                 else:
                     raise
             except Exception as e:
+                write_trace(
+                    {
+                        "ts": time.time(),
+                        "method": method,
+                        "url": req.full_url,
+                        "status": None,
+                        "response_body": "",
+                        "error": repr(e),
+                    }
+                )
                 last_err = e
                 self._log.warning(
                     "Request %s failed: %s (attempt %d/%d)",

@@ -66,6 +66,30 @@ class EchoMemClientTests(unittest.TestCase):
             paths,
         )
 
+    def test_uses_local_tenant_bootstrap_key_for_user_and_key(self) -> None:
+        client = EchoMemClient()
+        observed_headers: list[dict[str, str]] = []
+        responses = iter([
+            {
+                "tenant": {"tenant_id": "tenant_new"},
+                "bootstrap_key": "bootstrap_new",
+            },
+            {"user": {"user_id": "user_new"}},
+            {"auth_key": "ek_new"},
+        ])
+
+        def fake_post(path, body=None, **kwargs):
+            observed_headers.append(client._headers())
+            return next(responses)
+
+        client._post = fake_post  # type: ignore[method-assign]
+        client.provision_isolated_identity("evaluation")
+
+        self.assertNotIn("X-EchoMem-Bootstrap-Key", observed_headers[0])
+        self.assertEqual("bootstrap_new", observed_headers[1]["X-EchoMem-Bootstrap-Key"])
+        self.assertEqual("bootstrap_new", observed_headers[2]["X-EchoMem-Bootstrap-Key"])
+        self.assertEqual("", client.bootstrap_auth_key)
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)

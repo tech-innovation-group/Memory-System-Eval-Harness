@@ -1,7 +1,49 @@
 # Memory-System-Eval-Harness
 
-记忆系统评测框架。全 CLI，无网页 UI。直接通过 Python 脚本完成数据集加载、
-记忆注入、Agent 问答、Judge 评分和结果报告。
+记忆系统评测框架。核心评测全 CLI，无需网页 UI；直接通过 Python 脚本完成数据集
+加载、记忆注入、Agent 问答、Judge 评分和结果报告。服务器可以在此 CLI 之上增加
+Web/飞书编排层，完整线上流程见 [deploy/REMOTE_SERVER_README.md](deploy/REMOTE_SERVER_README.md)。
+
+> 服务器上的 Web/飞书任务入口不是本仓库 CLI 的替代实现，而是一个编排层：
+> 它负责拉取 EchoMem、检查 PR 合并快照、复用依赖镜像、隔离 workspace、启动
+> EchoMem，并最终调用本仓库的 `benchmarks/locomo/run_eval.py`。服务器实际流程、
+> 入口脚本和复核命令见 [deploy/REMOTE_SERVER_README.md](deploy/REMOTE_SERVER_README.md)；
+> 固定执行顺序和故障经验模板见 [deploy/ECHOMEM_EVAL_RUNBOOK.md](deploy/ECHOMEM_EVAL_RUNBOOK.md)。
+
+## 服务器一键部署
+
+```bash
+git clone --branch v3_mcpTool \
+  https://github.com/tech-innovation-group/Memory-System-Eval-Harness.git \
+  /opt/memory-eval-harness
+cd /opt/memory-eval-harness
+sudo deploy/install_server.sh
+```
+
+首次执行会生成 `/opt/memory-eval-web/server.env`。填写
+`DEFAULT_LLM_API_KEY`、`DEFAULT_EMBEDDING_API_KEY`、`SESSION_SECRET` 和
+`PUBLIC_BASE_URL`；使用飞书时再填写 `FEISHU_APP_ID`、`FEISHU_APP_SECRET`。
+再次执行即可启动 Web/飞书入口，默认端口为 `8081`。完整流程见
+[deploy/REMOTE_SERVER_README.md](deploy/REMOTE_SERVER_README.md)。
+
+## 通用系统压测
+
+除 EchoMem 专用压测套件外，平台还提供配置驱动的真实 HTTP/JSON 压测入口，
+可用于 REST 服务、网关、Agent API、检索服务和模型代理。通过请求模板、
+健康检查、业务断言和负载场景描述目标系统，不需要修改压测代码：
+
+```bash
+python3 stress/generic/runner.py \
+  --config stress/generic/example.json \
+  --out-dir results/stress/generic_$(date +%Y%m%d_%H%M%S)
+```
+
+使用说明和适用边界见
+[stress/generic/README.md](stress/generic/README.md)。每轮会生成
+`summary.json`、请求/资源 CSV 和可读的 `report.html`，并把异常分为可用性、
+错误率、延迟、负载达成率和资源增长问题。复杂协议如 gRPC、WebSocket 或
+纯 TCP 需要新增 transport 适配器。服务器入口使用 `test_type=generic_stress`
+提交配置后，会复用同一个单并发任务队列，并在任务详情页提供实时日志和报告文件。
 
 ## 设计目标
 
@@ -148,6 +190,32 @@ setup(config)
 - **评测**：LoCoMo / LongMemEval 使用 LLM Judge；HotpotQA 使用官方 F1/EM。
   产出 `summary.json`、`qa_results.csv`、`judge_results.csv`、`agent_traces/`。
 
+### 服务器 PR 评测流程
+
+服务器收到“测试 develop”或“测试 PR 227”后，实际顺序如下：
+
+1. 刷新 GitHub 上的 `EchoMem/develop` commit，并记录为本次任务基线。
+2. `develop` 任务下载或复用该 commit 的源码；PR 任务读取 PR 状态、head 和
+   GitHub 生成的 `pull/<pr>/merge` 快照。关闭 PR、非 develop 目标分支或无法获得
+   合并快照时停止，不进入评测。
+3. 按源码中的 `configs/config.example.json` 生成任务配置。平台只注入服务器模型
+   凭证和必要的运行时环境，不使用旧的平台模板覆盖 EchoMem 的 engine、recall、
+   rerank、MCP 或其他 schema。
+4. 根据依赖文件指纹复用长期评测镜像；源码、workspace、tenant、session 和结果
+   目录按任务隔离。同一个 commit 可以重复测试，不复用旧准确率。
+5. 启动任务专属 EchoMem workspace，先在容器内检查 `127.0.0.1:8010/health`，
+   再做网络检查；启动超时会保存 `docker inspect`、`docker logs`，并自动重启一次。
+6. 执行本仓库的 LoCoMo `conv-30`：记忆注入 -> QA -> Judge。服务器默认关闭模型
+   工具调用和 MCP 对话读取，但保留每题首次 `memory_query` 检索；QA/Judge 参数、
+   模型和温度以任务详情中的 `config.json` 为准。
+7. 保存 `summary.json`、QA/Judge 明细、检索轨迹、agent trace、容器日志和诊断；
+   完成后回传准确率，并按服务器上传配置发送结果压缩包。
+
+这里的“测试平台流程”和“benchmark CLI 流程”要区分：上面的步骤 1--5、7 属于
+服务器编排层；步骤 6 才是本仓库 benchmark 的标准评测逻辑。不要仅凭网页或飞书
+消息判断实际参数，应以任务结果目录的 `config.json`、`summary.json` 和
+`container.log` 为准。
+
 ### 动态评测双模式
 
 ```
@@ -179,6 +247,35 @@ replay:   回放数据集对话 -> 注入 EchoMem -> 新会话 QA (跨 session �
 
 Benchmark 评测只需启动记忆后端（EchoMem 或 OpenViking）。动态评测还需额外
 启动 EchoAgent Backend（含 Memory Engine）。
+
+服务器或本地已有 EchoMem checkout 时，推荐使用统一启动脚本，避免每个 PR
+重复安装依赖或构建镜像：
+
+```bash
+export DEFAULT_LLM_BASE_URL=https://api.deepseek.com/v1
+export DEFAULT_LLM_MODEL=deepseek-v4-flash
+export DEFAULT_LLM_API_KEY=YOUR_KEY
+export DEFAULT_EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+export DEFAULT_EMBEDDING_MODEL=text-embedding-v3
+export DEFAULT_EMBEDDING_API_KEY=YOUR_EMBEDDING_KEY
+
+deploy/start_echomem_eval.sh \
+  --source /path/to/EchoMem \
+  --workspace /path/to/job/workspace \
+  --cache-dir /path/to/shared/cache/recall
+```
+
+每次任务使用新的 workspace 和身份；只复用静态 embedding warm-up cache：
+`semantic_embeddings.json`，以及存在时的 `template_embeddings.json`。依赖未变化时
+复用 runner 环境，依赖变化时才重新构建。服务器 Web 入口复用长期评测 runner
+镜像，不会因为测试新的 PR 重建 EchoMem 镜像。每个任务仍创建独立的源码、
+workspace、tenant、session 和结果目录；provisioning 凭据只在任务容器环境中
+短暂存在，结果目录使用宿主机绝对路径挂载。LLM Key 和 embedding Key 必须分别
+对应各自的 endpoint，真实 Key 只放服务器 `server.env`，不写入仓库。停止任务：
+
+```bash
+deploy/stop_echomem_eval.sh /path/to/job/workspace
+```
 
 ### 环境变量（可选）
 
@@ -278,6 +375,59 @@ CLI 参数可直接传入，也可通过环境变量设默认值：
   --llm-retries 3</code></pre>
 
 </div>
+
+#### 一次注入，多组 EchoMem engine 配置 QA
+
+如果要比较 `atomic_engine`、`atomic_engine + base_engine` 和全引擎，
+先用任意一组配置完成一次 LoCoMo `conv-30` 注入。之后复用同一个
+workspace、tenant/user 和注入结果目录，只重启 EchoMem 使新的 `config.json`
+生效，再对每组配置执行 QA/Judge：
+
+```bash
+./.venv/bin/python benchmarks/locomo/run_eval.py \
+  --agent-plugin echomem_mcp \
+  --echomem-url http://127.0.0.1:8010 \
+  --mcp-url http://127.0.0.1:8001 \
+  --sample conv-30 \
+  --qa-only-from /path/to/injection-run \
+  --no-tool-calling \
+  --mcp-read-mode disabled \
+  --concurrency 1 \
+  --judge-concurrency 1 \
+  --top-k 25 \
+  --memory-budget-chars 8000 \
+  --user-memory-budget-chars 4000 \
+  --agent-memory-budget-chars 2000 \
+  --llm-base-url "$LLM_BASE_URL" \
+  --llm-model "$LLM_MODEL" \
+  --llm-api-key "$LLM_API_KEY" \
+  --llm-temperature 0.7 \
+  --question-timeout-s 600 \
+  --llm-timeout-s 600 \
+  --llm-retries 3
+```
+
+`--qa-only-from` 会校验来源目录存在完整的 `import_results.csv` 和
+`qa_resume_manifest.json`，并在日志中明确记录“严格跳过 open/add/commit”。
+三组结果必须分别保存，不能复用旧的 `qa_results.csv` 或 `judge_results.csv`；
+这样比较到的差异才只来自 QA 时的 engine 配置。
+
+仓库提供了可复用脚本：
+
+```bash
+export ENGINE_MATRIX_ROOT=/opt/memory-eval-engine-matrix
+export ENGINE_MATRIX_RESULTS_ROOT=/opt/memory-eval-harness-latest/results
+export ECHOMEM_IMAGE=memory-eval-echomem:<dependency-tag>
+export EVAL_IMAGE=memory-eval-runner:<runner-tag>
+export ECHOMEM_CONFIG_EXAMPLE=/path/to/EchoMem/configs/config.example.json
+export ECHOMEM_REGISTRY_MASTER_KEY=<temporary-key>
+scripts/run_locomo_engine_matrix.sh
+```
+
+脚本从 `configs/config.example.json` 生成三份任务配置：
+`atomic-only`、`atomic-base` 和 `full`。只有 `full` 执行注入；
+另外两组使用 `--qa-only-from`，严格跳过注入 API。完成后生成
+`ENGINE_MATRIX_ROOT/matrix-report.json`。
 
 #### LoCoMo + vikingbot（OpenViking 后端）
 

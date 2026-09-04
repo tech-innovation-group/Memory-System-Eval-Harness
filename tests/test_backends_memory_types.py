@@ -9,6 +9,9 @@ Uses unittest.TestCase with mocked HTTP (no real servers, no network).
 from __future__ import annotations
 
 import io
+import json
+import os
+import tempfile
 import unittest
 import urllib.error
 import urllib.request
@@ -262,9 +265,38 @@ class BaseHTTPMemoryClientDoRequestTests(unittest.TestCase):
 
     def test_success_on_first_attempt(self) -> None:
         resp = _fake_response(b'{"key": "value"}')
+        resp.status = 200
         with patch("urllib.request.urlopen", return_value=resp):
             result = self.client._do_request(self.req)
         self.assertEqual({"key": "value"}, result)
+
+    def test_success_response_is_written_to_http_trace(self) -> None:
+        resp = _fake_response(b'{"commit": {"status": "pending"}}')
+        resp.status = 202
+        with tempfile.TemporaryDirectory() as trace_dir, patch.dict(
+            os.environ, {"ECHOMEM_HTTP_TRACE_DIR": trace_dir}
+        ), patch("urllib.request.urlopen", return_value=resp):
+            self.client._do_request(self.req)
+            trace_path = os.path.join(trace_dir, "echomem_http_trace.jsonl")
+            with open(trace_path, encoding="utf-8") as handle:
+                record = json.loads(handle.readline())
+        self.assertEqual("GET", record["method"])
+        self.assertEqual(202, record["status"])
+        self.assertEqual('{"commit": {"status": "pending"}}', record["response_body"])
+
+    def test_http_error_response_is_written_to_http_trace(self) -> None:
+        error = _http_error(401, b'{"error":"invalid_api_key"}')
+        with tempfile.TemporaryDirectory() as trace_dir, patch.dict(
+            os.environ, {"ECHOMEM_HTTP_TRACE_DIR": trace_dir}
+        ), patch("urllib.request.urlopen", side_effect=error), patch("time.sleep"):
+            with self.assertRaises(urllib.error.HTTPError):
+                self.client._do_request(self.req)
+            trace_path = os.path.join(trace_dir, "echomem_http_trace.jsonl")
+            with open(trace_path, encoding="utf-8") as handle:
+                record = json.loads(handle.readline())
+        self.assertEqual(401, record["status"])
+        self.assertEqual('{"error":"invalid_api_key"}', record["response_body"])
+        self.assertEqual("HTTPError", record["error"])
 
     def test_empty_response_body_returns_empty_dict(self) -> None:
         resp = _fake_response(b"")

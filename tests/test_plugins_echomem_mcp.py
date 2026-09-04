@@ -700,6 +700,22 @@ class PluginSetupTests(unittest.TestCase):
 
     @patch("plugins.echomem_mcp.plugin.EchoMemClient")
     @patch("plugins.echomem_mcp.plugin.LLMClient")
+    def test_reuses_explicit_auth_key_without_reprovisioning(
+        self, mock_llm_cls: MagicMock, mock_echomem_cls: MagicMock,
+    ) -> None:
+        mock_mem = MagicMock()
+        mock_echomem_cls.return_value = mock_mem
+        p = EchoMemMCPPlugin()
+        p.setup({
+            "benchmark_name": "locomo",
+            "run_id": "r1",
+            "resume_qa": "",
+            "echomem_auth_key": "ek-existing",
+        })
+        mock_mem.provision_isolated_identity.assert_not_called()
+
+    @patch("plugins.echomem_mcp.plugin.EchoMemClient")
+    @patch("plugins.echomem_mcp.plugin.LLMClient")
     def test_provisions_isolated_identity_when_benchmark_and_run(
         self, mock_llm_cls: MagicMock, mock_echomem_cls: MagicMock,
     ) -> None:
