@@ -1073,10 +1073,14 @@ O4 会在 `search-priority-blackbox`、`tenant-skew` 等候选负载中选择租
 的一轮计算公平性，避免 quick 模式的小 barrier 结果遮蔽更完整的真实证据；如果
 该轮仍有租户没有 Commit 或 Search 样本，结果仍会保留为 `FAIL` 或 `INCONCLUSIVE`。
 报告输出 `objective-suite.json` 和 `objective-suite.html`，不会把缺失证据算成通过。
-profile 中配置 `capability_probe`、`commit_recovery`、`fault_plan` 后，入口会自动
+ profile 中配置 `capability_probe`、`commit_recovery`、`fault_plan` 后，入口会自动
 执行真实 HTTP 能力探针、Commit 中途 kill-9 恢复探针和故障套件，并把每个检查项写入
 HTML 明细。可从 `performance/instance-profiles.example.json` 与
 `performance/fault-plan.example.json` 复制后按实际服务地址、租户和容器名修改。
+Commit cursor 优先使用 EchoMem 已有的
+`echo://sessions/{session}/current/commit_cursor.json`，由平台通过公开的
+`GET /fs/read?uri=...` 读取；套件会自动绑定本轮真实完成 Commit 的 session。
+因此不需要为压测新增 EchoMem 接口，也不会把一个旧 session 的 cursor 当成本轮证据。
 另外，profile 可配置 `missing_cases` 和 `concurrent_commit`，入口会自动执行
 PR397 的写后可见性/持久化对账、Commit 状态机、冷暖 Search，以及并发 Commit
 探针；这些检查直接调用 EchoMem 已有 HTTP 接口，不需要修改 EchoMem。建议 quick

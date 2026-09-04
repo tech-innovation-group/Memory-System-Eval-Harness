@@ -15,7 +15,11 @@ from performance.probes._client import EchoMemHTTP
 from performance.probes.commit_recovery_probe import decode_fs_read_payload
 from performance.probes.commit_recovery_probe import recovery_control_ok
 from performance.scheduler_acceptance import evaluate as evaluate_scheduler_acceptance
-from performance.probes.capability_probe import classify_probe, run as run_capability
+from performance.probes.capability_probe import (
+    classify_probe,
+    request_cursor_uri,
+    run as run_capability,
+)
 from performance.probes.capability_probe import request as capability_request
 from performance.probes.blackbox_contract_probe import request as blackbox_request
 from performance.probes.fault_injection import NOT_IMPLEMENTED, run_control
@@ -63,6 +67,38 @@ class FailureToolTests(unittest.TestCase):
         self.assertIn("echomem_lane_queued", capability["payload"]["raw"])
         self.assertIn("echomem_lane_queued", blackbox["payload"]["raw"])
 
+    def test_capability_probe_reads_cursor_through_fs_read(self) -> None:
+        class Response:
+            status = 200
+            headers = {}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return json.dumps({
+                    "result": {
+                        "text": json.dumps({
+                            "committed_message_ids": ["msg_001"],
+                        })
+                    }
+                }).encode()
+
+        with patch("urllib.request.urlopen", return_value=Response()):
+            result = request_cursor_uri(
+                "http://example.test",
+                "echo://sessions/s1/current/commit_cursor.json",
+                auth_key="secret",
+                auth_header="X-Auth-Key",
+                timeout_s=1,
+            )
+
+        self.assertEqual(200, result["status_code"])
+        self.assertEqual("echo://sessions/s1/current/commit_cursor.json", result["cursor_uri"])
+        self.assertEqual(["msg_001"], result["document"]["committed_message_ids"])
     def test_capability_probe_classifies_404_as_not_implemented_and_unconfigured_as_inconclusive(self) -> None:
         self.assertEqual(
             "NOT_IMPLEMENTED",

@@ -12,6 +12,7 @@
         "health_path": "/health",
         "metrics_path": "/metrics",
         "cursor_path": "",
+        "cursor_uri_template": "echo://sessions/{session}/current/commit_cursor.json",
         "operation_path": "",
         "conflict_path": "",
         "ttl_path": "",

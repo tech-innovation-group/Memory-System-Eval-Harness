@@ -9,6 +9,7 @@ from performance.objective_suite import (
     QUICK_SCENARIOS,
     _append_quick_seed_options,
     _first_completed_commit_csv,
+    _first_completed_commit_evidence,
     _resolve_auth_key,
     _acquire_output_lock,
     _materialize_fault_plan,
@@ -37,6 +38,20 @@ from performance.formal_suite import SCENARIOS, _build_seed_warmup_command
 
 
 class ObjectiveSuiteTests(unittest.TestCase):
+    def test_first_completed_commit_evidence_returns_session(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            case = root / "case"
+            case.mkdir()
+            (case / "commit_results.csv").write_text(
+                "tenant,session_id,status,archive_id\n"
+                "0,session-real,completed,archive-1\n",
+                encoding="utf-8",
+            )
+            result = _first_completed_commit_evidence(root)
+            self.assertIsNotNone(result)
+            self.assertEqual("session-real", result[1]["session_id"])
+
     def test_runtime_overrides_replace_stale_profile_target(self) -> None:
         import argparse
         from performance.objective_suite import load_profiles

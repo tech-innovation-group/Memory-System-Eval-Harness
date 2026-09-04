@@ -14,6 +14,7 @@ import json
 import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -87,6 +88,37 @@ def request(
         }
 
 
+def request_cursor_uri(
+    base_url: str,
+    uri: str,
+    *,
+    auth_key: str = "",
+    auth_header: str = "X-Auth-Key",
+    timeout_s: float = 10.0,
+) -> dict[str, Any]:
+    """Read an ``echo://`` document through EchoMem's public fs/read API."""
+    result = request(
+        base_url,
+        f"/fs/read?uri={urllib.parse.quote(uri, safe=':/')}",
+        auth_key=auth_key,
+        auth_header=auth_header,
+        timeout_s=timeout_s,
+        preserve_raw=True,
+    )
+    payload = result.get("payload")
+    document: Any = {}
+    if isinstance(payload, dict):
+        fs_result = payload.get("result")
+        if isinstance(fs_result, dict) and isinstance(fs_result.get("text"), str):
+            try:
+                document = json.loads(fs_result["text"])
+            except json.JSONDecodeError:
+                document = {"raw": fs_result["text"][-4000:]}
+    result["cursor_uri"] = uri
+    result["document"] = document
+    return result
+
+
 def classify_probe(
     name: str,
     result: dict[str, Any],
@@ -139,13 +171,22 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 auth_header=args.auth_header, timeout_s=args.timeout_s),
     ))
     optional = [
-        ("cursor/message-set", args.cursor_path, (), getattr(args, "message_list_key", "message_ids")),
         ("operation/idempotency", args.operation_path, args.operation_keys, ""),
         ("version/conflict", args.conflict_path, args.conflict_keys, ""),
         ("cache/TTL", args.ttl_path, args.ttl_keys, ""),
         ("engine status/degradation", args.engine_path, args.engine_keys, ""),
         ("fault control", args.fault_path, args.fault_keys, ""),
     ]
+    if args.cursor_path:
+        optional.insert(
+            0,
+            (
+                "cursor/message-set",
+                args.cursor_path,
+                (),
+                getattr(args, "message_list_key", "message_ids"),
+            ),
+        )
     for name, path, keys, list_key in optional:
         if not path:
             checks.append({
@@ -176,6 +217,32 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             timeout_s=args.timeout_s,
         )
         checks.append(classify_probe(name, result, required_keys=keys, expect_list_key=list_key))
+    if getattr(args, "cursor_uri_template", ""):
+        if not args.session_id:
+            checks.append({
+                "name": "cursor/message-set",
+                "status": INCONCLUSIVE,
+                "http_status": None,
+                "reason": "cursor URI requires --session-id; capability was not externally tested",
+                "payload": {},
+            })
+        else:
+            cursor_uri = args.cursor_uri_template.format(session=args.session_id)
+            result = request_cursor_uri(
+                args.base_url,
+                cursor_uri,
+                auth_key=auth_key,
+                auth_header=args.auth_header,
+                timeout_s=args.timeout_s,
+            )
+            check = classify_probe("cursor/message-set", result)
+            check["cursor_uri"] = cursor_uri
+            check["document_keys"] = (
+                sorted(result["document"])
+                if isinstance(result.get("document"), dict)
+                else []
+            )
+            checks.append(check)
 
     metric_result = request(
         args.base_url, args.metrics_path, auth_key=auth_key,
@@ -238,6 +305,11 @@ def main() -> int:
     parser.add_argument("--metrics-path", default="/metrics")
     parser.add_argument("--session-id", default="")
     parser.add_argument("--cursor-path", default="")
+    parser.add_argument(
+        "--cursor-uri-template",
+        default="",
+        help="通过 /fs/read 读取 echo:// 文档，例如 echo://sessions/{session}/current/commit_cursor.json",
+    )
     parser.add_argument("--message-list-key", default="message_ids")
     parser.add_argument("--operation-path", default="")
     parser.add_argument("--operation-keys", nargs="*", default=["operation_id"])

@@ -322,6 +322,24 @@ def _first_completed_commit_csv(formal_root: Path) -> tuple[Path, str] | None:
     return None
 
 
+def _first_completed_commit_evidence(
+    formal_root: Path,
+) -> tuple[Path, dict[str, str]] | None:
+    """Return the first completed Commit row for probe session binding."""
+    for path in sorted(formal_root.glob("**/commit_results.csv")):
+        try:
+            with path.open(newline="", encoding="utf-8") as handle:
+                rows = list(csv.DictReader(handle))
+        except (OSError, csv.Error):
+            continue
+        for row in rows:
+            if str(row.get("status") or "").lower() in {
+                "completed", "complete", "success", "succeeded",
+            }:
+                return path, row
+    return None
+
+
 def _resolve_auth_key(
     tenant_config: Path,
     tenant_selector: str = "",
@@ -563,6 +581,8 @@ def _run_configured_probes(
     commit_artifact = _first_completed_commit_csv(formal_root)
     commit_csv = commit_artifact[0] if commit_artifact else None
     tenant_index = commit_artifact[1] if commit_artifact else ""
+    commit_evidence = _first_completed_commit_evidence(formal_root)
+    evidence_row = commit_evidence[1] if commit_evidence else {}
     auth_key, auth_key_env = _resolve_auth_key(tenant_path, tenant_index)
     redact = {auth_key} if auth_key else set()
 
@@ -587,6 +607,7 @@ def _run_configured_probes(
             ("health_path", "--health-path"),
             ("metrics_path", "--metrics-path"),
             ("cursor_path", "--cursor-path"),
+            ("cursor_uri_template", "--cursor-uri-template"),
             ("operation_path", "--operation-path"),
             ("conflict_path", "--conflict-path"),
             ("ttl_path", "--ttl-path"),
@@ -595,6 +616,10 @@ def _run_configured_probes(
             ("timeout_s", "--timeout-s"),
         ):
             _add_option(command, flag, capability.get(key))
+        # Bind cursor probing to a session created by this run rather than a
+        # stale session hard-coded in a shared deployment profile.
+        if evidence_row.get("session_id") and not capability.get("session_id"):
+            command += ["--session-id", str(evidence_row["session_id"])]
         execution = run_command(
             command,
             timeout_s=_bounded_timeout(min(timeout_s, 180), deadline),
