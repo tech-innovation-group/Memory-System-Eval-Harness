@@ -63,6 +63,12 @@ def status(value: Any) -> str:
     return f"<span class='badge {css}'>{esc(text)}</span>"
 
 
+def json_text(value: Any) -> str:
+    if value in (None, "", {}, []):
+        return "-"
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("root", type=Path, help="objective-suite result directory")
@@ -135,6 +141,63 @@ def main() -> int:
     model = load(root / "echomem-config-real-4u8g.json")
     llm = ((model.get("model") or {}).get("llm") or {}).get("model", "-")
     embedding = ((model.get("model") or {}).get("embedding") or {}).get("model", "-")
+    observed_rows = "".join(
+        f"<tr><td>{esc(ident)}</td><td>{status(item.get('status'))}</td>"
+        f"<td>{esc(item.get('reason'))}</td>"
+        f"<td><code>{esc(json_text(item.get('observed')))}</code></td></tr>"
+        for ident, _title in OBJECTIVES
+        for item in [objectives.get(ident, {})]
+    )
+    module_rows = [
+        (
+            "认证 / 多租户",
+            f"有效凭据 {auth.get('passed', 0)}/{auth.get('tenant_count', 0)}；"
+            "其余租户返回 401。",
+            "测试平台输入与部署凭据",
+            "补齐独立租户凭据后才能继续 8/16/32 档位和故障旁观租户测试。",
+        ),
+        (
+            "容量阶梯",
+            "capacity-2、capacity-4 有 Search 样本；更高档位未形成有效失败边界。",
+            "测试平台场景 / 4U8G 资源",
+            "继续执行 8、16、32，记录达到 SLO 的最后一档和下一档真实失败。",
+        ),
+        (
+            "检索 / Search",
+            "本轮有真实 Search 延迟，但 seed recall 预验证未形成热记忆证据。",
+            "测试数据准备与 EchoMem 检索链路",
+            "先保证 seed Commit 完成并用 marker Search 验证命中，再判定热缓存准确率和优先级。",
+        ),
+        (
+            "路由 / 调度",
+            "公平窗口有 4 租户 Commit/Search 竞争；Priority 窗口有真实并发，但热记忆前提不足。",
+            "测试平台负载 + EchoMem 调度",
+            "保留到达/完成时间、在途 Commit 和 Search P95，避免只凭客户端返回判定优先级。",
+        ),
+        (
+            "Commit / 持久化",
+            "202、kill-9、重启、completed、history/archive/cursor 顺序对账均有证据。",
+            "EchoMem 现有接口 + 测试平台恢复探针",
+            "增加重复样本；同幂等键虽返回同 archive，但 replayed 标记为 false，需单独确认契约。",
+        ),
+        (
+            "Metrics / 可观测性",
+            "lane 指标族存在，但实际 lane 四元组不完整，fan-out 指标无实样本。",
+            "EchoMem /metrics 与测试平台触发负载",
+            "用真实拒绝、等待和引擎 fan-out 负载触发每个指标，再采集完整四元组。",
+        ),
+        (
+            "故障控制面",
+            "未配置真实单租户依赖故障控制 URL/命令，O2 无前后 P95 配对数据。",
+            "部署侧控制面 + 测试平台采集",
+            "提供只作用于目标租户的 500/429/timeout/connection-refused 控制，并保留时间线。",
+        ),
+    ]
+    module_html = "".join(
+        f"<tr><td><b>{esc(module)}</b></td><td>{esc(evidence)}</td>"
+        f"<td>{esc(owner)}</td><td>{esc(action)}</td></tr>"
+        for module, evidence, owner, action in module_rows
+    )
 
     document = f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
@@ -169,6 +232,14 @@ table{{width:100%;border-collapse:collapse}}th,td{{padding:8px;border-bottom:1px
 <section><h2>场景明细</h2><p class="muted">Search 和 Commit 均按“提交数/成功或完成数”展示，P95 只来自真实请求。</p>
 <table><thead><tr><th>场景</th><th>运行状态</th><th>Search</th><th>Commit</th><th>Search P95</th></tr></thead>
 <tbody>{scenario_rows or "<tr><td colspan='5'>没有场景结果</td></tr>"}</tbody></table></section>
+<section><h2>六项指标原始观测</h2><p class="muted">这里保留验收器实际使用的 observed 字段，便于复核容量档位、Jain、恢复和指标覆盖。</p>
+<table><thead><tr><th>指标</th><th>状态</th><th>判定说明</th><th>观测数据</th></tr></thead>
+<tbody>{observed_rows}</tbody></table></section>
+<section><h2>按 config.json 模块归因</h2>
+<table><thead><tr><th>模块</th><th>当前真实证据</th><th>归属</th><th>下一步</th></tr></thead>
+<tbody>{module_html}</tbody></table>
+<div class="callout"><b>归因原则：</b>没有真实故障控制、热记忆命中或指标样本时，只能说明测试前提/证据缺失；
+不能直接写成 EchoMem 内部未实现。只有 HTTP 404 或真实服务行为明确违反契约时，才建议修改 EchoMem。</div></section>
 <section><h2>原始证据</h2><ul>{artifacts}</ul>
 <p class="muted">报告只引用运行目录内存在的文件，不写入 API key、密码或环境变量值。</p></section>
 </main></body></html>"""
