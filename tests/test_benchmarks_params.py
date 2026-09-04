@@ -65,8 +65,11 @@ class EvalConfigDefaultsTests(unittest.TestCase):
         self.assertEqual(cfg.memory_backend, "echomem")
         self.assertEqual(cfg.agent_plugin, "bare_llm")
         # LLM
-        self.assertEqual(cfg.llm_base_url, "")
-        self.assertEqual(cfg.llm_model, "doubao-seed-2.0-pro")
+        self.assertEqual(
+            cfg.llm_base_url,
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        )
+        self.assertEqual(cfg.llm_model, "deepseek-v4-flash-0731")
         self.assertEqual(cfg.llm_api_key, "")
         self.assertEqual(cfg.llm_temperature, 0.7)
         self.assertEqual(cfg.llm_max_tokens, 2048)
@@ -244,8 +247,11 @@ class AddLlmArgsTests(unittest.TestCase):
         with patch("os.getenv", side_effect=lambda k, d=None: d):
             add_llm_args(parser)
         ns = parser.parse_args([])
-        self.assertEqual(ns.llm_base_url, "")
-        self.assertEqual(ns.llm_model, "doubao-seed-2.0-pro")
+        self.assertEqual(
+            ns.llm_base_url,
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        )
+        self.assertEqual(ns.llm_model, "deepseek-v4-flash-0731")
         self.assertEqual(ns.llm_api_key, "")
         self.assertEqual(ns.llm_temperature, 0.7)
         self.assertEqual(ns.llm_max_tokens, 2048)
@@ -534,8 +540,11 @@ class BuildConfigFromArgsTests(unittest.TestCase):
         cfg = build_config_from_args(SimpleNamespace())
         self.assertEqual(cfg.memory_backend, "echomem")
         self.assertEqual(cfg.agent_plugin, "bare_llm")
-        self.assertEqual(cfg.llm_base_url, "")
-        self.assertEqual(cfg.llm_model, "doubao-seed-2.0-pro")
+        self.assertEqual(
+            cfg.llm_base_url,
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        )
+        self.assertEqual(cfg.llm_model, "deepseek-v4-flash-0731")
         self.assertEqual(cfg.llm_api_key, "")
         self.assertEqual(cfg.llm_temperature, 0.7)
         self.assertEqual(cfg.llm_max_tokens, 2048)
@@ -619,15 +628,12 @@ class ValidateEvalConfigTests(unittest.TestCase):
                     validate_eval_config(cfg)
 
     def test_multiple_errors_joined_by_semicolon(self) -> None:
-        # EvalConfig() defaults: empty base URL and API key (model is non-empty).
+        # EvalConfig() defaults: DashScope base URL and model; API key is required.
         cfg = EvalConfig()
         with self.assertRaises(ValueError) as ctx:
             validate_eval_config(cfg)
         message = str(ctx.exception)
-        self.assertIn("missing LLM base URL", message)
         self.assertIn("missing LLM API key", message)
-        # Errors are joined with "; "
-        self.assertIn("; ", message)
 
     def test_whitespace_only_llm_fields_are_rejected(self) -> None:
         cfg = EvalConfig(
@@ -718,14 +724,14 @@ class EndToEndParamsTests(unittest.TestCase):
         self.assertEqual(cfg.top_k, 5)
         self.assertEqual(cfg.llm_base_url, "http://x/v1")
 
-    def test_pipeline_with_missing_llm_url_fails_validation(self) -> None:
+    def test_pipeline_with_missing_llm_api_key_fails_validation(self) -> None:
         parser = _make_parser()
         add_eval_args(parser)
         with patch("os.getenv", side_effect=lambda k, d=None: d):
             add_llm_args(parser)
-        ns = parser.parse_args(["--llm-api-key", "k", "--llm-model", "m"])
+        ns = parser.parse_args(["--llm-model", "m"])
         cfg = build_config_from_args(ns)
-        with self.assertRaisesRegex(ValueError, "missing LLM base URL"):
+        with self.assertRaisesRegex(ValueError, "missing LLM API key"):
             validate_eval_config(cfg)
 
 

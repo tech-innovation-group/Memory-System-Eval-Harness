@@ -119,8 +119,8 @@ class BareLLMPluginAddArgumentsTests(unittest.TestCase):
             parser = self._make_parser()
             args = parser.parse_args([])
         expected = {
-            "llm_base_url": "",
-            "llm_model": "doubao-seed-2.0-pro",
+            "llm_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "llm_model": "deepseek-v4-flash-0731",
             "llm_api_key": "",
             "llm_temperature": 0.7,
             "llm_max_tokens": 2048,

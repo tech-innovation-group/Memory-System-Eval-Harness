@@ -9,7 +9,9 @@ Uses unittest.TestCase with mocked HTTP (no real servers, no network).
 from __future__ import annotations
 
 import io
+import time
 import unittest
+import threading
 import urllib.error
 import urllib.request
 from unittest.mock import MagicMock, patch
@@ -43,10 +45,14 @@ def _fake_response(body: bytes) -> MagicMock:
     return resp
 
 
-def _http_error(code: int, body: bytes = b"") -> urllib.error.HTTPError:
+def _http_error(
+    code: int,
+    body: bytes = b"",
+    headers: dict[str, str] | None = None,
+) -> urllib.error.HTTPError:
     """Create a real HTTPError with *code* and optional response *body*."""
     return urllib.error.HTTPError(
-        "http://test", code, "Error", {}, io.BytesIO(body),
+        "http://test", code, "Error", headers or {}, io.BytesIO(body),
     )
 
 
@@ -350,16 +356,16 @@ class BaseHTTPMemoryClientDoRequestTests(unittest.TestCase):
         with patch("urllib.request.urlopen", mock_open), patch("time.sleep"):
             with self.assertRaises(urllib.error.URLError):
                 client._do_request(self.req)
-        self.assertEqual(2, mock_open.call_count)
+        self.assertEqual(3, mock_open.call_count)
 
-    def test_max_retries_zero_raises_runtime_error(self) -> None:
+    def test_max_retries_zero_makes_one_request_without_retry(self) -> None:
         err = urllib.error.URLError("refused")
         mock_open = MagicMock(side_effect=err)
         client = _ConcreteClient("http://test", max_retries=0)
         with patch("urllib.request.urlopen", mock_open), patch("time.sleep"):
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(urllib.error.URLError):
                 client._do_request(self.req)
-        self.assertEqual(0, mock_open.call_count)
+        self.assertEqual(1, mock_open.call_count)
 
     def test_5xx_exhausted_re_raises_http_error(self) -> None:
         err = _http_error(500, b"err")
@@ -369,7 +375,7 @@ class BaseHTTPMemoryClientDoRequestTests(unittest.TestCase):
             with self.assertRaises(urllib.error.HTTPError) as ctx:
                 client._do_request(self.req)
         self.assertEqual(500, ctx.exception.code)
-        self.assertEqual(2, mock_open.call_count)
+        self.assertEqual(3, mock_open.call_count)
 
 
 # ------------------------------------------------------------------ #
@@ -507,6 +513,77 @@ class BaseHTTPMemoryClientPollCommitTests(unittest.TestCase):
             result = self.client.poll_commit("s1", "a1", timeout_s=5.0, poll_interval_s=0.01)
         self.assertEqual("completed", result.status)
         self.assertEqual(2, result.polls)
+
+    def test_429_poll_respects_retry_after_header(self) -> None:
+        err = _http_error(429, headers={"Retry-After": "3"})
+        calls: list[int] = []
+
+        def fake_fetch(sid: str, aid: str) -> dict:
+            calls.append(1)
+            if len(calls) == 1:
+                raise err
+            return {"status": "completed"}
+
+        self.client._fetch_commit_status = fake_fetch  # type: ignore[method-assign]
+        with patch("time.sleep") as sleep:
+            result = self.client.poll_commit(
+                "s1", "a1", timeout_s=5.0, poll_interval_s=0.01,
+            )
+        self.assertEqual("completed", result.status)
+        self.assertEqual(2, result.polls)
+        self.assertTrue(any(call.args[0] == 3.0 for call in sleep.call_args_list))
+
+    def test_429_poll_uses_json_retry_after_and_minimum_backoff(self) -> None:
+        err = _http_error(429, body=b'{"retry_after_s": 0.2}')
+        calls: list[int] = []
+
+        def fake_fetch(sid: str, aid: str) -> dict:
+            calls.append(1)
+            if len(calls) == 1:
+                raise err
+            return {"status": "completed"}
+
+        self.client._fetch_commit_status = fake_fetch  # type: ignore[method-assign]
+        with patch("time.sleep") as sleep:
+            result = self.client.poll_commit(
+                "s1", "a1", timeout_s=5.0, poll_interval_s=0.01,
+            )
+        self.assertEqual("completed", result.status)
+        self.assertTrue(any(call.args[0] == 1.0 for call in sleep.call_args_list))
+
+    def test_shared_client_serializes_concurrent_status_polls(self) -> None:
+        active = 0
+        max_active = 0
+        calls = 0
+        state_lock = threading.Lock()
+
+        def fake_fetch(sid: str, aid: str) -> dict:
+            nonlocal active, max_active, calls
+            with state_lock:
+                active += 1
+                max_active = max(max_active, active)
+                calls += 1
+            time.sleep(0.01)
+            with state_lock:
+                active -= 1
+            return {"status": "completed"}
+
+        self.client._fetch_commit_status = fake_fetch  # type: ignore[method-assign]
+        threads = [
+            threading.Thread(
+                target=self.client.poll_commit,
+                args=("s1", f"a{i}"),
+                kwargs={"timeout_s": 5.0, "poll_interval_s": 0.01},
+            )
+            for i in range(4)
+        ]
+        with patch("time.sleep", wraps=time.sleep):
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+        self.assertEqual(4, calls)
+        self.assertEqual(1, max_active)
 
     # -- generic exception is retried ----------------------------------
 

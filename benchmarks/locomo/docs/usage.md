@@ -19,9 +19,25 @@ workspace，并保留 `ECHOMEM_AUTO_START=1`。
 
 ```bash
 export LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-export LLM_MODEL=deepseek-v4-flash
+export LLM_MODEL=deepseek-v4-flash-0731
 export LLM_API_KEY="$DASHSCOPE_API_KEY"
 ```
+
+EchoMem's `config.json` must also use a real provider for both
+`model.llm` and `model.embedding`:
+
+```json
+{
+  "provider": "openai_compatible",
+  "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "api_key_env": "DASHSCOPE_API_KEY",
+  "model": "deepseek-v4-flash-0731"
+}
+```
+
+For `model.embedding`, use the same endpoint and key environment with
+`"model": "text-embedding-v3"` and `"dimensions": 1024`. Do not use
+`fake-llm` or `fake-embedding` for an official run.
 
 不带 MCP 工具调用。平台仍通过 MCP `memory_query` 做初始召回，但回答阶段不向
 模型暴露工具，只进行一次模型调用：

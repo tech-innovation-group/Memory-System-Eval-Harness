@@ -33,3 +33,6 @@ docs/*.html
 web/static/*.html
 !web/static/index.html
 !web/static/product-roadmap.html
+# 大型公开基准数据集：可由 shared/dataset_io.py 自动下载
+benchmarks/hotpotqa/data/hotpot_dev_distractor_v1.json
+benchmarks/longmemeval/data/longmemeval_s_cleaned.json

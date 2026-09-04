@@ -14,6 +14,7 @@ from dynamic.artifacts import save_results
 from dynamic.metrics import collect_round_metrics, load_evaluator_config
 from dynamic.simulator import MemoryDynamicEvaluator
 from plugins.base import AgentPlugin
+from shared.dataset_io import read_dataset
 from shared.eval_base import EvalRun
 from shared.llm_client import LLMClient
 
@@ -209,6 +210,25 @@ def run_generate_mode(
     )
 
 
+def _load_v2_dataset(path: str) -> dict | None:
+    """Return the dynamic v2 dataset dict when *path* has the v2 shape.
+
+    The dynamic ``generate`` mode exports ``dataset.json`` with
+    ``background_memories`` + ``dataset_queries`` (plus a conversational
+    ``samples`` view).  Replay of that file is handled by
+    ``_run_replay_v2_mode``; any other dataset falls back to the LoCoMo
+    format loader.
+    """
+    data = read_dataset(path)
+    if (
+        isinstance(data, dict)
+        and isinstance(data.get("background_memories"), list)
+        and isinstance(data.get("dataset_queries"), list)
+    ):
+        return data
+    return None
+
+
 def run_replay_mode(
     args,
     run: EvalRun,
@@ -217,6 +237,11 @@ def run_replay_mode(
 ) -> None:
     log = run.logger
     log.info("模式: replay (回放数据集: %s)", args.dataset)
+    v2_dataset = _load_v2_dataset(args.dataset)
+    if v2_dataset is not None:
+        log.info("检测到动态 v2 数据集，走 v2 回放路径")
+        _run_replay_v2_mode(args, run, agent_plugin, llm, v2_dataset)
+        return
     evaluator_config = load_evaluator_config(args.evaluator_config)
     jobs, plans = load_dataset(
         args.dataset,
@@ -300,5 +325,105 @@ def run_replay_mode(
         },
         evaluator_config,
         theme="replay",
+        inject_user_id=getattr(args, "user_id", ""),
+    )
+
+
+def _run_replay_v2_mode(
+    args,
+    run: EvalRun,
+    agent_plugin: AgentPlugin,
+    llm: LLMClient,
+    dataset: dict,
+) -> None:
+    """Replay a dynamic v2 dataset against the chosen memory backend.
+
+    Injects ``background_memories`` once, then asks every ``dataset_query``
+    through the agent plugin.  ``ground_facts`` stay as background-memory ids
+    so the comparison report can measure recall precision against the
+    injected texts (``all_facts`` maps id -> text for the quality judge).
+    """
+    log = run.logger
+    evaluator_config = load_evaluator_config(args.evaluator_config)
+    memories = [
+        {
+            "id": str(mem.get("id") or ""),
+            "text": str(mem.get("text") or ""),
+        }
+        for mem in (dataset.get("background_memories") or [])
+        if mem.get("text")
+    ]
+    facts = {mem["id"]: mem["text"] for mem in memories if mem["id"]}
+
+    backend = getattr(args, "memory_backend", "echomem")
+    inject_start = time.monotonic()
+    inject_session_id = agent_plugin.inject_memories(memories, backend=backend)
+    inject_elapsed = time.monotonic() - inject_start
+    print(f"[inject] {len(memories)} memories injected in {inject_elapsed:.1f}s (session={inject_session_id})")
+    log.info(
+        "memory injection completed: %d memories in %.1fs",
+        len(memories),
+        inject_elapsed,
+    )
+
+    rounds: list[dict[str, Any]] = []
+    session_id = ""
+    session_count = 0
+    for query_data in tqdm(
+        dataset.get("dataset_queries") or [],
+        desc="提问",
+        unit="q",
+    ):
+        query = str(query_data.get("query") or "")
+        if not query:
+            continue
+        round_data = {
+            "id": str(query_data.get("round_id") or f"q{len(rounds)}"),
+            "query": query,
+            "ground_facts": list(query_data.get("ground_facts") or []),
+            "new_session": bool(query_data.get("new_session_hint", False)),
+            "complexity": query_data.get("complexity", "simple"),
+            "is_injection": False,
+        }
+        if (
+            not session_id
+            or round_data["new_session"]
+            and random.random() < getattr(args, "new_session_ratio", 0.3)
+        ):
+            session_count += 1
+            session_id = agent_plugin.create_session(
+                title=f"replay-v2-{session_count}",
+            )
+        metrics = _ask_agent(args, agent_plugin, session_id, round_data)
+        metrics["session_id"] = session_id
+        rounds.append(metrics)
+        log.info(
+            "Q[%s] reply_len=%d tokens=(%s+%s)",
+            round_data["id"],
+            metrics["reply_length"],
+            metrics["prompt_tokens"],
+            metrics["completion_tokens"],
+        )
+
+    save_results(
+        run,
+        rounds,
+        facts,
+        llm,
+        {
+            "mode": "replay",
+            "dataset": args.dataset,
+            "sample": args.sample,
+            "questions": args.questions,
+            "agent_plugin": args.agent_plugin,
+            "evaluator_config": args.evaluator_config,
+            "inject_elapsed_s": round(inject_elapsed, 3),
+            "inject_memory_count": len(memories),
+        },
+        evaluator_config,
+        theme="replay-v2",
+        background_memories=memories,
+        dataset_queries=dataset.get("dataset_queries") or [],
+        inject_session_id=inject_session_id,
         inject_user_id=getattr(args, "user_id", ""),
     )

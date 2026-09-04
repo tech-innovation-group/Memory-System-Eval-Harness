@@ -240,7 +240,7 @@ class VikingBotAddArgumentsTests(unittest.TestCase):
 
     def test_adds_llm_args(self):
         ns = self._parse()
-        self.assertEqual("doubao-seed-2.0-pro", ns.llm_model)
+        self.assertEqual("deepseek-v4-flash-0731", ns.llm_model)
         self.assertEqual(2048, ns.llm_max_tokens)
 
     def test_adds_qa_args(self):

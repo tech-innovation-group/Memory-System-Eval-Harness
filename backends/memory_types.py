@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -152,6 +153,10 @@ class BaseHTTPMemoryClient(ABC):
         self.max_retries = max_retries
         self.retry_backoff_s = retry_backoff_s
         self._log = logging.getLogger(self.__class__.__name__)
+        # A client is normally shared by all workers for one tenant.  Serialize
+        # status polls so a commit wave cannot turn into a poll storm.
+        self._commit_poll_gate = threading.Lock()
+        self._next_commit_poll_at = 0.0
 
     # -- abstract hooks -------------------------------------------------
 
@@ -168,12 +173,15 @@ class BaseHTTPMemoryClient(ABC):
         *,
         timeout_s: float | None = None,
         headers: dict[str, str] | None = None,
+        request_id: str = "",
     ) -> dict[str, Any]:
         url = f"{self.base_url}{path}"
         data = json.dumps(body or {}).encode()
         request_headers = self._headers()
         if headers:
             request_headers.update(headers)
+        if request_id:
+            request_headers["X-Request-ID"] = request_id
         req = urllib.request.Request(url, data=data, headers=request_headers, method="POST")
         return self._do_request(req, timeout_s=timeout_s)
 
@@ -183,11 +191,15 @@ class BaseHTTPMemoryClient(ABC):
         query: dict[str, Any] | None = None,
         *,
         timeout_s: float | None = None,
+        request_id: str = "",
     ) -> dict[str, Any]:
         url = f"{self.base_url}{path}"
         if query:
             url += "?" + urllib.parse.urlencode(query)
-        req = urllib.request.Request(url, headers=self._headers(), method="GET")
+        request_headers = self._headers()
+        if request_id:
+            request_headers["X-Request-ID"] = request_id
+        req = urllib.request.Request(url, headers=request_headers, method="GET")
         return self._do_request(req, timeout_s=timeout_s)
 
     def _do_request(
@@ -199,7 +211,9 @@ class BaseHTTPMemoryClient(ABC):
         last_err: Exception | None = None
         request_timeout = self.timeout_s if timeout_s is None else max(0.001, timeout_s)
         deadline = time.monotonic() + request_timeout
-        for attempt in range(1, self.max_retries + 1):
+        # max_retries counts retries after the initial request. A value of
+        # zero therefore still performs one request, but never retries it.
+        for attempt in range(1, max(0, self.max_retries) + 2):
             try:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -217,12 +231,17 @@ class BaseHTTPMemoryClient(ABC):
                     pass
                 finally:
                     e.close()
+                # Preserve bounded diagnostics for callers that write
+                # structured evidence; credentials are never included here.
+                e.echomem_status = e.code
+                e.echomem_url = req.full_url
+                e.echomem_body = body
                 last_err = e
                 self._log.warning(
                     "HTTP %s %s -> %d %s (attempt %d/%d)",
                     req.method, req.full_url, e.code, body, attempt, self.max_retries,
                 )
-                if e.code >= 500 and attempt < self.max_retries:
+                if e.code >= 500 and attempt <= self.max_retries:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
                         raise TimeoutError(
@@ -237,7 +256,7 @@ class BaseHTTPMemoryClient(ABC):
                     "Request %s failed: %s (attempt %d/%d)",
                     req.full_url, e, attempt, self.max_retries,
                 )
-                if attempt < self.max_retries:
+                if attempt <= self.max_retries:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
                         raise TimeoutError(
@@ -246,7 +265,9 @@ class BaseHTTPMemoryClient(ABC):
                     time.sleep(min(self.retry_backoff_s * attempt, remaining))
                 else:
                     raise
-        raise RuntimeError(f"request failed after {self.max_retries} retries: {last_err}")
+        if last_err is not None:
+            raise last_err
+        raise RuntimeError(f"request failed after {self.max_retries} retries")
 
     # -- commit polling (template method) -------------------------------
 
@@ -284,7 +305,21 @@ class BaseHTTPMemoryClient(ABC):
                 return CommitResult(session_id, archive_id, "timeout", elapsed, polls)
 
             try:
-                resp = self._fetch_commit_status(session_id, archive_id)
+                with self._commit_poll_gate:
+                    # Keep the poll gate clock separate from the request
+                    # deadline clock.  This also avoids coupling the gate to
+                    # callers that inject a monotonic clock for deadlines.
+                    now = time.time()
+                    wait_s = self._next_commit_poll_at - now
+                    if wait_s > 0:
+                        time.sleep(wait_s)
+                    resp = self._fetch_commit_status(session_id, archive_id)
+                    # Keep a small minimum spacing even when callers pass a
+                    # very small interval.  The normal interval remains the
+                    # caller's requested value.
+                    self._next_commit_poll_at = (
+                        now + max(0.1, poll_interval_s)
+                    )
             except urllib.error.HTTPError as e:
                 if 400 <= e.code < 500 and e.code not in (408, 409, 425, 429):
                     self._log.error(
@@ -298,7 +333,8 @@ class BaseHTTPMemoryClient(ABC):
                 self._log.warning(
                     "commit status poll error (poll %d): %s", polls, e,
                 )
-                time.sleep(poll_interval_s)
+                delay = self._commit_retry_after(e, poll_interval_s)
+                time.sleep(delay)
                 continue
             except Exception as e:
                 self._log.warning(
@@ -328,6 +364,38 @@ class BaseHTTPMemoryClient(ABC):
                 )
 
             time.sleep(poll_interval_s)
+
+    def _commit_retry_after(
+        self,
+        error: urllib.error.HTTPError,
+        default_s: float,
+    ) -> float:
+        """Return a bounded retry delay for a transient status-poll error."""
+        retry_after: float | None = None
+        headers = getattr(error, "headers", None)
+        if headers is not None:
+            raw_header = headers.get("Retry-After")
+            if raw_header:
+                try:
+                    retry_after = float(raw_header)
+                except (TypeError, ValueError):
+                    retry_after = None
+
+        # EchoMem also reports retry_after_s in its JSON error body.  The body
+        # is attached by _do_request and is intentionally bounded there.
+        if retry_after is None:
+            raw_body = getattr(error, "echomem_body", "")
+            try:
+                body = json.loads(raw_body) if raw_body else {}
+                retry_after = float(body.get("retry_after_s", 0))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                retry_after = None
+
+        if retry_after is None or retry_after <= 0:
+            retry_after = default_s
+        if error.code == 429:
+            retry_after = max(1.0, retry_after)
+        return min(max(retry_after, 0.1), 30.0)
 
     def _fetch_commit_status(self, session_id: str, archive_id: str) -> dict[str, Any]:
         """Fetch commit status from the backend. Override for different endpoints."""

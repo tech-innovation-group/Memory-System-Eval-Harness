@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EchoMem PR397 压测方案说明与改进意见</title>
+  <style>
+    :root {
+      --ink: #202124;
+      --muted: #5f6368;
+      --line: #dadce0;
+      --blue: #1a73e8;
+      --blue-soft: #e8f0fe;
+      --green: #137333;
+      --green-soft: #e6f4ea;
+      --red: #b3261e;
+      --red-soft: #fce8e6;
+      --amber: #8a4b08;
+      --amber-soft: #fef7e0;
+      --paper: #fff;
+      --bg: #f7f8fa;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--bg);
+      font: 15px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+    main { max-width: 1120px; margin: 0 auto; padding: 36px 24px 70px; }
+    header {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-top: 5px solid var(--blue);
+      padding: 28px 32px;
+      margin-bottom: 22px;
+    }
+    h1 { margin: 0 0 8px; font-size: 30px; line-height: 1.25; }
+    h2 { margin: 34px 0 12px; font-size: 22px; line-height: 1.35; }
+    h3 { margin: 24px 0 8px; font-size: 18px; }
+    p { margin: 8px 0; }
+    .subtitle { color: var(--muted); font-size: 16px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 16px; color: var(--muted); }
+    .box {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      padding: 18px 22px;
+      margin: 14px 0;
+    }
+    .summary {
+      border-left: 4px solid var(--blue);
+      background: var(--blue-soft);
+    }
+    .warning {
+      border-left: 4px solid var(--red);
+      background: var(--red-soft);
+    }
+    .ok {
+      border-left: 4px solid var(--green);
+      background: var(--green-soft);
+    }
+    .amber {
+      border-left: 4px solid #f9ab00;
+      background: var(--amber-soft);
+    }
+    .red { color: var(--red); font-weight: 650; }
+    .green { color: var(--green); font-weight: 650; }
+    .muted { color: var(--muted); }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    .card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      padding: 16px 18px;
+    }
+    .card h3 { margin-top: 0; }
+    table { width: 100%; border-collapse: collapse; background: var(--paper); }
+    th, td { border: 1px solid var(--line); padding: 10px 12px; text-align: left; vertical-align: top; }
+    th { background: #f1f3f4; font-weight: 650; }
+    code {
+      background: #f1f3f4;
+      border: 1px solid #e5e7eb;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+    pre {
+      overflow-x: auto;
+      background: #202124;
+      color: #f8f9fa;
+      padding: 15px 18px;
+      border-radius: 4px;
+      line-height: 1.55;
+    }
+    ul, ol { margin: 8px 0 8px 22px; padding: 0; }
+    li { margin: 4px 0; }
+    .label {
+      display: inline-block;
+      padding: 2px 8px;
+      margin-right: 6px;
+      border-radius: 3px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .02em;
+    }
+    .label-red { color: var(--red); background: var(--red-soft); }
+    .label-blue { color: #174ea6; background: var(--blue-soft); }
+    .label-green { color: var(--green); background: var(--green-soft); }
+    .flow {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+      margin: 14px 0;
+    }
+    .step { border: 1px solid #aecbfa; background: var(--blue-soft); padding: 8px 12px; }
+    .arrow { color: var(--muted); font-size: 20px; }
+    .small { font-size: 13px; }
+    @media (max-width: 760px) {
+      main { padding: 20px 12px 48px; }
+      header { padding: 22px 18px; }
+      h1 { font-size: 25px; }
+      .grid, .grid-3 { grid-template-columns: 1fr; }
+      th, td { padding: 8px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>EchoMem PR397 压测方案</h1>
+    <div class="subtitle">通俗说明、执行顺序、判定标准，以及结合真实模型测试结果的改进意见</div>
+    <div class="meta">
+      <span>代码：EchoMem PR397</span>
+      <span>当前代码 commit：<code>24d3b9c0b782</code></span>
+      <span>方案基线：4U8G 单实例服务化</span>
+      <span>整理日期：2026-08-26</span>
+    </div>
+  </header>
+
+  <section class="box">
+    <h2>PR397 先做了什么</h2>
+    <p>PR397 的核心目标，是解决多个租户同时提交记忆时，commit 任务无限堆积、拖慢在线 search，或者服务重启后状态不一致的问题。</p>
+    <p>它的整体思路不是把 commit 和 search 合成一个队列，而是把它们拆成不同的处理路径，并给 commit 增加排队上限、租户配额、同一 session 串行执行和故障恢复控制。</p>
+
+    <h3>用一句话概括</h3>
+    <div class="box summary">
+      <p><b>PR397 = commit 有界排队 + 多租户限流 + commit/search 进程内资源隔离 + 熔断与状态恢复。</b></p>
+    </div>
+
+    <h3>具体做法</h3>
+    <table>
+      <thead><tr><th>问题</th><th>PR397 的处理方式</th><th>通俗理解</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>commit 请求无限堆积</td>
+          <td>给 commit executor 增加最大队列深度，队列满时拒绝新的显式 commit，并返回可重试的错误。</td>
+          <td>队伍太长时不再让所有人继续排队，而是告诉客户端稍后重试。</td>
+        </tr>
+        <tr>
+          <td>单个租户占满资源</td>
+          <td>增加租户级 commit quota，限制一个租户同时占用的 commit 数量。</td>
+          <td>一个客户不能把整台机器的处理能力全部占完。</td>
+        </tr>
+        <tr>
+          <td>同一个 session 同时提交</td>
+          <td>同一写入 scope 的 commit 通过执行链串行化，避免两个 commit 同时修改同一份 cursor 或索引。</td>
+          <td>同一份账本只能按顺序记账，不能两个人同时改。</td>
+        </tr>
+        <tr>
+          <td>commit 拖慢 search</td>
+          <td>commit 和 recall 使用不同的 executor、准入 semaphore、provider 线程池和熔断器。</td>
+          <td>两条业务路径在进程内分开排队，commit 忙时尽量给 search 保留处理名额。</td>
+        </tr>
+        <tr>
+          <td>模型服务挂起或报错</td>
+          <td>对 LLM 和 embedding 增加超时、并发准入和 circuit breaker，连续失败后快速失败，避免线程和请求无限卡住。</td>
+          <td>模型服务坏了以后，不让所有请求一直堵在门口。</td>
+        </tr>
+        <tr>
+          <td>进程中途重启</td>
+          <td>通过 commit journal、cursor 和状态记录区分未完成 commit 与终态 failed，并按 local/cluster 模式执行收敛或恢复。</td>
+          <td>重启后先查账，知道哪些已经完成、哪些中断、哪些需要重新提交。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>commit 和 search 实际上怎么走</h3>
+    <div class="flow">
+      <div class="step">commit 请求</div><span class="arrow">→</span>
+      <div class="step">commit executor</div><span class="arrow">→</span>
+      <div class="step">commit lane</div><span class="arrow">→</span>
+      <div class="step">LLM 抽取 / embedding / 写索引</div>
+    </div>
+    <div class="flow">
+      <div class="step">search 请求</div><span class="arrow">→</span>
+      <div class="step">recall service</div><span class="arrow">→</span>
+      <div class="step">recall lane</div><span class="arrow">→</span>
+      <div class="step">检索 / embedding / 读取索引</div>
+    </div>
+    <p><span class="green">因此，PR397 已经做了两条异步调度路径。</span>但这不是完全的物理隔离：默认情况下，commit 和 recall 仍可能共享模型 endpoint、embedding provider、索引文件、CPU 和内存。后面的 S3 压测就是要验证这种“进程内隔离”是否足够，以及共享资源是否仍会互相影响。</p>
+
+    <h3>PR397 没有完全解决什么</h3>
+    <ul>
+      <li><span class="red">没有默认保证 commit 和 recall 使用不同的模型账号、endpoint 或 provider 配额。</span></li>
+      <li><span class="red">local 模式重启后主要是收敛中断状态，不等于自动重新执行失败的 commit。</span></li>
+      <li><span class="red">已经进入终态 failed 的 commit，通常需要客户端显式重提，不能直接说成后台自动补齐。</span></li>
+      <li><span class="red">如果 embedding provider 本身排队或超时，commit/search 的本地 lane 隔离仍可能无法消除外部服务的限流影响。</span></li>
+    </ul>
+  </section>
+
+  <section class="box summary">
+    <h2>先说结论</h2>
+    <p>PR397 的核心方向是合理的：验证高峰提交、查询不被拖垮、模型故障后能否恢复、进程重启后是否丢数据。</p>
+    <p><span class="red">但当前方案还不能直接作为“通过/不通过”的最终测试规范。</span>主要问题是：真实模型性能测试与故障注入测试混在一起；部分 SLO 没有明确统计口径；local 模式和 cluster 模式的恢复语义不同，却容易被读成同一种“自动恢复”。</p>
+    <p><span class="red">结合之前真实模型测试，必须先增加“环境与配置预检”：</span>PR397 的不同 engine 使用不同的 <code>api_key_env</code>，只设置顶层 key 会导致全部注入失败；DashScope 端点不接受 <code>deepseek-v4-flash-0731</code>，只能把该模型用于支持它的 QA/Judge 端点，EchoMem 注入模型要按实际端点支持列表配置；embedding 还出现过 provider admission 等待超过 30 秒的问题。</p>
+  </section>
+
+  <h2>一、这次压测到底要回答什么</h2>
+  <div class="grid-3">
+    <div class="card">
+      <h3>问题 1：会不会丢提交</h3>
+      <p>高峰期大量 session 同时 commit，服务器可以拒绝或排队，但最终不能静默丢消息。</p>
+    </div>
+    <div class="card">
+      <h3>问题 2：提交时还能不能查</h3>
+      <p>commit 很忙时，search/recall 仍要有明确的延迟和错误率上限。</p>
+    </div>
+    <div class="card">
+      <h3>问题 3：出故障能否恢复</h3>
+      <p>模型挂起、进程被杀、服务重启后，要明确哪些由客户端重试，哪些由服务自动接管。</p>
+    </div>
+  </div>
+
+  <div class="flow">
+    <div class="step">准备固定版本与配置</div><span class="arrow">→</span>
+    <div class="step">健康检查与模型预检</div><span class="arrow">→</span>
+    <div class="step">S1 基线</div><span class="arrow">→</span>
+    <div class="step">S2 背压</div><span class="arrow">→</span>
+    <div class="step">S3 隔离</div><span class="arrow">→</span>
+    <div class="step">S4 故障</div><span class="arrow">→</span>
+    <div class="step">S5 重启恢复</div><span class="arrow">→</span>
+    <div class="step">S6 长跑</div>
+  </div>
+
+  <h2>二、测试前必须固定的条件</h2>
+  <table>
+    <thead><tr><th>项目</th><th>建议固定值</th><th>为什么要固定</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>代码</td>
+        <td>PR397 merge base、PR commit、工作区快照三者都记录</td>
+        <td>develop 更新会让同一个 PR 的结果失去可比性。</td>
+      </tr>
+      <tr>
+        <td>机器</td>
+        <td>4 vCPU / 8 GB，记录 CPU、RSS、磁盘、文件描述符</td>
+        <td>压测结果必须能说明是代码瓶颈还是机器规格造成的。</td>
+      </tr>
+      <tr>
+        <td>EchoMem 模型</td>
+        <td>按 <code>config.example.json</code> 的 engine 配置逐项解析；注入模型和 QA/Judge 模型分别记录</td>
+        <td><span class="red">不能只看顶层 <code>model.llm</code>，也不能把 QA 模型名直接覆盖到所有 EchoMem engine。</span></td>
+      </tr>
+      <tr>
+        <td>并发</td>
+        <td>先 1/1 单并发验证正确性，再逐级增加</td>
+        <td>前面测试出现 embedding admission timeout，说明直接上高并发会把配置/供应商问题放大成假故障。</td>
+      </tr>
+      <tr>
+        <td>数据完整性</td>
+        <td>每条消息记录 message_id、content_hash；每个 archive 记录终态</td>
+        <td>“请求返回 202”不等于消息已经成功写入记忆。</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="box warning">
+    <p><span class="label label-red">必须新增</span><span class="red">模型与配置预检门禁：</span></p>
+    <ol>
+      <li>读取实际运行的 config，而不是测试平台旧模板。</li>
+      <li>枚举所有 <code>api_key_env</code>，检查环境变量都存在且不为空。</li>
+      <li>对每个实际使用的 LLM/embedding endpoint 做一次最小真实请求。</li>
+      <li>检查模型名是否被该 endpoint 支持；不支持就停止测试，不进入压测。</li>
+      <li>记录 provider 响应时间、HTTP 状态码、模型名和配置摘要，但不记录 API key。</li>
+    </ol>
+  </div>
+
+  <h2>三、六个压测场景怎么理解</h2>
+
+  <h3>S1：基线测试，先知道“正常速度”</h3>
+  <div class="box">
+    <p><b>做法：</b>单租户、4 个 session，持续写入并定期查询，持续约 30 分钟，不注入故障。</p>
+    <p><b>看什么：</b>commit 成功率、commit P95、search P99、平均队列深度、CPU/RSS、线程数和文件描述符。</p>
+    <p><b>作用：</b>后面所有场景都和 S1 对比。例如 S3 的 search 变慢 2 倍，必须以 S1 的同口径结果为基准。</p>
+    <p><span class="red"><b>需要改进：</b>S1 里“每累计 1000+ 字符触发 auto-commit”会引入触发时机不稳定。建议同时保留一组固定频率的显式 commit，避免把 auto-commit 抖动和服务性能混为一谈。</span></p>
+  </div>
+
+  <h3>S2：多租户 commit 风暴，验证背压</h3>
+  <div class="box">
+    <p><b>做法：</b>8 个租户同时发起 160 个显式 commit，故意超过队列和租户配额，客户端收到 429 后按照 <code>Retry-After</code> 退避。</p>
+    <p><b>正确预期：</b>出现 429 不代表失败，前提是拒绝原因正确、带退避信息，并且客户端最终重试成功。</p>
+    <p><b>通过条件：</b>消息全集最终出现在 committed cursor 或 atom 的 source_turn_ids 中；没有重复 transcommit；热租户不能占满全部资源。</p>
+    <p><span class="red"><b>需要改进：</b>“队列深度达到 256 后才允许出现 429”过于依赖内部实现细节。建议把它改成：记录达到饱和的时间点，检查饱和后拒绝是否符合策略；不要要求每次都精确达到某个瞬时数字。</span></p>
+    <p><span class="red"><b>需要改进：</b>160 个 commit 的请求量能证明拒绝逻辑，但不一定能证明 4U8G 的长期容量。应增加 5 分钟稳定负载档位，例如 1、2、4、8 RPS，分别观察排队是否收敛。</span></p>
+  </div>
+
+  <h3>S2b：只走 auto-commit，验证内部退避语义</h3>
+  <div class="box">
+    <p><b>做法：</b>只写消息，不主动调用 commit，观察 auto-commit 遇到队列满时如何退避。</p>
+    <p><b>重要理解：</b>当前设计中 add_message 不应该因为 auto-commit 队列满而返回 429；auto-commit 只是记录 deferred 并稍后尝试。</p>
+    <p><span class="red"><b>需要改进：</b>末次写入后没有新活动时，最后一批消息可能保持未提交。这是当前语义缺口，不能在报告里写成“自动恢复成功”；应单独列为已知限制，或增加 idle flush/定时扫描机制后再验收。</span></p>
+  </div>
+
+  <h3>S3：commit 和 search 隔离，避免“写一忙全站都慢”</h3>
+  <div class="box">
+    <p><b>做法：</b>在 commit 风暴期间持续发 search，比较同租户与跨租户的延迟和错误率。</p>
+    <p><b>当前 PR397 能证明的范围：</b>gateway 的准入容量、熔断器和部分 intent 路径隔离。</p>
+    <p><span class="red"><b>不能直接宣称：</b>“commit 使用一个模型账号，recall 使用另一个模型账号，二者完全隔离”。PR397 当前部分 recall 路径仍可能和 commit 共用同一个 model proxy。</span></p>
+    <p><span class="red"><b>需要改进：</b>search 的“成功”不能只看 HTTP 200。必须同时记录是否走了真实 recall、召回条数、deadline、模型请求是否发生，否则可能出现“没有调用模型所以很快”的假通过。</span></p>
+  </div>
+
+  <h3>S4：模型故障注入，验证错误分类和重试</h3>
+  <div class="box">
+    <p><b>做法：</b>依次注入 50% 的 500、完全挂起、恢复 provider，再观察熔断、失败终态和客户端重提。</p>
+    <p><b>应当区分三件事：</b></p>
+    <ul>
+      <li>客户端收到 429 后退避重试。</li>
+      <li>auto-commit 自己发现队列满后的内部退避。</li>
+      <li>进程崩溃后由 cluster recovery 接管未完成 commit。</li>
+    </ul>
+    <p><span class="red"><b>需要改进：</b>故障注入用 mock provider 是合理的，因为需要稳定复现 500、429、挂起；但它不能替代真实模型容量测试。报告必须明确标注“真实模型性能结果”和“可控故障语义结果”是两类证据。</span></p>
+    <p><span class="red"><b>需要改进：</b>“失败后自动补齐”表述不准确。单次 commit 进入终态 failed 后，local 模式不会后台自动重提，通常需要客户端显式重提；不要把它和 cluster 对非终态 commit 的 recovery 混为一谈。</span></p>
+  </div>
+
+  <h3>S5：重启恢复，验证进程被杀后是否丢数据</h3>
+  <div class="box">
+    <p><b>做法：</b>commit 正在执行时强制杀掉进程，等待后重启，分别测试 local 和 cluster。</p>
+    <table>
+      <thead><tr><th>模式</th><th>真实语义</th><th>验收方式</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>local</td>
+          <td>重启后主要是收敛中断 journal、回滚 cursor，不一定自动重新执行 engine。</td>
+          <td>首次访问后确认收敛；再由客户端显式 commit，核验消息最终落库。</td>
+        </tr>
+        <tr>
+          <td>cluster</td>
+          <td>通过 control store 和租约机制接管非终态 commit。</td>
+          <td>无流量等待租约过期，确认 recovery started，再轮询到最终终态。</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><span class="red"><b>需要改进：</b>local 和 cluster 必须分开出报告，不能汇总成一个“重启恢复成功率”。两者的产品承诺不同。</span></p>
+  </div>
+
+  <h3>S6：2 小时混合长跑，验证资源是否泄漏</h3>
+  <div class="box">
+    <p><b>做法：</b>基线流量持续 2 小时，期间插入小型 commit 风暴和短暂模型抖动。</p>
+    <p><b>看什么：</b>RSS 增长、线程数、文件描述符、队列深度、错误日志趋势、索引文件增长和恢复后的积压。</p>
+    <p><span class="red"><b>需要改进：</b>“RSS 增长 &lt; 10%”必须先定义基线时间点和允许的索引增长。建议同时报告“原始 RSS”“扣除新增 atom/索引后的 RSS”“峰值 RSS”，否则正常数据增长可能被误判为泄漏。</span></p>
+    <p><span class="red"><b>需要改进：</b>2 小时只能发现一部分泄漏，不能证明没有泄漏。最好增加每 10 分钟快照，并用线性回归观察增长斜率。</span></p>
+  </div>
+
+  <h2>四、结合前面真实模型测试的结论</h2>
+  <div class="box amber">
+    <h3>已观察到的事实</h3>
+    <ol>
+      <li>PR397 核心测试通过，全量测试结果为 <code>3807 passed, 30 skipped</code>，说明代码静态回归层面没有明显阻断。</li>
+      <li>第一次真实注入失败，根因是 EchoMem 多个 engine 使用独立的 <code>api_key_env</code>，测试启动只设置顶层环境变量，导致 endpoint 缺少 provider/api_base/api_key/model。</li>
+      <li>补齐环境变量后，使用 <code>deepseek-v4-flash-0731</code> 的 EchoMem 注入请求被 DashScope 返回 HTTP 400，明确提示该端点不支持这个模型名。</li>
+      <li>恢复为 <code>deepseek-v4-flash</code> 后，真实 embedding 出现 provider admission 等待超过 30 秒，触发 <code>ProviderAdmissionTimeoutError</code>；这说明测试环境的并发/排队参数需要先单独校准。</li>
+      <li>因此前几轮没有形成有效的 LoCoMo 81 题准确率，不能把注入不完整的轮次当作 PR397 的准确率。</li>
+    </ol>
+    <h3>对压测方案的直接影响</h3>
+    <p><span class="red">压测开始前必须先通过“单请求真实模型 smoke + 逐 engine 配置检查 + embedding admission 校准”。否则压测报告很可能只是在测 API key、模型路由或 provider 排队，而不是测 PR397 的并发设计。</span></p>
+  </div>
+
+  <h2>五、建议的正式执行顺序</h2>
+  <ol>
+    <li><b>冻结版本：</b>记录 PR397 commit、develop merge base、测试平台 commit、配置 SHA-256。</li>
+    <li><b>做预检：</b>检查所有 engine 的 provider、api_base、api_key_env、model，并对 LLM 和 embedding 各做一次真实请求。</li>
+    <li><b>单请求 smoke：</b>写入一条消息、commit、poll 到终态；再做一次 search，确认不是假健康。</li>
+    <li><b>低并发基线：</b>EchoMem 内部 LLM/embedding 并发为 1，完成 S1，记录稳定结果。</li>
+    <li><b>逐级加压：</b>并发逐步升高，不要直接从 1 跳到 160；每档至少持续 5 分钟。</li>
+    <li><b>故障注入：</b>使用 mock 只验证可控的 500/429/挂起/恢复语义，另开真实模型容量测试。</li>
+    <li><b>重启测试：</b>local、cluster 分开执行，分别按各自语义判定。</li>
+    <li><b>数据对账：</b>以消息全集、cursor、atom source_turn_ids、archive 终态四者交叉核验。</li>
+    <li><b>报告结论：</b>将“通过”“失败”“未执行”“已知限制”“环境错误”分开，不用一个总分掩盖某一阶段未完成。</li>
+  </ol>
+
+  <h2>六、最终改进清单</h2>
+  <table>
+    <thead><tr><th>优先级</th><th>问题</th><th>修改建议</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="label label-red">P0</span></td>
+        <td class="red">没有模型/配置预检，容易把环境错误当成代码故障</td>
+        <td>增加逐 engine 配置解析、模型支持检查、真实最小请求和失败即停。</td>
+      </tr>
+      <tr>
+        <td><span class="label label-red">P0</span></td>
+        <td class="red">SLO 的成功率、P95/P99、最终一致性口径不完全统一</td>
+        <td>所有指标定义分子、分母、时间起点、终点、是否包含重试，并同时输出原始值和重试后值。</td>
+      </tr>
+      <tr>
+        <td><span class="label label-red">P1</span></td>
+        <td class="red">真实模型压测与 mock 故障注入没有分层</td>
+        <td>拆成“真实容量压测”和“可控故障语义压测”两份结果，禁止互相替代。</td>
+      </tr>
+      <tr>
+        <td><span class="label label-red">P1</span></td>
+        <td class="red">local 与 cluster 恢复结论混在一起</td>
+        <td>分模式执行、分模式验收，明确 local 需要后续客户端重提的限制。</td>
+      </tr>
+      <tr>
+        <td><span class="label label-blue">P1</span></td>
+        <td>只设计突发风暴，长期容量证据不足</td>
+        <td>增加阶梯负载和稳定负载，观察队列是否收敛、search 是否退化。</td>
+      </tr>
+      <tr>
+        <td><span class="label label-blue">P2</span></td>
+        <td>RSS 的 10% 门槛可能误判正常索引增长</td>
+        <td>按新增 atom/索引增长校正，并输出增长斜率、峰值和回收后的 RSS。</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="box ok">
+    <p><span class="green">建议的最终判定：</span>只有在预检通过、消息注入完整、真实模型请求可追溯、S1 基线完成后，S2-S6 的结果才具备可解释性。任何阶段因为 key、模型名、网络或 provider admission 失败，都应标为“环境/依赖失败”，不能直接归因于 PR397。</p>
+  </div>
+</main>
+</body>
+</html>

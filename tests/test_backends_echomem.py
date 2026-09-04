@@ -87,7 +87,7 @@ class TestSearch(unittest.TestCase):
         self.assertEqual("hello world", self.captured_body["query"])
         self.assertEqual("agent-x", self.captured_body["agent_id"])
         self.assertEqual(7, self.captured_body["limit"])
-        self.assertFalse(self.captured_body["include_explain"])
+        self.assertTrue(self.captured_body["include_explain"])
         self.assertTrue(self.captured_body["include_debug"])
         self.assertNotIn("session_id", self.captured_body)
 

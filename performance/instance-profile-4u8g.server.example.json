@@ -1,0 +1,65 @@
+{
+  "profiles": [
+    {
+      "name": "4U8G",
+      "base_url": "http://127.0.0.1:18187",
+      "tenant_config": "/config/tenants.json",
+      "preflight_config": "/config/config.json",
+      "allow_partial_tenants": true,
+      "metrics_enabled": true,
+      "capability_probe": {
+        "health_path": "/health",
+        "metrics_path": "/metrics",
+        "cursor_uri_template": "echo://sessions/{session}/current/commit_cursor.json"
+      },
+      "missing_cases": {
+        "enabled": true,
+        "max_tenants": 1,
+        "commit_timeout_s": 15,
+        "search_timeout_s": 10,
+        "visibility_timeout_s": 20
+      },
+      "concurrent_commit": {
+        "enabled": true,
+        "concurrency": 4,
+        "timeout_s": 120
+      },
+      "commit_recovery": {
+        "container": "echomem-pr449-fresh-4u8g",
+        "tenant": "tenant_deebbe563763",
+        "require_accepted_202": true,
+        "kill_delay_s": 0.5,
+        "messages": 4,
+        "content_chars": 500,
+        "recovery_timeout_s": 180,
+        "poll_s": 2
+      },
+      "fairness_expectations": {
+        "tenant_ids": ["stress-a", "stress-b", "stress-c", "stress-d"]
+      },
+      "observability": {
+        "lanes": [
+          "recall_engine",
+          "recall_intent_llm",
+          "recall_query_embedding",
+          "recall_rerank",
+          "commit"
+        ],
+        "fanout_engines": ["recall", "commit"]
+      },
+      "limit_failure_sweep": {
+        "levels": "16,64,128,256",
+        "search_count": 256,
+        "open_count": 128,
+        "commit_count": 128,
+        "workers": 256,
+        "timeout_s": 8,
+        "create_sessions": true
+      },
+      "resource_profile": {
+        "cpu": "4 vCPU",
+        "memory": "8 GiB"
+      }
+    }
+  ]
+}

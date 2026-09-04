@@ -16,6 +16,10 @@ DATASET_ENV = {
     "longmemeval": "LONGMEMEVAL_DATASET",
 }
 
+DEFAULT_DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+DEFAULT_LLM_MODEL = "deepseek-v4-flash-0731"
+DEFAULT_EMBEDDING_MODEL = "text-embedding-v3"
+
 RUNTIME_ARG_ENV = {
     "--echomem-url": "ECHOMEM_BASE_URL",
     "--echomem-auth-key": "ECHOMEM_AUTH_KEY",
@@ -91,6 +95,66 @@ def _set_default(name: str, *values: Any) -> None:
             return
 
 
+def validate_real_model_config(
+    config_path: str | Path,
+    *,
+    expected_embedding_dimensions: int | None = None,
+) -> list[str]:
+    """Validate the model endpoints used by an EchoMem runtime.
+
+    Unit tests may still use fake providers, but an official benchmark must
+    fail before starting when either the LLM or embedding endpoint is fake.
+    """
+    path = Path(config_path).expanduser()
+    if not path.is_file():
+        return [f"EchoMem config not found: {path}"]
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"EchoMem config could not be read: {path}: {exc}"]
+    if not isinstance(payload, dict):
+        return [f"EchoMem config must contain a JSON object: {path}"]
+
+    errors: list[str] = []
+    model = payload.get("model")
+    if not isinstance(model, dict):
+        return ["EchoMem config is missing model section"]
+
+    for capability in ("llm", "embedding"):
+        endpoint = model.get(capability)
+        if not isinstance(endpoint, dict):
+            errors.append(f"model.{capability} is missing")
+            continue
+        provider = str(endpoint.get("provider") or "").strip().lower()
+        model_name = str(endpoint.get("model") or "").strip()
+        if provider == "fake" or model_name.lower().startswith("fake"):
+            errors.append(
+                f"model.{capability} uses fake provider/model "
+                f"({provider or 'unset'} / {model_name or 'unset'})"
+            )
+        if not model_name:
+            errors.append(f"model.{capability}.model is empty")
+        if capability == "llm" and not str(endpoint.get("api_base") or "").strip():
+            errors.append("model.llm.api_base is empty")
+        if capability == "embedding" and not str(endpoint.get("api_base") or "").strip():
+            errors.append("model.embedding.api_base is empty")
+        if capability == "embedding" and expected_embedding_dimensions is not None:
+            dimensions = endpoint.get("dimensions")
+            try:
+                dimensions_value = int(dimensions)
+            except (TypeError, ValueError):
+                dimensions_value = 0
+            if dimensions_value != expected_embedding_dimensions:
+                errors.append(
+                    "model.embedding.dimensions must be "
+                    f"{expected_embedding_dimensions}, got {dimensions or 'unset'}"
+                )
+        key_env = str(endpoint.get("api_key_env") or "").strip()
+        if key_env and not os.environ.get(key_env, "").strip():
+            errors.append(f"missing API key environment variable {key_env} for model.{capability}")
+    return errors
+
+
 def prepare_runtime_environment(project_root: str | Path, env_file: str = ".env") -> dict[str, Any]:
     root = Path(project_root).resolve()
     env_path = Path(env_file).expanduser()
@@ -113,8 +177,18 @@ def prepare_runtime_environment(project_root: str | Path, env_file: str = ".env"
         if isinstance(payload, dict):
             config = payload
 
-    _set_default("LLM_BASE_URL", os.environ.get("ANSWER_BASE_URL"), _nested(config, "model.llm.api_base"))
-    _set_default("LLM_MODEL", os.environ.get("ANSWER_MODEL"), _nested(config, "model.llm.model"))
+    _set_default(
+        "LLM_BASE_URL",
+        os.environ.get("ANSWER_BASE_URL"),
+        _nested(config, "model.llm.api_base"),
+        DEFAULT_DASHSCOPE_BASE_URL,
+    )
+    _set_default(
+        "LLM_MODEL",
+        os.environ.get("ANSWER_MODEL"),
+        _nested(config, "model.llm.model"),
+        DEFAULT_LLM_MODEL,
+    )
     _set_default("LLM_API_KEY", os.environ.get("ANSWER_TOKEN"), _nested(config, "model.llm.api_key"))
     _set_default("JUDGE_BASE_URL", os.environ.get("LLM_BASE_URL"))
     _set_default("JUDGE_MODEL", os.environ.get("LLM_MODEL"))

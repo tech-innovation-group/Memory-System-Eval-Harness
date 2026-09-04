@@ -1,0 +1,31 @@
+{
+  "faults": [
+    {
+      "kind": "llm-500",
+      "endpoint": "${BASE_URL}/fault/llm-500",
+      "action": "enable",
+      "timeout_s": 30
+    },
+    {
+      "kind": "llm-timeout",
+      "endpoint": "${BASE_URL}/fault/timeout",
+      "action": "enable",
+      "timeout_s": 30
+    },
+    {
+      "kind": "llm-429",
+      "endpoint": "${BASE_URL}/fault/429",
+      "action": "enable",
+      "timeout_s": 30
+    }
+  ],
+  "recovery": {
+    "health_url": "${BASE_URL}/health",
+    "container": "echomem-4u8g",
+    "wait_s": 1,
+    "poll_s": 2
+  },
+  "cursor": {
+    "uri_template": "echo://sessions/{session}/current/commit_cursor.json"
+  }
+}

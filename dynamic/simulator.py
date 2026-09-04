@@ -288,7 +288,7 @@ class MemoryDynamicEvaluator:
 
         # LLM config
         llm_config = config.get("llm_config", {})
-        self.model = llm_config.get("model", "deepseek-v4-flash")
+        self.model = llm_config.get("model", "deepseek-v4-flash-0731")
         self.base_url = llm_config.get("base_url") or None
         self.api_key = llm_config.get("api_key") or None
         

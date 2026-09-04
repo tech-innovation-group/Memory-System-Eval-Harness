@@ -71,7 +71,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     # 场景生成 LLM (仅 generate 模式使用, 用于生成背景记忆和 query)
     g = parser.add_argument_group("场景生成 LLM")
-    g.add_argument("--scenario-model", default=os.environ.get("ECHOAGENT_TEST_SCENARIO_MODEL", "deepseek-v4-flash"))
+    g.add_argument(
+        "--scenario-model",
+        default=os.environ.get("ECHOAGENT_TEST_SCENARIO_MODEL", "deepseek-v4-flash-0731"),
+    )
     g.add_argument("--scenario-base-url", default=os.environ.get("ECHOAGENT_TEST_SCENARIO_BASE_URL", ""))
     g.add_argument("--scenario-api-key", default=os.environ.get("ECHOAGENT_TEST_SCENARIO_API_KEY", ""))
 

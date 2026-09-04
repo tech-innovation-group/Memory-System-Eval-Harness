@@ -1,0 +1,18 @@
+FROM python:3.12-slim
+
+WORKDIR /app/stress
+COPY performance /app/stress/performance
+COPY backends /app/stress/backends
+COPY shared /app/stress/shared
+COPY benchmarks /app/stress/benchmarks
+
+# The Web/Feishu service invokes the current performance entrypoint. Keep
+# the legacy directory copies for formal-suite compatibility, but do not
+# point the image at a removed runner.py.
+RUN mkdir -p /app/stress/echomem \
+    && cp /app/stress/performance/formal_suite.py /app/stress/echomem/formal_suite.py \
+    && cp /app/stress/performance/formal_data_report.py /app/stress/echomem/formal_data_report.py \
+    && cp /app/stress/performance/run_stress.py /app/stress/echomem/run_stress.py
+
+ENV PYTHONUNBUFFERED=1
+ENTRYPOINT ["python", "/app/stress/performance/run_stress.py"]

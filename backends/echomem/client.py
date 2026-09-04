@@ -36,6 +36,7 @@ class EchoMemClient(BaseHTTPMemoryClient):
         max_retries: int = 3,
         retry_backoff_s: float = 1.0,
         log_access_key: str = "",
+        auth_header: str = "X-Auth-Key",
     ):
         super().__init__(
             base_url,
@@ -49,13 +50,21 @@ class EchoMemClient(BaseHTTPMemoryClient):
         )
         self.auth_key = auth_key
         self.log_access_key = log_access_key
+        self.auth_header = auth_header
 
     # -- low-level HTTP -------------------------------------------------
 
     def _headers(self) -> dict[str, str]:
         h = {"Content-Type": "application/json"}
         if self.auth_key:
-            h["X-Auth-Key"] = self.auth_key
+            if self.auth_header.lower() == "authorization":
+                h["Authorization"] = (
+                    self.auth_key
+                    if self.auth_key.lower().startswith("bearer ")
+                    else f"Bearer {self.auth_key}"
+                )
+            else:
+                h[self.auth_header] = self.auth_key
         return h
 
     # -- commit polling hooks -------------------------------------------
@@ -139,7 +148,7 @@ class EchoMemClient(BaseHTTPMemoryClient):
         if str(response.get("status") or "").lower() != "deleted":
             raise RuntimeError(f"account deletion was not confirmed: {response}")
 
-    def open_session(self, title: str = "") -> str:
+    def open_session(self, title: str = "", *, request_id: str = "") -> str:
         """Create a new session, return its id."""
         body: dict[str, Any] = {
             "agent_id": self.agent_id,
@@ -153,7 +162,7 @@ class EchoMemClient(BaseHTTPMemoryClient):
             body["title"] = title
         if self.workspace:
             body["workspace"] = self.workspace
-        resp = self._post("/api/sessions/open", body)
+        resp = self._post("/api/sessions/open", body, request_id=request_id)
         sid = resp.get("session_id") or resp.get("id") or ""
         if not sid:
             scope = resp.get("scope", {})
@@ -171,6 +180,8 @@ class EchoMemClient(BaseHTTPMemoryClient):
         content: str,
         created_at: str = "",
         role_id: str = "",
+        *,
+        request_id: str = "",
     ) -> dict[str, Any]:
         """Append one message to a session."""
         body: dict[str, Any] = {
@@ -187,14 +198,28 @@ class EchoMemClient(BaseHTTPMemoryClient):
             metadata["role_id"] = role_id
         if metadata:
             body["metadata"] = metadata
-        return self._post(f"/api/sessions/{session_id}/messages", body)
+        return self._post(
+            f"/api/sessions/{session_id}/messages",
+            body,
+            request_id=request_id,
+        )
 
-    def commit_session(self, session_id: str, keep_recent_count: int = 0) -> str:
+    def commit_session(
+        self,
+        session_id: str,
+        keep_recent_count: int = 0,
+        *,
+        request_id: str = "",
+    ) -> str:
         """Commit a session, return the archive_id."""
         body: dict[str, Any] = {
             "metadata": {"keep_recent_count": int(keep_recent_count or 0)}
         }
-        resp = self._post(f"/api/sessions/{session_id}/commit", body)
+        resp = self._post(
+            f"/api/sessions/{session_id}/commit",
+            body,
+            request_id=request_id,
+        )
         aid = resp.get("archive_id") or resp.get("task_id") or ""
         if not aid:
             result = resp.get("result", {})
@@ -215,6 +240,32 @@ class EchoMemClient(BaseHTTPMemoryClient):
         archives = resp.get("archives") or resp.get("commits") or []
         return bool(archives)
 
+    # -- message-level reconciliation ------------------------------------
+
+    def session_history(self, session_id: str, limit: int = 200) -> list[dict[str, Any]]:
+        """Server-side message list of a session (for write reconciliation).
+
+        Each entry carries the server-assigned message ``id`` and ``content``
+        when the endpoint exposes them; entries without an id are returned
+        as-is so reconciliation can still compare content hashes.
+        """
+        resp = self._get(f"/api/sessions/{session_id}/history", {"limit": limit})
+        history = resp.get("history") or []
+        if isinstance(history, dict):
+            history = history.get("messages") or []
+        return [dict(item) for item in history if isinstance(item, dict)]
+
+    def commit_memories(
+        self, session_id: str, archive_id: str
+    ) -> dict[str, Any]:
+        """Commit extraction summary (may include atom source_turn_ids)."""
+        return self._get(f"/api/sessions/{session_id}/commits/{archive_id}/memories")
+
+    def session_archives(self, session_id: str, limit: int = 50) -> list[dict[str, Any]]:
+        """List committed archives of a session (for archive terminal state)."""
+        resp = self._get(f"/api/sessions/{session_id}/archives", {"limit": limit})
+        return [dict(item) for item in (resp.get("archives") or []) if isinstance(item, dict)]
+
     # -- retrieval ------------------------------------------------------
 
     def search(
@@ -226,18 +277,64 @@ class EchoMemClient(BaseHTTPMemoryClient):
         timeout_s: float | None = None,
     ) -> list[SearchResult]:
         """Search EchoMem for memory items."""
+        items, _ = self.search_with_meta(
+            query,
+            top_k=top_k,
+            session_id=session_id,
+            agent_id=agent_id,
+            timeout_s=timeout_s,
+        )
+        return items
+
+    def search_with_meta(
+        self,
+        query: str,
+        top_k: int = 10,
+        session_id: str = "",
+        agent_id: str = "",
+        timeout_s: float | None = None,
+        *,
+        request_id: str = "",
+    ) -> tuple[list[SearchResult], dict[str, Any]]:
+        """Search and also return response metadata for quality assertions.
+
+        The metadata carries the raw ``result`` payload (explain/debug
+        fields when the server includes them) so loadgen can decide whether
+        the response really came from the recall path rather than being a
+        short-circuited empty reply.
+        """
         body: dict[str, Any] = {
             "query": query,
             "agent_id": agent_id or self.agent_id,
             "limit": top_k,
-            "include_explain": False,
+            "include_explain": True,
             "include_debug": True,
         }
         if session_id:
             body["session_id"] = session_id
-        resp = self._post("/api/retrieval/search", body, timeout_s=timeout_s)
-        items = resp.get("result", {}).get("items", []) if "result" in resp else resp.get("items", [])
-        return [SearchResult.from_dict(item) for item in items]
+        resp = self._post(
+            "/api/retrieval/search",
+            body,
+            timeout_s=timeout_s,
+            request_id=request_id,
+        )
+        result = resp.get("result") if "result" in resp else resp
+        items_raw = result.get("items", []) if isinstance(result, dict) else []
+        items = [SearchResult.from_dict(item) for item in items_raw]
+        meta: dict[str, Any] = {}
+        if isinstance(result, dict):
+            meta = {
+                "hit_count": len(items),
+                "has_explain": bool(result.get("explain")),
+                "has_debug": bool(result.get("debug")),
+                "engine": result.get("engine", ""),
+                # Degraded contract: surface the orchestrator status so the
+                # caller can tell partial results (engine skipped / saturated)
+                # from full ones.
+                "status": str(result.get("status") or ""),
+                "degraded_reasons": list(result.get("degraded_reasons") or []),
+            }
+        return items, meta
 
     # -- document resources (resource_engine) -----------------------------
 

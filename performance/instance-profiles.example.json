@@ -1,0 +1,132 @@
+{
+  "profiles": [
+    {
+      "name": "4U8G",
+      "base_url": "http://127.0.0.1:8010",
+      "tenant_config": "performance/tenants-32.server.json",
+      "preflight_config": "/etc/echomem/4u8g/config.json",
+      "auth_header": "X-Auth-Key",
+      "allow_partial_tenants": true,
+      "metrics_enabled": true,
+      "quick_include_seed": false,
+      "capability_probe": {
+        "health_path": "/health",
+        "metrics_path": "/metrics",
+        "cursor_path": "",
+        "cursor_uri_template": "echo://sessions/{session}/current/commit_cursor.json",
+        "operation_path": "",
+        "conflict_path": "",
+        "ttl_path": "",
+        "engine_path": "",
+        "fault_path": ""
+      },
+      "missing_cases": {
+        "enabled": true,
+        "max_tenants": 1,
+        "commit_timeout_s": 15,
+        "search_timeout_s": 10,
+        "visibility_timeout_s": 20
+      },
+      "concurrent_commit": {
+        "enabled": true,
+        "concurrency": 4,
+        "timeout_s": 120
+      },
+      "commit_recovery": {
+        "container": "${ECHOMEM_CONTAINER:-echomem-4u8g}",
+        "tenant": "stress-a",
+        "kill_delay_s": 0.5,
+        "messages": 12,
+        "content_chars": 2500,
+        "recovery_timeout_s": 180,
+        "poll_s": 2
+      },
+      "fault_isolation": {
+        "enabled": true,
+        "target_tenant": "stress-a",
+        "bystander_tenants": "stress-b,stress-c,stress-d",
+        "endpoint": "${ECHOMEM_FAULT_CONTROL_URL}",
+        "samples": 8,
+        "workers": 8,
+        "timeout_s": 20,
+        "control_timeout_s": 30
+      },
+      "fairness_expectations": {
+        "tenant_ids": ["stress-a", "stress-b", "stress-c", "stress-d"]
+      },
+      "observability": {
+        "lanes": [
+          "recall_engine",
+          "recall_intent_llm",
+          "recall_query_embedding",
+          "recall_rerank",
+          "commit"
+        ],
+        "fanout_engines": ["recall", "commit"]
+      },
+      "fault_plan": "fault-plan.example.json",
+      "limit_failure_sweep": {
+        "levels": "16,64,128,256",
+        "search_count": 256,
+        "open_count": 128,
+        "commit_count": 128,
+        "workers": 256,
+        "timeout_s": 8,
+        "create_sessions": true
+      },
+      "resource_profile": {
+        "cpu": "4 vCPU",
+        "memory": "8 GiB"
+      },
+      "prepare_command": "/usr/local/bin/echomem-select-profile 4U8G"
+    },
+    {
+      "name": "8U16G",
+      "base_url": "http://127.0.0.1:8010",
+      "tenant_config": "performance/tenants-32.server.json",
+      "preflight_config": "/etc/echomem/8u16g/config.json",
+      "metrics_enabled": true,
+      "resource_profile": {
+        "cpu": "8 vCPU",
+        "memory": "16 GiB"
+      },
+      "prepare_command": "/usr/local/bin/echomem-select-profile 8U16G"
+    },
+    {
+      "name": "16U32G",
+      "base_url": "http://127.0.0.1:8010",
+      "tenant_config": "performance/tenants-32.server.json",
+      "preflight_config": "/etc/echomem/16u32g/config.json",
+      "metrics_enabled": true,
+      "resource_profile": {
+        "cpu": "16 vCPU",
+        "memory": "32 GiB"
+      },
+      "prepare_command": "/usr/local/bin/echomem-select-profile 16U32G"
+    },
+    {
+      "name": "32U",
+      "base_url": "http://127.0.0.1:8010",
+      "tenant_config": "performance/tenants-32.server.json",
+      "preflight_config": "/etc/echomem/32u/config.json",
+      "metrics_enabled": true,
+      "resource_profile": {
+        "cpu": "32 vCPU",
+        "memory": "32 GiB"
+      },
+      "prepare_command": "/usr/local/bin/echomem-select-profile 32U"
+    },
+    {
+      "name": "64G",
+      "base_url": "http://127.0.0.1:8010",
+      "tenant_config": "performance/tenants-32.server.json",
+      "preflight_config": "/etc/echomem/64g/config.json",
+      "metrics_enabled": true,
+      "resource_profile": {
+        "cpu": "8 vCPU",
+        "memory": "64 GiB"
+      },
+      "prepare_command": "/usr/local/bin/echomem-select-profile 64G"
+    }
+  ]
+}

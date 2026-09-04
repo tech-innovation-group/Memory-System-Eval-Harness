@@ -178,6 +178,50 @@
 
 ---
 
+## 5. performance（性能压测）
+
+### 本节适用
+
+结果目录含 `requests.csv` + `metrics_samples.csv` 且 `summary.json.generator =
+performance/run_stress.py`（`detect_type = performance`）。**注意**：performance
+不是精度 benchmark，**没有** D1–D7 精度维度；它回答「并发/资源/延迟」问题，
+与精度评测互为补充（精度达标但 P99 劣化 10x 同样阻塞上线）。
+
+### 特有产物清单
+
+| 产物 | 作用 |
+|---|---|
+| `summary.json` | 按场景×并发档分节的延迟/吞吐/错误/资源/劣化倍数/信号/一致性 |
+| `requests.csv` | 逐请求：`op`（read/open/add/commit_submit/commit_done/consistent_check）与 `stage_ms`/`error_type`/`extra`（burst） |
+| `metrics_samples.csv` | 服务端 `/metrics` 采样时序（原始 Prometheus 样本） |
+| `report.html` | 自包含报告（QPS/延迟/资源时间线/劣化表） |
+| `config.json` | 全参数（auth_key 已掩码）+ 数据规模 |
+
+### 特有字段与解析提示
+
+| 字段路径 | 含义 | 解析提示 |
+|---|---|---|
+| `summary.json.scenes.<key>.ops.<op>` | 每场景每操作统计（count/qps/avg/p50/p95/p99/error_rate） | `<key>` 形如 `A@16` / `C:8:1@4` / `D@16`；**对比必须在同并发档进行**（C/D 与同档 A 比，别拿 A@1 比 D@64）。 |
+| `summary.json.degradation.<key>_vs_A@<n>.{p50,p95,p99}` | 劣化倍数（target ÷ baseline） | `>1` 表示写干扰使读延迟上升；**≥2x 通常意味着"注入阻塞检索"成立**，配合 `signals` 确认。 |
+| `summary.json.signals.signals_found[]` | 阻塞判定信号（P95 劣化/engine_calls 增量≈0→锁竞争/读错误/inflight 接近总并发） | 信号非空即存在可复现的读-写干扰；`engine_calls` 增量"≈0 且延迟升"指向排他/锁，"正常且延迟升"指向资源竞争。 |
+| `summary.json.resources.{cpu_util_mean_percent,rss_*_mb}` | CPU 均值 / RSS 基线-峰值-冷却后-未回落 | `rss_unsettled_mb` 持续增长 → 内存泄漏方向（对比多次运行）。 |
+| `summary.json.feature_verdicts` | 四特性结论（PASS/FAIL/INCONCLUSIVE + reason） | **报告的最终结论入口**：任一特性 FAIL → 总体 FAIL；INCONCLUSIVE → 数据不足（少跑场景/单租户/无 metrics），补跑对应场景再判。 |
+| `requests.csv[].op=commit_submit` 的 `error_type` | 提交回拒（如 commit 队列满的 4xx/5xx） | 高回拒率 → commit 准入成为瓶颈（`metrics_samples` 里 `echomem_session_commit_queue_depth` 见顶佐证）。 |
+| `requests.csv[].op=consistent_check` | 写后读一致性窗口（commit 完成 → 检索可命中） | 该结论只在**锚词命中**时有意义；`error_type=consistency_timeout` 说明写入后长期不可见。 |
+| `summary.json.server.metrics_available` | 服务端指标是否采集到 | `false`（外网未暴露 /metrics）时 `resources` 与 `degradation` 的服务端部分不可用——只信客户端指标，标注数据来源。 |
+| `metrics_samples.csv` 中 `echomem_recall_duration_seconds_bucket` | 服务端真实检索延迟直方图 | 与客户端 `requests.csv` 的 `read.stage_ms` 对照：差距大 → 排队/客户端瓶颈在哪一侧。 |
+
+### 特有字段 → 结论方向
+
+| 特有字段读数 | 结论 | 处置方向 |
+|---|---|---|
+| 某档 `degradation.p99 ≥ 2` + `signals` 非空 | 该并发档下写阻塞读 | 收敛注入并发/批量大小，定位 commit 抽取与检索的资源竞争（EchoMem 侧） |
+| `commit_queue_max` 见顶 + 回拒率高 | commit 准入队列是瓶颈 | 提高准入水位或优化抽取吞吐 |
+| `rss_unsettled_mb` 显著 | 内存未随冷却回落 | 疑似泄漏，长时间压测复查趋势 |
+| `server.metrics_available=false` | 服务端观测缺失 | 开放 /metrics 或接受仅客户端结论 |
+
+---
+
 ## 通用坑位（所有类型都要看）
 
 - **dynamic 中文文本字段可能编码损坏**（GBK→UTF-8 替换字符），query/reply/weakness 不可逐字引用，

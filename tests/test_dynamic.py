@@ -97,7 +97,7 @@ class DynamicConfigTests(unittest.TestCase):
             config = build_config_from_args(args)
             with self.assertRaises(ValueError) as ctx:
                 validate_eval_config(config)
-            self.assertIn("LLM base URL", str(ctx.exception))
+            self.assertIn("LLM API key", str(ctx.exception))
 
 
 
