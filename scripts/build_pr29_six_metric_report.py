@@ -63,6 +63,14 @@ def status(value: Any) -> str:
     return f"<span class='badge {css}'>{esc(text)}</span>"
 
 
+def metric_bar(value: float | None, maximum: float = 1.0, tone: str = "teal") -> str:
+    if value is None or maximum <= 0:
+        width = 0
+    else:
+        width = max(0.0, min(100.0, value / maximum * 100.0))
+    return f"<span class='meter {tone}'><i style='width:{width:.1f}%'></i></span>"
+
+
 def json_text(value: Any) -> str:
     if value in (None, "", {}, []):
         return "-"
@@ -148,6 +156,38 @@ def main() -> int:
         for ident, _title in OBJECTIVES
         for item in [objectives.get(ident, {})]
     )
+    status_counts = {
+        state: sum(
+            str(objectives.get(ident, {}).get("status") or "INCONCLUSIVE").upper() == state
+            for ident, _title in OBJECTIVES
+        )
+        for state in ("PASS", "FAIL", "INCONCLUSIVE")
+    }
+    status_legend = "".join(
+        f"<div class='legend-item'><span class='dot {state.lower()}'></span>"
+        f"<b>{count}</b> {esc(state)}</div>"
+        for state, count in status_counts.items()
+    )
+    capacity_points = []
+    for name, state, _ss, _sd, _cs, _cd, _p95 in scenarios:
+        if name.startswith("capacity-"):
+            try:
+                level = int(name.split("-", 1)[1])
+            except ValueError:
+                continue
+            capacity_points.append((level, str(state).upper()))
+    capacity_points.sort()
+    capacity_chart = "".join(
+        f"<div class='capacity-point'><span>{level}</span>"
+        f"<i class='{'done' if state == 'COMPLETED' else 'blocked'}'></i></div>"
+        for level, state in capacity_points
+    )
+    o3 = objectives.get("O3", {}).get("observed") or {}
+    o4 = objectives.get("O4", {}).get("observed") or {}
+    o1 = objectives.get("O1", {}).get("observed") or {}
+    o3_jain = o3.get("jain")
+    o4_ratio = o4.get("priority_ratio") or o4.get("degradation_ratio")
+    o1_max = o1.get("max_completed_active_user_count") or o1.get("max_measured_active_user_count")
     module_rows = [
         (
             "认证 / 多租户",
@@ -213,14 +253,30 @@ main{{max-width:1320px;margin:auto;padding:28px 20px 60px}}h1{{margin:0;font-siz
 .badge{{display:inline-block;padding:2px 7px;border-radius:3px;font-weight:700;font-size:12px}}
 .pass{{color:var(--green);background:#e5f4ee}}.fail{{color:var(--red);background:#fae9e7}}.warn{{color:var(--amber);background:#fff3d2}}.neutral{{color:var(--muted);background:#edf1f2}}
 table{{width:100%;border-collapse:collapse}}th,td{{padding:8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}}th{{background:#f2f6f7;font-size:12px}}
+.dashboard{{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:12px}}.viz{{border:1px solid var(--line);padding:14px;background:#fbfcfc}}
+.viz h3{{margin-top:0}}.legend-item{{display:inline-flex;align-items:center;margin:0 12px 8px 0;gap:5px;font-size:12px}}.dot{{width:10px;height:10px;border-radius:50%;display:inline-block}}.dot.pass{{background:var(--green)}}.dot.fail{{background:var(--red)}}.dot.inconclusive{{background:var(--amber)}}
+.big-number{{font-size:28px;font-weight:800;color:var(--teal);margin:4px 0}}.meter{{display:block;height:9px;background:#e6edef;margin:7px 0 11px;border-radius:2px;overflow:hidden}}.meter i{{display:block;height:100%;background:var(--teal)}}.meter.green i{{background:var(--green)}}.meter.amber i{{background:var(--amber)}}.meter.red i{{background:var(--red)}}
+.capacity{{display:flex;align-items:flex-end;gap:10px;height:72px;border-bottom:1px solid var(--line);padding:0 8px}}.capacity-point{{display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--muted);font-size:11px}}.capacity-point i{{display:block;width:18px;height:42px;background:var(--amber);border-radius:2px 2px 0 0}}.capacity-point i.done{{background:var(--green)}}.capacity-point i.blocked{{background:#d8e2e7}}
 .callout{{border-left:4px solid var(--teal);background:#eef7f9;padding:12px 14px}}ul{{padding-left:20px}}a{{color:var(--teal)}}
-@media(max-width:950px){{.cards{{grid-template-columns:repeat(2,1fr)}}}}@media(max-width:520px){{.cards{{grid-template-columns:1fr}}main{{padding:18px 10px}}}}
+@media(max-width:1050px){{.cards{{grid-template-columns:repeat(2,1fr)}}.dashboard{{grid-template-columns:1fr}}}}@media(max-width:520px){{.cards{{grid-template-columns:1fr}}main{{padding:18px 10px}}}}
 </style></head><body><main>
 <h1>PR29 4U8G 六项指标真实黑盒测试</h1>
 <p class="sub">生成时间：{esc(suite.get("created_at"))} · 场景覆盖：{coverage} · 默认不含 soak</p>
 <div class="callout"><b>阅读规则：</b>配置了场景不等于已经完成测试；有 HTTP 返回不等于有记忆召回证据。
 缺少故障控制、热记忆或完整指标样本时，保留为 INCONCLUSIVE。</div>
 <section><h2>六项指标结论</h2><div class="cards">{cards}</div></section>
+<section><h2>一眼看懂</h2><div class="dashboard">
+<div class="viz"><h3>状态分布</h3><div>{status_legend}</div>
+<p class="muted">PASS 只代表当前验收器已有充分证据；INCONCLUSIVE 代表还缺真实前提或样本。</p></div>
+<div class="viz"><h3>已观测容量</h3><div class="big-number">{esc(o1_max or "-")} 个 session</div>
+<div class="capacity">{capacity_chart or "<span class='muted'>无容量数据</span>"}</div>
+<p class="muted">绿色为实际完成，灰色为未形成有效边界；不是业务 DAU。</p></div>
+<div class="viz"><h3>关键数值</h3>
+<div class="muted">公平性 Jain（取较小值）</div><b>{esc(o3_jain or "-")}</b>
+{metric_bar(float(o3_jain) if o3_jain is not None else None, 1, "green")}
+<div class="muted">Search 洪泛/基线比</div><b>{esc(o4_ratio or "-")}</b>
+{metric_bar(float(o4_ratio) if o4_ratio is not None else None, 2, "amber")}</div>
+</div></section>
 <section><h2>运行环境</h2><table>
 <tr><th>项目</th><th>值</th></tr>
 <tr><td>测试平台</td><td>Memory-System-Eval-Harness PR29</td></tr>
