@@ -2870,6 +2870,13 @@ def main() -> int:
                 elif seed_warmup_failed:
                     args.reuse_existing_data = False
                     args.skip_seed = True
+                elif not requires_seed:
+                    # Capacity, scheduling and metrics cases do not need
+                    # model-backed memory preparation. Explicitly disable
+                    # per-case seed work so a black-box case cannot spend
+                    # its timeout on an irrelevant Commit warm-up.
+                    args.reuse_existing_data = False
+                    args.skip_seed = True
                 completed_runs = len(manifest["runs"])
                 total_runs = len(scenario_names) * args.repeats * len(POLICIES)
                 print(
