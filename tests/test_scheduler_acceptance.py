@@ -562,6 +562,53 @@ class SchedulerAcceptanceTests(unittest.TestCase):
         self.assertEqual(PASS, check["status"])
         self.assertEqual([8], check["observed"]["capacity_boundary_levels"])
 
+    def test_capacity_failed_search_level_is_boundary(self) -> None:
+        result = evaluate(
+            {
+                "instance_profile": "4U8G",
+                "runs": [
+                    {
+                        "scenario": "capacity-32",
+                        "status": "completed",
+                        "scenario_config": {"capacity_active_users": 32},
+                        "summary": {
+                            "metrics": {
+                                "search": {
+                                    "submitted": 32,
+                                    "success_rate": 1.0,
+                                }
+                            },
+                            "details": {
+                                "user_activity": {
+                                    "active_user_count": 32,
+                                    "hot_user_proxy": {"request_count": 8},
+                                }
+                            },
+                        },
+                    },
+                    {
+                        "scenario": "capacity-64",
+                        "status": "FAIL",
+                        "summary": {
+                            "metrics": {
+                                "search": {
+                                    "submitted": 64,
+                                    "success_rate": 0.75,
+                                }
+                            }
+                        },
+                    },
+                ],
+            }
+        )
+        check = next(
+            item for item in result["checks"]
+            if item["name"] == "DAU / 最大热用户容量"
+        )
+        self.assertEqual(PASS, check["status"])
+        self.assertEqual([64], check["observed"]["invalid_capacity_levels"])
+        self.assertEqual(32, check["observed"]["max_valid_active_user_count"])
+
     def test_capacity_reports_active_user_target_separately_from_tenants(self) -> None:
         result = evaluate(
             {

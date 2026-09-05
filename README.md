@@ -1238,7 +1238,9 @@ lane/租户就算覆盖”的误判：
 - `configured` 表示测试入口已经配置；`incomplete` 会列出缺失的场景或探针，
   例如 `probe:fault_isolation`；
 - O1 需要完整的 `capacity-2/4/8/16/32/64/128` 阶梯，低档成功只能证明容量下界，
-  不能直接宣称“最大 DAU”；
+  不能直接宣称“最大 DAU”。更高档位如果已经产生真实 Search 请求但成功率低于
+  99%，即使 runner 以 `FAIL` 退出，也会被记录为容量边界；没有真实 Search 请求的
+  启动、鉴权或 seed 失败不会被当作容量上限；
 - O2 的单租户故障注入、O5 的 kill/restart 必须由部署提供真实控制，平台负责
   调用、采样和对账；
 - 最终 `PASS/FAIL/INCONCLUSIVE` 仍由真实 HTTP、服务端指标和对账结果决定；

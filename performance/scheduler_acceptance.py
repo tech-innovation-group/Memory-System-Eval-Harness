@@ -276,17 +276,24 @@ def _capacity(suite: dict[str, Any]) -> dict[str, Any]:
             )
             activity_observed = active_users > 0 and hot_requests > 0
             if str(run.get("status")) != "completed":
-                if str(run.get("status") or "").upper() == "TIMEOUT":
-                    # A real load case that exceeded its bounded wall-clock
-                    # budget is a valid capacity-boundary observation only
-                    # after the workload actually emitted Search requests.
-                    # Setup/Commit preparation timeouts are not a Search
-                    # capacity limit.
-                    search_submitted = int(
-                        (metrics.get("search") or {}).get("submitted") or 0
-                    )
-                    if search_submitted > 0:
+                # A higher capacity point can fail in two different ways:
+                # the bounded case timeout fires, or the real service emits
+                # enough HTTP/transport errors for run_stress to exit non-zero.
+                # Both are valid boundary evidence only after Search actually
+                # reached the target. Setup failures and empty runner crashes
+                # must remain outside the capacity calculation.
+                search = metrics.get("search") or {}
+                search_submitted = int(search.get("submitted") or 0)
+                if search_submitted > 0:
+                    if str(run.get("status") or "").upper() == "TIMEOUT":
                         timeout_levels.append(level)
+                    else:
+                        try:
+                            below_slo = float(search.get("success_rate") or 0.0) < 0.99
+                        except (TypeError, ValueError):
+                            below_slo = True
+                        if below_slo:
+                            invalid_levels.append(level)
                 continue
             search = metrics.get("search") or {}
             # Capacity is the active-user/Search boundary.  Commit flooding
