@@ -24,6 +24,7 @@ from typing import Any
 # Allow direct execution from the repository's ``scripts/`` directory.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from performance.scheduler_acceptance import evaluate as evaluate_scheduler_acceptance
+from performance.objective_suite import _probe_plan, platform_objective_coverage
 
 
 OBJECTIVES = (
@@ -230,6 +231,17 @@ def main() -> int:
                 for item in acceptance.get("checks") or []
                 if isinstance(item, dict)
             }
+    platform_coverage = profile.get("platform_objective_coverage") or []
+    if not platform_coverage:
+        probe_plan = profile.get("probe_plan")
+        if not isinstance(probe_plan, list):
+            probe_plan = _probe_plan(profile)
+        platform_coverage = platform_objective_coverage(
+            profile,
+            formal_manifest,
+            probe_plan,
+            profile.get("coverage") or {},
+        )
     auth = formal_manifest.get("auth_preflight") or {}
     scenarios = []
     manifest_runs = {
@@ -466,6 +478,12 @@ def main() -> int:
         if str(item["name"]).startswith("capacity-")
         and str(item["status"]).lower() == "blocked"
     ]
+    capacity_action = (
+        "已完成 2/4/8/16/32 阶梯，但还需要继续增加负载直到出现真实 SLO 失败，"
+        "才能报告最大边界。"
+        if len(capacity_completed) >= 5
+        else "继续执行尚未完成的容量档位，并记录最后成功档位与下一档真实失败。"
+    )
     module_rows = [
         (
             "认证 / 多租户",
@@ -481,7 +499,7 @@ def main() -> int:
             f"阻断 {', '.join(capacity_blocked) or '无'}，未形成最大容量失败边界。",
             "session / active-user / admission",
             "测试平台场景 / 4U8G 资源",
-            "继续执行 8、16、32，记录达到 SLO 的最后一档和下一档真实失败。",
+            capacity_action,
         ),
         (
             "检索 / Search",
@@ -559,6 +577,23 @@ table{{width:100%;border-collapse:collapse}}th,td{{padding:8px;border-bottom:1px
 <div class="callout"><b>阅读规则：</b>配置了场景不等于已经完成测试；有 HTTP 返回不等于有记忆召回证据。
 缺少故障控制、热记忆或完整指标样本时，保留为 INCONCLUSIVE。</div>
 <section><h2>六项指标结论</h2><div class="cards">{cards}</div></section>
+<section><h2>测试平台覆盖审计</h2>
+<p class="muted">这张表回答“平台有没有配置出数据的入口”，不把入口存在误当成指标通过。</p>
+<table><thead><tr><th>指标</th><th>平台状态</th><th>已配置场景</th>
+<th>已配置探针</th><th>缺口</th><th>责任边界</th></tr></thead><tbody>
+{"".join(
+    f"<tr><td><b>{esc(item.get('id'))}</b> {esc(item.get('name'))}</td>"
+    f"<td>{esc(item.get('status'))}</td>"
+    f"<td>{esc(', '.join(map(str, item.get('configured_scenarios') or [])) or '-')}</td>"
+    f"<td>{esc(', '.join(map(str, item.get('configured_probes') or [])) or '-')}</td>"
+    f"<td>{esc(', '.join(map(str, item.get('missing') or [])) or '-')}</td>"
+    f"<td>{esc(item.get('owner') or '-')}</td></tr>"
+    for item in platform_coverage if isinstance(item, dict)
+)}
+</tbody></table>
+<div class="callout">平台状态为 <b>incomplete</b> 时，报告仍展示已有真实数据，
+但不会自动把结果标成 PASS；需要区分“平台未配置”“部署没有控制/凭据”和“服务真实失败”。</div>
+</section>
 <section><h2>一眼看懂</h2><div class="dashboard">
 <div class="viz"><h3>状态分布</h3><div>{status_legend}</div>
 <p class="muted">PASS 只代表当前验收器已有充分证据；INCONCLUSIVE 代表还缺真实前提或样本。</p></div>

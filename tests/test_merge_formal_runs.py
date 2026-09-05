@@ -52,6 +52,52 @@ class MergeFormalRunsTests(unittest.TestCase):
             self.assertEqual("complete", merged["finalization"]["coverage_status"])
             self.assertTrue((output_dir / "suite.html").is_file())
 
+    def test_supplement_replaces_legacy_unnamespaced_scenario(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base_dir = root / "base"
+            supplement_dir = root / "supplement"
+            output_dir = root / "merged"
+            base_dir.mkdir()
+            supplement_dir.mkdir()
+            base = {
+                "scenarios": ["capacity-8"],
+                "repeats": 1,
+                "policies": ["server-observe"],
+                "runs": [
+                    {
+                        "scenario": "capacity-8",
+                        "status": "blocked",
+                        "summary": {"metrics": {"search": {"submitted": 0}}},
+                    }
+                ],
+            }
+            supplement = {
+                "runs": [
+                    {
+                        "scenario": "capacity-8",
+                        "status": "completed",
+                        "summary": {"metrics": {"search": {"submitted": 8}}},
+                    }
+                ]
+            }
+            base_path = base_dir / "suite.json"
+            supplement_path = supplement_dir / "suite.json"
+            base_path.write_text(json.dumps(base), encoding="utf-8")
+            supplement_path.write_text(json.dumps(supplement), encoding="utf-8")
+
+            merged = json.loads(
+                merge_manifests(base_path, supplement_path, output_dir).read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(1, len(merged["runs"]))
+            self.assertEqual("completed", merged["runs"][0]["status"])
+            self.assertEqual(
+                "pr421__capacity-8",
+                merged["runs"][0]["scenario_key"],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

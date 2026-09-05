@@ -47,10 +47,20 @@ def _read(path: Path) -> dict[str, Any]:
 
 def _namespaced_key(run: dict[str, Any], default_prefix: str = "pr421") -> str:
     key = str(run.get("scenario_key") or "").strip()
-    if key:
+    if key and "__" in key:
         return key
     scenario = str(run.get("source_scenario") or run.get("scenario") or "").strip()
-    return f"{default_prefix}__{scenario}" if scenario else ""
+    return f"{default_prefix}__{scenario or key}" if (scenario or key) else ""
+
+
+def _raw_scenario_key(run: dict[str, Any]) -> str:
+    """Return the un-namespaced scenario name used by legacy manifests."""
+    return str(
+        run.get("source_scenario")
+        or run.get("scenario")
+        or run.get("scenario_key")
+        or ""
+    ).strip()
 
 
 def merge_manifests(base_path: Path, supplement_path: Path, output_dir: Path) -> Path:
@@ -70,13 +80,18 @@ def merge_manifests(base_path: Path, supplement_path: Path, output_dir: Path) ->
         item.setdefault("plan_source", key.split("__", 1)[0])
         item["scenario"] = item.get("source_scenario") or item.get("scenario")
         replacements[key] = item
+        raw_key = _raw_scenario_key(run)
+        if raw_key:
+            replacements[raw_key] = item
 
     merged_runs: list[dict[str, Any]] = []
     replaced: list[str] = []
     for run in base_runs:
         key = _namespaced_key(run)
-        if key in replacements:
-            merged_runs.append(replacements[key])
+        raw_key = _raw_scenario_key(run)
+        replacement = replacements.get(key) or replacements.get(raw_key)
+        if replacement is not None:
+            merged_runs.append(replacement)
             replaced.append(key)
         else:
             merged_runs.append(run)
