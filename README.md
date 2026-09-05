@@ -1231,6 +1231,19 @@ lane/租户就算覆盖”的误判：
 暴露的 bounded-label 集合；缺失项会在 `observed.missing_lanes` 或
 `observed.missing_fanout_engines` 中明确列出。
 
+每次 `objective_suite` 运行还会生成 `platform_objective_coverage`，并在 HTML
+报告中展示“测试平台六项指标覆盖审计”。这张表只审计平台是否配置了产出指标
+所需的场景和探针，不替代最终的真实运行判定：
+
+- `configured` 表示测试入口已经配置；`incomplete` 会列出缺失的场景或探针，
+  例如 `probe:fault_isolation`；
+- O1 需要完整的 `capacity-2/4/8/16/32` 阶梯，低档成功只能证明容量下界，
+  不能直接宣称“最大 DAU”；
+- O2 的单租户故障注入、O5 的 kill/restart 必须由部署提供真实控制，平台负责
+  调用、采样和对账；
+- 最终 `PASS/FAIL/INCONCLUSIVE` 仍由真实 HTTP、服务端指标和对账结果决定；
+  平台覆盖表不能把缺失证据变成通过。
+
 formal suite 生成的每个场景 `search_results.csv` 还会保留请求级的
 `end_to_end_s`、`error_type`、`error_class`、`error_detail`、`Retry-After`、
 `reason_code`、查询类型和召回命中字段；`commit_results.csv` 会保留 HTTP 状态、

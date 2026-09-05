@@ -24,6 +24,7 @@ from performance.objective_suite import (
     load_env_file,
     load_profiles,
     objective_statuses,
+    platform_objective_coverage,
     run_command,
     render_report,
 )
@@ -271,6 +272,39 @@ class ObjectiveSuiteTests(unittest.TestCase):
             ["recall"],
             observability["observed"].get("expected_fanout_engines"),
         )
+
+    def test_platform_objective_coverage_reports_missing_runtime_controls(self) -> None:
+        result = platform_objective_coverage(
+            {
+                "fault_isolation": {"enabled": False},
+                "commit_recovery": {"container": "target"},
+            },
+            {
+                "runs": [
+                    {"scenario": "capacity-2"},
+                    {"scenario": "capacity-4"},
+                    {"scenario": "capacity-8"},
+                    {"scenario": "capacity-16"},
+                    {"scenario": "capacity-32"},
+                    {"scenario": "fairness-steady"},
+                    {"scenario": "search-priority-blackbox"},
+                    {"scenario": "baseline"},
+                ]
+            },
+            [
+                {"name": "blackbox_probe", "configured": True},
+                {"name": "commit_recovery", "configured": True},
+                {"name": "capability_probe", "configured": True},
+                {"name": "fault_isolation", "configured": False},
+            ],
+            {"evidence_missing_scenarios": []},
+        )
+        by_id = {item["id"]: item for item in result}
+        self.assertEqual("configured", by_id["O1"]["status"])
+        self.assertEqual("incomplete", by_id["O2"]["status"])
+        self.assertIn("probe:fault_isolation", by_id["O2"]["missing"])
+        self.assertEqual("configured", by_id["O5"]["status"])
+        self.assertEqual("configured", by_id["O6"]["status"])
 
     def test_resolve_tenant_id_falls_back_when_profile_is_stale(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

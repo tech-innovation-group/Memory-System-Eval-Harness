@@ -56,6 +56,58 @@ QUICK_SCENARIOS = (
     "capacity-16,capacity-32"
 )
 
+PLATFORM_OBJECTIVE_REQUIREMENTS = {
+    "O1": {
+        "name": "单实例最大用户量 / 热用户量",
+        "scenarios": {
+            "capacity-2",
+            "capacity-4",
+            "capacity-8",
+            "capacity-16",
+            "capacity-32",
+        },
+        "probes": set(),
+        "owner": "测试平台 + 部署资源",
+    },
+    "O2": {
+        "name": "单租户故障下 Search P95 劣化",
+        "scenarios": set(),
+        "probes": {"fault_isolation", "fault_suite"},
+        "owner": "部署故障控制 + 测试平台采集",
+    },
+    "O3": {
+        "name": "多租户 Commit/Search 公平性 Jain",
+        "scenarios": {"fairness-steady", "fairness-bounded"},
+        "scenario_mode": "any",
+        "probes": set(),
+        "owner": "测试平台负载 + 独立租户凭据",
+    },
+    "O4": {
+        "name": "Commit 洪泛时 Search 优先级",
+        "scenarios": {"search-priority-blackbox"},
+        "probes": set(),
+        "owner": "测试平台负载 + EchoMem 调度",
+    },
+    "O5": {
+        "name": "202 Commit 崩溃恢复与重放",
+        "scenarios": set(),
+        "probes": {"commit_recovery", "blackbox_probe"},
+        "owner": "EchoMem 持久化 + 测试平台重启/对账",
+    },
+    "O6": {
+        "name": "每层/每租户四元组可观测性",
+        "scenarios": {
+            "baseline",
+            "fairness-steady",
+            "fairness-bounded",
+            "search-priority-blackbox",
+        },
+        "scenario_mode": "all_except_fairness",
+        "probes": {"capability_probe"},
+        "owner": "EchoMem /metrics + 测试平台校验",
+    },
+}
+
 
 def _formal_profile_name(profile_name: str, *, quick: bool) -> str:
     """Select the scenario catalog for one objective-suite profile."""
@@ -1125,6 +1177,81 @@ def _formal_coverage(suite: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def platform_objective_coverage(
+    profile: dict[str, Any],
+    suite: dict[str, Any],
+    probe_plan: list[dict[str, Any]],
+    coverage: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Report whether the platform is configured to produce each objective.
+
+    This is deliberately separate from the runtime PASS/FAIL verdict.  A
+    configured scenario can still be blocked, and an absent fault/restart
+    control is a deployment gap rather than evidence that EchoMem failed.
+    """
+    configured_probes = {
+        str(item.get("name"))
+        for item in probe_plan
+        if isinstance(item, dict) and item.get("configured")
+    }
+    run_names = {
+        str(item.get("source_scenario") or item.get("scenario") or "")
+        for item in suite.get("runs") or []
+        if isinstance(item, dict)
+    }
+    results: list[dict[str, Any]] = []
+    for objective_id, requirement in PLATFORM_OBJECTIVE_REQUIREMENTS.items():
+        scenarios = sorted(set(requirement["scenarios"]) & run_names)
+        missing_scenarios = sorted(set(requirement["scenarios"]) - run_names)
+        scenario_mode = requirement.get("scenario_mode")
+        if scenario_mode == "any":
+            missing_scenarios = (
+                [] if scenarios else sorted(requirement["scenarios"])
+            )
+        elif scenario_mode == "all_except_fairness":
+            has_fairness = bool(
+                {"fairness-steady", "fairness-bounded"} & run_names
+            )
+            missing_scenarios = sorted(
+                {
+                    item
+                    for item in requirement["scenarios"]
+                    if item not in run_names
+                    and item not in {"fairness-steady", "fairness-bounded"}
+                }
+            )
+            if not has_fairness:
+                missing_scenarios.append("fairness-steady|fairness-bounded")
+        probes = sorted(set(requirement["probes"]) & configured_probes)
+        missing_probes = sorted(set(requirement["probes"]) - configured_probes)
+        missing = [
+            *(f"scenario:{item}" for item in missing_scenarios),
+            *(f"probe:{item}" for item in missing_probes),
+        ]
+        if objective_id == "O1":
+            evidence_missing = coverage.get("evidence_missing_scenarios") or []
+            missing.extend(
+                f"evidence:{item}"
+                for item in evidence_missing
+                if str(item).startswith("capacity-")
+            )
+        status = "configured" if not missing else "incomplete"
+        results.append(
+            {
+                "id": objective_id,
+                "name": requirement["name"],
+                "status": status,
+                "owner": requirement["owner"],
+                "required_scenarios": sorted(requirement["scenarios"]),
+                "configured_scenarios": scenarios,
+                "required_probes": sorted(requirement["probes"]),
+                "configured_probes": probes,
+                "missing": sorted(set(missing)),
+            }
+        )
+    return results
+
+
 def acceptance_by_name(suite: dict[str, Any]) -> dict[str, dict[str, Any]]:
     acceptance = suite.get("acceptance") or {}
     return {
@@ -1356,6 +1483,34 @@ def render_report(result: dict[str, Any], path: Path) -> None:
             )
         coverage = profile.get("coverage") or {}
         missing = coverage.get("missing_scenarios") or []
+        platform_coverage = profile.get("platform_objective_coverage") or []
+        if isinstance(platform_coverage, list) and platform_coverage:
+            details.append(
+                "<details open><summary>测试平台六项指标覆盖审计</summary>"
+                "<table><thead><tr><th>指标</th><th>平台状态</th>"
+                "<th>已配置场景</th><th>已配置探针</th><th>缺口</th>"
+                "<th>责任边界</th></tr></thead><tbody>"
+            )
+            for item in platform_coverage:
+                if not isinstance(item, dict):
+                    continue
+                missing_items = item.get("missing") or []
+                details.append(
+                    "<tr>"
+                    f"<td>{html.escape(str(item.get('id') or ''))} "
+                    f"{html.escape(str(item.get('name') or ''))}</td>"
+                    f"<td>{html.escape(str(item.get('status') or ''))}</td>"
+                    f"<td>{html.escape(', '.join(map(str, item.get('configured_scenarios') or [])) or '-')}</td>"
+                    f"<td>{html.escape(', '.join(map(str, item.get('configured_probes') or [])) or '-')}</td>"
+                    f"<td>{html.escape(', '.join(map(str, missing_items)) or '-')}</td>"
+                    f"<td>{html.escape(str(item.get('owner') or '-'))}</td>"
+                    "</tr>"
+                )
+            details.append(
+                "</tbody></table>"
+                "<p class='muted'>平台状态只表示“是否具备产出该指标的测试入口”；"
+                "最终 PASS/FAIL/INCONCLUSIVE 仍以真实运行证据为准。</p></details>"
+            )
         details.append(
             "<p><strong>场景覆盖：</strong>"
             f"{html.escape(str(coverage.get('manifest_runs', 0)))}/"
@@ -1892,6 +2047,12 @@ def main() -> int:
 
         completed_runs, submitted_runs = _formal_run_counts(suite)
         coverage = _formal_coverage(suite)
+        platform_coverage = platform_objective_coverage(
+            profile,
+            suite,
+            probe_plan,
+            coverage,
+        )
         profile_execution_status = (
             "completed"
             if coverage["status"] == "complete"
@@ -1905,6 +2066,7 @@ def main() -> int:
             "completed_runs": completed_runs,
             "submitted_runs": submitted_runs,
             "coverage": coverage,
+            "platform_objective_coverage": platform_coverage,
             "probe_plan": probe_plan,
             "probe_budget_reserved_s": probe_reserve_s,
             **probe_artifacts,
