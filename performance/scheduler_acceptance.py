@@ -127,7 +127,7 @@ def _per_tenant_metrics(
         runs = runs_by_scenario[selected_scenario] if selected_scenario else []
     else:
         # The fairness gate has already selected one comparable workload.
-        # Re-selecting from the whole suite here can pull in capacity-32
+        # Re-selecting from the whole suite here can pull in capacity-128
         # tenants and silently change the Jain denominator.
         runs = [
             run for run in selected_runs
@@ -697,7 +697,11 @@ def _priority(suite: dict[str, Any]) -> dict[str, Any]:
             "场景存在但没有已完成的真实运行结果",
         )
     seed_statuses = {
-        str(run.get("seed_evidence_status") or "").lower()
+        str(
+            run.get("seed_evidence_status")
+            or ((_run_summary(run).get("details") or {}).get("search_evidence_status"))
+            or ""
+        ).lower()
         for run in completed_runs
     }
     if "inconclusive" in seed_statuses:
@@ -710,6 +714,24 @@ def _priority(suite: dict[str, Any]) -> dict[str, Any]:
                 "seed_evidence_statuses": sorted(seed_statuses),
             },
             "场景已产生真实请求，但共享记忆 seed 未完成，不能把无记忆负载的结果当作热缓存优先级结论",
+        )
+    quality_asserted = [
+        _metric(_run_summary(run), "metrics", "search", "quality_asserted")
+        for run in completed_runs
+    ]
+    if not any(
+        isinstance(value, (int, float)) and int(value) > 0
+        for value in quality_asserted
+    ):
+        return _result(
+            "Search 优先于 Commit",
+            INCONCLUSIVE,
+            "热缓存 Search P95 <= 5s 且至少有一条真实召回质量断言",
+            {
+                "runs": len(completed_runs),
+                "quality_asserted": quality_asserted,
+            },
+            "没有真实召回命中断言；只能说明接口可用，不能证明热缓存 Search 优先级",
         )
     overlap_evidence = [
         ((_run_summary(run).get("details") or {}).get("same_window_overlap"))

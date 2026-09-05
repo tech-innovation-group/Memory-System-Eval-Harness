@@ -183,7 +183,7 @@
 
 - `SCENARIO_PROFILES`：包含 `report6`（PR397/report(6) 矩阵）、
   `pr421`（PR421 验收，默认）、`complete`（两者去重并集）以及
-  `4u8g-full`（PR397 12 项 + PR421 25 项，重复场景分别执行）；
+  `4u8g-full`（PR397 12 项 + PR421 27 项，重复场景分别执行）；
 - `run_case(...)`：单 case 执行——可选 reset 命令、子进程超时（超时杀进程组）、
   逐请求 CSV 规范化、契约摘要推导、产物落盘；
 - `aggregate_runs(...)`：多轮结果聚合（分位/吞吐/错误）；
@@ -368,7 +368,7 @@ python -m performance.formal_suite --profile complete \
   --out-dir results/performance/formal_capacity
 
 4U8G 单实例的常规验收使用 `performance/run_4u8g_complete.sh`。它执行
-PR397/report(6) 的 12 项和 PR421 的 25 项，默认单轮、只使用 4U8G，不执行
+PR397/report(6) 的 12 项和 PR421 的 27 项，默认单轮、只使用 4U8G，不执行
 长稳态 `soak`，也不启动 4U16G。`suite.json` 会记录实际场景列表和每个
 case 的状态；`suite.html` 会保留逐 case 结果，不能把未执行场景混入总体结论。
 

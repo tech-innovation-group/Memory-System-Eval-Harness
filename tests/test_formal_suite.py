@@ -143,7 +143,7 @@ class Report6ScenarioTests(unittest.TestCase):
         scenarios = complete_scenarios()
 
         self.assertEqual(set(report6_scenarios()) | set(SCENARIOS), set(scenarios))
-        self.assertEqual(27, len(scenarios))
+        self.assertEqual(29, len(scenarios))
 
     def test_capacity_ladder_has_expected_points(self) -> None:
         scenarios = SCENARIOS
@@ -425,8 +425,8 @@ class Report6ScenarioTests(unittest.TestCase):
             if name.startswith("pr421__")
         ]
         self.assertEqual(12, len(pr397))
-        self.assertEqual(25, len(pr421))
-        self.assertEqual(37, len(FOUR_U8G_FULL_SCENARIOS))
+        self.assertEqual(27, len(pr421))
+        self.assertEqual(39, len(FOUR_U8G_FULL_SCENARIOS))
         self.assertNotIn("pr421__soak", FOUR_U8G_FULL_SCENARIOS)
 
     def test_report6_mixed_ratios_are_exact_over_one_minute(self) -> None:

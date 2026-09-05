@@ -191,7 +191,10 @@ class SchedulerAcceptanceTests(unittest.TestCase):
                         "scenario": "search-priority-blackbox",
                         "summary": {
                             "metrics": {
-                                "search": {"latency": {"p95_s": 1.2}},
+                                "search": {
+                                    "latency": {"p95_s": 1.2},
+                                    "quality_asserted": 4,
+                                },
                                 "commit": {"submitted": 32},
                             },
                             "details": {
@@ -231,7 +234,10 @@ class SchedulerAcceptanceTests(unittest.TestCase):
                         "status": "completed",
                         "summary": {
                             "metrics": {
-                                "search": {"latency": {"p95_s": 1.2}},
+                                "search": {
+                                    "latency": {"p95_s": 1.2},
+                                    "quality_asserted": 4,
+                                },
                                 "commit": {"submitted": 32},
                             },
                             "details": {
@@ -257,7 +263,10 @@ class SchedulerAcceptanceTests(unittest.TestCase):
                         "scenario": "search-priority-blackbox",
                         "summary": {
                             "metrics": {
-                                "search": {"latency": {"p95_s": 1.2}},
+                                "search": {
+                                    "latency": {"p95_s": 1.2},
+                                    "quality_asserted": 4,
+                                },
                                 "commit": {"submitted": 8},
                             },
                             "details": {
@@ -350,7 +359,10 @@ class SchedulerAcceptanceTests(unittest.TestCase):
                     "status": "completed",
                     "summary": {
                         "metrics": {
-                            "search": {"latency": {"p95_s": 5.01}},
+                            "search": {
+                                "latency": {"p95_s": 5.01},
+                                "quality_asserted": 4,
+                            },
                             "commit": {"submitted": 128},
                         },
                         "details": {

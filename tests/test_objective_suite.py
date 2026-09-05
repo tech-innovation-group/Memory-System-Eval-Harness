@@ -286,6 +286,8 @@ class ObjectiveSuiteTests(unittest.TestCase):
                     {"scenario": "capacity-8"},
                     {"scenario": "capacity-16"},
                     {"scenario": "capacity-32"},
+                    {"scenario": "capacity-64"},
+                    {"scenario": "capacity-128"},
                     {"scenario": "fairness-steady"},
                     {"scenario": "search-priority-blackbox"},
                     {"scenario": "baseline"},
@@ -339,7 +341,15 @@ class ObjectiveSuiteTests(unittest.TestCase):
         self.assertEqual(0.0, SCENARIOS["capacity-4"]["quick_commit_rpm"])
 
     def test_capacity_catalog_disables_commit_for_full_runs(self) -> None:
-        for name in ("capacity-2", "capacity-4", "capacity-8", "capacity-16", "capacity-32"):
+        for name in (
+            "capacity-2",
+            "capacity-4",
+            "capacity-8",
+            "capacity-16",
+            "capacity-32",
+            "capacity-64",
+            "capacity-128",
+        ):
             with self.subTest(name=name):
                 self.assertEqual(0.0, SCENARIOS[name]["commit_rpm"])
 

@@ -142,6 +142,8 @@ def scenario_label(value: str) -> str:
         "capacity-8": "8 活跃用户容量阶梯",
         "capacity-16": "16 活跃用户容量阶梯",
         "capacity-32": "32 活跃用户容量阶梯",
+        "capacity-64": "64 活跃用户容量阶梯",
+        "capacity-128": "128 活跃用户容量阶梯",
         "search-storm": "Search 压力",
         "soak": "长稳态",
         "A@1": "A 纯读基线 / 每租户并发 1",
@@ -732,7 +734,8 @@ def render(manifest_path: Path, output_path: Path) -> None:
     capacity_summary = []
     capacity_timeout_count = 0
     capacity_with_samples = 0
-    for capacity in (2, 4, 8, 16, 32):
+    capacity_levels = (2, 4, 8, 16, 32, 64, 128)
+    for capacity in capacity_levels:
         item = aggregate_by_scenario.get(f"capacity-{capacity}") or {}
         status = next(
             (str(run.get("status") or "-") for run in runs if run["scenario"] == f"capacity-{capacity}"),
@@ -747,7 +750,7 @@ def render(manifest_path: Path, output_path: Path) -> None:
         )
     capacity_sentence = (
         "；".join(capacity_summary)
-        + f"。其中 {capacity_with_samples}/5 个容量档位产生了 Search 样本"
+        + f"。其中 {capacity_with_samples}/{len(capacity_levels)} 个容量档位产生了 Search 样本"
         + (
             f"，{capacity_timeout_count} 个档位因场景超时未产生样本"
             if capacity_timeout_count

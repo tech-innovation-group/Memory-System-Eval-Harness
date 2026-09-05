@@ -272,6 +272,32 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         "messages_per_session": 3,
         "search_query_profile": "no-recall-only",
     },
+    "capacity-64": {
+        "label": "64 活跃用户容量阶梯（4 租户 × 16 session）",
+        "tenants": 4,
+        "capacity_active_users": 64,
+        "active_sessions_per_tenant": 16,
+        "duration_s": 300,
+        "search_rps": 64.0,
+        "commit_rpm": 0.0,
+        "quick_commit_rpm": 0.0,
+        "sessions_per_tenant": 2,
+        "messages_per_session": 3,
+        "search_query_profile": "no-recall-only",
+    },
+    "capacity-128": {
+        "label": "128 活跃用户容量阶梯（4 租户 × 32 session）",
+        "tenants": 4,
+        "capacity_active_users": 128,
+        "active_sessions_per_tenant": 32,
+        "duration_s": 300,
+        "search_rps": 128.0,
+        "commit_rpm": 0.0,
+        "quick_commit_rpm": 0.0,
+        "sessions_per_tenant": 2,
+        "messages_per_session": 3,
+        "search_query_profile": "no-recall-only",
+    },
     "search-priority-blackbox": {
         "label": "Search/Commit 同时到达（服务端优先级黑盒）",
         "tenants": 4,
@@ -458,6 +484,8 @@ FOUR_U8G_SCENARIOS.update({
         "capacity-8",
         "capacity-16",
         "capacity-32",
+        "capacity-64",
+        "capacity-128",
     )
 })
 for _capacity_name in (
@@ -466,6 +494,8 @@ for _capacity_name in (
     "capacity-8",
     "capacity-16",
     "capacity-32",
+    "capacity-64",
+    "capacity-128",
 ):
     # Capacity is a Search-only measurement in quick mode.  Keep this
     # override on the bounded 4U8G catalog as well as the base catalog;
@@ -497,7 +527,7 @@ SCENARIO_PROFILES["4u8g"] = FOUR_U8G_SCENARIOS
 
 # The historical ``4u8g`` profile is kept for compatibility with existing
 # quick commands.  This explicit profile runs both source plans in full:
-# PR397/report(6) has 12 cases and the PR421 4U8G catalog has 25 cases.
+# PR397/report(6) has 12 cases and the PR421 4U8G catalog has 27 cases.
 # Names are namespaced because the two plans intentionally reuse some case
 # names; the original scenario name is retained for acceptance evaluation.
 FOUR_U8G_FULL_SCENARIOS: dict[str, dict[str, Any]] = {}
@@ -1284,6 +1314,16 @@ def _derive_case_summary(run_dir: Path, identity_independent: bool) -> dict[str,
         "identity_mode": "independent_auth_keys" if identity_independent else "shared",
         "quality_seed": [],
         "native_status": native.get("status"),
+        "search_evidence_status": (
+            (native.get("data_scale") or {}).get("search_evidence_status")
+            if isinstance(native.get("data_scale"), dict)
+            else None
+        ),
+        "query_profile": (
+            (native.get("data_scale") or {}).get("query_profile")
+            if isinstance(native.get("data_scale"), dict)
+            else None
+        ),
         "user_activity": {
             "active_user_count": sum(active_users_by_tenant.values()),
             "active_users_by_tenant": active_users_by_tenant,
@@ -2277,7 +2317,7 @@ def main() -> int:
         help=(
             "Scenario profile; report6 is the PR397/report(6) matrix, pr421 "
             "is the PR421 acceptance suite, 4u8g is the compatibility bounded "
-            "single-instance run, 4u8g-full runs all 12 PR397 and 25 PR421 "
+            "single-instance run, 4u8g-full runs all 12 PR397 and 27 PR421 "
             "cases, and complete runs both catalogs."
         ),
     )

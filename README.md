@@ -708,7 +708,7 @@ queued/wait/exec/rejected 四元组。旧报告只有单维 Jain、单一指标�
 
 单台 4U8G 机器可以使用 `4u8g` 档快速诊断；需要完整数据时使用
 `4u8g-full`。完整档会分别执行 PR397/report(6) 的 12 个场景和 PR421
-的 25 个场景，共 37 个执行项，重复场景也会分别保留，不能用并集数量替代。
+的 27 个场景，共 39 个执行项，重复场景也会分别保留，不能用并集数量替代。
 快速档只执行
 能在一台服务实例上快速得到黑盒证据的场景：单租户基线、均衡混合、Commit
 屏障、饱和、热租户偏斜、Search/Commit 同时到达，以及 2/4/8 租户容量阶梯；
@@ -733,7 +733,7 @@ python -m performance.formal_suite \
 “EchoMem 功能失败”。
 
 ```bash
-# 4U8G 完整黑盒矩阵：PR397 12 项 + PR421 25 项，共 37 项；不含 soak
+# 4U8G 完整黑盒矩阵：PR397 12 项 + PR421 27 项，共 39 项；不含 soak
 python -m performance.formal_suite \
   --profile 4u8g-full \
   --base-url http://127.0.0.1:8010 \
@@ -917,7 +917,7 @@ FORMAL_PROGRESS 1/1 scenario=baseline repeat=1 policy=server-observe status=comp
 
 ### 6. 执行 4U8G 完整测试
 
-默认执行 PR397/report(6) 的 12 个场景与 PR421 的 25 个场景，共 37 个
+默认执行 PR397/report(6) 的 12 个场景与 PR421 的 27 个场景，共 39 个
 bounded 场景，单轮、不执行 `soak`，只测试 4U8G：
 
 ```bash
@@ -1000,7 +1000,7 @@ cat "$STRESS_OUTPUT_DIR/acceptance.json"
 find "$STRESS_OUTPUT_DIR" -name summary.json -type f | sort
 ```
 
-最终应确认 `suite.json` 中 37 个场景均有结果；`acceptance.json` 中的
+最终应确认 `suite.json` 中 39 个场景均有结果；`acceptance.json` 中的
 `PASS`、`FAIL`、`INCONCLUSIVE` 要逐项查看，不能只看总准确率或退出码。
 完整 4U8G 套件还必须检查 `suite.json.finalization`：
 `run_count == expected_run_count` 只表示每个场景有记录，仍需同时查看
@@ -1028,12 +1028,12 @@ python3 -m performance.objective_suite \
   --full
 ```
 
-`--full` 是正式 4U8G 入口：会运行 PR397 的 12 个场景和 PR421 的 25 个场景，
-总计 37 个场景（默认不包含 soak），默认总墙钟预算为 6 小时。37 个场景需要逐个
+`--full` 是正式 4U8G 入口：会运行 PR397 的 12 个场景和 PR421 的 27 个场景，
+总计 39 个场景（默认不包含 soak），默认总墙钟预算为 6 小时。39 个场景需要逐个
 保留真实模型和真实 HTTP 样本；可以通过 `--max-wall-clock-s` 显式缩短，但缩短后的
 结果只能按实际完成覆盖解读。不要在正式验收
 命令中加 `--quick`；`--quick` 仅用于快速诊断子集，不能作为完整测试结果。
-报告中的场景覆盖必须显示 `37/37`，否则本轮只能算部分结果。
+报告中的场景覆盖必须显示 `39/39`，否则本轮只能算部分结果。
 
 正式入口默认从总预算中预留 900 秒给 formal 结束后的能力、限流、故障和
 kill-9 恢复补测，避免 formal 场景耗尽时间后 O2/O5/O6 没有机会执行。可用
@@ -1148,7 +1148,7 @@ PR397 的写后可见性/持久化对账、Commit 状态机、冷暖 Search，�
 
 如果完整 formal suite 已经跑完，只需要补测故障隔离、拒绝响应、kill-9
 恢复或 `/metrics` 能力，可以使用缺口入口。它复用已有的 `suite.json`，不会
-重新发送 37 个真实模型场景：
+重新发送 39 个真实模型场景：
 
 ```bash
 STRESS_SUITE_PATH=/data/formal/suite.json \
@@ -1237,7 +1237,7 @@ lane/租户就算覆盖”的误判：
 
 - `configured` 表示测试入口已经配置；`incomplete` 会列出缺失的场景或探针，
   例如 `probe:fault_isolation`；
-- O1 需要完整的 `capacity-2/4/8/16/32` 阶梯，低档成功只能证明容量下界，
+- O1 需要完整的 `capacity-2/4/8/16/32/64/128` 阶梯，低档成功只能证明容量下界，
   不能直接宣称“最大 DAU”；
 - O2 的单租户故障注入、O5 的 kill/restart 必须由部署提供真实控制，平台负责
   调用、采样和对账；

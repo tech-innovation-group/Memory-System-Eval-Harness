@@ -80,7 +80,7 @@ PR28_REVIEW_RESOLUTION = [
         # controls still require an explicit deployment plan, so this is a
         # platform limitation rather than an EchoMem defect.
         "status": "PARTIAL",
-        "evidence": "formal_suite capacity-2/4/8/16/32; incident controls require deployment plan",
+        "evidence": "formal_suite capacity-2/4/8/16/32/64/128; incident controls require deployment plan",
     },
     {
         "item": "Persistence reconciliation judge",

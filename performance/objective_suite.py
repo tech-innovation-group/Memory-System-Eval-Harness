@@ -65,6 +65,8 @@ PLATFORM_OBJECTIVE_REQUIREMENTS = {
             "capacity-8",
             "capacity-16",
             "capacity-32",
+            "capacity-64",
+            "capacity-128",
         },
         "probes": set(),
         "owner": "测试平台 + 部署资源",
@@ -1663,7 +1665,7 @@ def main() -> int:
     parser.add_argument(
         "--full",
         action="store_true",
-        help="强制完整模式；4U8G 运行 PR397 12 个 + PR421 25 个场景，不得与 --quick 同时使用",
+        help="强制完整模式；4U8G 运行 PR397 12 个 + PR421 27 个场景，不得与 --quick 同时使用",
     )
     parser.add_argument("--scenarios", default="", help="覆盖场景列表，逗号分隔")
     parser.add_argument("--quick-duration-cap-s", type=float, default=30.0)
@@ -1891,7 +1893,7 @@ def main() -> int:
                     "--profile",
                     # Quick 4U8G uses the bounded catalog. A normal 4U8G
                     # run must use the explicit 37-case catalog: PR397 has
-                    # 12 scenarios and PR421 has 25. The legacy ``complete``
+                    # 12 scenarios and PR421 has 27. The legacy ``complete``
                     # profile is a smaller historical catalog.
                     _formal_profile_name(name, quick=args.quick),
                     "--instance-profile",
