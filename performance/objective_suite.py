@@ -56,6 +56,19 @@ QUICK_SCENARIOS = (
     "capacity-16,capacity-32"
 )
 
+# This is the bounded but complete evidence matrix for the six target
+# metrics. It is intentionally smaller than the full PR397/PR421 regression
+# catalog: one baseline, the active-user ladder, one equal-rate fairness
+# window, and one priority contention window are sufficient to create every
+# formal measurement. Post-suite probes provide O2/O5 and admission/metrics
+# evidence. Soak remains opt-in.
+SIX_METRIC_SCENARIOS = (
+    "baseline,capacity-2,capacity-4,capacity-8,capacity-16,capacity-32,"
+    "capacity-64,capacity-128,capacity-256,capacity-512,"
+    "fairness-steady,search-priority-blackbox,"
+    "saturation"
+)
+
 PLATFORM_OBJECTIVE_REQUIREMENTS = {
     "O1": {
         "name": "单实例最大用户量 / 热用户量",
@@ -67,6 +80,8 @@ PLATFORM_OBJECTIVE_REQUIREMENTS = {
             "capacity-32",
             "capacity-64",
             "capacity-128",
+            "capacity-256",
+            "capacity-512",
         },
         "probes": set(),
         "owner": "测试平台 + 部署资源",
@@ -105,7 +120,10 @@ PLATFORM_OBJECTIVE_REQUIREMENTS = {
             "search-priority-blackbox",
         },
         "scenario_mode": "all_except_fairness",
-        "probes": {"capability_probe"},
+        # ``/metrics`` proves the metric families exist.  The protected
+        # tenant snapshot is required for the actual O6 claim because the
+        # target is per-tenant coverage, not merely process-level metrics.
+        "probes": {"capability_probe", "tenant_observability"},
         "owner": "EchoMem /metrics + 测试平台校验",
     },
 }
@@ -118,7 +136,12 @@ def _formal_profile_name(profile_name: str, *, quick: bool) -> str:
     return "complete"
 
 
-def _formal_scenario_filter(profile_name: str, scenarios: str, *, quick: bool) -> str:
+def _formal_scenario_filter(
+    profile_name: str,
+    scenarios: str,
+    *,
+    quick: bool,
+) -> str:
     """Translate public objective names to the formal catalog names.
 
     The full 4U8G catalog namespaces overlapping PR397/PR421 cases. The
@@ -337,6 +360,7 @@ def _probe_budget_skip(
         "missing_cases",
         "concurrent_commit",
         "fault_isolation",
+        "tenant_observability",
         "limit_failure_sweep",
         "commit_recovery",
         "fault_plan",
@@ -363,6 +387,7 @@ PROBE_CONFIG_KEYS = (
     "missing_cases",
     "concurrent_commit",
     "fault_isolation",
+    "tenant_observability",
     "limit_failure_sweep",
     "commit_recovery",
     "fault_plan",
@@ -384,6 +409,7 @@ def _probe_plan(profile: dict[str, Any]) -> list[dict[str, Any]]:
         "missing_cases": ("PR397 一致性探针", "O5"),
         "concurrent_commit": ("并发 Commit 探针", "O3"),
         "fault_isolation": ("单租户故障隔离探针", "O2"),
+        "tenant_observability": ("逐租户/lane 四元组探针", "O6"),
         "limit_failure_sweep": ("限流阶梯探针", "O1/O4/O6"),
         "commit_recovery": ("Commit kill-9 恢复探针", "O5"),
         "fault_plan": ("故障套件", "O2/O5"),
@@ -536,6 +562,42 @@ def _resolve_tenant_id(tenant_config: Path, requested: str) -> str:
             if tenant_id:
                 return tenant_id
     return requested
+
+
+def _configured_tenant_ids(tenant_config: Path) -> list[str]:
+    """Read tenant ids without resolving credentials.
+
+    This is used only for protected observability expectations.  The probe
+    must inspect the identities that the current run actually configured,
+    rather than relying on tenant names from an old deployment profile.
+    """
+    payload = read_json(tenant_config)
+    entries = payload.get("tenants") or []
+    if not isinstance(entries, list):
+        return []
+    result: list[str] = []
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        tenant_id = str(
+            item.get("tenant_id") or item.get("id") or item.get("user_id") or ""
+        ).strip()
+        if tenant_id and tenant_id not in result:
+            result.append(tenant_id)
+    return result
+
+
+def _preflight_usable_tenant_ids(formal_root: Path) -> list[str]:
+    """Read the identities that actually passed the formal auth preflight."""
+    suite = read_json(formal_root / "suite.json")
+    auth = suite.get("auth_preflight")
+    if not isinstance(auth, dict):
+        return []
+    return [
+        str(item).strip()
+        for item in auth.get("usable_tenant_ids") or []
+        if str(item).strip()
+    ]
 
 
 def _resolve_profile_path(value: str, profiles_path: Path) -> str:
@@ -736,6 +798,12 @@ def _run_configured_probes(
     evidence_row = commit_evidence[1] if commit_evidence else {}
     auth_key, auth_key_env = _resolve_auth_key(tenant_path, tenant_index)
     redact = {auth_key} if auth_key else set()
+    for control_config in (
+        profile.get("fault_isolation"),
+        profile.get("tenant_observability"),
+    ):
+        if isinstance(control_config, dict) and control_config.get("token"):
+            redact.add(str(control_config["token"]))
 
     capability = profile.get("capability_probe")
     if isinstance(capability, dict):
@@ -898,6 +966,14 @@ def _run_configured_probes(
     fault_isolation = profile.get("fault_isolation")
     if isinstance(fault_isolation, dict) and fault_isolation.get("enabled", True):
         output = profile_dir / "fault-isolation.json"
+        fault_endpoint = str(
+            fault_isolation.get("endpoint")
+            or os.environ.get("ECHOMEM_FAULT_CONTROL_URL", "")
+        ).strip()
+        fault_command = str(
+            fault_isolation.get("command")
+            or os.environ.get("ECHOMEM_FAULT_CONTROL_COMMAND", "")
+        ).strip()
         command = [
             sys.executable,
             "-m",
@@ -908,9 +984,16 @@ def _run_configured_probes(
             "--bystander-tenants", str(fault_isolation.get("bystander_tenants") or ""),
             "--out", str(output),
         ]
+        if fault_endpoint:
+            command += ["--endpoint", fault_endpoint]
+        if fault_command:
+            command += ["--command", fault_command]
         for key, flag in (
-            ("endpoint", "--endpoint"),
-            ("command", "--command"),
+            ("token", "--token"),
+            ("token_env", "--token-env"),
+            ("fault_type", "--fault-type"),
+            ("duration_s", "--duration-s"),
+            ("delay_ms", "--delay-ms"),
             ("samples", "--samples"),
             ("workers", "--workers"),
             ("timeout_s", "--timeout-s"),
@@ -932,6 +1015,77 @@ def _run_configured_probes(
         _preserve_probe_status(execution, payload)
         if payload:
             artifacts["fault_isolation"] = {**payload, "path": str(output)}
+
+    tenant_observability = profile.get("tenant_observability")
+    if isinstance(tenant_observability, dict) and tenant_observability.get(
+        "enabled", True
+    ):
+        output = profile_dir / "tenant-observability.json"
+        observability_endpoint = str(
+            tenant_observability.get("endpoint")
+            or os.environ.get("ECHOMEM_TENANT_OBSERVABILITY_URL", "")
+        ).strip()
+        expected_tenants = tenant_observability.get("expected_tenants")
+        if (
+            not expected_tenants
+            and tenant_observability.get("expected_tenants_from_auth_preflight", True)
+        ):
+            expected_tenants = _preflight_usable_tenant_ids(formal_root)
+        if (
+            not expected_tenants
+            and tenant_observability.get("expected_tenants_from_config", True)
+        ):
+            expected_tenants = _configured_tenant_ids(tenant_path)
+        if not expected_tenants:
+            expected_tenants = (profile.get("fairness_expectations") or {}).get(
+                "tenant_ids", []
+            )
+        expected_lanes = tenant_observability.get("expected_lanes")
+        if not expected_lanes:
+            expected_lanes = (profile.get("observability") or {}).get("lanes", [])
+        command = [
+            sys.executable,
+            "-m",
+            "performance.probes.tenant_observability_probe",
+            "--base-url",
+            base_url,
+            "--expected-tenants",
+            ",".join(str(item) for item in expected_tenants or []),
+            "--expected-lanes",
+            ",".join(str(item) for item in expected_lanes or []),
+            "--out",
+            str(output),
+        ]
+        if observability_endpoint:
+            command += ["--endpoint", observability_endpoint]
+        for key, flag in (
+            ("endpoint", "--endpoint"),
+            ("token", "--token"),
+            ("token_env", "--token-env"),
+            ("timeout_s", "--timeout-s"),
+        ):
+            _add_option(command, flag, tenant_observability.get(key))
+        execution = run_command(
+            command,
+            timeout_s=_bounded_timeout(min(timeout_s, 180), deadline),
+            redact_values=redact,
+        )
+        commands["tenant_observability"] = execution
+        payload = read_json(output)
+        _preserve_probe_status(execution, payload)
+        if payload:
+            artifacts["tenant_observability"] = {**payload, "path": str(output)}
+        else:
+            # Keep a configured-but-unobserved probe visible to the strict
+            # evaluator.  Otherwise a subprocess failure could disappear and
+            # O6 might accidentally pass from scenario-level samples alone.
+            artifacts["tenant_observability"] = {
+                "status": execution.get("status") or "INCONCLUSIVE",
+                "reason": execution.get("reason") or "未生成逐租户观测快照",
+                "path": str(output),
+                "rows": [],
+                "missing": [{"reason": "probe_artifact_missing"}],
+            }
 
     if _remaining_budget(deadline) is not None and _remaining_budget(deadline) <= 0:
         commands["limit_failure_sweep"] = {
@@ -981,6 +1135,7 @@ def _run_configured_probes(
             ("content_chars", "--content-chars"),
             ("recovery_timeout_s", "--recovery-timeout-s"),
             ("poll_s", "--poll-s"),
+            ("iterations", "--iterations"),
             ("accepted_wait_s", "--accepted-wait-s"),
         ):
             _add_option(command, flag, recovery.get(key))
@@ -1224,8 +1379,12 @@ def platform_objective_coverage(
             )
             if not has_fairness:
                 missing_scenarios.append("fairness-steady|fairness-bounded")
-        probes = sorted(set(requirement["probes"]) & configured_probes)
-        missing_probes = sorted(set(requirement["probes"]) - configured_probes)
+        required_probes = set(requirement["probes"])
+        optional_probes = set(requirement.get("optional_probes") or set())
+        probes = sorted(required_probes & configured_probes)
+        missing_probes = sorted(required_probes - configured_probes)
+        configured_optional_probes = sorted(optional_probes & configured_probes)
+        missing_optional_probes = sorted(optional_probes - configured_probes)
         missing = [
             *(f"scenario:{item}" for item in missing_scenarios),
             *(f"probe:{item}" for item in missing_probes),
@@ -1246,8 +1405,11 @@ def platform_objective_coverage(
                 "owner": requirement["owner"],
                 "required_scenarios": sorted(requirement["scenarios"]),
                 "configured_scenarios": scenarios,
-                "required_probes": sorted(requirement["probes"]),
+                "required_probes": sorted(required_probes),
                 "configured_probes": probes,
+                "optional_probes": sorted(optional_probes),
+                "configured_optional_probes": configured_optional_probes,
+                "missing_optional_probes": missing_optional_probes,
                 "missing": sorted(set(missing)),
             }
         )
@@ -1274,6 +1436,7 @@ def objective_statuses(
     recovery = suite.get("commit_recovery") or {}
     fault_suite = suite.get("fault_suite") or {}
     capability = suite.get("capability_probe") or {}
+    tenant_observability = suite.get("tenant_observability")
 
     recovery_for_scheduler = dict(recovery)
     message_reconciliation = recovery_for_scheduler.get("message_reconciliation")
@@ -1308,6 +1471,7 @@ def objective_statuses(
         capability=capability,
         recovery=recovery_for_scheduler,
         fault=fault_suite,
+        tenant_observability=tenant_observability,
     )
     strict_by_name = {
         str(item.get("name")): item
@@ -1543,6 +1707,7 @@ def render_report(result: dict[str, Any], path: Path) -> None:
             ("missing_cases", "PR397 黑盒一致性探针"),
             ("concurrent_commit", "并发 Commit 探针"),
             ("fault_isolation", "单租户故障隔离探针"),
+            ("tenant_observability", "逐租户/lane 四元组探针"),
             ("limit_failure_sweep", "真实限流阶梯"),
             ("commit_recovery", "Commit 崩溃恢复探针"),
             ("fault_suite", "故障套件"),
@@ -1663,6 +1828,14 @@ def main() -> int:
     parser.add_argument("--out-dir", required=True, type=Path)
     parser.add_argument("--quick", action="store_true", help="bounded smoke matrix")
     parser.add_argument(
+        "--six-metric",
+        action="store_true",
+        help=(
+            "运行六项指标专用矩阵：容量 2/4/8/16/32/64/128/256/512、"
+            "基线、公平性、Search 优先级和饱和；不跑 soak 或重复回归场景"
+        ),
+    )
+    parser.add_argument(
         "--full",
         action="store_true",
         help="强制完整模式；4U8G 运行 PR397 12 个 + PR421 27 个场景，不得与 --quick 同时使用",
@@ -1762,10 +1935,12 @@ def main() -> int:
         ),
     )
     args = parser.parse_args()
-    if args.full and args.quick:
-        parser.error("--full 与 --quick 不能同时使用")
+    if sum(bool(value) for value in (args.full, args.quick, args.six_metric)) > 1:
+        parser.error("--full、--quick 与 --six-metric 只能指定一个")
     if args.full and args.scenarios:
         parser.error("--full 不能与 --scenarios 同时使用；请使用 profile 的完整场景目录")
+    if args.six_metric and args.scenarios:
+        parser.error("--six-metric 不与 --scenarios 同时使用")
     if args.full:
         args.quick = False
     if args.gaps_only:
@@ -1874,7 +2049,13 @@ def main() -> int:
                     "reason": "profile 缺少 tenant_config 或 preflight_config",
                 }
             else:
-                scenarios = args.scenarios or (QUICK_SCENARIOS if args.quick else "")
+                scenarios = args.scenarios or (
+                    QUICK_SCENARIOS
+                    if args.quick
+                    else SIX_METRIC_SCENARIOS
+                    if args.six_metric
+                    else ""
+                )
                 formal_scenarios = _formal_scenario_filter(
                     name,
                     scenarios,
@@ -1932,21 +2113,29 @@ def main() -> int:
                 # credentials.  Only an explicit profile/CLI setting may
                 # select --local-auth; never infer it from config.json.
                 if formal_scenarios:
-                    command += [
-                        "--scenarios", formal_scenarios,
-                        "--duration-cap-s", str(args.quick_duration_cap_s),
-                        "--case-timeout-s", str(args.quick_case_timeout_s),
-                        "--barrier-count-cap", str(args.quick_barrier_count_cap),
-                    ]
+                    barrier_count_cap = (
+                        args.quick_barrier_count_cap if args.quick else 0
+                    )
                     if args.quick:
+                        command += [
+                            "--scenarios", formal_scenarios,
+                            "--duration-cap-s", str(args.quick_duration_cap_s),
+                            "--case-timeout-s", str(args.quick_case_timeout_s),
+                            "--barrier-count-cap", str(barrier_count_cap),
+                        ]
                         # Keep the real-model warm-up bounded even when the
                         # selected quick matrix contains 16/32-tenant
                         # capacity probes.  Unseeded tenants still remain
                         # valid for scheduler/capacity evidence, but the
                         # report must retain that limitation explicitly.
                         command += ["--quick-seed-tenant-cap", "4"]
-                    if args.quick:
                         command += ["--quick-mode"]
+                    else:
+                        # Formal mode must use the scenario's declared
+                        # duration and the runner's derived case timeout.
+                        # Passing quick caps here silently turned a real
+                        # acceptance run into a 30-second smoke test.
+                        command += ["--scenarios", formal_scenarios]
                 include_quick_seed = bool(
                     args.quick_include_seed
                     or profile.get("quick_include_seed")

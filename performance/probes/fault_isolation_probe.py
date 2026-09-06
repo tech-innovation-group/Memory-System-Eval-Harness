@@ -52,6 +52,10 @@ def control(
     action: str,
     target_tenant: str = "",
     timeout_s: float,
+    token: str = "",
+    fault_type: str = "reject",
+    duration_s: float = 30.0,
+    delay_ms: int = 1000,
 ) -> dict[str, Any]:
     endpoint = str(config.get("endpoint") or "").strip()
     command = str(config.get("command") or "").strip()
@@ -63,11 +67,18 @@ def control(
                 data=json.dumps(
                     {
                         "action": action,
+                        "tenant_id": target_tenant,
                         "target_tenant": target_tenant,
                         "tenant": target_tenant,
+                        "fault_type": fault_type,
+                        "duration_s": duration_s,
+                        "delay_ms": delay_ms,
                     }
                 ).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Content-Type": "application/json",
+                    **({"X-EchoMem-Test-Token": token} if token else {}),
+                },
                 method="POST",
             )
             with urllib.request.urlopen(request, timeout=timeout_s) as response:
@@ -176,8 +187,23 @@ def main() -> int:
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--tenant-config", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
-    parser.add_argument("--endpoint", default="")
-    parser.add_argument("--command", default="")
+    parser.add_argument(
+        "--endpoint",
+        default=os.environ.get("ECHOMEM_FAULT_CONTROL_URL", ""),
+    )
+    parser.add_argument(
+        "--command",
+        default=os.environ.get("ECHOMEM_FAULT_CONTROL_COMMAND", ""),
+    )
+    parser.add_argument(
+        "--token",
+        default="",
+        help="protected EchoMem test-control token; never written to the result",
+    )
+    parser.add_argument("--token-env", default="ECHOMEM_TEST_CONTROL_TOKEN")
+    parser.add_argument("--fault-type", choices=("delay", "reject"), default="reject")
+    parser.add_argument("--duration-s", type=float, default=30.0)
+    parser.add_argument("--delay-ms", type=int, default=1000)
     parser.add_argument("--target-tenant", required=True)
     parser.add_argument("--bystander-tenants", default="")
     parser.add_argument("--samples", type=int, default=8)
@@ -186,6 +212,10 @@ def main() -> int:
     parser.add_argument("--control-timeout-s", type=float, default=30)
     parser.add_argument("--auth-header", default="X-Auth-Key")
     args = parser.parse_args()
+    token = str(args.token or os.environ.get(args.token_env, "")).strip()
+    endpoint = str(args.endpoint or "").strip()
+    if not endpoint and token:
+        endpoint = args.base_url.rstrip("/") + "/api/inspect/test-control/fault"
 
     specs = load_tenant_specs(args.tenant_config)
     selected = {
@@ -237,10 +267,14 @@ def main() -> int:
             timeout_s=args.timeout_s, phase="before",
         )
         enable = control(
-            {"endpoint": args.endpoint, "command": args.command},
+            {"endpoint": endpoint, "command": args.command},
             action="enable",
             target_tenant=args.target_tenant,
             timeout_s=args.control_timeout_s,
+            token=token,
+            fault_type=args.fault_type,
+            duration_s=args.duration_s,
+            delay_ms=args.delay_ms,
         )
         during: dict[str, Any] = {}
         disable: dict[str, Any] = {
@@ -257,10 +291,14 @@ def main() -> int:
             # Always restore a real dependency after sampling, even when a
             # client-side error interrupts the observation phase.
             disable = control(
-                {"endpoint": args.endpoint, "command": args.command},
+                {"endpoint": endpoint, "command": args.command},
                 action="disable",
                 target_tenant=args.target_tenant,
                 timeout_s=args.control_timeout_s,
+                token=token,
+                fault_type=args.fault_type,
+                duration_s=args.duration_s,
+                delay_ms=args.delay_ms,
             )
         result.update({"before": before, "enable": enable, "during": during, "disable": disable})
         degradations: dict[str, float] = {}

@@ -45,11 +45,27 @@
         "enabled": true,
         "target_tenant": "stress-a",
         "bystander_tenants": "stress-b,stress-c,stress-d",
-        "endpoint": "${ECHOMEM_FAULT_CONTROL_URL}",
+        "endpoint": "${ECHOMEM_FAULT_CONTROL_URL:-}",
+        "token_env": "ECHOMEM_TEST_CONTROL_TOKEN",
         "samples": 8,
         "workers": 8,
         "timeout_s": 20,
         "control_timeout_s": 30
+      },
+      "tenant_observability": {
+        "enabled": true,
+        "endpoint": "${ECHOMEM_TENANT_OBSERVABILITY_URL:-}",
+        "token_env": "ECHOMEM_TEST_CONTROL_TOKEN",
+        "expected_tenants_from_auth_preflight": true,
+        "expected_tenants_from_config": true,
+        "expected_lanes": [
+          "recall_engine",
+          "recall_intent_llm",
+          "recall_query_embedding",
+          "recall_rerank",
+          "commit"
+        ],
+        "timeout_s": 15
       },
       "fairness_expectations": {
         "tenant_ids": ["stress-a", "stress-b", "stress-c", "stress-d"]

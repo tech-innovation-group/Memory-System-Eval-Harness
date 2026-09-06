@@ -144,12 +144,21 @@ def _per_tenant_metrics(
                 {
                     "commit_submitted": 0,
                     "commit_completed": 0,
+                    "commit_submitted_fallback": False,
                     "window_s": 0.0,
                     "search_p95_s": [],
                 },
             )
             commit = data.get("commit") or {}
-            entry["commit_submitted"] += int(commit.get("submitted") or 0)
+            submitted = commit.get("submitted")
+            if submitted in (None, ""):
+                # Older summaries exposed only completed counts.  Treat that
+                # as a lower-bound submission count for compatibility, while
+                # retaining the fallback marker so the report can disclose
+                # that the raw arrival count was unavailable.
+                submitted = commit.get("completed") or 0
+                entry["commit_submitted_fallback"] = True
+            entry["commit_submitted"] += int(submitted or 0)
             entry["commit_completed"] += int(commit.get("completed") or 0)
             run_window = run.get("duration_s")
             if run_window is None:
@@ -181,6 +190,109 @@ def _per_tenant_metrics(
             "completed_per_window" if entry["window_s"] > 0 else "completed_count_fallback"
         )
     return merged
+
+
+def _usable_tenant_ids(suite: dict[str, Any]) -> list[str]:
+    """Return the ordered identities that passed the current auth preflight."""
+    auth = suite.get("auth_preflight")
+    if not isinstance(auth, dict):
+        return []
+    return [
+        str(item).strip()
+        for item in auth.get("usable_tenant_ids") or []
+        if str(item).strip()
+    ]
+
+
+def _canonical_tenant_key(raw: Any, suite: dict[str, Any]) -> str:
+    """Map runner tenant indexes back to the current tenant identity.
+
+    ``run_stress`` historically writes ``0``, ``1`` ... into per-tenant
+    summaries.  Fairness expectations, fault probes, and observability
+    snapshots use real tenant IDs.  Normalizing at the acceptance boundary
+    keeps the denominator tied to the current auth-preflight result without
+    treating a stale profile name as a missing tenant.
+    """
+    value = str(raw or "").strip()
+    usable = _usable_tenant_ids(suite)
+    if value.isdigit():
+        index = int(value)
+        if 0 <= index < len(usable):
+            return usable[index]
+    return value
+
+
+def _canonicalize_tenant_metrics(
+    metrics: dict[str, dict[str, Any]],
+    suite: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    normalized: dict[str, dict[str, Any]] = {}
+    for raw_tenant, data in metrics.items():
+        tenant = _canonical_tenant_key(raw_tenant, suite)
+        if not tenant or not isinstance(data, dict):
+            continue
+        # A malformed/legacy manifest can contain both an index and its
+        # already-normalized ID. Merge rather than silently dropping either.
+        current = normalized.setdefault(tenant, {})
+        for key, value in data.items():
+            if isinstance(value, dict) and isinstance(current.get(key), dict):
+                current[key] = {**current[key], **value}
+            else:
+                current[key] = value
+    return normalized
+
+
+def _fairness_expected_tenants(
+    suite: dict[str, Any],
+    selected_runs: list[dict[str, Any]],
+    observed_tenants: set[str],
+) -> set[str]:
+    """Build the fairness denominator from the selected workload window.
+
+    Static ``fairness_expectations.tenant_ids`` is only a fallback.  If the
+    runner records numeric tenant indexes, use the number of tenants required
+    by the selected scenario and map those indexes through auth preflight.
+    This preserves tenants that produced zero rows instead of excluding them.
+    """
+    usable = _usable_tenant_ids(suite)
+    expected_count = 0
+    for run in selected_runs:
+        config = run.get("scenario_config")
+        if isinstance(config, dict):
+            try:
+                expected_count = max(expected_count, int(config.get("tenant_count") or 0))
+            except (TypeError, ValueError):
+                pass
+        summary = _run_summary(run)
+        activity = (summary.get("details") or {}).get("user_activity") or {}
+        active = activity.get("active_users_by_tenant")
+        if isinstance(active, dict):
+            numeric = [int(key) for key in active if str(key).isdigit()]
+            expected_count = max(expected_count, max(numeric, default=-1) + 1)
+
+    declared = suite.get("fairness_expectations")
+    declared_ids = (
+        {
+            str(item).strip()
+            for item in declared.get("tenant_ids") or []
+            if str(item).strip()
+        }
+        if isinstance(declared, dict)
+        else set()
+    )
+
+    if expected_count and observed_tenants and all(
+        tenant.isdigit() for tenant in observed_tenants
+    ):
+        return {
+            _canonical_tenant_key(str(index), suite)
+            for index in range(expected_count)
+        }
+    if expected_count and usable:
+        return set(usable[:expected_count])
+    if declared_ids:
+        return declared_ids
+    return set(observed_tenants)
 
 
 def _suite_runs(suite: dict[str, Any]) -> list[dict[str, Any]]:
@@ -323,6 +435,48 @@ def _capacity(suite: dict[str, Any]) -> dict[str, Any]:
             ]
             if submitted:
                 hot_user_candidates.append(max(submitted))
+
+    # A formal capacity ladder measures distinct active sessions.  The
+    # separate real admission sweep measures the next useful boundary when a
+    # formal point is still healthy.  Treat it as boundary evidence only when
+    # the sweep has real request rows and an observed error/rejection/transport
+    # failure at a higher offered level; a configured level alone is not a
+    # failure boundary.
+    boundary_levels: list[int] = []
+    sweep = suite.get("limit_failure_sweep")
+    sweep_levels = (
+        sweep.get("level_results")
+        if isinstance(sweep, dict)
+        else []
+    )
+    sweep_boundary_levels: list[int] = []
+    sweep_valid_levels: list[int] = []
+    if isinstance(sweep_levels, list):
+        for item in sweep_levels:
+            if not isinstance(item, dict):
+                continue
+            try:
+                level = int(item.get("level"))
+            except (TypeError, ValueError):
+                continue
+            submitted = int(item.get("submitted") or 0)
+            success_rate = item.get("success_rate")
+            has_boundary = bool(item.get("boundary_evidence"))
+            if submitted <= 0:
+                continue
+            if (
+                isinstance(success_rate, (int, float))
+                and float(success_rate) >= 0.99
+                and not has_boundary
+            ):
+                sweep_valid_levels.append(level)
+            elif has_boundary:
+                sweep_boundary_levels.append(level)
+    # Do not merge admission-sweep levels into the formal capacity ladder.
+    # ``limit_failure_sweep`` measures concurrent requests/workers and does
+    # not establish a distinct active-user or DAU identity.  It remains useful
+    # evidence for O4/O6 and for diagnosing admission limits, but must never
+    # turn a formal DAU result into PASS.
     max_valid_level = max(valid_levels, default=None)
     boundary_levels = [
         level for level in invalid_levels
@@ -332,6 +486,9 @@ def _capacity(suite: dict[str, Any]) -> dict[str, Any]:
         level for level in timeout_levels
         if max_valid_level is not None and level > max_valid_level
     )
+    # Keep sweep failures in their own field.  A sweep boundary is not a
+    # formal active-user failure boundary and therefore cannot satisfy the O1
+    # PASS gate.
     has_capacity_boundary = bool(
         profile and max_valid_level is not None and boundary_levels
     )
@@ -348,6 +505,10 @@ def _capacity(suite: dict[str, Any]) -> dict[str, Any]:
             "timeout_capacity_levels": sorted(set(timeout_levels)),
             "activity_missing_levels": sorted(set(activity_missing_levels)),
             "capacity_boundary_levels": sorted(set(boundary_levels)),
+            "formal_capacity_boundary_levels": sorted(set(boundary_levels)),
+            "admission_sweep_valid_levels": sorted(set(sweep_valid_levels)),
+            "admission_sweep_boundary_levels": sorted(set(sweep_boundary_levels)),
+            "admission_sweep": sweep if isinstance(sweep, dict) else {},
             "capacity_target_active_users": {
                 key: capacity_targets[key]
                 for key in sorted(capacity_targets, key=int)
@@ -552,24 +713,16 @@ def _fairness(suite: dict[str, Any]) -> dict[str, Any]:
         # to a different scenario's Search latency denominator.
         scoped_suite = dict(suite)
         scoped_suite["runs"] = selected_runs
-        tenant_metrics = _per_tenant_metrics(scoped_suite, selected_runs)
+        tenant_metrics = _canonicalize_tenant_metrics(
+            _per_tenant_metrics(scoped_suite, selected_runs),
+            suite,
+        )
         # A Jain score over only the tenants that happened to finish a
         # Commit is misleading: a tenant with no submitted/observed work has
         # silently disappeared from the denominator.  Fairness requires one
         # comparable workload window covering every tenant that participated
         # in the selected scenario.
-        expected_tenants: set[str] = set()
-        observed_tenants: set[str] = set()
-        fairness_expectations = suite.get("fairness_expectations")
-        declared_tenants = (
-            fairness_expectations.get("tenant_ids")
-            if isinstance(fairness_expectations, dict)
-            else None
-        )
-        if isinstance(declared_tenants, list):
-            expected_tenants.update(
-                str(item).strip() for item in declared_tenants if str(item).strip()
-            )
+        observed_tenants: set[str] = set(tenant_metrics)
         for run in selected_runs:
             summary = _run_summary(run)
             metrics = summary.get("metrics") or {}
@@ -578,19 +731,20 @@ def _fairness(suite: dict[str, Any]) -> dict[str, Any]:
                 for tenant, data in per_tenant.items():
                     if not isinstance(data, dict):
                         continue
-                    tenant_id = str(tenant)
+                    tenant_id = _canonical_tenant_key(tenant, suite)
                     observed_tenants.add(tenant_id)
-                    search = data.get("search") or {}
-                    commit = data.get("commit") or {}
-                    if (
-                        int(search.get("submitted") or 0) > 0
-                        or int(commit.get("submitted") or 0) > 0
-                    ):
-                        expected_tenants.add(tenant_id)
             activity = (summary.get("details") or {}).get("user_activity") or {}
             active_by_tenant = activity.get("active_users_by_tenant")
             if isinstance(active_by_tenant, dict):
-                expected_tenants.update(str(item) for item in active_by_tenant)
+                observed_tenants.update(
+                    _canonical_tenant_key(item, suite)
+                    for item in active_by_tenant
+                )
+        expected_tenants = _fairness_expected_tenants(
+            suite,
+            selected_runs,
+            observed_tenants,
+        )
         missing_tenants = sorted(expected_tenants - set(tenant_metrics))
         incomplete_tenants = sorted(
             tenant
@@ -879,6 +1033,28 @@ def _recovery(recovery: dict[str, Any]) -> dict[str, Any]:
     replay_rate = recovery.get("replay_rate")
     if replay_rate is None:
         replay_rate = recovery.get("recovered_commit_rate")
+    # Multi-iteration probes expose an explicit denominator.  Do not fall
+    # back to a single aggregate status when only some 202 samples were
+    # actually exercised.
+    aggregated_iterations = recovery.get("attempted_iterations") is not None
+    attempted_iterations = recovery.get("attempted_iterations")
+    accepted_202_count = recovery.get("accepted_202_count")
+    all_conditions_pass_count = recovery.get("all_conditions_pass_count")
+    if aggregated_iterations:
+        try:
+            attempted_iterations = int(attempted_iterations or 0)
+        except (TypeError, ValueError):
+            attempted_iterations = 0
+        try:
+            accepted_202_count = int(accepted_202_count or 0)
+        except (TypeError, ValueError):
+            accepted_202_count = 0
+        try:
+            all_conditions_pass_count = int(all_conditions_pass_count or 0)
+        except (TypeError, ValueError):
+            all_conditions_pass_count = 0
+        if replay_rate is None and accepted_202_count:
+            replay_rate = all_conditions_pass_count / accepted_202_count
     try:
         rate = float(replay_rate)
     except (TypeError, ValueError):
@@ -922,7 +1098,7 @@ def _recovery(recovery: dict[str, Any]) -> dict[str, Any]:
     # durability target is proven by 202 + restart + completed terminal state
     # + durable message/cursor/order reconciliation + same archive on replay.
     replay_evidence = same_archive or idempotency_status == PASS
-    passed = (
+    single_sample_passed = (
         accepted_202
         and status != FAIL
         and (rate is None or rate >= 1.0)
@@ -933,14 +1109,38 @@ def _recovery(recovery: dict[str, Any]) -> dict[str, Any]:
         and order_proven
         and replay_evidence
     )
+    aggregate_passed = (
+        aggregated_iterations
+        and attempted_iterations > 0
+        and accepted_202_count == attempted_iterations
+        and accepted_202_count > 0
+        and all_conditions_pass_count == accepted_202_count
+        and rate is not None
+        and rate >= 1.0
+    )
+    passed = aggregate_passed or (
+        not aggregated_iterations and single_sample_passed
+    )
     if idempotency_status == FAIL and not same_archive:
         verdict = FAIL
         reason = "服务恢复但同一幂等键没有返回原 archive，幂等重放失败"
     elif passed:
         verdict = PASS
         reason = (
-            "收到 202；服务恢复；Commit completed；消息集合、cursor、顺序对账通过；"
-            "同一幂等键仍返回原 archive"
+            (
+                f"{accepted_202_count}/{attempted_iterations} 个独立样本均收到 202；"
+                "全部完成恢复、消息集合/cursor/顺序对账和幂等重放"
+                if aggregated_iterations
+                else
+                "收到 202；服务恢复；Commit completed；消息集合、cursor、顺序对账通过；"
+                "同一幂等键仍返回原 archive"
+            )
+        )
+    elif aggregated_iterations and accepted_202_count < attempted_iterations:
+        verdict = INCONCLUSIVE
+        reason = (
+            f"只有 {accepted_202_count}/{attempted_iterations} 个样本收到 202，"
+            "恢复统计前提不完整"
         )
     elif status in {FAIL, INCONCLUSIVE}:
         verdict = status
@@ -950,6 +1150,11 @@ def _recovery(recovery: dict[str, Any]) -> dict[str, Any]:
         reason = "202、恢复、Commit 终态、消息/cursor/顺序对账或幂等重放证据不完整/失败"
     observed = dict(recovery)
     observed["accepted_202_required"] = True
+    observed["aggregated_iterations"] = aggregated_iterations
+    if aggregated_iterations:
+        observed["accepted_202_count"] = accepted_202_count
+        observed["attempted_iterations"] = attempted_iterations
+        observed["all_conditions_pass_count"] = all_conditions_pass_count
     observed["final_state"] = final_state
     observed["same_archive_on_idempotency_replay"] = same_archive
     observed["replayed_flag_observed"] = (
@@ -967,7 +1172,11 @@ def _recovery(recovery: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _observability(capability: dict[str, Any], suite: dict[str, Any]) -> dict[str, Any]:
+def _observability(
+    capability: dict[str, Any],
+    suite: dict[str, Any],
+    tenant_observability: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     checks = capability.get("checks") if isinstance(capability.get("checks"), list) else []
     metric = next((item for item in checks if item.get("name") == "Prometheus B7 metrics"), None)
     required = {"lane_queued", "lane_wait", "lane_exec", "lane_rejected"}
@@ -1062,6 +1271,22 @@ def _observability(capability: dict[str, Any], suite: dict[str, Any]) -> dict[st
     missing_fanout_engines = sorted(
         expected_fanout_engines - set(complete_fanout_engines)
     )
+    snapshot_required = isinstance(tenant_observability, dict)
+    snapshot_missing = (
+        list(tenant_observability.get("missing") or [])
+        if isinstance(tenant_observability, dict)
+        else []
+    )
+    snapshot_status = (
+        str(tenant_observability.get("status") or INCONCLUSIVE)
+        if isinstance(tenant_observability, dict)
+        else None
+    )
+    snapshot_complete = (
+        snapshot_status == PASS
+        and not snapshot_missing
+        and bool((tenant_observability or {}).get("rows"))
+    )
     if (missing or not expected_lanes) and not coverage:
         return _result(
             "分层/分租户调度可观测性",
@@ -1073,6 +1298,7 @@ def _observability(capability: dict[str, Any], suite: dict[str, Any]) -> dict[st
                 "expected_fanout_engines": sorted(expected_fanout_engines),
                 "missing_lanes": sorted(expected_lanes),
                 "missing_fanout_engines": sorted(expected_fanout_engines),
+                "tenant_observability": tenant_observability,
             },
             (
                 "没有采到任何实际 lane 的 Prometheus B7 覆盖证据"
@@ -1092,6 +1318,9 @@ def _observability(capability: dict[str, Any], suite: dict[str, Any]) -> dict[st
         "expected_fanout_engines": sorted(expected_fanout_engines),
         "missing_fanout_engines": missing_fanout_engines,
         "legacy_tenant_lanes": legacy_tenant_lanes,
+        "tenant_observability": tenant_observability,
+        "tenant_observability_required": snapshot_required,
+        "tenant_observability_complete": snapshot_complete,
     }
     legacy_complete_tenants = [
         tenant for tenant, lanes in legacy_tenant_lanes.items()
@@ -1102,6 +1331,7 @@ def _observability(capability: dict[str, Any], suite: dict[str, Any]) -> dict[st
         and not missing_lanes
         and bool(complete_fanout_engines)
         and not missing_fanout_engines
+        and (not snapshot_required or snapshot_complete)
     ) or (
         # Accept old artifacts only when they explicitly contain the legacy
         # per-tenant evidence and no bounded-label violation was recorded.
@@ -1109,6 +1339,7 @@ def _observability(capability: dict[str, Any], suite: dict[str, Any]) -> dict[st
         and not missing
         and bool(legacy_complete_tenants)
         and not any(item.get("bounded_label_violations") for item in coverage)
+        and (not snapshot_required or snapshot_complete)
     )
     observed["legacy_complete_tenants"] = legacy_complete_tenants
     return _result(
@@ -1130,6 +1361,7 @@ def evaluate(
     capability: dict[str, Any] | None = None,
     recovery: dict[str, Any] | None = None,
     fault: dict[str, Any] | None = None,
+    tenant_observability: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     checks = [
         _capacity(suite),
@@ -1137,7 +1369,7 @@ def evaluate(
         _fairness(suite),
         _priority(suite),
         _recovery(recovery or {}),
-        _observability(capability or {}, suite),
+        _observability(capability or {}, suite, tenant_observability),
     ]
     statuses = [item["status"] for item in checks]
     overall = FAIL if FAIL in statuses else INCONCLUSIVE if INCONCLUSIVE in statuses else PASS
@@ -1161,6 +1393,7 @@ def main() -> int:
     parser.add_argument("--capability", type=Path)
     parser.add_argument("--recovery", type=Path)
     parser.add_argument("--fault", type=Path)
+    parser.add_argument("--tenant-observability", type=Path)
     parser.add_argument("--out", required=True, type=Path)
     args = parser.parse_args()
     result = evaluate(
@@ -1168,6 +1401,9 @@ def main() -> int:
         capability=_load(args.capability),
         recovery=_load(args.recovery),
         fault=_load(args.fault),
+        tenant_observability=_load(
+            Path(args.tenant_observability)
+        ) if args.tenant_observability else None,
     )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

@@ -16,6 +16,7 @@ import signal
 import socket
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -294,6 +295,201 @@ def recovery_control_ok(control: dict[str, Any]) -> bool:
     )
 
 
+def _single_iteration_argv(raw: list[str], output: Path) -> list[str]:
+    """Clone the current CLI while replacing ``--iterations`` and ``--out``."""
+    command: list[str] = []
+    index = 0
+    replaced_output = False
+    while index < len(raw):
+        item = raw[index]
+        if item == "--iterations":
+            index += 2
+            continue
+        if item.startswith("--iterations="):
+            index += 1
+            continue
+        if item == "--out":
+            command.extend(["--out", str(output)])
+            replaced_output = True
+            index += 2
+            continue
+        if item.startswith("--out="):
+            command.append(f"--out={output}")
+            replaced_output = True
+            index += 1
+            continue
+        command.append(item)
+        index += 1
+    if not replaced_output:
+        command.extend(["--out", str(output)])
+    command.extend(["--iterations", "1"])
+    return command
+
+
+def aggregate_iterations(
+    results: list[dict[str, Any]],
+    *,
+    requested_iterations: int,
+    require_accepted_202: bool,
+) -> dict[str, Any]:
+    """Aggregate independent crash samples without hiding failed iterations."""
+    attempted = len(results)
+    accepted = sum(item.get("accepted_202") is True for item in results)
+    recovered_completed = sum(
+        item.get("accepted_202") is True
+        and item.get("recovered") is True
+        and isinstance(item.get("commit_terminal"), list)
+        and bool(item["commit_terminal"])
+        and isinstance(item["commit_terminal"][-1], dict)
+        and item["commit_terminal"][-1].get("state") == "completed"
+        for item in results
+        if isinstance(item, dict)
+    )
+    replay_verified = sum(
+        (item.get("idempotency_replay") or {}).get("same_archive") is True
+        for item in results
+        if isinstance(item, dict)
+    )
+    order_verified = sum(
+        (item.get("order_reconciliation") or {}).get("status") == PASS
+        for item in results
+        if isinstance(item, dict)
+    )
+    replay_contract_passed = sum(
+        (item.get("idempotency_reconciliation") or {}).get("status") == PASS
+        for item in results
+        if isinstance(item, dict)
+    )
+    all_conditions_passed = sum(
+        str(item.get("status") or "") == PASS
+        for item in results
+        if isinstance(item, dict)
+    )
+    recovery_rate = (
+        all_conditions_passed / accepted
+        if accepted
+        else None
+    )
+    controls_ok = sum(
+        item.get("container_control_ok") is True
+        for item in results
+        if isinstance(item, dict)
+    )
+
+    if accepted == 0:
+        has_response = any(
+            item.get("commit_response_before_kill", {}).get("status_code") is not None
+            for item in results
+            if isinstance(item, dict)
+        )
+        status = FAIL if has_response and require_accepted_202 else INCONCLUSIVE
+        reason = (
+            "所有样本都没有在 kill-9 前收到 HTTP 202，无法形成已接受 Commit 的恢复分母"
+            if status == INCONCLUSIVE
+            else "Commit 返回了非 202 响应，未满足已接受异步 Commit 的恢复前提"
+        )
+    elif all_conditions_passed < accepted:
+        status = FAIL
+        reason = "至少一个已返回 202 的 Commit 未通过恢复、持久化对账或幂等重放"
+    elif require_accepted_202 and accepted < attempted:
+        status = INCONCLUSIVE
+        reason = (
+            f"只有 {accepted}/{attempted} 个样本在崩溃前返回 202，"
+            "样本前提不完整，不能宣称完整恢复率"
+        )
+    elif accepted == requested_iterations and all_conditions_passed == accepted:
+        status = PASS
+        reason = "每个独立样本都收到 202，并完成恢复、消息/顺序/幂等对账"
+    else:
+        status = INCONCLUSIVE
+        reason = "恢复样本数与请求数不一致，不能给出完整统计结论"
+
+    return {
+        "status": status,
+        "reason": reason,
+        "real_http": True,
+        "mock_model": False,
+        "requested_iterations": requested_iterations,
+        "attempted_iterations": attempted,
+        "accepted_202_count": accepted,
+        "recovered_completed_count": recovered_completed,
+        "replay_verified_count": replay_verified,
+        "replay_contract_pass_count": replay_contract_passed,
+        "order_verified_count": order_verified,
+        "all_conditions_pass_count": all_conditions_passed,
+        "recovery_rate": recovery_rate,
+        "container_control_ok_count": controls_ok,
+        "iteration_results": results,
+    }
+
+
+def run_iterations(args: argparse.Namespace) -> int:
+    """Run independent real kill-9 samples and write one aggregate artifact."""
+    iteration_root = args.out.parent / f".{args.out.stem}.iterations"
+    iteration_root.mkdir(parents=True, exist_ok=True)
+    timeout_s = max(
+        120.0,
+        float(args.recovery_timeout_s) * 2.0
+        + float(args.accepted_wait_s)
+        + 120.0,
+    )
+    results: list[dict[str, Any]] = []
+    for index in range(1, args.iterations + 1):
+        output = iteration_root / f"iteration-{index:02d}.json"
+        completed = subprocess.run(
+            [sys.executable, __file__, *_single_iteration_argv(sys.argv[1:], output)],
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            check=False,
+        )
+        if output.is_file():
+            payload = _load_json(output)
+        else:
+            payload = {
+                "status": INCONCLUSIVE,
+                "reason": (
+                    f"iteration {index} did not produce an artifact; "
+                    f"returncode={completed.returncode}"
+                ),
+                "accepted_202": False,
+                "container_control_ok": False,
+                "stdout": completed.stdout[-4000:],
+                "stderr": completed.stderr[-4000:],
+            }
+            output.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        payload["iteration"] = index
+        payload["artifact"] = str(output)
+        results.append(payload)
+
+    aggregate = aggregate_iterations(
+        results,
+        requested_iterations=args.iterations,
+        require_accepted_202=args.require_accepted_202,
+    )
+    aggregate["started_at"] = now()
+    aggregate["finished_at"] = now()
+    aggregate["iteration_dir"] = str(iteration_root)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(
+        json.dumps(aggregate, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    print(json.dumps(aggregate, ensure_ascii=False))
+    return 0 if aggregate["status"] == PASS else 2
+
+
+def _load_json(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
@@ -315,6 +511,12 @@ def main() -> int:
     parser.add_argument("--recovery-timeout-s", type=float, default=180.0)
     parser.add_argument("--poll-s", type=float, default=2.0)
     parser.add_argument(
+        "--iterations",
+        type=int,
+        default=3,
+        help="独立 kill-9 恢复样本数；每次使用独立 session/marker/幂等键",
+    )
+    parser.add_argument(
         "--require-accepted-202",
         action="store_true",
         help="只有先收到 HTTP 202，再 kill/restart，才纳入恢复验收",
@@ -329,6 +531,10 @@ def main() -> int:
     args = parser.parse_args()
     if not args.container and not args.pid:
         parser.error("either --container or --pid is required")
+    if args.iterations < 1:
+        parser.error("--iterations must be >= 1")
+    if args.iterations > 1:
+        return run_iterations(args)
 
     started_at = now()
     health_url = args.health_url or args.base_url.rstrip("/") + "/health"

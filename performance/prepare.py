@@ -197,12 +197,16 @@ def verify_recall_query_pool(
             is_degraded = bool(meta.get("degraded_reasons")) or str(
                 meta.get("status") or ""
             ).lower() == "degraded"
-            if is_degraded:
-                degraded += 1
-            elif items and _items_match_expected_terms(
+            # An optional engine may mark the aggregate response as degraded
+            # even when an enabled engine returned valid evidence.  Prefer the
+            # evidence check: a valid item must not be discarded merely
+            # because (for example) resource_engine is disabled.
+            if items and _items_match_expected_terms(
                 items, (expected_terms_by_query or {}).get(query, [])
             ):
                 verified.append(query)
+            elif is_degraded:
+                degraded += 1
             elif items:
                 relevance_failures += 1
         except Exception:
@@ -240,7 +244,7 @@ def _anchor(idx: int, session_idx: int, msg_idx: int) -> str:
 def _synthetic_recall_case(
     idx: int, session_idx: int, msg_idx: int
 ) -> tuple[str, str, str, list[str]]:
-    """A short fact paragraph plus a semantic question and expected marker."""
+    """A short fact paragraph plus a semantic question and fact terms."""
     anchor = _anchor(idx, session_idx, msg_idx)
     person, project, location, schedule = _SYNTHETIC_FACTS[
         (idx + session_idx + msg_idx) % len(_SYNTHETIC_FACTS)
@@ -253,7 +257,81 @@ def _synthetic_recall_case(
         f"已记录：{person} 的{project}安排，关联事实编号 {anchor}。"
     )
     question = f"{person} 在哪里负责什么项目？"
-    return user_msg, assistant_msg, question, [anchor]
+    # Extractors commonly preserve the person/project fact but drop synthetic
+    # bookkeeping tokens such as PERFANCHOR.  Recall verification therefore
+    # checks semantic evidence, while the anchor remains available as a
+    # separate write/read diagnostic.
+    return user_msg, assistant_msg, question, [person, project]
+
+
+def seed_recall_queries(
+    tenant_count: int,
+    *,
+    sessions_per_tenant: int = 1,
+    messages_per_session: int = 3,
+) -> list[str]:
+    """Build deterministic semantic queries for a shared synthetic seed.
+
+    These queries are derived from the same facts as ``seed_tenant``.  They
+    are intentionally semantic rather than PERFANCHOR tokens because an
+    atomizer is allowed to omit synthetic identifiers from extracted memory.
+    """
+    queries: list[str] = []
+    seen: set[str] = set()
+    for tenant_idx in range(max(0, int(tenant_count))):
+        for session_idx in range(max(1, int(sessions_per_tenant))):
+            for msg_idx in range(max(1, int(messages_per_session))):
+                _, _, question, _ = _synthetic_recall_case(
+                    tenant_idx, session_idx, msg_idx
+                )
+                if question not in seen:
+                    seen.add(question)
+                    queries.append(question)
+    return queries
+
+
+def seed_recall_query_map(
+    tenant_count: int,
+    *,
+    sessions_per_tenant: int = 1,
+    messages_per_session: int = 3,
+) -> dict[str, Any]:
+    """Build a tenant-scoped recall query map for a shared seed warm-up.
+
+    A reused warm-up has no in-process ``TenantContext`` when later scenarios
+    start.  Passing one global query list in that situation can accidentally
+    ask tenant B to search for tenant A's facts.  Persist the deterministic
+    query/expected-term pair per tenant so the later black-box run verifies
+    both tenant isolation and real recall.
+    """
+    tenants: dict[str, dict[str, Any]] = {}
+    for tenant_idx in range(max(0, int(tenant_count))):
+        queries: list[str] = []
+        expected_terms: dict[str, list[str]] = {}
+        seen: set[str] = set()
+        for session_idx in range(max(1, int(sessions_per_tenant))):
+            for msg_idx in range(max(1, int(messages_per_session))):
+                _, _, question, terms = _synthetic_recall_case(
+                    tenant_idx, session_idx, msg_idx
+                )
+                if question in seen:
+                    continue
+                seen.add(question)
+                queries.append(question)
+                expected_terms[question] = list(terms)
+        tenants[str(tenant_idx)] = {
+            "tenant_index": tenant_idx,
+            "queries": queries,
+            "expected_terms": expected_terms,
+        }
+    return {
+        "version": 1,
+        "source": "synthetic_seed_warmup",
+        "tenant_count": len(tenants),
+        "sessions_per_tenant": int(sessions_per_tenant),
+        "messages_per_session": int(messages_per_session),
+        "tenants": tenants,
+    }
 
 
 def _message_pair(idx: int, session_idx: int, msg_idx: int) -> tuple[str, str]:

@@ -7,11 +7,13 @@ from pathlib import Path
 
 from performance.objective_suite import (
     QUICK_SCENARIOS,
+    SIX_METRIC_SCENARIOS,
     _append_quick_seed_options,
     _first_completed_commit_csv,
     _first_completed_commit_evidence,
     _resolve_auth_key,
     _acquire_output_lock,
+    _configured_tenant_ids,
     _materialize_fault_plan,
     _preserve_probe_status,
     _resolve_tenant_id,
@@ -28,7 +30,7 @@ from performance.objective_suite import (
     run_command,
     render_report,
 )
-from scripts.build_pr29_six_metric_report import load_formal_artifacts
+from scripts.build_pr29_six_metric_report import load_formal_artifacts, load_recall_run
 from performance.probes.limit_failure_probe import (
     auth_key,
     classify_response,
@@ -42,6 +44,54 @@ from performance.formal_suite import SCENARIOS, _build_seed_warmup_command
 
 
 class ObjectiveSuiteTests(unittest.TestCase):
+    def test_recall_report_loader_reads_real_recall_summary_and_request_breakdown(self) -> None:
+        result = load_recall_run(
+            Path(
+                "/Users/chx/.tmp/recall-latency-verified-20260905/"
+                "20260905_145732_495254"
+            )
+        )
+        if not result["available"]:
+            self.skipTest("local real-recall fixture is not present")
+        stats = result["stats"]
+        self.assertEqual(10, stats["count"])
+        self.assertAlmostEqual(6079.165, stats["avg_ms"], places=3)
+        self.assertAlmostEqual(7266.4649, stats["p95_ms"], places=3)
+        self.assertEqual(10, stats["real_recall_count"])
+        self.assertEqual(9, stats["degraded_count"])
+        self.assertEqual({"recall": 10}, stats["query_kind_counts"])
+        self.assertEqual(2, len(stats["query_rows"]))
+
+    def test_recall_report_loader_falls_back_to_csv_stats(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "summary.json").write_text(
+                json.dumps(
+                    {
+                        "status": "completed",
+                        "search_quality": {
+                            "total": 2,
+                            "recall_total": 2,
+                            "degraded_total": 1,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (root / "config.json").write_text("{}", encoding="utf-8")
+            (root / "requests.csv").write_text(
+                "op,status,stage_ms,real_recall,degraded,query_kind,query,hit_count\n"
+                "read,ok,1000,true,false,recall,q1,2\n"
+                "read,ok,3000,true,true,recall,q1,1\n",
+                encoding="utf-8",
+            )
+            result = load_recall_run(root)
+            self.assertTrue(result["available"])
+            self.assertAlmostEqual(2000.0, result["stats"]["avg_ms"])
+            self.assertAlmostEqual(2900.0, result["stats"]["p95_ms"])
+            self.assertEqual(2, result["stats"]["real_recall_count"])
+            self.assertEqual(1, result["stats"]["degraded_count"])
+
     def test_report_loader_keeps_probe_artifacts_next_to_formal_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -135,6 +185,8 @@ class ObjectiveSuiteTests(unittest.TestCase):
         text = script.read_text(encoding="utf-8")
         self.assertIn("performance.objective_suite", text)
         self.assertIn("--full", text)
+        self.assertIn("--six-metric", text)
+        self.assertIn("STRESS_FULL", text)
         self.assertIn("--profile", text)
         self.assertIn("STRESS_QUICK", text)
         self.assertIn("STRESS_PYTHON", text)
@@ -302,11 +354,14 @@ class ObjectiveSuiteTests(unittest.TestCase):
             {"evidence_missing_scenarios": []},
         )
         by_id = {item["id"]: item for item in result}
-        self.assertEqual("configured", by_id["O1"]["status"])
+        self.assertEqual("incomplete", by_id["O1"]["status"])
+        self.assertIn("scenario:capacity-256", by_id["O1"]["missing"])
+        self.assertIn("scenario:capacity-512", by_id["O1"]["missing"])
         self.assertEqual("incomplete", by_id["O2"]["status"])
         self.assertIn("probe:fault_isolation", by_id["O2"]["missing"])
         self.assertEqual("configured", by_id["O5"]["status"])
-        self.assertEqual("configured", by_id["O6"]["status"])
+        self.assertEqual("incomplete", by_id["O6"]["status"])
+        self.assertIn("probe:tenant_observability", by_id["O6"]["missing"])
 
     def test_resolve_tenant_id_falls_back_when_profile_is_stale(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -327,6 +382,26 @@ class ObjectiveSuiteTests(unittest.TestCase):
                 _resolve_tenant_id(path, "stress-a"),
             )
 
+    def test_configured_tenant_ids_are_read_from_current_config(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "tenants.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "tenants": [
+                            {"tenant_id": "current-a"},
+                            {"tenant_id": "current-b"},
+                            {"id": "current-c"},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                ["current-a", "current-b", "current-c"],
+                _configured_tenant_ids(path),
+            )
+
     def test_quick_matrix_is_bounded_and_contains_priority(self) -> None:
         self.assertIn("search-priority-blackbox", QUICK_SCENARIOS)
         self.assertIn("capacity-2", QUICK_SCENARIOS)
@@ -340,6 +415,27 @@ class ObjectiveSuiteTests(unittest.TestCase):
         self.assertEqual(0.0, SCENARIOS["capacity-2"]["quick_commit_rpm"])
         self.assertEqual(0.0, SCENARIOS["capacity-4"]["quick_commit_rpm"])
 
+    def test_six_metric_matrix_covers_all_formal_measurements_without_soak(self) -> None:
+        for scenario in (
+            "baseline",
+            "capacity-2",
+            "capacity-4",
+            "capacity-8",
+            "capacity-16",
+            "capacity-32",
+            "capacity-64",
+            "capacity-128",
+            "capacity-256",
+            "capacity-512",
+            "fairness-steady",
+            "search-priority-blackbox",
+            "saturation",
+        ):
+            with self.subTest(scenario=scenario):
+                self.assertIn(scenario, SIX_METRIC_SCENARIOS)
+        self.assertNotIn("soak", SIX_METRIC_SCENARIOS)
+        self.assertNotIn("fairness-bounded", SIX_METRIC_SCENARIOS)
+
     def test_capacity_catalog_disables_commit_for_full_runs(self) -> None:
         for name in (
             "capacity-2",
@@ -349,9 +445,56 @@ class ObjectiveSuiteTests(unittest.TestCase):
             "capacity-32",
             "capacity-64",
             "capacity-128",
+            "capacity-256",
+            "capacity-512",
         ):
             with self.subTest(name=name):
                 self.assertEqual(0.0, SCENARIOS[name]["commit_rpm"])
+
+    def test_run_stress_loads_tenant_scoped_recall_query_map(self) -> None:
+        from performance.run_stress import _load_recall_query_map
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "query-map.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "tenants": {
+                            "0": {
+                                "queries": ["林晓 在哪里负责什么项目？"],
+                                "expected_terms": {
+                                    "林晓 在哪里负责什么项目？": [
+                                        "林晓",
+                                        "北极星知识库迁移",
+                                    ]
+                                },
+                            },
+                            "tenant-live-b": {
+                                "queries": ["周宁 在哪里负责什么项目？"],
+                                "expected_terms": {
+                                    "周宁 在哪里负责什么项目？": [
+                                        "周宁",
+                                        "海风客户画像项目",
+                                    ]
+                                },
+                            },
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            loaded = _load_recall_query_map(str(path))
+            self.assertEqual(
+                ["林晓 在哪里负责什么项目？"],
+                loaded["0"]["queries"],
+            )
+            self.assertEqual(
+                ["周宁", "海风客户画像项目"],
+                loaded["tenant-live-b"]["expected_terms"][
+                    "周宁 在哪里负责什么项目？"
+                ],
+            )
 
     def test_fairness_steady_has_explicit_per_tenant_commit_rate(self) -> None:
         self.assertEqual(2.0, SCENARIOS["fairness-steady"]["commit_rpm_per_tenant"])

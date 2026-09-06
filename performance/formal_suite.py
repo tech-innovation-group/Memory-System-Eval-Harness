@@ -37,6 +37,7 @@ from performance.acceptance import (
 )
 from performance.perf_preflight import run_preflight
 from performance.probes.auth_preflight import run as run_auth_preflight
+from performance.prepare import seed_recall_query_map, seed_recall_queries
 
 
 # 正式运行复现在线客户端。压测端不施加 FIFO、优先级、lane 或租户公平调度。
@@ -153,7 +154,11 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         "commit_rpm_per_tenant": 2.0,
         "sessions_per_tenant": 4,
         "messages_per_session": 3,
-        "search_query_profile": "no-recall-only",
+        # Fairness must cover the same production-like Search mix as the
+        # service, not only empty/no-recall queries.  The shared seed warm-up
+        # supplies verified recall queries; run_stress keeps the configured
+        # recall/no-recall ratio identical for every tenant.
+        "search_query_profile": "mixed",
         "steady_state_fairness": True,
         "min_commit_submitted_per_tenant": 6,
     },
@@ -292,6 +297,32 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         "active_sessions_per_tenant": 32,
         "duration_s": 300,
         "search_rps": 128.0,
+        "commit_rpm": 0.0,
+        "quick_commit_rpm": 0.0,
+        "sessions_per_tenant": 2,
+        "messages_per_session": 3,
+        "search_query_profile": "no-recall-only",
+    },
+    "capacity-256": {
+        "label": "256 活跃用户容量阶梯（4 租户 × 64 session）",
+        "tenants": 4,
+        "capacity_active_users": 256,
+        "active_sessions_per_tenant": 64,
+        "duration_s": 180,
+        "search_rps": 256.0,
+        "commit_rpm": 0.0,
+        "quick_commit_rpm": 0.0,
+        "sessions_per_tenant": 2,
+        "messages_per_session": 3,
+        "search_query_profile": "no-recall-only",
+    },
+    "capacity-512": {
+        "label": "512 活跃用户容量阶梯（4 租户 × 128 session）",
+        "tenants": 4,
+        "capacity_active_users": 512,
+        "active_sessions_per_tenant": 128,
+        "duration_s": 180,
+        "search_rps": 512.0,
         "commit_rpm": 0.0,
         "quick_commit_rpm": 0.0,
         "sessions_per_tenant": 2,
@@ -486,6 +517,8 @@ FOUR_U8G_SCENARIOS.update({
         "capacity-32",
         "capacity-64",
         "capacity-128",
+        "capacity-256",
+        "capacity-512",
     )
 })
 for _capacity_name in (
@@ -496,6 +529,8 @@ for _capacity_name in (
     "capacity-32",
     "capacity-64",
     "capacity-128",
+    "capacity-256",
+    "capacity-512",
 ):
     # Capacity is a Search-only measurement in quick mode.  Keep this
     # override on the bounded 4U8G catalog as well as the base catalog;
@@ -527,7 +562,7 @@ SCENARIO_PROFILES["4u8g"] = FOUR_U8G_SCENARIOS
 
 # The historical ``4u8g`` profile is kept for compatibility with existing
 # quick commands.  This explicit profile runs both source plans in full:
-# PR397/report(6) has 12 cases and the PR421 4U8G catalog has 27 cases.
+# PR397/report(6) has 12 cases and the PR421 4U8G catalog has 29 cases.
 # Names are namespaced because the two plans intentionally reuse some case
 # names; the original scenario name is retained for acceptance evaluation.
 FOUR_U8G_FULL_SCENARIOS: dict[str, dict[str, Any]] = {}
@@ -568,6 +603,42 @@ def _seed_anchor_queries(tenant_count: int) -> str:
     """Return deterministic queries for synthetic data reused across cases."""
     return ",".join(
         f"PERFANCHOR-{index}-0-0" for index in range(max(0, tenant_count))
+    )
+
+
+def _seed_recall_queries(
+    tenant_count: int,
+    *,
+    sessions_per_tenant: int = 1,
+    messages_per_session: int = 3,
+) -> str:
+    """Return semantic queries for the shared synthetic seed.
+
+    ``PERFANCHOR`` remains useful for a write/read diagnostic, but it is not a
+    stable retrieval key: EchoMem's atomizer can omit synthetic identifiers.
+    Formal cases that reuse the shared seed must therefore use the semantic
+    questions generated from the same facts.
+    """
+    return ",".join(
+        seed_recall_queries(
+            tenant_count,
+            sessions_per_tenant=sessions_per_tenant,
+            messages_per_session=messages_per_session,
+        )
+    )
+
+
+def _seed_recall_query_map(
+    tenant_count: int,
+    *,
+    sessions_per_tenant: int = 1,
+    messages_per_session: int = 3,
+) -> dict[str, Any]:
+    """Build a reusable tenant-scoped map for shared seed warm-up data."""
+    return seed_recall_query_map(
+        tenant_count,
+        sessions_per_tenant=sessions_per_tenant,
+        messages_per_session=messages_per_session,
     )
 
 
@@ -1220,7 +1291,22 @@ def _derive_case_summary(run_dir: Path, identity_independent: bool) -> dict[str,
     submitted = len(reads)
     succeeded = len(ok_reads)
     commit_submitted = len(commit_submits)
-    completed = len(ok_dones)
+    def commit_identity(row: dict[str, str], index: int) -> str:
+        # A repeated request can legitimately return the same archive because
+        # of idempotency. Count one logical Commit once for throughput and
+        # fairness; retain raw request counts separately for audit.
+        return str(
+            row.get("archive_id")
+            or row.get("request_id")
+            or row.get("operation_id")
+            or f"row-{index}"
+        ).strip()
+
+    unique_done_ids = {
+        commit_identity(row, index)
+        for index, row in enumerate(ok_dones)
+    }
+    completed = len(unique_done_ids)
     failed = len(fail_dones)
     commit_success_rate = native_durability.get("commit_success_rate")
     if commit_success_rate is None:
@@ -1248,10 +1334,16 @@ def _derive_case_summary(run_dir: Path, identity_independent: bool) -> dict[str,
     )
 
     completed_by_tenant: dict[str, int] = {}
-    for row in ok_dones:
+    completed_seen_by_tenant: defaultdict[str, set[str]] = defaultdict(set)
+    for index, row in enumerate(ok_dones):
         tenant_idx = str(row.get("tenant_idx") or "")
         if tenant_idx:
-            completed_by_tenant[tenant_idx] = completed_by_tenant.get(tenant_idx, 0) + 1
+            identity = commit_identity(row, index)
+            if identity not in completed_seen_by_tenant[tenant_idx]:
+                completed_seen_by_tenant[tenant_idx].add(identity)
+                completed_by_tenant[tenant_idx] = (
+                    completed_by_tenant.get(tenant_idx, 0) + 1
+                )
 
     per_tenant: dict[str, dict[str, Any]] = {}
     for tenant_idx in sorted({str(row.get("tenant_idx") or "") for row in rows}):
@@ -1282,11 +1374,11 @@ def _derive_case_summary(run_dir: Path, identity_independent: bool) -> dict[str,
         commit_entry: dict[str, Any] = {}
         if tenant_ok_commits:
             commit_entry["submitted"] = len(tenant_ok_commits)
-            commit_entry["completed"] = sum(
-                1
-                for row in ok_dones
-                if str(row.get("tenant_idx") or "") == tenant_idx
-            )
+            commit_entry["accepted_unique"] = len({
+                commit_identity(row, index)
+                for index, row in enumerate(tenant_ok_commits)
+            })
+            commit_entry["completed"] = completed_by_tenant.get(tenant_idx, 0)
         if tenant_done_stages:
             commit_entry["completion"] = {
                 "p50_s": round(percentile(tenant_done_stages, 50), 3)
@@ -2317,7 +2409,7 @@ def main() -> int:
         help=(
             "Scenario profile; report6 is the PR397/report(6) matrix, pr421 "
             "is the PR421 acceptance suite, 4u8g is the compatibility bounded "
-            "single-instance run, 4u8g-full runs all 12 PR397 and 27 PR421 "
+            "single-instance run, 4u8g-full runs all 12 PR397 and 29 PR421 "
             "cases, and complete runs both catalogs."
         ),
     )
@@ -2419,6 +2511,14 @@ def main() -> int:
         "--search-queries",
         default=os.getenv("ECHOMEM_SEARCH_QUERIES", ""),
         help="skip-seed 时使用已有记忆的真实查询词，逗号分隔；未提供则记录 fallback",
+    )
+    parser.add_argument(
+        "--search-recall-query-map",
+        default=os.getenv("ECHOMEM_SEARCH_RECALL_QUERY_MAP", ""),
+        help=(
+            "按租户隔离的 recall 查询映射 JSON；共享 seed 复用时由 warm-up "
+            "生成，避免所有租户使用同一组记忆问题"
+        ),
     )
     parser.add_argument(
         "--inter-case-recovery-timeout-s",
@@ -2914,7 +3014,21 @@ def main() -> int:
             }
             if seed_ready:
                 args.reuse_existing_data = True
-                args.search_queries = _seed_anchor_queries(seed_tenant_count)
+                query_map = _seed_recall_query_map(
+                    seed_tenant_count,
+                    sessions_per_tenant=1,
+                    messages_per_session=3,
+                )
+                query_map_path = warmup_output / "seed-recall-query-map.json"
+                query_map_path.write_text(
+                    json.dumps(query_map, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                args.search_queries = ""
+                args.search_recall_query_map = str(query_map_path.resolve())
+                manifest["seed_warmup"]["query_map_path"] = str(
+                    query_map_path.resolve()
+                )
             else:
                 manifest["seed_warmup"]["failure_reason"] = (
                     "共享真实模型 seed warmup 未完成；相关场景继续执行但只能将记忆质量/"
@@ -2958,6 +3072,15 @@ def main() -> int:
                         "repetition": repetition,
                         "policy": policy,
                         "status": "blocked",
+                        "scenario_config": {
+                            "tenant_count": int(case.get("tenants") or 1),
+                            "capacity_active_users": case.get("capacity_active_users"),
+                            "active_sessions_per_tenant": int(
+                                case.get("active_sessions_per_tenant")
+                                or case.get("sessions_per_tenant")
+                                or 1
+                            ),
+                        },
                         "blocked_reason": reason,
                         "required_tenants": case["tenants"],
                         "usable_tenants": len(all_tenants),
@@ -3000,16 +3123,26 @@ def main() -> int:
                 case_reuses_seed = seed_ready
                 previous_reuse = bool(args.reuse_existing_data)
                 previous_queries = str(args.search_queries)
+                previous_query_map = str(
+                    getattr(args, "search_recall_query_map", "") or ""
+                )
                 previous_skip_seed = bool(args.skip_seed)
                 if case_reuses_seed:
                     args.reuse_existing_data = True
-                    args.search_queries = _seed_anchor_queries(seed_tenant_count)
+                    args.search_queries = ""
+                    args.search_recall_query_map = str(
+                        (
+                            manifest.get("seed_warmup") or {}
+                        ).get("query_map_path") or ""
+                    )
                     args.skip_seed = False
                 elif seed_warmup_failed:
                     args.reuse_existing_data = False
+                    args.search_recall_query_map = ""
                     args.skip_seed = True
                 elif args.skip_seed:
                     args.reuse_existing_data = False
+                    args.search_recall_query_map = ""
                     args.skip_seed = True
                 elif not requires_seed:
                     # Capacity, scheduling and metrics cases do not need
@@ -3017,6 +3150,7 @@ def main() -> int:
                     # per-case seed work so a black-box case cannot spend
                     # its timeout on an irrelevant Commit warm-up.
                     args.reuse_existing_data = False
+                    args.search_recall_query_map = ""
                     args.skip_seed = True
                 completed_runs = len(manifest["runs"])
                 total_runs = len(scenario_names) * args.repeats * len(POLICIES)
@@ -3115,6 +3249,27 @@ def main() -> int:
                 run["scenario_key"] = scenario
                 run["source_scenario"] = case.get("_source_scenario", scenario)
                 run["plan_source"] = case.get("_plan_source", "")
+                # Persist the effective workload shape so the acceptance layer
+                # can reconstruct the intended tenant denominator and capacity
+                # target even when one tenant produced zero rows.
+                run["scenario_config"] = {
+                    "tenant_count": int(case.get("tenants") or 1),
+                    "capacity_active_users": case.get("capacity_active_users"),
+                    "active_sessions_per_tenant": int(
+                        case.get("active_sessions_per_tenant")
+                        or case.get("sessions_per_tenant")
+                        or 1
+                    ),
+                    "search_query_profile": str(
+                        case.get("search_query_profile") or ""
+                    ),
+                    "search_rps": case.get("search_rps"),
+                    "search_rps_per_tenant": case.get("search_rps_per_tenant"),
+                    "commit_rpm": case.get("commit_rpm"),
+                    "commit_rpm_per_tenant": case.get("commit_rpm_per_tenant"),
+                    "commit_barrier": bool(case.get("commit_barrier")),
+                    "commit_barrier_count": case.get("commit_barrier_count"),
+                }
                 # Acceptance gates consume the canonical scenario name while
                 # ``scenario_key`` keeps duplicate PR397/PR421 artifacts
                 # separately addressable on disk.
@@ -3155,6 +3310,7 @@ def main() -> int:
                 )
                 args.reuse_existing_data = previous_reuse
                 args.search_queries = previous_queries
+                args.search_recall_query_map = previous_query_map
                 args.skip_seed = previous_skip_seed
                 checkpoint()
             if budget_exhausted:

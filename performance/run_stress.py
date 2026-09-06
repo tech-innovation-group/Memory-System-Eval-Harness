@@ -203,6 +203,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     g.add_argument(
+        "--search-recall-query-map",
+        default=os.getenv("ECHOMEM_SEARCH_RECALL_QUERY_MAP", ""),
+        help=(
+            "按租户隔离的 recall 查询映射 JSON；键可为租户下标或 tenant_id，"
+            "值为 {queries, expected_terms}。用于复用共享 seed 时避免跨租户查询。"
+        ),
+    )
+    g.add_argument(
         "--search-no-recall-queries",
         default=os.getenv("ECHOMEM_SEARCH_NO_RECALL_QUERIES", ""),
         help=(
@@ -553,6 +561,9 @@ def _resolve_args(args: argparse.Namespace) -> dict[str, Any]:
             for item in str(getattr(args, "search_recall_queries", "") or "").split(",")
             if item.strip()
         ],
+        "search_recall_query_map": str(
+            getattr(args, "search_recall_query_map", "") or ""
+        ).strip(),
         "search_no_recall_queries": [
             item.strip()
             for item in str(getattr(args, "search_no_recall_queries", "") or "").split(",")
@@ -561,6 +572,48 @@ def _resolve_args(args: argparse.Namespace) -> dict[str, Any]:
         "search_query_profile": search_query_profile,
         "search_recall_ratio": search_recall_ratio,
     }
+
+
+def _load_recall_query_map(path: str) -> dict[str, dict[str, Any]]:
+    """Load tenant-scoped recall queries without accepting malformed data."""
+    if not str(path or "").strip():
+        return {}
+    try:
+        payload = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("无法读取租户 recall query map，热记忆证据将保持不确定: %s", exc)
+        return {}
+    entries = payload.get("tenants") if isinstance(payload, dict) else None
+    if not isinstance(entries, dict):
+        logger.warning("recall query map 缺少 tenants 对象: %s", path)
+        return {}
+    result: dict[str, dict[str, Any]] = {}
+    for key, raw in entries.items():
+        if isinstance(raw, list):
+            result[str(key)] = {"queries": [str(item) for item in raw]}
+            continue
+        if not isinstance(raw, dict):
+            continue
+        queries = [
+            str(item).strip()
+            for item in raw.get("queries") or []
+            if str(item).strip()
+        ]
+        expected_terms = raw.get("expected_terms")
+        expected_terms = expected_terms if isinstance(expected_terms, dict) else {}
+        result[str(key)] = {
+            "queries": queries,
+            "expected_terms": {
+                str(query): [
+                    str(term).strip()
+                    for term in terms
+                    if str(term).strip()
+                ]
+                for query, terms in expected_terms.items()
+                if isinstance(terms, list)
+            },
+        }
+    return result
 
 
 def _probe_metrics(monitor: MetricsMonitor) -> dict[str, Any]:
@@ -1165,6 +1218,9 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     resolved = _resolve_args(args)
+    recall_query_map = _load_recall_query_map(
+        resolved.get("search_recall_query_map", "")
+    )
 
     out_root = Path(args.out_dir)
     if not out_root.is_absolute():
@@ -1239,8 +1295,25 @@ def main() -> None:
             configured_no_recall = list(resolved.get("search_no_recall_queries") or [])
             fallback_queries = legacy_queries or ["hello"]
             for tenant in tenants:
+                mapped = (
+                    recall_query_map.get(str(tenant.idx))
+                    or recall_query_map.get(str(tenant.tenant_id))
+                    or {}
+                )
+                mapped_recall = (
+                    list(mapped.get("queries") or [])
+                    if isinstance(mapped, dict)
+                    else []
+                )
+                mapped_expected_terms = (
+                    mapped.get("expected_terms")
+                    if isinstance(mapped, dict)
+                    and isinstance(mapped.get("expected_terms"), dict)
+                    else {}
+                )
                 recall_candidates = list(
                     configured_recall
+                    or mapped_recall
                     or tenant.recall_queries
                     or tenant.queries
                     or legacy_queries
@@ -1255,15 +1328,20 @@ def main() -> None:
                         recall_candidates = list(fallback_queries)
                     if not no_recall_queries:
                         no_recall_queries = list(fallback_queries)
+                expected_terms_by_query = {
+                    **tenant.recall_expected_terms,
+                    **mapped_expected_terms,
+                }
                 recall_queries, recall_probe = verify_recall_query_pool(
                     tenant.client,
                     recall_candidates,
                     top_k=args.top_k,
                     timeout_s=args.timeout_s,
                     limit=args.seed_recall_probe_limit,
-                    expected_terms_by_query=tenant.recall_expected_terms,
+                    expected_terms_by_query=expected_terms_by_query,
                 )
                 tenant.recall_probe = recall_probe
+                tenant.recall_expected_terms = expected_terms_by_query
                 requires_recall = args.search_query_profile == "recall-only" or (
                     args.search_query_profile == "mixed"
                     and args.search_recall_ratio > 0
@@ -1470,10 +1548,17 @@ def main() -> None:
                         "seeded"
                         if not (args.skip_seed or getattr(args, "reuse_existing_data", False))
                         else (
-                            "configured_fallback"
+                            "tenant_scoped_seed_map"
+                            if recall_query_map
+                            else "configured_fallback"
                             if resolved.get("search_queries")
                             else "default_fallback"
                         )
+                    ),
+                    "search_recall_query_map": (
+                        str(resolved.get("search_recall_query_map") or "")
+                        if recall_query_map
+                        else ""
                     ),
                     "query_profile": args.search_query_profile,
                     "search_recall_ratio": args.search_recall_ratio,

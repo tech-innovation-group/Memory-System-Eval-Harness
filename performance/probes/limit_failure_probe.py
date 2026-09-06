@@ -591,6 +591,61 @@ def write_report(
     groups: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         groups.setdefault(row["kind"], []).append(row)
+    level_results: list[dict[str, Any]] = []
+    for kind, group in groups.items():
+        # The sweep encodes the offered concurrency in the kind name, for
+        # example ``search-workers-64``. Persist a machine-readable per-level
+        # result so the six-metric evaluator can identify the first real
+        # failure boundary instead of only showing aggregate HTTP counts.
+        parts = str(kind).rsplit("-workers-", 1)
+        level = None
+        if len(parts) == 2:
+            try:
+                level = int(parts[1])
+            except (TypeError, ValueError):
+                level = None
+        if level is None:
+            continue
+        elapsed = [
+            float(row.get("elapsed_s") or 0.0)
+            for row in group
+            if row.get("elapsed_s") not in (None, "")
+        ]
+        successful = [
+            row for row in group
+            if isinstance(row.get("status_code"), int)
+            and 200 <= row["status_code"] < 300
+        ]
+        rejected = [
+            row for row in group
+            if str(row.get("error_class") or "") == "admission_rejected"
+        ]
+        transport = [row for row in group if not row.get("status_code")]
+        level_results.append(
+            {
+                "kind": parts[0],
+                "level": level,
+                "submitted": len(group),
+                "succeeded": len(successful),
+                "error_count": len(group) - len(successful),
+                "admission_rejected": len(rejected),
+                "transport_error": len(transport),
+                "success_rate": (
+                    len(successful) / len(group) if group else None
+                ),
+                "p95_s": quantile(elapsed, 0.95),
+                "max_s": max(elapsed, default=None),
+                "boundary_evidence": bool(
+                    group
+                    and (
+                        len(successful) < len(group)
+                        or rejected
+                        or transport
+                    )
+                ),
+            }
+        )
+    level_results.sort(key=lambda item: (str(item["kind"]), int(item["level"])))
     cards = []
     charts = []
     sections = []
@@ -638,6 +693,7 @@ def write_report(
         )
         for kind, group in groups.items()
     }
+    manifest["level_results"] = level_results
     (out_dir / "summary.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
     )

@@ -4,7 +4,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from performance.scheduler_acceptance import INCONCLUSIVE, PASS, _load, evaluate
+from performance.scheduler_acceptance import (
+    INCONCLUSIVE,
+    PASS,
+    _load,
+    evaluate,
+)
+from performance.probes.commit_recovery_probe import aggregate_iterations
 
 
 class SchedulerAcceptanceTests(unittest.TestCase):
@@ -524,6 +530,51 @@ class SchedulerAcceptanceTests(unittest.TestCase):
             check["reason"],
         )
 
+    def test_admission_sweep_failure_is_not_a_dau_boundary(self) -> None:
+        result = evaluate(
+            {
+                "instance_profile": "4U8G",
+                "runs": [{
+                    "scenario": "capacity-16",
+                    "status": "completed",
+                    "summary": {
+                        "metrics": {
+                            "search": {"submitted": 16, "success_rate": 1.0},
+                        },
+                        "details": {
+                            "user_activity": {
+                                "active_user_count": 16,
+                                "hot_user_proxy": {"request_count": 4},
+                            }
+                        },
+                    },
+                }],
+                "limit_failure_sweep": {
+                    "level_results": [
+                        {
+                            "kind": "search",
+                            "level": 256,
+                            "submitted": 256,
+                            "succeeded": 0,
+                            "error_count": 256,
+                            "success_rate": 0.0,
+                            "boundary_evidence": True,
+                        }
+                    ]
+                },
+            }
+        )
+        check = next(
+            item for item in result["checks"]
+            if item["name"] == "DAU / 最大热用户容量"
+        )
+        self.assertEqual(INCONCLUSIVE, check["status"])
+        self.assertEqual([], check["observed"]["capacity_boundary_levels"])
+        self.assertEqual(
+            [256],
+            check["observed"]["admission_sweep_boundary_levels"],
+        )
+
     def test_capacity_passes_only_with_higher_failed_boundary(self) -> None:
         result = evaluate(
             {
@@ -800,6 +851,85 @@ class SchedulerAcceptanceTests(unittest.TestCase):
         )
         check = next(item for item in result["checks"] if item["name"] == "Commit/Search 公平性 Jain")
         self.assertEqual(INCONCLUSIVE, check["status"])
+
+    def test_fairness_maps_numeric_runner_tenants_to_auth_preflight_ids(self) -> None:
+        per_tenant = {
+            str(index): {
+                "commit": {"submitted": 10, "completed": 10},
+                "search": {"submitted": 10, "latency": {"p95_s": 1.0}},
+            }
+            for index in range(4)
+        }
+        result = evaluate(
+            {
+                "auth_preflight": {
+                    "usable_tenant_ids": [
+                        "current-a",
+                        "current-b",
+                        "current-c",
+                        "current-d",
+                    ]
+                },
+                "fairness_expectations": {
+                    "tenant_ids": ["stale-a", "stale-b", "stale-c", "stale-d"]
+                },
+                "runs": [{
+                    "scenario": "fairness-steady",
+                    "status": "completed",
+                    "duration_s": 30,
+                    "scenario_config": {"tenant_count": 4},
+                    "summary": {
+                        "metrics": {
+                            "per_tenant": per_tenant,
+                            "fairness": {
+                                "commit_completed_per_tenant": {
+                                    key: value["commit"]["completed"]
+                                    for key, value in per_tenant.items()
+                                }
+                            },
+                        }
+                    },
+                }],
+            }
+        )
+        check = next(
+            item for item in result["checks"]
+            if item["name"] == "Commit/Search 公平性 Jain"
+        )
+        self.assertEqual(PASS, check["status"])
+        self.assertEqual(
+            ["current-a", "current-b", "current-c", "current-d"],
+            check["observed"]["expected_tenants"],
+        )
+
+    def test_recovery_aggregate_requires_all_202_iterations(self) -> None:
+        results = [
+            {
+                "status": PASS,
+                "accepted_202": True,
+                "recovered": True,
+                "container_control_ok": True,
+                "commit_terminal": [{"state": "completed"}],
+                "idempotency_replay": {"same_archive": True},
+                "idempotency_reconciliation": {"status": PASS},
+                "order_reconciliation": {"status": PASS},
+            },
+            {
+                "status": INCONCLUSIVE,
+                "accepted_202": False,
+                "recovered": True,
+                "container_control_ok": True,
+                "commit_response_before_kill": {"status_code": 200},
+            },
+        ]
+        aggregate = aggregate_iterations(
+            results,
+            requested_iterations=2,
+            require_accepted_202=True,
+        )
+        self.assertEqual(INCONCLUSIVE, aggregate["status"])
+        self.assertEqual(1, aggregate["accepted_202_count"])
+        self.assertEqual(1, aggregate["replay_verified_count"])
 
     def test_recovery_requires_real_evidence(self) -> None:
         result = evaluate(

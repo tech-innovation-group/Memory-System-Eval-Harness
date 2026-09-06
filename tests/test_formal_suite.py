@@ -18,6 +18,7 @@ from performance.formal_suite import (
     _archive_case_attempt,
     _auth_mode_validation_error,
     _seed_anchor_queries,
+    _seed_recall_queries,
     _scenario_requires_seed,
     _seed_dependency,
     _scale_explicit_tenant_counts,
@@ -26,6 +27,7 @@ from performance.formal_suite import (
     complete_scenarios,
     FOUR_U8G_FULL_SCENARIOS,
     report6_scenarios,
+    _seed_recall_query_map,
 )
 from performance.probes.limit_failure_sweep import workers_for_level
 
@@ -110,6 +112,20 @@ class Report6ScenarioTests(unittest.TestCase):
             _seed_anchor_queries(3),
         )
 
+    def test_reused_seed_queries_are_semantic_not_markers(self) -> None:
+        queries = _seed_recall_queries(4).split(",")
+        self.assertEqual(5, len(queries))
+        self.assertEqual(
+            [
+                "林晓 在哪里负责什么项目？",
+                "周宁 在哪里负责什么项目？",
+                "陈默 在哪里负责什么项目？",
+                "叶青 在哪里负责什么项目？",
+                "许言 在哪里负责什么项目？",
+            ],
+            queries,
+        )
+
     def test_4u8g_profile_is_bounded_single_instance_catalog(self) -> None:
         self.assertTrue(set(report6_scenarios()) <= set(FOUR_U8G_SCENARIOS))
         self.assertTrue(
@@ -143,7 +159,7 @@ class Report6ScenarioTests(unittest.TestCase):
         scenarios = complete_scenarios()
 
         self.assertEqual(set(report6_scenarios()) | set(SCENARIOS), set(scenarios))
-        self.assertEqual(29, len(scenarios))
+        self.assertEqual(31, len(scenarios))
 
     def test_capacity_ladder_has_expected_points(self) -> None:
         scenarios = SCENARIOS
@@ -184,6 +200,36 @@ class Report6ScenarioTests(unittest.TestCase):
         self.assertEqual(128, case["commit_barrier_count"])
         self.assertGreater(case["search_rps"], 0)
         self.assertEqual(0.0, case["commit_rpm"])
+
+    def test_fairness_steady_uses_mixed_search_queries(self) -> None:
+        self.assertEqual("mixed", SCENARIOS["fairness-steady"]["search_query_profile"])
+
+    def test_full_barrier_command_keeps_original_count(self) -> None:
+        args = argparse.Namespace(
+            base_url="http://127.0.0.1:8010",
+            barrier_wave_size=32,
+            barrier_drain_timeout_s=600.0,
+            local_auth_mode=False,
+            reuse_existing_data=True,
+            preflight_config="",
+            no_server_metrics=False,
+            commit_timeout_s=600.0,
+            commit_max_attempts=3,
+            commit_retry_backoff_s=2.0,
+            quick_mode=False,
+        )
+        command = _build_case_command(
+            args,
+            SCENARIOS["search-priority-blackbox"],
+            Path("/tmp/tenants.json"),
+            Path("/tmp/out"),
+            60.0,
+            barrier_count_cap=0,
+        )
+        self.assertEqual(
+            "128",
+            command[command.index("--commit-barrier-count") + 1],
+        )
 
     def test_fault_isolation_command_can_receive_target_tenant(self) -> None:
         from performance.probes.fault_isolation_probe import control
@@ -425,9 +471,41 @@ class Report6ScenarioTests(unittest.TestCase):
             if name.startswith("pr421__")
         ]
         self.assertEqual(12, len(pr397))
-        self.assertEqual(27, len(pr421))
-        self.assertEqual(39, len(FOUR_U8G_FULL_SCENARIOS))
+        self.assertEqual(29, len(pr421))
+        self.assertEqual(41, len(FOUR_U8G_FULL_SCENARIOS))
         self.assertNotIn("pr421__soak", FOUR_U8G_FULL_SCENARIOS)
+
+    def test_4u8g_capacity_catalog_includes_high_boundary_points(self) -> None:
+        counts = (2, 4, 8, 16, 32, 64, 128, 256, 512)
+        self.assertEqual(
+            set(counts),
+            {
+                FOUR_U8G_SCENARIOS[f"capacity-{count}"]["capacity_active_users"]
+                for count in counts
+            },
+        )
+        self.assertTrue(
+            all(
+                FOUR_U8G_SCENARIOS[f"capacity-{count}"]["quick_commit_rpm"] == 0.0
+                for count in counts
+            )
+        )
+
+    def test_seed_recall_query_map_is_tenant_scoped_and_semantic(self) -> None:
+        query_map = _seed_recall_query_map(
+            2,
+            sessions_per_tenant=1,
+            messages_per_session=3,
+        )
+        self.assertEqual(2, query_map["tenant_count"])
+        self.assertEqual({"0", "1"}, set(query_map["tenants"]))
+        tenant_a = query_map["tenants"]["0"]
+        tenant_b = query_map["tenants"]["1"]
+        self.assertTrue(set(tenant_a["queries"]))
+        self.assertTrue(set(tenant_b["queries"]))
+        self.assertNotEqual(set(tenant_a["queries"]), set(tenant_b["queries"]))
+        self.assertTrue(all(tenant_a["expected_terms"].values()))
+        self.assertTrue(all(tenant_b["expected_terms"].values()))
 
     def test_report6_mixed_ratios_are_exact_over_one_minute(self) -> None:
         scenarios = report6_scenarios()
@@ -801,6 +879,7 @@ class FormalSuiteAdapterTests(unittest.TestCase):
                     "0": {
                         "commit": {
                             "submitted": 2,
+                            "accepted_unique": 2,
                             "completed": 2,
                             "completion": {"p50_s": 3.0},
                         },

@@ -13,6 +13,8 @@ set -euo pipefail
 #   STRESS_OUTPUT_DIR   default: results/performance/4u8g-six-metrics-<timestamp>
 #   STRESS_ENV_FILE     KEY=VALUE file for the real-model subprocesses
 #   STRESS_QUICK=1      bounded diagnostic run; not a full acceptance result
+#   STRESS_FULL=1       run the full PR397 + PR421 regression matrix instead
+#                       of the focused six-metric matrix
 #   STRESS_SKIP_PREPARE=1
 #                       skip host-only profile switching inside a runner container
 #   STRESS_MAX_WALL_CLOCK_S
@@ -104,6 +106,10 @@ if [ "${STRESS_QUICK:-0}" = "1" ]; then
     "${env_args[@]}"
   suite_rc=$?
 else
+  mode_args=(--six-metric)
+  if [ "${STRESS_FULL:-0}" = "1" ]; then
+    mode_args=(--full)
+  fi
   set +e
   "$python_bin" -m performance.objective_suite \
     --profiles "$profiles" \
@@ -111,7 +117,7 @@ else
     --base-url "$base_url" \
     --preflight-config "$config" \
     --out-dir "$out_dir" \
-    --full \
+    "${mode_args[@]}" \
     --timeout-s "$max_wall_clock" \
     --max-wall-clock-s "$max_wall_clock" \
     --probe-budget-s "$probe_budget" \

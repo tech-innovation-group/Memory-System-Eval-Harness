@@ -2,31 +2,39 @@
   "profiles": [
     {
       "name": "4U8G",
-      "base_url": "http://127.0.0.1:18187",
-      "tenant_config": "/config/tenants.json",
-      "preflight_config": "/config/config.json",
+      "base_url": "http://172.17.0.7:8010",
+      "tenant_config": "/app/stress/tenants-32.server.json",
+      "preflight_config": "/app/stress/server-config.json",
+      "auth_header": "X-Auth-Key",
       "allow_partial_tenants": true,
       "metrics_enabled": true,
+      "quick_include_seed": true,
       "capability_probe": {
         "health_path": "/health",
         "metrics_path": "/metrics",
-        "cursor_uri_template": "echo://sessions/{session}/current/commit_cursor.json"
+        "cursor_path": "",
+        "cursor_uri_template": "echo://sessions/{session}/current/commit_cursor.json",
+        "operation_path": "",
+        "conflict_path": "",
+        "ttl_path": "",
+        "engine_path": "",
+        "fault_path": ""
       },
       "missing_cases": {
         "enabled": true,
-        "max_tenants": 1,
-        "commit_timeout_s": 15,
-        "search_timeout_s": 10,
-        "visibility_timeout_s": 20
+        "max_tenants": 4,
+        "commit_timeout_s": 30,
+        "search_timeout_s": 20,
+        "visibility_timeout_s": 60
       },
       "concurrent_commit": {
         "enabled": true,
         "concurrency": 4,
-        "timeout_s": 120
+        "timeout_s": 180
       },
       "commit_recovery": {
-        "container": "echomem-pr449-fresh-4u8g",
-        "tenant": "tenant_deebbe563763",
+        "container": "echomem-real-4u8g-20260904",
+        "tenant": "stress-a",
         "require_accepted_202": true,
         "kill_delay_s": 0.5,
         "messages": 4,
@@ -35,11 +43,31 @@
         "recovery_timeout_s": 180,
         "poll_s": 2
       },
+      "fault_isolation": {
+        "enabled": true,
+        "target_tenant": "stress-a",
+        "bystander_tenants": "stress-b,stress-c,stress-d",
+        "endpoint": "${ECHOMEM_FAULT_CONTROL_URL:-}",
+        "command": "",
+        "token_env": "ECHOMEM_TEST_CONTROL_TOKEN",
+        "fault_type": "reject",
+        "duration_s": 60,
+        "delay_ms": 1000,
+        "samples": 12,
+        "workers": 8,
+        "timeout_s": 20,
+        "control_timeout_s": 30
+      },
       "tenant_observability": {
         "enabled": true,
         "endpoint": "${ECHOMEM_TENANT_OBSERVABILITY_URL:-}",
         "token_env": "ECHOMEM_TEST_CONTROL_TOKEN",
-        "expected_tenants_from_config": true,
+        "expected_tenants": [
+          "stress-a",
+          "stress-b",
+          "stress-c",
+          "stress-d"
+        ],
         "expected_lanes": [
           "recall_engine",
           "recall_intent_llm",
