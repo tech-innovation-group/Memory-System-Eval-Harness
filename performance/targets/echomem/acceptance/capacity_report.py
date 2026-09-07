@@ -79,6 +79,9 @@ def render(report: dict) -> str:
     # Only an explicit confirmed boundary permits a maximum/DAU claim.
     boundary = report.get("boundary") or {}
     confirmed = boundary.get("status") == "CONFIRMED" and bool(boundary.get("evidence"))
+    zero_error_confirmed = (boundary.get("status") == "ZERO_ERROR_CONFIRMED" and
+                            bool(boundary.get("evidence")))
+    zero_error_level = boundary.get("highest_zero_error") if zero_error_confirmed else None
     maximum = (boundary.get("max_hot_users") or report.get("max_hot_users")) if confirmed else None
     dau = report.get("dau") if confirmed else None
     actor_rows = []
@@ -193,10 +196,15 @@ def render(report: dict) -> str:
         return ''.join(f'<span title="{v:.2f}" style="height:{max(1, 100*v/ceiling):.2f}%"></span>' for v in values)
     title = "4U8G 单实例热用户容量与 DAU"
     conclusion = ("已确认容量边界；DAU 是锁定业务行为与峰均比后的条件估算。" if confirmed else
+        f"已确认三轮零错误档 H={zero_error_level}；它不是最大容量，硬边界仍需继续加压。" if zero_error_confirmed else
         "尚未测得最大热用户数和 DAU。以下是已完成的真实数据，不把预检或最高尝试档位当作容量上限。")
     if confirmed and maximum == 0:
         blocker = ("最低档 H=1 已在三组全新身份上违反锁定 SLO，因此按 fail-fast 规则跳过更高负载；"
                    "0 表示当前测试合同下没有正容量，不代表接口完全不可用。")
+    elif zero_error_confirmed:
+        blocker = (f"H={zero_error_level} 是连续三轮零 HTTP/传输错误且 Commit 全部完成的档位；"
+                   f"H={boundary.get('first_nonzero_error')} 是首个三轮复测出现非零错误的档位。"
+                   "两者都不是崩溃/OOM/不可恢复意义上的硬容量上限。")
     elif confirmed:
         blocker = "相邻通过/失败档已确认；DAU 仍是固定业务行为与峰均比下的条件估算。"
     elif report.get("status") == "BLOCKED":
@@ -222,6 +230,8 @@ def render(report: dict) -> str:
                  else "容量边界未确认，不生成 DAU。")
     capacity_conclusion = ("当前合同下 H=1 已失败，最大热用户数为 0；修复低负载误召回或端到端延迟后必须重新运行，不能沿用本轮边界。"
                            if confirmed and maximum == 0 else
+                           "零错误完成档不是最大容量；继续升档并分别报告错误率、有效吞吐和硬失败证据。"
+                           if zero_error_confirmed else
                            "先修复或解释健康低负载召回问题，再测最大热用户边界；不降低质量门槛换取容量数字。")
     download_links = '<a href="report.json">下载脱敏结构化证据</a>'
     if not report.get("publication", {}).get("redacted"):
@@ -240,6 +250,7 @@ header{{border-bottom:2px solid #1b7869;padding-bottom:20px}}section{{padding:12
 </style><main><header><p class="note">M1 · 真实模型 · 黑盒 HTTP · 独立压测端</p><h1>{title}</h1>
 <p class="warn">{conclusion}</p><p>{blocker}</p></header>
 <div class="grid"><div class="metric">最大热用户数<strong>{fmt(maximum)}</strong></div>
+<div class="metric">三轮零错误档<strong>{fmt(zero_error_level)}</strong></div>
 <div class="metric">DAU<strong>{_dau_label(dau)}</strong></div>
 <div class="metric">语义事实有效召回<strong>{correct} / {query_count}</strong></div>
 <div class="metric">有效容量窗口<strong>{sum(not l.get('diagnostic_only', False) for l in snapshots)}</strong></div></div>
@@ -315,7 +326,7 @@ def main():
     parser.add_argument("--exploration", type=Path)
     parser.add_argument("--seed-evidence", type=Path, action="append", default=[])
     parser.add_argument("--resources", type=Path, action="append", default=[])
-    parser.add_argument("--assessment-mode", choices=("observe", "slo"), default="observe")
+    parser.add_argument("--assessment-mode", choices=("observe", "completion", "slo"), default="observe")
     args = parser.parse_args()
     report = json.loads(args.input.read_text())
     if args.assessment_mode == "observe":

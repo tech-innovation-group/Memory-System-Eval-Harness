@@ -108,6 +108,14 @@ python -m performance.targets.echomem.acceptance.capacity_experiment \
 python -m performance.targets.echomem.acceptance.capacity_publish \
   --observation .local-stress/capacity-001 --observation .local-stress/capacity-002 \
   --output .local-stress/capacity-report
+
+# 找到首个请求无法全部完成的档位后，用相邻通过/失败档各做三次新身份确认。
+# completion 不应用延迟或质量门槛，但 Search HTTP/传输失败、Commit 未受理或未完成均判失败。
+python -m performance.targets.echomem.acceptance.capacity_confirmation \
+  --base-url http://127.0.0.1:8010 --target-container echomem-test-4u8g \
+  --output .local-stress/capacity-confirm-001 --topology cross-tenant \
+  --levels 2,4 --repeats 3 --pure-duration-s 60 --mixed-duration-s 60 \
+  --warmup-s 10 --assessment-mode completion
 ```
 
 独立身份由测试环境公开注册接口创建，真实短文经 Commit 生成记忆后进行自然语言事实检索。
@@ -124,11 +132,27 @@ python -m performance.targets.echomem.acceptance.main_metric_samples \
   --seed-directory .local-stress/capacity-002 --output .local-stress/main-samples \
   --expected-lanes recall_engine,recall_intent_llm,recall_query_embedding,commit \
   --duration-s 60 --allow-container-restart
+
+# M2 正式矩阵：T1-T4 × reject/delay × 3轮，真实HTTP故障与恢复后对照。
+python -m performance.targets.echomem.acceptance.fault_matrix \
+  --base-url http://127.0.0.1:8010 --container echomem-test-4u8g \
+  --seed-directory .local-stress/capacity-002 --output .local-stress/fault-matrix \
+  --repeats 3 --phase-duration-s 60 --recovery-duration-s 30 --delay-ms 1000
+
+# M5 恢复矩阵：三个真实 kill-9 时机和不同消息量。
+python -m performance.targets.echomem.acceptance.recovery_matrix \
+  --base-url http://127.0.0.1:8010 --container echomem-test-4u8g \
+  --seed-directory .local-stress/capacity-002 --output .local-stress/recovery-matrix \
+  --kill-delays-s 0.0,0.2,1.0 --message-counts 8,12,20
 ```
 
 只可对专用容器传 `--allow-container-restart`。控制 Token 由环境提供；expected-lanes
 必须按实际启用模块核对，不能删掉缺少数据的启用层以伪造完整率。
-短测覆盖一个故障租户、三名旁观者、四租户各 8 次 Commit 洪泛、一次 202 崩溃恢复及四元组快照。
+短测覆盖一个可指定的故障租户、三名旁观者、四租户各 8 次 Commit 洪泛、一次 202 崩溃恢复及四元组快照。
+`--fault-target-index 0..3`、`--fault-type reject|delay`、`--fault-delay-ms` 可形成全租户故障矩阵；
+`--commits-per-tenant`、`--commit-timeout-s`、`--recovery-kill-delay-s` 和
+`--recovery-messages` 用于扩大 M3-M5 样本。完整结论至少轮换四租户、两类故障并重复，
+不能只发布默认 T1/reject 的结果。
 Commit Jain 仅用相同 Search 观测窗口内完成吞吐，窗口后排空单列；零完成租户不删除。
 原始探针产物仅保留执行机，包含会话与身份标识，不能直接发布。
 这不是完整故障矩阵或全天 DAU 验证，也不能仅凭 Search 延迟证明内部严格优先调度。
@@ -181,7 +205,7 @@ python -m performance --target echomem \
 | 指标/用例 | 负载与步骤 | 必须生成的数据 |
 |---|---|---|
 | 数据准备 | 每租户短事实 → open → add → Commit → completed → Search 标记命中 | 每租户 marker、可见性、降级原因；不使用 LoCoMo 长对话 |
-| M1 capacity-2/4/8/16/32 | 每档 60s，N 个活跃身份、N RPS，仅 Search 已注入记忆 | 档位、实际身份数、全部请求数、质量率、平均/P50/P95/P99、成功下界/失败边界、DAU 假设与估算 |
+| M1 capacity-2/4/8/16/32/64 | 每档纯召回+混合各60s，N个活跃身份、N RPS；相邻完成/失败档各三次确认 | 档位、实际身份数、全部请求数、质量率、平均/P50/P95/P99、错误、CPU/RSS、完成边界、DAU假设与保守估算 |
 | M2 fault matrix | 前四租户各做 reject/delay，三轮；每轮 before/during/after | 24 例、目标故障生效证据、每个旁观租户三阶段延迟与错误、最差 p95 劣化、故障撤销证据 |
 | M3 fairness-bounded | 四个同档位租户；120s 同一窗口；每租户 8 个 Commit；Search 并行持续发出 | 每租户 Commit 完成/秒、Search p95、两个 Jain、零完成和错误分母 |
 | M4 recall-baseline + search-priority-blackbox | 两阶段同一份记忆、16 RPS、32 Search workers；洪泛阶段第15秒提交32个 Commit | 唯一202受理数、开始/完成时间、积压重叠 Search 分母、逐租户基线与洪泛p95及劣化比 |

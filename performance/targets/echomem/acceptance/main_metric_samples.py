@@ -94,7 +94,9 @@ def summarize_flood(baseline: dict, loaded: dict, commits: list[dict], identitie
     return {"status": "MEASURED", "performance_requirements_applied": False,
             "commit_planned": len(commits), "accepted_202": len(accepted),
             "completed_including_drain": sum(bool(c.get("completed")) for c in commits),
-            "pending_after_drain": sum(c.get("accepted_202", False) and not c.get("terminal_at") for c in commits),
+            "unresolved_after_observation": sum(
+                c.get("accepted_202", False) and not c.get("terminal_at") for c in commits
+            ),
             "search_window_s": loaded["duration_s"], "tenants": tenants,
             "commit_jain": jain(commit_rates),
             "search_inverse_p95_jain": jain([1 / p for p in latencies]) if all(latencies) else None,
@@ -105,11 +107,20 @@ def summarize_flood(baseline: dict, loaded: dict, commits: list[dict], identitie
 
 def run(*, base_url: str, seed_directory: Path, output: Path, container: str,
         expected_lanes: list[str], token_env: str = "ECHOMEM_TEST_CONTROL_TOKEN",
-        duration_s: float = 60, q: float = 1, allow_container_restart: bool = False) -> dict:
+        duration_s: float = 60, q: float = 1, allow_container_restart: bool = False,
+        fault_target_index: int = 0, fault_type: str = "reject", fault_delay_ms: int = 1000,
+        commits_per_tenant: int = 8, commit_timeout_s: float = 180,
+        recovery_kill_delay_s: float = .2, recovery_messages: int = 8) -> dict:
     if output.exists():
         raise FileExistsError("Refuse to overwrite main-metric evidence")
     if duration_s < 15 or duration_s > 120 or q <= 0:
         raise ValueError("Short sample duration must be 15..120 seconds and q must be positive")
+    if fault_target_index not in range(4) or fault_type not in {"reject", "delay"}:
+        raise ValueError("fault target must be T1..T4 and type must be reject or delay")
+    if not 1 <= commits_per_tenant <= 64 or not 10 <= commit_timeout_s <= 600:
+        raise ValueError("commits_per_tenant must be 1..64 and commit_timeout_s 10..600")
+    if not 1 <= recovery_messages <= 100 or recovery_kill_delay_s < 0:
+        raise ValueError("invalid recovery sample settings")
     state = inspect_container(container)
     if not state.get("State", {}).get("Running") or state["HostConfig"].get("NanoCpus") != 4_000_000_000 or state["HostConfig"].get("Memory") != 8_589_934_592:
         raise ValueError("A running, dedicated 4CPU/8GiB target is required")
@@ -147,20 +158,26 @@ def run(*, base_url: str, seed_directory: Path, output: Path, container: str,
     baseline = measure(actors, duration_s=duration_s, q=q, seed=31001)
     save("fault-baseline", baseline)
     endpoint = base_url.rstrip("/") + "/api/inspect/test-control/fault"
+    target = actors[fault_target_index]
     if token:
         phase("fault-during")
         fault_started = time.monotonic()
-        enabled = control({"endpoint": endpoint}, action="enable", target_tenant=actors[0].client.tenant_id,
-                          timeout_s=10, token=token, fault_type="reject", duration_s=duration_s + 30)
+        cleanup_failed = False
+        enabled = control({"endpoint": endpoint}, action="enable", target_tenant=target.client.tenant_id,
+                          timeout_s=10, token=token, fault_type=fault_type,
+                          delay_ms=fault_delay_ms, duration_s=duration_s + 30)
         save("fault-enabled", enabled)
         try:
             if enabled.get("status") == "PASS":
                 during = measure(actors, duration_s=duration_s, q=q, seed=31001)
                 save("fault-during", during)
                 pairs = comparison(baseline, during, 4)
-                target_errors = pairs[0]["during"]["transport_or_http_errors"]
-                report["metrics"]["M2"] = {"status": "MEASURED" if target_errors else "INCONCLUSIVE",
-                    "target_index": 0, "pairs": pairs, "scope": "one target, one reject fault, three bystanders",
+                target_errors = pairs[fault_target_index]["during"]["transport_or_http_errors"]
+                fault_effect = target_errors if fault_type == "reject" else pairs[fault_target_index].get("p95_degradation_percent")
+                report["metrics"]["M2"] = {"status": "MEASURED" if fault_effect else "INCONCLUSIVE",
+                    "target_index": fault_target_index, "fault_type": fault_type,
+                    "fault_delay_ms": fault_delay_ms if fault_type == "delay" else None,
+                    "pairs": pairs, "scope": "one target and one fault type; three bystanders",
                     "target_http_errors": target_errors,
                     "fault_window_covered": time.monotonic() - fault_started < duration_s + 30,
                     "baseline_strict_valid": baseline.get("rows") is not None and
@@ -168,19 +185,21 @@ def run(*, base_url: str, seed_directory: Path, output: Path, container: str,
             else:
                 report["metrics"]["M2"] = {"status": "INCONCLUSIVE", "reason": "fault-control-not-connected"}
         finally:
-            disabled = control({"endpoint": endpoint}, action="disable", target_tenant=actors[0].client.tenant_id,
+            disabled = control({"endpoint": endpoint}, action="disable", target_tenant=target.client.tenant_id,
                                timeout_s=10, token=token)
             save("fault-disabled", disabled)
             if disabled.get("status") != "PASS":
                 report.update(status="INCONCLUSIVE", current="fault-cleanup-failed")
                 save("report", report)
-                return report
+                cleanup_failed = True
+        if cleanup_failed:
+            return report
     else:
         report["metrics"]["M2"] = {"status": "INCONCLUSIVE", "reason": "test-control-token-unavailable"}
 
     phase("prepare-equal-commits")
     sessions = []
-    for turn in range(8):
+    for turn in range(commits_per_tenant):
         for index, actor in enumerate(actors):
             sid, _ = actor.client.open_session(actor.client.tenant_id, "equal-commit-sample")
             result = actor.client.add_message(sid, uuid.uuid4().hex, actor.corpus["documents"][turn % 5], retry_rate_limit=True)
@@ -204,7 +223,7 @@ def run(*, base_url: str, seed_directory: Path, output: Path, container: str,
     monitoring.start()
     try:
         with ThreadPoolExecutor(max_workers=1) as pool:
-            committing = pool.submit(flood, actors, sessions)
+            committing = pool.submit(flood, actors, sessions, commit_timeout_s=commit_timeout_s)
             loaded = measure(actors, duration_s=duration_s, q=q, seed=31002)
             save("priority-loaded", loaded)
             commits = committing.result()
@@ -230,22 +249,25 @@ def run(*, base_url: str, seed_directory: Path, output: Path, container: str,
             if isinstance(row.get("accepted_total"), (int, float)) and
                isinstance(previous.get("accepted_total"), (int, float)) else None)
 
-    if allow_container_restart and not summary["pending_after_drain"]:
+    if allow_container_restart and not summary["unresolved_after_observation"]:
         phase("real-202-crash-recovery")
         config = output / "tenants.private.json"
         _write(config, {"tenants": [{key: getattr(a.client, key) for key in
                ("tenant_id", "user_id", "auth_key", "account_id", "agent_id")} for a in actors]}, private=True)
         profile = SimpleNamespace(target=SimpleNamespace(base_url=base_url, headers={}, read_timeout_s=10),
             tenants=actors, params={"container": container, "tenant_config": str(config),
-            "tenant": actors[0].client.tenant_id, "messages": 8, "content_chars": 1000,
-            "require_accepted_202": True, "kill_delay_s": .2, "recovery_timeout_s": 180})
+            "tenant": actors[0].client.tenant_id, "messages": recovery_messages, "content_chars": 1000,
+            "require_accepted_202": True, "kill_delay_s": recovery_kill_delay_s,
+            "recovery_timeout_s": max(180, commit_timeout_s)})
         result = ProbeRunner(profile, ProbeModule("commit-recovery", "", commit_recovery.run, ())).run()
         recovery = {"checks": [asdict(c) for c in result.checks], "elapsed_s": result.elapsed_s}
         save("commit-recovery", recovery)
         report["metrics"]["M5"] = recovery
     else:
         report["metrics"]["M5"] = {"status": "INCONCLUSIVE", "reason":
-            "flood-commits-still-pending" if summary["pending_after_drain"] else "container-restart-not-authorized"}
+            "flood-commits-unresolved-after-observation"
+            if summary["unresolved_after_observation"]
+            else "container-restart-not-authorized"}
     report.update(status="MEASURED", current=None)
     save("report", report)
     return report
@@ -260,10 +282,22 @@ def main():
     parser.add_argument("--expected-lanes", required=True)
     parser.add_argument("--allow-container-restart", action="store_true")
     parser.add_argument("--duration-s", type=float, default=60)
+    parser.add_argument("--fault-target-index", type=int, default=0)
+    parser.add_argument("--fault-type", choices=("reject", "delay"), default="reject")
+    parser.add_argument("--fault-delay-ms", type=int, default=1000)
+    parser.add_argument("--commits-per-tenant", type=int, default=8)
+    parser.add_argument("--commit-timeout-s", type=float, default=180)
+    parser.add_argument("--recovery-kill-delay-s", type=float, default=.2)
+    parser.add_argument("--recovery-messages", type=int, default=8)
     args = parser.parse_args()
     result = run(base_url=args.base_url, seed_directory=args.seed_directory, output=args.output,
                  container=args.container, expected_lanes=args.expected_lanes.split(","),
-                 allow_container_restart=args.allow_container_restart, duration_s=args.duration_s)
+                 allow_container_restart=args.allow_container_restart, duration_s=args.duration_s,
+                 fault_target_index=args.fault_target_index, fault_type=args.fault_type,
+                 fault_delay_ms=args.fault_delay_ms, commits_per_tenant=args.commits_per_tenant,
+                 commit_timeout_s=args.commit_timeout_s,
+                 recovery_kill_delay_s=args.recovery_kill_delay_s,
+                 recovery_messages=args.recovery_messages)
     print(json.dumps({"status": result["status"], "metrics": list(result["metrics"])}))
 
 

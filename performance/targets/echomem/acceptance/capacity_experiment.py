@@ -64,7 +64,7 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
     aliases = {"pure": "search", "both": "search,mixed"}
     load_profile = aliases.get(load_profile, load_profile)
     allowed_profiles = {"search", "commit", "mixed", "hotspot", "search,mixed", "all"}
-    if assessment_mode not in {"observe", "slo"} or load_profile not in allowed_profiles:
+    if assessment_mode not in {"observe", "completion", "slo"} or load_profile not in allowed_profiles:
         raise ValueError("Invalid assessment mode or load profile")
     tenants = max(levels) if topology == "cross-tenant" else fixed_tenants
     users = 1 if topology == "cross-tenant" else max(levels)
@@ -255,7 +255,7 @@ def main() -> None:
     parser.add_argument("--per-user-search-rps", type=float, default=1)
     parser.add_argument("--target-container", default="")
     parser.add_argument("--manifest-json", default="{}")
-    parser.add_argument("--assessment-mode", choices=("observe", "slo"), default="observe")
+    parser.add_argument("--assessment-mode", choices=("observe", "completion", "slo"), default="observe")
     parser.add_argument(
         "--load-profile",
         choices=("search", "commit", "mixed", "hotspot", "all", "pure", "both"),

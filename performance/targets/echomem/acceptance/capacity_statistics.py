@@ -98,8 +98,8 @@ def search_summary(rows: list[dict]) -> dict:
 
 def evaluate_level(measurement: dict, *, confirmation: bool = False,
                    assessment_mode: str = "observe") -> dict:
-    if assessment_mode not in {"observe", "slo"}:
-        raise ValueError("assessment_mode must be observe or slo")
+    if assessment_mode not in {"observe", "completion", "slo"}:
+        raise ValueError("assessment_mode must be observe, completion or slo")
     reads = [r for r in measurement["rows"] if r["op"] == "read"]
     load_mode = measurement.get("load_mode") or (
         "mixed" if measurement["mixed"] else "search"
@@ -125,10 +125,36 @@ def evaluate_level(measurement: dict, *, confirmation: bool = False,
     accepted = [r for r in submissions if r.get("accepted_202")]
     done = [r for r in measurement["rows"] if r["op"] == "commit_done"]
     successful = [r for r in done if r.get("success")]
+    concurrency_by_repeat = []
+    repeat_indexes = sorted({row.get("repeat_index", 0) for row in submissions + done}) or [0]
+    for repeat_index in repeat_indexes:
+        repeat_accepted = [row for row in accepted if row.get("repeat_index", 0) == repeat_index]
+        repeat_done = [row for row in done if row.get("repeat_index", 0) == repeat_index]
+        repeat_submissions = [row for row in submissions if row.get("repeat_index", 0) == repeat_index]
+        in_flight_events = [
+            (row["accepted_at_s"], 1) for row in repeat_accepted if row.get("accepted_at_s") is not None]
+        in_flight_events += [
+            (row["end_s"], -1) for row in repeat_done if row.get("end_s") is not None]
+        current_in_flight = peak_in_flight = 0
+        for _, delta in sorted(in_flight_events, key=lambda item: (item[0], item[1])):
+            current_in_flight = max(0, current_in_flight + delta)
+            peak_in_flight = max(peak_in_flight, current_in_flight)
+        submission_times = [row.get("start_s") for row in repeat_submissions
+                            if row.get("start_s") is not None]
+        concurrency_by_repeat.append({
+            "repeat": repeat_index or 1,
+            "peak_in_flight": peak_in_flight,
+            "submission_window_s": (max(submission_times) - min(submission_times)
+                                    if len(submission_times) > 1 else 0 if submission_times else None),
+        })
     commit = {"submitted": len(submissions), "accepted_202": len(accepted), "completed": len(successful),
               "completion_rate": len(successful) / len(accepted) if accepted else None,
               "p95_s": percentile([r["elapsed_s"] for r in done], 95),
-              "unfinished_or_failed": len(accepted) - len(successful)}
+              "unfinished_or_failed": len(accepted) - len(successful),
+              "peak_in_flight": max((row["peak_in_flight"] for row in concurrency_by_repeat), default=0),
+              "submission_window_s": max((row["submission_window_s"] for row in concurrency_by_repeat
+                                           if row["submission_window_s"] is not None), default=None),
+              "concurrency_by_repeat": concurrency_by_repeat}
     backlog = []
     for at in range(0, math.ceil(measurement["duration_s"]) + 1, 10):
         outstanding = sum(r.get("accepted_at_s", float("inf")) <= at for r in accepted) - sum(r.get("end_s", float("inf")) <= at for r in done)
@@ -169,6 +195,35 @@ def evaluate_level(measurement: dict, *, confirmation: bool = False,
                           == measurement["identity_count"]
                       ),
                       performance_requirements_applied=False)
+        return common
+    if assessment_mode == "completion":
+        searches_completed = bool(
+            total["planned"]
+            and total["sent"] == total["planned"]
+            and total["transport_or_http_errors"] == 0
+        )
+        commits_completed = bool(
+            not measurement["mixed"]
+            or submissions
+            and len(accepted) == len(submissions)
+            and len(successful) == len(accepted)
+            and not growing
+        )
+        common.update(
+            status="PASS" if searches_completed and commits_completed else "FAIL",
+            all_identities_and_classes_sampled=all(c["sent"] > 0 for c in cells),
+            generator_delivery_valid=total["sent"] == total["planned"],
+            completion_contract={
+                "search_all_scheduled_sent": total["sent"] == total["planned"],
+                "search_http_or_transport_errors": total["transport_or_http_errors"],
+                "commit_all_accepted": not measurement["mixed"] or len(accepted) == len(submissions),
+                "commit_all_terminal_completed": not measurement["mixed"] or len(successful) == len(accepted),
+                "commit_backlog_recovered": not measurement["mixed"] or not growing,
+            },
+            performance_requirements_applied=False,
+            latency_threshold_applied=False,
+            quality_threshold_applied=False,
+        )
         return common
     if measurement["mixed"]:
         covered = {r["identity_index"] for r in accepted}

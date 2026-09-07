@@ -128,10 +128,15 @@ def render_observation(report: dict) -> str:
     legacy = report.get("max_hot_users") == 0 or report.get("retracted_legacy_slo", False)
     notice = ("之前由性能门槛推导的最大热用户数=0、DAU=0结论已撤销；当前不使用该口径。" if legacy else
               "未使用性能合格线。最高已测用户数不是最大用户数，缺少运行故障边界时上限仍未知。")
-    boundary_text = (f"在 H={operational['hot_users']} 观察到：{operational['evidence']['reason']}。"
-                     f"恢复观察窗口 {operational['evidence'].get('recovery_window_s', '未记录')} 秒，"
-                     "需结合前一档与故障证据解释，不能外推为永久无法恢复。" if operational else
-                     "已测档尚未提供崩溃/OOM或停止发压后无法恢复的边界证据，将继续递增用户数。")
+    if operational and operational.get("hot_users") is not None:
+        evidence = operational.get("evidence") or {}
+        boundary_text = (f"在 H={operational['hot_users']} 观察到：{evidence.get('reason', '运行故障')}。"
+                         f"恢复观察窗口 {evidence.get('recovery_window_s', '未记录')} 秒，"
+                         "需结合前一档与故障证据解释，不能外推为永久无法恢复。")
+    else:
+        tested = (operational or {}).get("highest_tested_hot_users", highest)
+        boundary_text = (f"已测到 H={tested}，尚未提供崩溃、OOM或停止发压后无法恢复的边界证据；"
+                         "该数字只是最高观察档，不是容量上限。")
     return f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>4U8G 热用户与 DAU 实测数据</title><style>
 *{{box-sizing:border-box}}body{{margin:0;background:#f5f7f8;color:#202a30;font:15px/1.7 system-ui,-apple-system,"PingFang SC",sans-serif;letter-spacing:0}}main{{max-width:1400px;margin:auto;padding:26px}}h1{{font-size:28px;margin:6px 0 12px}}h2{{font-size:21px;margin:24px 0 12px}}h3{{font-size:16px}}header,section{{border-bottom:1px solid #cdd7dc;padding:18px 0}}.muted{{color:#566773}}.notice{{border-left:4px solid #b74c39;padding:8px 14px;background:#fff4ec}}.kpis{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px;margin:22px 0}}.kpis div{{border-top:3px solid #258577;padding:10px 0}}.kpis strong{{display:block;font-size:26px}}.charts{{display:grid;grid-template-columns:1fr 1fr;gap:30px}}.barrow{{display:grid;grid-template-columns:112px minmax(0,1fr) 85px;align-items:center;gap:10px;margin:12px 0;font-size:13px}}.barrow b{{text-align:right;font-variant-numeric:tabular-nums}}.track{{height:15px;background:#e0e6e8}}.track span{{display:block;height:100%;background:#268978}}.charts>div+div .track span{{background:#4c7fba}}.scroll{{overflow:auto}}table{{width:100%;border-collapse:collapse;background:white;font-size:13px}}th,td{{padding:9px 12px;border-bottom:1px solid #dce3e6;text-align:left;vertical-align:top}}th{{white-space:nowrap;background:#e8eff1}}td{{overflow-wrap:anywhere}}code{{overflow-wrap:anywhere}}summary{{cursor:pointer;font-weight:600;padding:12px 0}}a{{color:#1568a3}}@media(max-width:720px){{main{{padding:14px}}.kpis{{grid-template-columns:1fr 1fr}}.charts{{grid-template-columns:1fr}}h1{{font-size:24px}}}}
