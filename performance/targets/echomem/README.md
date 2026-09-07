@@ -6,6 +6,95 @@
 默认不包含 soak。旧的 [六指标用例](docs/six-metrics.md) 与
 [旧运行手册](docs/six-metrics-runbook.md) 记录历史 SLO 验收语义，不作为观测结论。
 
+## 六项测试最短路径
+
+以下是新测试人员唯一需要先跑通的入口。完整参数、口径和故障恢复说明见
+[六项观测运行手册](docs/six-metrics-observation.md)。所有命令均在仓库根目录执行。
+
+### 1. 安装并准备本地目录
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+mkdir -p .local-stress
+cp performance/targets/echomem/docs/six-metrics.profile.example.json \
+  .local-stress/six-metrics.profile.json
+```
+
+将被测 EchoMem **实际生效的** `config.json` 放到
+`.local-stress/echomem.config.json`。不要使用测试平台保存的旧模板。
+
+### 2. 准备独立租户和密钥
+
+仅在允许 bootstrap 注册的专用测试服务执行：
+
+```bash
+.venv/bin/python -m performance.targets.echomem.provision \
+  --base-url http://127.0.0.1:8010 --count 32 \
+  --out .local-stress/tenants.json \
+  --env-file .local-stress/test.env
+chmod 600 .local-stress/tenants.json .local-stress/test.env
+```
+
+`tenants.json` 只保存 `auth_key_env` 引用；真实 key 写入 Git 忽略的
+`test.env`。继续在 `test.env` 中配置真实 LLM、embedding 和
+`ECHOMEM_TEST_CONTROL_TOKEN`，不要把值放进 profile、报告或 Git。
+
+### 3. 核对专用 4U8G 容器
+
+```bash
+docker inspect echomem-stress-4u8g \
+  --format '{{.State.Running}} cpu={{.HostConfig.NanoCpus}} memory={{.HostConfig.Memory}}'
+```
+
+profile 中的 `resource_container` 必须是这个专用容器。M5 会执行真实
+`kill -9/start`，M6 也会借助重启观测计数器代际；禁止指向机器人、共享或生产容器。
+
+### 4. 先跑 quick，确认链路
+
+```bash
+.venv/bin/python -m performance.targets.echomem.observation_run \
+  --profiles .local-stress/six-metrics.profile.json --profile 4U8G \
+  --env-file .local-stress/test.env --quick \
+  --out-dir results/echomem-4u8g-smoke
+```
+
+quick 只验证真实模型、真实 HTTP、租户、故障控制、恢复和报告链路，结果固定为
+`PARTIAL`，不能作为完整六项结论。
+
+### 5. 正式测试与断点续跑
+
+```bash
+.venv/bin/python -m performance.targets.echomem.observation_run \
+  --profiles .local-stress/six-metrics.profile.json --profile 4U8G \
+  --env-file .local-stress/test.env \
+  --out-dir results/echomem-4u8g-formal
+
+# 中断后使用完全相同的 profile 和输出目录续跑。
+.venv/bin/python -m performance.targets.echomem.observation_run \
+  --profiles .local-stress/six-metrics.profile.json --profile 4U8G \
+  --env-file .local-stress/test.env \
+  --out-dir results/echomem-4u8g-formal --resume
+```
+
+只测单项时加 `--metrics M1`，可替换为 `M2` 至 `M6`。M6 会自动执行
+NORMAL、QUEUE、REJECT、RESET 所需依赖负载，但不会把依赖数据冒充其他指标完成。
+
+### 6. 看结果
+
+先打开 `results/echomem-4u8g-formal/report.html`。页面默认展示六项含义、关键图表、
+数据状态和 EchoMem 模块改进建议；逐请求表、资源逐点采样和原始 JSON 默认折叠。
+
+| 状态 | 含义 |
+|---|---|
+| `MEASURED` | 本方案要求的分母已采集，不代表性能一定达标 |
+| `PARTIAL` | 有真实数据，但重复次数、场景或分母不完整 |
+| `BLOCKED` | 前置条件或关键接口阻塞，未形成有效数据 |
+| `EXECUTION_ERROR` | 测试平台或执行过程异常 |
+
+报告必须与同目录的 `summary.json`、`suite.json`、CSV 和执行清单一起留档；不能只截图，
+也不能删除失败、超时、空召回或 pending Commit 后重新计算。
+
 EchoMem 记忆服务的正式压测与验收入口。复用通用 HTTP 压测框架
 （`performance/`：`engine.py` worker 池 + `ctx.py` 请求原语 + `suite.py`
 套件编排 + `probe.py` 探针），本目录提供 EchoMem 的：

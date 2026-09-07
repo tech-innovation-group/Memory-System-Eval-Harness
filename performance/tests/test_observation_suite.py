@@ -7,10 +7,12 @@ from pathlib import Path
 from performance.targets.echomem.acceptance.capacity_load import arrival_plan
 from performance.targets.echomem.acceptance.observation import (
     STATUSES,
+    derive_observation_recommendations,
     evaluate_observation,
     jain,
     summarize_m5,
     summarize_m6,
+    write_observation_report,
 )
 from performance.targets.echomem.observation_run import _m1_levels, _validate_m1_resume
 from performance.targets.echomem.probes.tenant_observability import expected_lanes_from_config
@@ -168,3 +170,27 @@ def test_quick_never_reports_selected_metric_as_measured() -> None:
     )
     assert result["status"] == "PARTIAL"
     assert result["metrics"]["M1"]["status"] == "PARTIAL"
+
+
+def test_observation_report_is_summary_first_with_hidden_details(tmp_path: Path) -> None:
+    result = evaluate_observation({}, {}, quick=False)
+    output = tmp_path / "report.html"
+    write_observation_report(result, output)
+    page = output.read_text(encoding="utf-8")
+
+    assert "EchoMem 模块改进建议" in page
+    assert "原子引擎 Atomic Engine" in page
+    assert "多租户调度" in page
+    assert "查看 CPU、内存逐点采样" in page
+    assert "<details>" in page
+    assert "<details open" not in page
+    assert all(name in page for name in ("M1", "M2", "M3", "M4", "M5", "M6"))
+
+
+def test_observation_recommendations_cover_required_modules() -> None:
+    recommendations = derive_observation_recommendations(
+        evaluate_observation({}, {}, quick=False)
+    )
+    modules = {row["module"] for row in recommendations}
+    assert {"原子引擎 Atomic Engine", "路由与 Search 编排", "多租户调度"} <= modules
+    assert all(row["evidence"] and row["action"] for row in recommendations)

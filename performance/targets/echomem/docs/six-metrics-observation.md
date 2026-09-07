@@ -48,6 +48,18 @@ export YOUR_LLM_API_KEY='...'
 export YOUR_EMBEDDING_API_KEY='...'
 ```
 
+若专用服务允许 bootstrap 注册，可一次生成引用环境变量的租户文件和本地密钥文件：
+
+```bash
+.venv/bin/python -m performance.targets.echomem.provision \
+  --base-url http://127.0.0.1:8010 --count 32 \
+  --out .local-stress/tenants.json \
+  --env-file .local-stress/test.env
+```
+
+不要省略 `--env-file` 后再把生成的明文 `auth_key` JSON 用于观测入口；该入口会拒绝运行。
+模型密钥和测试控制 Token 继续追加到同一个 `test.env`，运行时通过 `--env-file` 加载。
+
 `preflight_config` 必须指向 EchoMem 实际使用的 JSON 配置。运行器从该配置推导
 expected lanes，不接受在测试配置里写死四条 lane。它会在发压前真实调用 LLM 和
 embedding endpoint，mock/fake 或错误模型不会生成成功结果。

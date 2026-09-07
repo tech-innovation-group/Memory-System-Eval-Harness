@@ -25,6 +25,14 @@ METRIC_NAMES = {
     "M5": "202 Commit 的 kill-9 恢复",
     "M6": "每层每租户四元组",
 }
+METRIC_PURPOSES = {
+    "M1": "回答一个 4U8G 实例实际承载多少热用户，以及不同业务画像下的流量等价 DAU。",
+    "M2": "观察一个租户失败或变慢时，其他租户的 Search 尾延迟和错误是否被拖累。",
+    "M3": "检查同档位租户是否获得接近等权的 Commit 吞吐和 Search 响应机会。",
+    "M4": "检查 Commit 洪泛期间，交互式 Search 的延迟、质量和可用性是否仍受保护。",
+    "M5": "验证已返回 202 的 Commit 在 kill-9 后能否自主恢复，并保持消息、顺序和幂等一致。",
+    "M6": "验证每个租户、每个处理层都能观测排队、等待、执行和拒绝四类数据。",
+}
 
 
 def _number(value: Any) -> float | None:
@@ -517,6 +525,59 @@ def evaluate_observation(suite: dict[str, Any], profile: dict[str, Any],
             "raw_suite": "suite.json"}
 
 
+def derive_observation_recommendations(result: dict[str, Any]) -> list[dict[str, Any]]:
+    """Turn measured symptoms into bounded, module-specific next actions."""
+    metrics = result.get("metrics", {})
+    m1, m2, m3, m4, m5, m6 = (metrics.get(f"M{i}", {}) for i in range(1, 7))
+    m2_changes = [
+        float(value) * 100
+        for case in m2.get("cases", [])
+        for value in (case.get("degradation_by_tenant") or {}).values()
+        if _number(value) is not None
+    ]
+    m3_jain = [
+        value for window in m3.get("windows", [])
+        for value in (window.get("commit_throughput_jain"),
+                      window.get("search_inverse_p95_jain"))
+        if value is not None
+    ]
+    m4_ratios = [
+        tenant.get("p95_ratio")
+        for window in m4.get("windows", [])
+        for tenant in window.get("tenants", [])
+        if tenant.get("p95_ratio") is not None
+    ]
+    levels = m1.get("levels", [])
+    highest = max((int(level.get("hot_users") or 0) for level in levels), default=None)
+    return [
+        {"priority": "P0", "module": "Admission 与容量保护", "metrics": "M1 / M4",
+         "evidence": (f"最高已测热用户档 H={highest}；首个运行异常="
+                      f"{m1.get('first_operational_anomaly') or '尚未观测'}。"),
+         "action": "区分 Search 与 Commit 配额，拒绝时返回 tenant、lane、reason_code 和 retry_after；继续升档直到取得真实边界。"},
+        {"priority": "P0", "module": "多租户调度", "metrics": "M3 / M4",
+         "evidence": (f"已测 Jain 最低={min(m3_jain) if m3_jain else None}；"
+                      f"Commit 洪泛下 Search P95 最大倍率={max(m4_ratios) if m4_ratios else None}。"),
+         "action": "Commit 按租户轮询或 DRR，并限制单租户在途数；Search 使用独立 lane、worker 和 admission 预算。"},
+        {"priority": "P0", "module": "路由与 Search 编排", "metrics": "M1 / M4",
+         "evidence": f"M4 已取得 {m4.get('observed_windows', 0)}/{m4.get('expected_windows', 0)} 个配对窗口。",
+         "action": "为 intent/router、embedding、fanout、merge 分别记录排队和执行耗时，并为确定性记忆查询提供有质量校验的快速路径。"},
+        {"priority": "P1", "module": "原子引擎 Atomic Engine", "metrics": "M1 / M4 / M6",
+         "evidence": "当前黑盒报告尚不能把端到端尾延迟单独归因到索引读取、向量检索或候选合并。",
+         "action": "暴露 embedding、索引读取、候选合并的阶段耗时和队列；避免 Commit 建索引持有 Search 所需的全局锁。"},
+        {"priority": "P1", "module": "租户故障隔离", "metrics": "M2",
+         "evidence": (f"完整故障用例 {m2.get('complete_cases', 0)}/{m2.get('expected_cases', 0)}；"
+                      f"旁观租户最差 P95 变化={max(m2_changes) if m2_changes else None}%。"),
+         "action": "按租户隔离并发、重试和 provider 连接预算；慢依赖等待不能长期占用全局 Search permit。"},
+        {"priority": "P1", "module": "Commit 持久化与恢复", "metrics": "M5",
+         "evidence": f"完整恢复样本 {m5.get('complete_samples', 0)}/{m5.get('expected_samples', 0)}。",
+         "action": "保证返回 202 前持久化任务、幂等键和 cursor；扩大到入队后、执行中、落 archive 前后的崩溃矩阵。"},
+        {"priority": "P1", "module": "可观测性", "metrics": "M6",
+         "evidence": (f"完整 tenant×lane 单元 {m6.get('complete_cells', 0)}/{m6.get('expected_cells', 0)}；"
+                      f"场景覆盖={m6.get('scenarios', {})}。"),
+         "action": "所有启用层统一输出 queued/wait/exec/rejected，并补 accepted/completed/failed、reason_code 与进程代际。"},
+    ]
+
+
 def write_observation_report(result: dict[str, Any], path: Path) -> None:
     def esc(value: Any) -> str:
         return html.escape("-" if value is None else str(value))
@@ -526,18 +587,22 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
         body = "".join("<tr>" + "".join(f"<td>{esc(row.get(key))}</td>" for key, _ in columns) + "</tr>" for row in rows)
         return f"<div class='scroll'><table><thead><tr>{head}</tr></thead><tbody>{body or '<tr><td colspan=\"9\">暂无数据</td></tr>'}</tbody></table></div>"
 
-    def bars(title: str, points: list[tuple[str, float | None]]) -> str:
-        maximum = max((value for _, value in points if value is not None), default=0) or 1
+    def details(label: str, content: str) -> str:
+        return f"<details><summary>{esc(label)}</summary>{content}</details>"
+
+    def bars(title: str, points: list[tuple[str, float | None]], *, signed: bool = False) -> str:
+        normalized = [(label, _number(value)) for label, value in points]
+        maximum = max((abs(value) for _, value in normalized if value is not None), default=0) or 1
         body = "".join(
-            f"<div class='bar'><span>{esc(label)}</span><i><b style='width:{100 * value / maximum:.2f}%'></b></i><strong>{esc(value)}</strong></div>"
-            for label, value in points if value is not None
+            f"<div class='bar'><span>{esc(label)}</span><i><b class='{'worse' if signed and value > 0 else 'better'}' style='width:{100 * abs(value) / maximum:.2f}%'></b></i><strong>{esc(round(value, 3))}</strong></div>"
+            for label, value in normalized if value is not None
         )
         return f"<h3>{esc(title)}</h3>{body or '<p>暂无数据</p>'}"
 
     cards = "".join(
         f"<article><b>{code}</b><h2>{esc(METRIC_NAMES[code])}</h2>"
         f"<span class='{metric['status']}'>{metric['status']}</span>"
-        f"<p>{esc(metric.get('reason'))}</p></article>"
+        f"<p>{esc(METRIC_PURPOSES[code])}</p><small>{esc(metric.get('reason'))}</small></article>"
         for code, metric in result["metrics"].items()
     )
     sections = []
@@ -550,36 +615,65 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                  if (level.get("search") or {}).get("p95_s") is not None else None)
                 for level in metric.get("levels", [])
             ])
-            visual += table(metric.get("levels", []), [("topology", "拓扑"), ("hot_users", "热用户"), ("load_mode", "负载"), ("status", "数据状态"), ("sent_search_rps", "Search发送/s"), ("effective_search_rps", "Search完成/s")])
-            visual += table(metric.get("dau_scenarios", []), [("name", "DAU情景"), ("searches_per_user_day", "Search/日"), ("commits_per_user_day", "Commit/日"), ("peak_to_average_ratio", "峰均比"), ("traffic_equivalent_dau", "流量等价DAU"), ("is_measured_maximum", "实测最大值")])
+            visual += details("查看各档吞吐与完成状态", table(metric.get("levels", []), [("topology", "拓扑"), ("hot_users", "热用户"), ("load_mode", "负载"), ("status", "数据状态"), ("sent_search_rps", "Search发送/s"), ("effective_search_rps", "Search完成/s")]))
+            visual += details("查看 DAU 画像换算", table(metric.get("dau_scenarios", []), [("name", "DAU情景"), ("searches_per_user_day", "Search/日"), ("commits_per_user_day", "Commit/日"), ("peak_to_average_ratio", "峰均比"), ("traffic_equivalent_dau", "流量等价DAU"), ("is_measured_maximum", "实测最大值")]))
             resource_rows = [{"topology": level.get("topology"), "hot_users": level.get("hot_users"),
                               "load_mode": level.get("load_mode"), **sample}
                              for level in metric.get("levels", []) for sample in level.get("resources", [])]
-            visual += table(resource_rows, [("topology", "拓扑"), ("hot_users", "热用户"), ("load_mode", "负载"), ("at_epoch_s", "时间"), ("cpu_percent_one_core_100", "CPU% (100%=1核)"), ("rss_bytes", "RSS bytes"), ("phase", "阶段")])
+            visual += details("查看 CPU、内存逐点采样", table(resource_rows, [("topology", "拓扑"), ("hot_users", "热用户"), ("load_mode", "负载"), ("at_epoch_s", "时间"), ("cpu_percent_one_core_100", "CPU% (100%=1核)"), ("rss_bytes", "RSS bytes"), ("phase", "阶段")]))
         elif code == "M2":
-            visual = table(metric.get("cases", []), [("target_tenant", "目标租户"), ("fault_type", "故障"), ("repetition", "重复"), ("fault_observed", "实际生效"), ("fault_recovered", "恢复")])
+            points = []
+            for case in metric.get("cases", []):
+                values = [_number(value) for value in (case.get("degradation_by_tenant") or {}).values()]
+                values = [value * 100 for value in values if value is not None]
+                points.append((f"{case.get('fault_type')} · {case.get('target_tenant')} · #{case.get('repetition')}",
+                               max(values) if values else None))
+            visual = bars("各故障用例最差旁观租户 Search P95 变化 %", points, signed=True)
+            visual += details("查看 24 个故障用例状态", table(metric.get("cases", []), [("target_tenant", "目标租户"), ("fault_type", "故障"), ("repetition", "重复"), ("fault_observed", "实际生效"), ("fault_recovered", "恢复")]))
         elif code == "M3":
-            visual = table(metric.get("windows", []), [("scenario", "场景"), ("tenant_count", "租户"), ("duration_s", "窗口秒"), ("commit_throughput_jain", "Commit Jain"), ("search_inverse_p95_jain", "Search inverse-P95 Jain")])
+            visual = bars("公平指数（越接近 1 越均匀）", [
+                (f"{window.get('tenant_count')}租户 Commit Jain", window.get("commit_throughput_jain"))
+                for window in metric.get("windows", [])
+            ] + [
+                (f"{window.get('tenant_count')}租户 Search Jain", window.get("search_inverse_p95_jain"))
+                for window in metric.get("windows", [])
+            ])
+            visual += details("查看公平窗口汇总", table(metric.get("windows", []), [("scenario", "场景"), ("tenant_count", "租户"), ("duration_s", "窗口秒"), ("commit_throughput_jain", "Commit Jain"), ("search_inverse_p95_jain", "Search inverse-P95 Jain")]))
             tenant_rows = [{"scenario": window.get("scenario"), **tenant,
                             "search_p95_ms": tenant.get("search", {}).get("p95_ms")}
                            for window in metric.get("windows", []) for tenant in window.get("tenants", [])]
-            visual += table(tenant_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("commit_submitted", "提交"), ("commit_accepted", "受理"), ("commit_completed", "完成"), ("commit_failed", "失败"), ("commit_pending", "Pending"), ("longest_no_completion_s", "最长无服务秒"), ("search_p95_ms", "Search P95 ms")])
+            visual += details("查看逐租户完成数与延迟", table(tenant_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("commit_submitted", "提交"), ("commit_accepted", "受理"), ("commit_completed", "完成"), ("commit_failed", "失败"), ("commit_pending", "Pending"), ("longest_no_completion_s", "最长无服务秒"), ("search_p95_ms", "Search P95 ms")]))
         elif code == "M4":
-            visual = table(metric.get("windows", []), [("scenario", "场景"), ("commit_planned_or_recorded", "Commit 计划/记录"), ("commit_accepted_202", "202"), ("commit_rejected", "拒绝"), ("commit_completed", "完成"), ("commit_pending", "Pending"), ("overlap_intervals", "Overlap 区间")])
+            visual = bars("Commit 积压重叠窗口 Search P95 / ms", [
+                (str(window.get("scenario")), (window.get("overlap") or {}).get("p95_ms"))
+                for window in metric.get("windows", [])
+            ])
+            visual += details("查看 Commit 受理、完成与积压", table(metric.get("windows", []), [("scenario", "场景"), ("commit_planned_or_recorded", "Commit 计划/记录"), ("commit_accepted_202", "202"), ("commit_rejected", "拒绝"), ("commit_completed", "完成"), ("commit_pending", "Pending"), ("overlap_intervals", "Overlap 区间")]))
             tenant_rows = [{"scenario": window.get("scenario"), **tenant,
                             "baseline_p95_ms": tenant.get("baseline", {}).get("p95_ms"),
                             "overlap_p95_ms": tenant.get("overlap", {}).get("p95_ms")}
                            for window in metric.get("windows", []) for tenant in window.get("tenants", [])]
-            visual += table(tenant_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("baseline_p95_ms", "Baseline P95"), ("overlap_p95_ms", "Overlap P95"), ("p95_delta_ms", "差值"), ("p95_ratio", "比值")])
+            visual += details("查看逐租户基线与洪泛对比", table(tenant_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("baseline_p95_ms", "Baseline P95"), ("overlap_p95_ms", "Overlap P95"), ("p95_delta_ms", "差值"), ("p95_ratio", "比值")]))
         elif code == "M5":
-            visual = table(metric.get("samples", []), [("sample_index", "样本"), ("received_202", "收到202"), ("unfinished_at_kill", "崩溃时未完成"), ("autonomous_completed", "自主完成"), ("fully_reconciled", "完整对账"), ("recovery_elapsed_s", "恢复秒")])
+            visual = bars("完整恢复样本", [("完成 / 期望", 100 * (metric.get("complete_samples") or 0) / max(1, metric.get("expected_samples") or 0))])
+            visual += details("查看每次 kill-9 恢复检查", table(metric.get("samples", []), [("sample_index", "样本"), ("received_202", "收到202"), ("unfinished_at_kill", "崩溃时未完成"), ("autonomous_completed", "自主完成"), ("fully_reconciled", "完整对账"), ("recovery_elapsed_s", "恢复秒")]))
         elif code == "M6":
-            visual = table([{"scenario": name, "observed": observed} for name, observed in metric.get("scenarios", {}).items()], [("scenario", "行为"), ("observed", "已观测")])
-            visual += table(metric.get("matrix", []), [("tenant_id", "租户"), ("lane", "Lane"), ("missing_fields", "缺失"), ("invalid_fields", "非法")])
-        sections.append(f"<section><h2>{code} {esc(METRIC_NAMES[code])}</h2>{visual}<details><summary>原始汇总与完整分母</summary><pre>{esc(json.dumps(metric, ensure_ascii=False, indent=2))}</pre></details></section>")
+            visual = bars("四元组完整率与行为覆盖率 / %", [
+                ("tenant×lane 完整率", 100 * (metric.get("complete_cells") or 0) / max(1, metric.get("expected_cells") or 0)),
+                ("NORMAL/QUEUE/REJECT/RESET", 25 * sum(value is True for value in metric.get("scenarios", {}).values())),
+            ])
+            visual += details("查看四种行为覆盖", table([{"scenario": name, "observed": observed} for name, observed in metric.get("scenarios", {}).items()], [("scenario", "行为"), ("observed", "已观测")]))
+            visual += details("查看逐租户逐 Lane 完整性", table(metric.get("matrix", []), [("tenant_id", "租户"), ("lane", "Lane"), ("missing_fields", "缺失"), ("invalid_fields", "非法")]))
+        sections.append(f"<section><h2>{code} {esc(METRIC_NAMES[code])}</h2><p class='purpose'>{esc(METRIC_PURPOSES[code])}</p>{visual}{details('原始汇总与完整分母', '<pre>' + esc(json.dumps(metric, ensure_ascii=False, indent=2)) + '</pre>')}</section>")
+    recommendations = derive_observation_recommendations(result)
+    recommendation_table = table(recommendations, [
+        ("priority", "优先级"), ("module", "EchoMem 模块"),
+        ("metrics", "关联指标"), ("evidence", "本次证据"),
+        ("action", "改进建议"),
+    ])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("""<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>EchoMem 4U8G 六项黑盒观测</title><style>
-body{margin:0;color:#18242b;background:#f4f7f8;font:14px/1.6 system-ui;letter-spacing:0}main{max-width:1320px;margin:auto;padding:24px}h1{font-size:28px}.lead{border-left:4px solid #17746a;padding:10px 14px;background:#fff}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 0}.cards article{background:#fff;border:1px solid #d5dfe3;padding:14px;border-radius:4px}.cards h2{font-size:16px}.MEASURED{color:#08745d}.PARTIAL{color:#946200}.BLOCKED,.EXECUTION_ERROR{color:#b1372e}section{background:#fff;border-top:1px solid #cbd6da;padding:18px;margin-top:12px}.scroll{overflow:auto}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border-bottom:1px solid #dde4e7}th{background:#edf2f4}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f1f4f5;padding:12px}.bar{display:grid;grid-template-columns:260px minmax(120px,1fr) 90px;gap:10px;align-items:center;margin:7px 0}.bar i{display:block;height:12px;background:#e0e7e9}.bar i b{display:block;height:100%;background:#17746a}.bar strong{text-align:right}@media(max-width:760px){.cards{grid-template-columns:1fr}main{padding:12px}.bar{grid-template-columns:1fr}.bar strong{text-align:left}}</style></head><body><main>""" +
+body{margin:0;color:#18242b;background:#f4f7f8;font:14px/1.6 system-ui;letter-spacing:0}main{max-width:1320px;margin:auto;padding:24px}h1{font-size:28px}h2{font-size:20px}.lead{border-left:4px solid #17746a;padding:10px 14px;background:#fff}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 0}.cards article{background:#fff;border:1px solid #d5dfe3;padding:14px;border-radius:4px}.cards h2{font-size:16px;margin:6px 0}.cards small{display:block;color:#60727a}.MEASURED{color:#08745d}.PARTIAL{color:#946200}.BLOCKED,.EXECUTION_ERROR{color:#b1372e}section{background:#fff;border-top:1px solid #cbd6da;padding:18px;margin-top:12px}.purpose{color:#40565f;font-size:15px}.scroll{overflow:auto}table{width:100%;border-collapse:collapse}th,td{text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid #dde4e7}th{background:#edf2f4;white-space:nowrap}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f1f4f5;padding:12px}details{border-top:1px solid #e0e6e8;margin-top:12px;padding-top:8px}summary{cursor:pointer;color:#176d75;font-weight:650}.bar{display:grid;grid-template-columns:260px minmax(120px,1fr) 90px;gap:10px;align-items:center;margin:7px 0}.bar i{display:block;height:12px;background:#e0e7e9}.bar i b{display:block;height:100%;background:#17746a}.bar i b.worse{background:#c05a45}.bar i b.better{background:#278575}.bar strong{text-align:right}@media(max-width:760px){.cards{grid-template-columns:1fr}main{padding:12px}.bar{grid-template-columns:1fr}.bar strong{text-align:left}}</style></head><body><main>""" +
         f"<h1>EchoMem 4U8G 六项黑盒观测</h1><div class='lead'><b>结论先行：{esc(result['status'])}</b><p>这是观测报告，不是性能准入验收；没有 P95、准确率、Jain、吞吐或劣化比例 PASS/FAIL 门槛。错误、超时、空召回与 pending/failed Commit 均保留在分母。采样模式：{esc(result['sampling_mode'])}。</p></div><div class='cards'>{cards}</div>" +
-        "<section><h2>问题分类</h2>" + table(result.get("issue_categories", []), [("category", "类别"), ("note", "观测/下一步"), ("evidence", "证据")]) + "</section>" +
+        "<section><h2>EchoMem 模块改进建议</h2><p class='purpose'>建议只由本轮可见证据推导；无法从黑盒区分的阶段明确写为需补观测，不把端到端延迟武断归因给原子引擎。</p>" + recommendation_table + details("查看责任边界与技术证据", table(result.get("issue_categories", []), [("category", "类别"), ("note", "观测/下一步"), ("evidence", "证据")])) + "</section>" +
         "".join(sections) + "<section><h2>原始产物</h2><p><a href='summary.json'>summary.json</a> · <a href='suite.json'>suite.json</a> · <a href='records.csv'>records.csv</a> · <a href='metrics_samples.csv'>metrics_samples.csv</a> · <a href='execution-manifest.json'>execution-manifest.json</a></p></section></main></body></html>", encoding="utf-8")
