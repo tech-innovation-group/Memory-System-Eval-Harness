@@ -279,6 +279,78 @@ def derive_conclusions(report: dict) -> dict[str, dict]:
     }
 
 
+def derive_module_recommendations(report: dict) -> list[dict]:
+    """Map measured symptoms to bounded EchoMem module recommendations."""
+    levels = report.get("M1", {}).get("levels", [])
+    joint = report.get("M3_M4", {})
+    m2 = report.get("M2", {})
+    m5 = report.get("M5", {})
+    m6 = report.get("M6", {})
+    tenant_counts = [row.get("commit_completed_in_search_window", 0)
+                     for row in joint.get("tenants", [])]
+    atomic_p95 = [row.get("search", {}).get("atomic_p95_s")
+                  for row in joint.get("tenants", [])
+                  if row.get("search", {}).get("atomic_p95_s") is not None]
+    residual_p95 = [row.get("search", {}).get("unattributed_residual_p95_s")
+                    for row in joint.get("tenants", [])
+                    if row.get("search", {}).get("unattributed_residual_p95_s") is not None]
+    bystander_changes = [case.get("worst_bystander_p95_change_percent")
+                         for case in m2.get("cases", [])
+                         if case.get("worst_bystander_p95_change_percent") is not None]
+    fault_cases = m2.get("cases", [])
+    effective_fault_cases = sum(case.get("target_effect_observed") is True
+                                for case in fault_cases)
+    accepted = joint.get("accepted_202", 0)
+    planned = joint.get("commit_planned", 0)
+    highest = max((row.get("hot_users", 0) for row in levels), default=None)
+    highest_errors = max((row.get("search", {}).get("transport_or_http_errors", 0)
+                          for row in levels if row.get("hot_users") == highest), default=0)
+    return [
+        {"priority": "P0", "module": "Admission 与容量保护", "metrics": "M1 / M4",
+         "evidence": (f"最高观察档 H={highest} 出现最多 {highest_errors} 个 HTTP/传输错误；"
+                      f"洪泛 Commit 仅受理 {accepted}/{planned}。"),
+         "judgment": "服务能通过拒绝保护自身，但当前报告无法区分全局容量、租户配额和具体拒绝原因。",
+         "change": "为 Search 预留独立 admission 配额；Commit 使用独立上限，并返回稳定的 reason_code、lane、tenant quota 与 retry_after。",
+         "verify": "重跑 H4/H8/H16 与 32 Commit 洪泛，按 reason_code 拆分拒绝数，并确认 Search 不被 Commit 配额占满。"},
+        {"priority": "P0", "module": "租户公平调度", "metrics": "M3 / M4",
+         "evidence": (f"60 秒窗口内各租户 Commit 完成数={tenant_counts}，"
+                      f"Commit Jain={joint.get('commit_jain')}，Search Jain={joint.get('search_inverse_p95_jain')}。"),
+         "judgment": "同档位租户没有获得近似等权的完成机会，慢租户同时承受更高 Search 延迟。",
+         "change": "Commit lane 引入按租户轮询或 DRR；限制单租户在途数；Search lane 使用独立 worker/permit，并在调度器中显式高于 Commit。",
+         "verify": "固定4租户等权输入，至少重复3轮；检查每租户窗口完成数、等待时间和Jain分布，不能用窗口后排空数回填。"},
+        {"priority": "P0", "module": "路由与意图模型", "metrics": "M1 / M4",
+         "evidence": (f"洪泛下 Atomic P95 最大约 {max(atomic_p95, default=0):.3f}s，"
+                      f"未归因残余 P95 最大约 {max(residual_p95, default=0):.3f}s。"),
+         "judgment": "当前样本中原子检索本身较快，较大的端到端尾延迟主要发生在未单独计时的路由、模型调用、排队或编排阶段。",
+         "change": "为 intent/router 设置总时间预算、超时降级和熔断；确定性 memory-recall query 优先走快速路径；分别记录排队、LLM、embedding、fanout、merge耗时。",
+         "verify": "同一批固定问题对比 router 开/关及快速路径，要求报告逐阶段 P50/P95/P99，并核对最终召回质量不下降。"},
+        {"priority": "P1", "module": "原子引擎 Atomic Engine", "metrics": "M1 / M4",
+         "evidence": f"本轮租户 Atomic P95 范围为 {min(atomic_p95, default=0):.3f}-{max(atomic_p95, default=0):.3f}s。",
+         "judgment": "现有证据不支持把 Atomic Engine 认定为主要瓶颈，但它仍需与慢路由、批量 Commit 隔离。",
+         "change": "保留独立 bulkhead/线程池；对 embedding、索引读取和候选合并分别打点；避免 Commit 重建索引时持有 Search 所需的全局锁。",
+         "verify": "Commit 洪泛中持续比较 Atomic P95 与端到端 P95；若 Atomic 稳定而总延迟升高，应优先修路由/排队而非盲目优化向量检索。"},
+        {"priority": "P1", "module": "租户故障隔离", "metrics": "M2",
+         "evidence": (f"故障生效 {effective_fault_cases}/{len(fault_cases)}，"
+                      f"旁观租户 HTTP 错误为 {m2.get('bystander_http_errors', 0)}，"
+                      f"最差旁观 P95 变化 {max(bystander_changes, default=0):.2f}%。"),
+         "judgment": "错误隔离有效，但延迟隔离仍有明显抖动，慢租户可能占用共享 worker、permit或模型连接。",
+         "change": "按租户设置并发预算和熔断；慢依赖等待不得占用全局 Search permit；将 provider 连接池与重试预算纳入租户隔离。",
+         "verify": "T1-T4轮流注入 reject/delay 并重复3轮，比较旁观租户 before/during/after P95和队列等待，不只看HTTP错误。"},
+        {"priority": "P1", "module": "Commit 持久化与恢复", "metrics": "M5",
+         "evidence": (f"真实 kill-9 恢复 {m5.get('passed_samples', 0)}/{m5.get('sample_count', 0)}；"
+                      f"缺失消息 {m5.get('missing_messages')}，幂等同 archive={m5.get('same_archive')}。"),
+         "judgment": "当前样本证明恢复链路可用，但单一崩溃时机不能证明所有已返回202任务都可靠。",
+         "change": "确保返回202前持久化任务、幂等键和顺序游标；恢复扫描与正常提交使用同一状态机，终态写入保持原子性。",
+         "verify": "覆盖入队后、执行中、落 archive 前后三种 kill 时机，以及并发积压和连续两次崩溃，逐任务对账 history/archive/cursor。"},
+        {"priority": "P1", "module": "可观测性", "metrics": "M6",
+         "evidence": (f"当前 tenant×lane 四元组 {len(m6.get('rows', []))}/{m6.get('expected_cells', 0)}，"
+                      f"已声明 lane={m6.get('expected_lanes', [])}。"),
+         "judgment": "四个已声明 lane 可观测，但 HTTP admission、router fanout、provider、archive/storage 尚未进入完整分母。",
+         "change": "所有启用层统一输出 tenant、lane、queued、wait、exec、rejected，并补 accepted/completed/failed 与 reason_code；接口声明完整 lane 清单。",
+         "verify": "测试平台从生效配置和接口声明生成分母；任何启用层缺一项都标INCONCLUSIVE，不允许用0补缺失值。"},
+    ]
+
+
 def redacted_report(source: dict, capacity: dict) -> dict:
     metrics = source.get("metrics", {})
     joint = dict(metrics.get("M3_M4", {}))
@@ -326,6 +398,7 @@ def redacted_report(source: dict, capacity: dict) -> dict:
             "M2": fault_matrix_counts(metrics.get("M2", {})), "M3_M4": joint,
             "M5": recovery_counts(metrics.get("M5", {})), "M6": m6}
     report["conclusions"] = derive_conclusions(report)
+    report["module_recommendations"] = derive_module_recommendations(report)
     return report
 
 
@@ -366,6 +439,8 @@ def render(report: dict) -> str:
     highest = max((r.get("hot_users", 0) for r in levels), default=None)
     m2, joint, m5, m6 = (report[k] for k in ("M2", "M3_M4", "M5", "M6"))
     conclusions = report.get("conclusions") or derive_conclusions(report)
+    module_recommendations = (report.get("module_recommendations") or
+                              derive_module_recommendations(report))
     dau_estimates = (report.get("M1", {}).get("dau") or {}).get("estimates", [])
     conservative_dau = [row.get("conservative_dau") for row in dau_estimates
                         if row.get("conservative_dau") is not None]
@@ -399,6 +474,10 @@ def render(report: dict) -> str:
         case.get("target_effect_observed"), case.get("bystander_http_errors"),
         case.get("worst_bystander_p95_change_percent"), case.get("control_disabled")]
         for case in m2.get("cases", [])]
+    fault_types = "/".join(sorted({str(case.get("fault_type"))
+                                   for case in m2.get("cases", []) if case.get("fault_type")}))
+    fault_targets = len({case.get("target_index") for case in m2.get("cases", [])
+                         if case.get("target_index") is not None})
     fairness_rows = [[f"T{t['identity_index']+1}", t["commit_completed_in_search_window"], t["commit_rps"],
         t["search"].get("sent"), t["search"].get("p95_s"), t["search"].get("quality_rate")]
         for t in joint.get("tenants", [])]
@@ -415,15 +494,36 @@ def render(report: dict) -> str:
         r.get("effective_search_rps"), max((x.get("effective_search_rps") or 0 for x in levels), default=1), "#258875") for r in levels)
     fault_chart = comparison_chart([(f"T{p['identity_index']+1}", p["before"].get("p95_s"), p["during"].get("p95_s")) for p in m2.get("pairs", [])])
     priority_chart = comparison_chart([(f"T{p['identity_index']+1}", p["before"].get("p95_s"), p["during"].get("p95_s")) for p in joint.get("paired", [])])
+    fault_case_chart = ''.join(bar(
+        f"{case.get('fault_type')} T{_number(case.get('target_index')) + 1}",
+        max(0, _number(case.get("worst_bystander_p95_change_percent"))),
+        max((max(0, _number(item.get("worst_bystander_p95_change_percent")))
+             for item in m2.get("cases", [])), default=1), "#c65b45")
+        for case in m2.get("cases", []))
+    queue_chart = ''.join(bar(
+        f"{row.get('tenant')} {row.get('lane')}", row.get("queued_peak_during_load"),
+        max((_number(item.get("queued_peak_during_load")) for item in m6.get("rows", [])), default=1),
+        "#6f6aa8") for row in m6.get("rows", []) if row.get("queued_peak_during_load") is not None)
+    recommendation_rows = [[item[key] for key in
+        ("priority", "module", "metrics", "evidence", "judgment", "change", "verify")]
+        for item in module_recommendations]
     env = report.get("environment", {})
     return f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>4U8G 六项指标 · 综合实测</title><style>*{{box-sizing:border-box}}body{{margin:0;color:#24323a;background:#f6f8f9;font:15px/1.7 system-ui,"PingFang SC",sans-serif;letter-spacing:0}}main{{max-width:1260px;margin:auto;padding:28px}}h1{{font-size:28px}}h2{{font-size:21px}}h3{{font-size:17px}}header,section{{padding:20px 0;border-bottom:1px solid #ccd8dc}}.muted{{color:#576b74}}.notice{{border-left:4px solid #ad4637;padding:8px 16px;background:#fff1ec}}.conclusion{{border-left:4px solid #2b8175;padding:10px 16px;background:#edf7f4;margin:12px 0}}.conclusion>strong{{display:block;color:#17685e;font-size:17px}}.conclusion p{{margin:5px 0}}.conclusion small{{display:block;color:#40555e;margin-top:5px}}.stats{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin:24px 0}}.stats div{{border-top:3px solid #278575;padding-top:12px}}.stats b{{display:block;font-size:27px}}.scroll{{overflow:auto}}table{{width:100%;border-collapse:collapse;background:white;font-size:13px}}th,td{{padding:10px;border-bottom:1px solid #d7e0e5;text-align:left}}th{{background:#e6eef1;white-space:nowrap}}td{{overflow-wrap:anywhere}}code{{overflow-wrap:anywhere}}.chart-grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;margin:18px 0}}.chart-grid>div{{min-width:0;border-top:2px solid #9eb3bc;padding-top:8px}}.bar{{display:grid;grid-template-columns:120px minmax(0,1fr) 60px;gap:12px;align-items:center;margin:10px 0}}.bar>div,.track{{height:14px;background:#dae3e7;display:block}}.bar i,.track em{{display:block;height:100%;font-style:normal}}.bar b{{text-align:right}}.comparison-chart{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:16px 0}}.compare{{display:grid;grid-template-columns:58px minmax(0,1fr) 62px;gap:5px 8px;align-items:center;background:#fff;padding:10px;border-top:2px solid #9eb3bc}}.compare>b{{grid-column:1/-1}}.compare strong{{text-align:right}}.flow{{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:16px 0}}.flow span{{background:#fff;border-top:3px solid #278575;padding:10px;text-align:center;font-size:13px}}.flow b{{display:block}}a{{color:#16699b}}@media(max-width:900px){{.chart-grid{{grid-template-columns:1fr}}}}@media(max-width:700px){{main{{padding:14px}}.stats,.comparison-chart{{grid-template-columns:1fr}}h1{{font-size:24px}}.bar{{grid-template-columns:92px minmax(0,1fr) 56px;font-size:13px}}.flow{{grid-template-columns:1fr}}}}</style></head><body><main>
-<header><p class="muted">服务器真实 HTTP / 真实模型 / 4 CPU · 8 GiB / PR31 基线</p><h1>六项性能指标：初版关键数据</h1>
-<p>先给出已测数值，不设性能合格线。此页是短测观察，不代表完整故障矩阵、全天 DAU 或长期可靠性验收。</p>
-<p>EchoMem <code>{fmt(env.get('echomem_commit'))}</code>；平台基线 <code>{fmt(env.get('platform_base_commit'))}</code>，另加本次未提交压测修改。</p>
+<title>4U8G 六项指标 · 综合实测</title><style>*{{box-sizing:border-box}}body{{margin:0;color:#24323a;background:#f6f8f9;font:15px/1.7 system-ui,"PingFang SC",sans-serif;letter-spacing:0}}main{{max-width:1360px;margin:auto;padding:28px}}h1{{font-size:28px}}h2{{font-size:21px}}h3{{font-size:17px}}header,section{{padding:20px 0;border-bottom:1px solid #ccd8dc}}.muted{{color:#576b74}}.notice{{border-left:4px solid #ad4637;padding:8px 16px;background:#fff1ec}}.conclusion{{border-left:4px solid #2b8175;padding:10px 16px;background:#edf7f4;margin:12px 0}}.conclusion>strong{{display:block;color:#17685e;font-size:17px}}.conclusion p{{margin:5px 0}}.conclusion small{{display:block;color:#40555e;margin-top:5px}}.stats{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin:24px 0}}.stats div{{border-top:3px solid #278575;padding-top:12px}}.stats b{{display:block;font-size:27px}}.scroll{{overflow:auto}}table{{width:100%;border-collapse:collapse;background:white;font-size:13px}}th,td{{padding:10px;border-bottom:1px solid #d7e0e5;text-align:left;vertical-align:top}}th{{background:#e6eef1;white-space:nowrap}}td{{overflow-wrap:anywhere}}code{{overflow-wrap:anywhere}}.chart-grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;margin:18px 0}}.chart-grid>div{{min-width:0;border-top:2px solid #9eb3bc;padding-top:8px}}.chart-wide{{max-width:900px}}.bar{{display:grid;grid-template-columns:145px minmax(0,1fr) 70px;gap:12px;align-items:center;margin:10px 0}}.bar>div,.track{{height:14px;background:#dae3e7;display:block}}.bar i,.track em{{display:block;height:100%;font-style:normal}}.bar b{{text-align:right}}.comparison-chart{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:16px 0}}.compare{{display:grid;grid-template-columns:58px minmax(0,1fr) 62px;gap:5px 8px;align-items:center;background:#fff;padding:10px;border-top:2px solid #9eb3bc}}.compare>b{{grid-column:1/-1}}.compare strong{{text-align:right}}.flow{{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:16px 0}}.flow span{{background:#fff;border-top:3px solid #278575;padding:10px;text-align:center;font-size:13px}}.flow b{{display:block}}a{{color:#16699b}}@media(max-width:900px){{.chart-grid{{grid-template-columns:1fr}}}}@media(max-width:700px){{main{{padding:14px}}.stats,.comparison-chart{{grid-template-columns:1fr}}h1{{font-size:24px}}.bar{{grid-template-columns:110px minmax(0,1fr) 58px;font-size:12px}}.flow{{grid-template-columns:1fr}}}}</style></head><body><main>
+<header><p class="muted">服务器真实 HTTP / 真实模型 / 4 CPU · 8 GiB / PR31 基线 + PR32 测试增强</p><h1>EchoMem 六项指标综合压测报告</h1>
+<p>报告按“指标含义、测试方法、图表数据、结论、模块改进”组织。未设置业务性能合格线；所有失败、超时、拒绝和召回错误均保留在分母。</p>
+<p>EchoMem <code>{fmt(env.get('echomem_commit'))}</code>；测试平台 <code>{fmt(env.get('platform_base_commit'))}</code>。</p>
 <p class="notice">版本口径：容量详情保留各档 platform_base_pr / platform_base_commit；缺失表示历史快照未记录该字段，不能称所有档位均已重跑本版本。容器4U8G是资源限额，不代表宿主机资源独占。</p></header>
 <div class="stats">{''.join('<div>'+escape(label)+'<b>'+fmt(value)+'</b></div>' for label,value in cards)}</div>
+<section><h2>六个指标分别反映什么</h2>{table(['指标','回答的问题','暴露的线上风险','主要关联模块'],[
+['M1 容量与DAU','单个4U8G实例在不同热用户数下能完成多少真实Search和Commit？从哪一档开始拒绝、超时或积压？','扩容过晚、请求大量失败、后台任务长期堆积。','Admission、Search编排、Provider并发、Commit队列、资源限制'],
+['M2 故障隔离','一个租户被拒绝或依赖变慢时，其他租户的Search是否仍稳定？','单租户拖慢全站，形成共享线程池或连接池雪崩。','租户隔离、Bulkhead、连接池、超时与熔断'],
+['M3 公平性','同档位租户是否获得近似等权的Commit吞吐与Search延迟？','部分租户饥饿，活跃大户长期挤占后台处理能力。','租户调度器、队列轮询、在途配额'],
+['M4 Search优先级','Commit洪泛时，交互式Search是否仍优先并保持召回质量？','后台写任务拖慢用户在线查询。','Search/Commit分lane、Admission、路由、Atomic bulkhead'],
+['M5 崩溃恢复','已经返回202的Commit在进程崩溃后是否自主恢复且不丢失、不乱序、不重复？','接口称已受理但任务永久丢失，或重放产生重复记忆。','持久队列、状态机、cursor、幂等与archive写入'],
+['M6 可观测性','能否按租户、按处理层看到queue/wait/exec/reject四元组？','出现慢请求时无法判断卡在路由、模型、检索还是Commit。','Metrics、Trace、lane声明、reason_code']])}</section>
 <section><h2>六项结论总览</h2>{table(['指标','结论等级','具体结论','关键证据','下一步'],[[key,value['level'],value['conclusion'],value['evidence'],value['next']] for key,value in conclusions.items()])}</section>
+<section><h2>EchoMem 模块改进优先级</h2><p>以下建议由本次数据推导；“判断”描述证据能够支持的范围，不把黑盒延迟直接当作某一模块的确定代码缺陷。</p>{table(['优先级','模块','关联指标','本次证据','判断','建议修改','如何复测'],recommendation_rows)}</section>
 <section><h2>测试数据与真实操作</h2>{table(['对象','测试数据','真实HTTP操作','成功判定'],[
 ['Search召回','每个身份预先写入5段确定性记忆，包含20个固定事实；从40个改写问题中轮换提问。','POST /api/retrieval/search；问题不携带答案；记录HTTP、端到端耗时、引擎来源和返回items。','HTTP 200、非degraded、返回items中出现预先锁定的日期/时间/地点/联系人。'],
 ['Search不召回','20个日常问题，例如问候、算术和翻译，答案不依赖个人记忆。','与召回问题走同一个真实Search接口，混合场景按固定随机种子穿插。','HTTP 200、非degraded、记忆items为空；不能把接口200直接算召回正确。'],
@@ -432,10 +532,10 @@ def render(report: dict) -> str:
 ['租户与观测','四个独立tenant/user/key，不用同一key伪装多租户。','负载前、中、后调用受保护只读观测接口；故障通过受保护test-control端点注入。','每个预期tenant×lane都有queue/wait/exec/reject四元组，字段非负、唯一且负载变化可见。']])}</section>
 <section><h2>M1 · 热用户与 DAU</h2>{conclusion_panel('M1')}<p><b>怎么测：</b>每个热用户拥有独立身份和预注入记忆，以1 Search/s开放到达率同时发请求；纯召回与“召回+不召回+Commit”混合流量分别测。混合场景在第30–60秒为每个热用户错峰提交1个非空Commit，因此H4代表计划4个、H8代表计划8个；“峰值在途”按每个已获202任务从受理到终态的真实时间区间计算，不把总提交数冒充服务端并行度。每档记录全部请求、P95/P99、有效吞吐、错误/降级、CPU/RSS及积压恢复。请求完成容量不使用延迟阈值：同一档纯召回和混合负载都必须无HTTP/传输失败，混合Commit还必须全部受理并最终完成。</p><div class="chart-grid"><div><h3>P95 / 秒</h3>{curves}</div><div><h3>HTTP/传输错误率 / %</h3>{capacity_error_curves}</div><div><h3>严格有效 Search/s</h3>{capacity_rps_curves}</div></div>{table(['H','负载','Search P95 s','有效 Search/s','HTTP/传输错误','严格有效/发出','Commit提交','Commit 202','Commit完成','Commit未完成/失败','Commit峰值在途','提交跨度 s','Commit P95 s','CPU峰值 %','RSS峰值 MiB'],capacity_rows)}
 <p>100% CPU 表示一个 CPU 核。最高已测档位不是最大用户量；HTTP 429、超时、召回降级全部保留。最大 DAU 尚未验证，画像换算及每题数据见 <a href="capacity-report.html">容量详细报告</a>。</p></section>
-<section><h2>M2 · 单租户故障隔离</h2>{conclusion_panel('M2')}<p><b>怎么测：</b>先让四租户同时执行同一组召回问题形成基线，再仅对目标租户注入reject或delay；目标租户和三个旁观租户继续使用独立线程池发同速率Search，避免目标故障占满客户端线程而制造假隔离。劣化=(故障中P95/基线P95−1)×100%。正式矩阵应轮流故障T1-T4并重复。</p>{fault_chart}
+<section><h2>M2 · 单租户故障隔离</h2>{conclusion_panel('M2')}<p><b>怎么测：</b>先让四租户同时执行同一组召回问题形成基线，再仅对目标租户注入reject或delay；目标租户和三个旁观租户继续使用独立线程池发同速率Search，避免目标故障占满客户端线程而制造假隔离。劣化=(故障中P95/基线P95−1)×100%。本轮覆盖 {fmt(fault_targets)} 个目标租户、{fmt(fault_types)} 故障，共 {fmt(len(fault_case_rows))} 个用例。</p>{fault_chart}<div class="chart-wide"><h3>每个故障用例的最差旁观租户 P95 上升 / %</h3>{fault_case_chart}</div>
 {table(['租户','基线样本','故障中样本','基线P95 s','故障中P95 s','变化 %','故障中HTTP错误'],fault_rows)}
 {table(['轮次','故障','目标','状态','目标生效','旁观HTTP错误','最差旁观P95变化 %','故障撤销'],fault_case_rows) if fault_case_rows else ''}
-<p>基线全部严格有效：{fmt(m2.get('baseline_strict_valid'))}；故障窗口覆盖：{fmt(m2.get('fault_window_covered'))}。这里只覆盖一个租户的一次 reject，不代表任意租户与慢模型故障均已验证。</p></section>
+<p>当前矩阵可形成快速实测结论，但统计稳定性仍需至少3轮复测。</p></section>
 <section><h2>M3 · 等权租户公平性</h2>{conclusion_panel('M3')}<p><b>怎么测：</b>四个不同租户各准备8个独立写session，在同一个60秒稳态窗口并发Search与Commit。Commit公平性输入是每租户“窗口内completed/秒”，Search公平性输入是每租户P95倒数；没有完成的租户必须以0留在分母，窗口后的任务不回填。</p>
 {table(['租户','窗口内Commit完成','Commit/s','Search样本','Search P95 s','严格有效率'],fairness_rows)}
 {bar('Commit Jain',joint.get('commit_jain'),1,'#258875')}{bar('Search Jain',joint.get('search_inverse_p95_jain'),1,'#327d9d')}
@@ -447,9 +547,10 @@ def render(report: dict) -> str:
 {table(['行为检查','结果'],[[c['name'],c['status']] for c in m5.get('checks',[])])}
 <p>对专用容器执行一次真实 kill-9/start，等待原任务恢复后才做幂等重试；小样本即使通过，也不能推导所有崩溃时机均 100% 可靠。因未受理、已提前完成或其他任务未排空而没有重启时，不冒充恢复成功。</p></section>
 <section><h2>M6 · 每租户四元组</h2>{conclusion_panel('M6')}<p><b>怎么测：</b>以EchoMem受保护接口声明/观测到的lane形成分母，在负载前、中、后反复读取快照。每个独立租户×lane都必须同时具有排队深度、累计等待、累计执行、拒绝数；缺失、重复、负数或NaN均不能填0，也不能算通过。</p><p>负载中采样 {fmt(m6.get('sample_count'))} 次；本轮期望 {fmt(m6['expected_cells'])} 个 tenant×lane 单元，观察到 {len(m6['rows'])} 个。模块：{escape(', '.join(m6['expected_lanes']))}。</p>
+<div class="chart-wide"><h3>各租户各层峰值排队深度</h3>{queue_chart}</div>
 {table(['租户','层/模块','队列峰值','最终队列','累计等待 s','累计执行 s','累计拒绝','受理增量'],observable_rows)}
 <p>累计时间不是单次请求延迟；缺失不能填零。这里只证明上表模块的观测，其他启用层和完整调度顺序仍需补充。</p></section>
-<section><h2>下一步缺口</h2>{table(['归属','待迭代'],[['测试平台','更高用户档和实际故障边界；同租户多用户、更多记忆量与业务DAU画像。'],['测试平台','轮换故障租户与delay依赖、重复样本；更长稳态公平性；多崩溃时机。'],['EchoMem / 观测接口','核对所有启用层是否具备逐租户四元组和可证明调度先后的事件；仅凭延迟不推断内部实现。'],['模块归因','429、模型降级、请求超时、Commit失败分别保留证据；不能仅凭CPU/内存未满判断代码没有瓶颈。']])}</section>
+<section><h2>测试仍需补齐的分母</h2>{table(['归属','待补测试'],[['测试平台','M1继续提高热用户与记忆规模，直到观察到崩溃、OOM或停止发压后积压无法恢复；补业务DAU画像。'],['测试平台','M2、M3至少重复3轮；M5覆盖多个kill时机、并发积压和连续崩溃。'],['EchoMem / 观测接口','让HTTP admission、router/fanout、provider与archive/storage进入完整lane声明和逐租户四元组。'],['模块归因','按reason_code和阶段耗时拆分429、模型降级、请求超时与Commit拒绝；CPU/内存未满不能证明代码没有瓶颈。']])}</section>
 <p><a href="report.json">脱敏统计 JSON</a> · 原始请求、身份凭据和故障详情保留执行机，不包含于分享文件。</p></main></body></html>'''
 
 

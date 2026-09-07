@@ -1,5 +1,11 @@
 from performance.targets.echomem.acceptance.main_metric_samples import comparison, summarize_flood
-from performance.targets.echomem.acceptance.main_metric_report import derive_conclusions, recovery_counts, redacted_report, render
+from performance.targets.echomem.acceptance.main_metric_report import (
+    derive_conclusions,
+    derive_module_recommendations,
+    recovery_counts,
+    redacted_report,
+    render,
+)
 import json
 
 
@@ -81,6 +87,36 @@ def test_each_metric_has_an_explicit_bounded_conclusion():
     assert "不能把最高已测档写成绝对容量上限" in conclusions["M1"]["conclusion"]
     assert conclusions["M3"]["level"] == "观察到租户完成分布不均"
     assert "严格优先仍未证明" in conclusions["M4"]["level"]
+
+
+def test_report_derives_evidence_backed_module_recommendations():
+    report = {"M1": {"levels": [{"hot_users": 8, "search": {"transport_or_http_errors": 3}}]},
+              "M2": {"cases": [{"worst_bystander_p95_change_percent": 25}],
+                     "bystander_http_errors": 0},
+              "M3_M4": {"commit_planned": 32, "accepted_202": 16, "commit_jain": .75,
+                          "search_inverse_p95_jain": .9,
+                          "tenants": [{"commit_completed_in_search_window": 2},
+                                      {"commit_completed_in_search_window": 0}],
+                          "overlap_search": {}, "paired": []},
+              "M5": {"passed_samples": 1, "sample_count": 1,
+                     "missing_messages": 0, "same_archive": True},
+              "M6": {"rows": [{"tenant": "T1", "lane": "commit"}],
+                     "expected_cells": 4, "expected_lanes": ["commit"]}}
+    recommendations = derive_module_recommendations(report)
+    modules = {item["module"] for item in recommendations}
+    assert {"原子引擎 Atomic Engine", "路由与意图模型", "租户公平调度"} <= modules
+    assert all(item["evidence"] and item["change"] and item["verify"]
+               for item in recommendations)
+
+
+def test_html_explains_metrics_and_echo_mem_modules():
+    public = redacted_report({}, {"levels": []})
+    html = render(public)
+    assert "六个指标分别反映什么" in html
+    assert "EchoMem 模块改进优先级" in html
+    assert "原子引擎 Atomic Engine" in html
+    assert "路由与意图模型" in html
+    assert "租户公平调度" in html
 
 
 def test_recovery_matrix_is_reduced_to_public_counts():
