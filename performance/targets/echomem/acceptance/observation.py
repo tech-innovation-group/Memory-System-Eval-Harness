@@ -84,6 +84,8 @@ def _request_stats(rows: list[dict[str, Any]], op: str = "read") -> dict[str, An
 
 def jain(values: list[float]) -> float | None:
     """Jain index preserving zero-demand outcomes; all-zero is undefined."""
+    if any(not math.isfinite(value) or value < 0 for value in values):
+        return None
     denominator = len(values) * sum(value * value for value in values)
     return sum(values) ** 2 / denominator if values and denominator else None
 
@@ -475,7 +477,10 @@ def evaluate_observation(suite: dict[str, Any], profile: dict[str, Any],
         if code not in selected:
             metric["status"] = "BLOCKED"
             metric["reason"] = "本次命令未选择该指标"
-    statuses = [metric["status"] for metric in metrics.values()]
+        elif quick and metric["status"] == "MEASURED":
+            metric["status"] = "PARTIAL"
+            metric["reason"] = "quick 仅为非完整采样；" + str(metric.get("reason") or "")
+    statuses = [metrics[code]["status"] for code in selected]
     overall = ("EXECUTION_ERROR" if "EXECUTION_ERROR" in statuses else
                "BLOCKED" if all(value == "BLOCKED" for value in statuses) else
                "MEASURED" if all(value == "MEASURED" for value in statuses) else "PARTIAL")

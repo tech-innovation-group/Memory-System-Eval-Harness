@@ -114,6 +114,7 @@ curl -fsS -X POST http://127.0.0.1:8010/api/inspect/test-control/fault \
 - `metrics_samples.csv`：合并后的资源/Prometheus 采样
 - `summary.json`：M1-M6 四态观测汇总
 - `tenant-observability-samples.json`：M6 两秒快照、队列和重启分段来源
+- `tenant-observability-before.json`：M6 发压前同步基线，用于计算计数器增量
 - `fault-isolation-*.json`、`commit-recovery-*.json`：逐探针证据
 - `report.html`：结论先行的最终 HTML
 

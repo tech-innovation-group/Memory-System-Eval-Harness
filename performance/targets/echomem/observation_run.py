@@ -84,6 +84,22 @@ def _combine_csv(suite: dict[str, Any], output: Path, filename: str) -> None:
         writer.writerows(rows)
 
 
+def _m1_levels(profile: dict[str, Any], key: str, defaults: list[int]) -> list[int]:
+    configured = profile.get(key)
+    return defaults if configured is None else [int(value) for value in configured]
+
+
+def _validate_m1_resume(report: dict[str, Any], expected: dict[str, Any]) -> None:
+    mismatches = [
+        key for key, value in expected.items()
+        if report.get(key) != value
+    ]
+    if mismatches:
+        raise ValueError(
+            "M1 resume configuration differs for " + ", ".join(mismatches)
+        )
+
+
 def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> dict[str, Any]:
     needs_m6_behaviors = "M6" in selected
     needs_fault = "M2" in selected or needs_m6_behaviors
@@ -198,20 +214,39 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         m1_reports = []
         if "M1" in selected:
             levels_by_topology = {
-                "cross-tenant": profile.get("m1_tenant_levels") or ([1, 2] if args.quick else [1, 2, 4, 8, 16, 32]),
-                "within-tenant": profile.get("m1_user_levels") or ([1, 2] if args.quick else [1, 2, 4, 8]),
+                "cross-tenant": _m1_levels(
+                    profile, "m1_tenant_levels",
+                    [1, 2] if args.quick else [1, 2, 4, 8, 16, 32],
+                ),
+                "within-tenant": _m1_levels(
+                    profile, "m1_user_levels",
+                    [1, 2] if args.quick else [1, 2, 4, 8],
+                ),
             }
             for topology, levels in levels_by_topology.items():
                 target = output / "M1" / topology
                 report_path = target / "report.json"
+                duration_s = 15 if args.quick else float(profile.get("m1_duration_s", 300))
+                warmup_s = 5 if args.quick else 30
+                expected_resume = {
+                    "topology": topology,
+                    "levels_requested": levels,
+                    "assessment_mode": "observe",
+                    "load_profile": "all",
+                    "warmup_s": warmup_s,
+                    "duration_s": duration_s,
+                    "per_user_search_rps": float(profile.get("m1_search_rps_per_user", 1)),
+                }
                 if args.resume and report_path.is_file():
-                    m1_reports.append(read_json(report_path))
+                    resumed_report = read_json(report_path)
+                    _validate_m1_resume(resumed_report, expected_resume)
+                    m1_reports.append(resumed_report)
                     continue
                 m1_reports.append(run_exploration(
                     base_url=profile["base_url"], output=target,
-                    topology=topology, levels=[int(value) for value in levels],
-                    fixed_tenants=4, warmup_s=5 if args.quick else 30,
-                    duration_s=15 if args.quick else float(profile.get("m1_duration_s", 300)),
+                    topology=topology, levels=levels,
+                    fixed_tenants=4, warmup_s=warmup_s,
+                    duration_s=duration_s,
                     q=float(profile.get("m1_search_rps_per_user", 1)),
                     target_container=str(profile.get("resource_container") or ""),
                     manifest={"resource_evidence": profile["resource_evidence"]},
@@ -226,7 +261,19 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         sampler_stop = threading.Event()
         sampler = None
         token = os.environ.get(str(observation.get("token_env") or "ECHOMEM_TEST_CONTROL_TOKEN"), "")
+        observation_before: dict[str, Any] = {}
         if observation.get("enabled") and token:
+            observation_before = collect_tenant_observability(
+                base_url=profile["base_url"], endpoint=str(observation.get("endpoint", "")),
+                token=token,
+                expected_tenants=list(observation.get("expected_tenants", [])),
+                expected_lanes=list(observation.get("expected_lanes", [])), timeout_s=15,
+            )
+            (output / "tenant-observability-before.json").write_text(
+                json.dumps(observation_before, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
             def sample_observability() -> None:
                 while not sampler_stop.is_set():
                     observation_samples.append(collect_tenant_observability(
@@ -281,6 +328,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             timeout_s=args.timeout_s,
         )
         suite = {**suite, **probes}
+        if observation.get("enabled"):
+            suite["tenant_observability_before"] = observation_before
         suite["m1"] = {
             "reports": [
                 {"topology": report.get("topology"),

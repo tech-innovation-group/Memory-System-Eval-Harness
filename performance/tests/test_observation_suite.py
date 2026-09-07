@@ -10,7 +10,9 @@ from performance.targets.echomem.acceptance.observation import (
     evaluate_observation,
     jain,
     summarize_m5,
+    summarize_m6,
 )
+from performance.targets.echomem.observation_run import _m1_levels, _validate_m1_resume
 from performance.targets.echomem.probes.tenant_observability import expected_lanes_from_config
 
 
@@ -43,6 +45,26 @@ def test_arrival_plan_has_four_real_load_shapes() -> None:
 def test_jain_all_zero_is_undefined_and_zero_tenant_is_retained() -> None:
     assert jain([0, 0, 0, 0]) is None
     assert jain([8, 8, 8, 0]) == 0.75
+    assert jain([1, -1]) is None
+    assert jain([1, float("nan")]) is None
+
+
+def test_m1_explicit_empty_levels_are_not_replaced_by_defaults() -> None:
+    assert _m1_levels({}, "m1_tenant_levels", [1, 2]) == [1, 2]
+    assert _m1_levels({"m1_tenant_levels": []}, "m1_tenant_levels", [1, 2]) == []
+
+
+def test_m1_resume_rejects_changed_configuration() -> None:
+    expected = {"topology": "cross-tenant", "levels_requested": [1, 2]}
+    _validate_m1_resume(dict(expected), expected)
+    try:
+        _validate_m1_resume(
+            {"topology": "cross-tenant", "levels_requested": [1]}, expected
+        )
+    except ValueError as exc:
+        assert "levels_requested" in str(exc)
+    else:
+        raise AssertionError("changed M1 resume configuration was accepted")
 
 
 def test_overlap_uses_search_start_not_interval_intersection(tmp_path: Path) -> None:
@@ -97,7 +119,52 @@ def test_lanes_are_derived_from_effective_config(tmp_path: Path) -> None:
     assert expected_lanes_from_config(inferred) == ["commit", "recall_query_embedding"]
 
 
+def test_m6_uses_explicit_before_snapshot_for_deltas() -> None:
+    def snapshot(accepted: int, rejected: int = 0) -> dict:
+        return {"process_id": "p1", "rows": [{
+            "tenant_id": "t1", "lane": "commit", "queued": 0,
+            "wait_seconds_total": accepted, "exec_seconds_total": accepted,
+            "rejected_total": rejected, "accepted_total": accepted,
+            "completed_total": accepted, "failed_total": 0,
+        }]}
+
+    suite = {
+        "tenant_observability_before": snapshot(2),
+        "tenant_observability_after_all": snapshot(5, 1),
+        "tenant_observability_samples": [snapshot(3), snapshot(4, 1)],
+    }
+    profile = {"tenant_observability": {
+        "expected_tenants": ["t1"], "expected_lanes": ["commit"],
+    }}
+    result = summarize_m6(suite, profile)
+    assert result["matrix"][0]["delta"]["accepted_total"] == 3
+    assert result["matrix"][0]["delta"]["rejected_total"] == 1
+    assert result["scenarios"]["NORMAL"] is True
+    assert result["scenarios"]["REJECT"] is True
+
+
 def test_final_observation_uses_only_four_statuses() -> None:
     result = evaluate_observation({}, {}, quick=False)
     assert result["status"] in STATUSES
     assert {metric["status"] for metric in result["metrics"].values()} <= set(STATUSES)
+
+
+def test_single_metric_overall_status_ignores_unselected_metrics() -> None:
+    result = evaluate_observation(
+        {}, {}, m1_reports=[{
+            "topology": "cross-tenant", "levels_requested": [1],
+            "load_profile": "search", "levels": [{"status": "MEASURED", "hot_users": 1}],
+        }], selected_metrics=["M1"],
+    )
+    assert result["status"] == "MEASURED"
+
+
+def test_quick_never_reports_selected_metric_as_measured() -> None:
+    result = evaluate_observation(
+        {}, {}, m1_reports=[{
+            "topology": "cross-tenant", "levels_requested": [1],
+            "load_profile": "search", "levels": [{"status": "MEASURED", "hot_users": 1}],
+        }], quick=True, selected_metrics=["M1"],
+    )
+    assert result["status"] == "PARTIAL"
+    assert result["metrics"]["M1"]["status"] == "PARTIAL"
