@@ -169,6 +169,13 @@ def collect(
         for item in normalized_rows
         if item["tenant_id"] and item["lane"]
     }
+    observed_lanes = sorted({item["lane"] for item in normalized_rows if item["lane"]})
+    declared_lane_count = payload.get("lane_count")
+    lane_count_matches_observed = (
+        isinstance(declared_lane_count, int)
+        and not isinstance(declared_lane_count, bool)
+        and declared_lane_count == len(observed_lanes)
+    )
     duplicate_rows: list[dict[str, Any]] = []
     seen_keys: set[tuple[str, str]] = set()
     for item in normalized_rows:
@@ -233,6 +240,8 @@ def collect(
         and not missing
         and not invalid
         and not duplicate_rows
+        and lane_count_matches_observed
+        and set(expected_lanes) == set(observed_lanes)
     )
     result.update(
         {
@@ -244,6 +253,10 @@ def collect(
             "boot_id": payload.get("boot_id"),
             "tenant_count": payload.get("tenant_count"),
             "lane_count": payload.get("lane_count"),
+            "observed_lanes": observed_lanes,
+            "lane_count_matches_observed": lane_count_matches_observed,
+            "expected_lanes_match_observed": set(expected_lanes) == set(observed_lanes),
+            "coverage_scope": "all lanes declared by the protected endpoint",
             "row_count": len(normalized_rows),
             "rows": observed,
             "unexpected": [

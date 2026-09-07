@@ -14,6 +14,7 @@ from performance.targets.echomem.acceptance.capacity_confirmation import (
     estimate_dau,
     recompute_confirmation,
 )
+from performance.targets.echomem.acceptance.capacity_evidence_merge import merge
 from performance.targets.echomem.probes.docker_inspect import resource_values
 from performance.targets.echomem.acceptance.preflight import config_digest, valid_model_response
 
@@ -105,6 +106,20 @@ def test_commit_drain_is_not_counted_as_in_window_throughput():
     assert result["commit"]["completed_rps"] == 0
 
 
+def test_commit_summary_reports_peak_in_flight_and_submission_window():
+    measurement = {"rows": [
+        {"op": "commit_submit", "accepted_202": True, "start_s": 30, "accepted_at_s": 31},
+        {"op": "commit_submit", "accepted_202": True, "start_s": 40, "accepted_at_s": 41},
+        {"op": "commit_done", "success": True, "accepted_at_s": 31, "end_s": 50,
+         "elapsed_s": 19, "status": "completed"},
+        {"op": "commit_done", "success": True, "accepted_at_s": 41, "end_s": 60,
+         "elapsed_s": 19, "status": "completed"},
+    ], "duration_s": 60, "identity_count": 1, "tenant_count": 1, "mixed": True}
+    commit = evaluate_level(measurement)["commit"]
+    assert commit["peak_in_flight"] == 2
+    assert commit["submission_window_s"] == 10
+
+
 def test_manual_restart_is_detected_even_without_restart_counter_change():
     assert crash_reason({"started_at": "before"}, {"running": True, "started_at": "after"}) == "container-restarted-during-load"
 
@@ -151,6 +166,58 @@ def test_missing_identity_cannot_be_capacity_pass():
     result = evaluate_level(measurement, assessment_mode="slo")
     assert result["status"] == "INCONCLUSIVE"
     assert len(result["cells"]) == 2
+
+
+def test_completion_mode_uses_request_completion_without_latency_or_quality_thresholds():
+    rows = [{"op": "read", "identity_index": 0, "query_type": "recall",
+             "sent": True, "http_status": 200, "success": False,
+             "elapsed_s": 12, "start_s": n, "end_s": n + 12}
+            for n in range(20)]
+    result = evaluate_level({"rows": rows, "mixed": False, "identity_count": 1,
+                             "tenant_count": 1, "duration_s": 20},
+                            assessment_mode="completion")
+    assert result["status"] == "PASS"
+    assert result["completion_contract"]["search_all_scheduled_sent"]
+    assert not result["latency_threshold_applied"]
+    assert not result["quality_threshold_applied"]
+
+
+def test_completion_mode_fails_on_first_http_or_transport_error():
+    rows = [{"op": "read", "identity_index": 0, "query_type": "recall",
+             "sent": True, "http_status": 429 if n == 3 else 200,
+             "success": n != 3, "elapsed_s": .1, "start_s": n, "end_s": n + .1}
+            for n in range(20)]
+    result = evaluate_level({"rows": rows, "mixed": False, "identity_count": 1,
+                             "tenant_count": 1, "duration_s": 20},
+                            assessment_mode="completion")
+    assert result["status"] == "FAIL"
+    assert result["completion_contract"]["search_http_or_transport_errors"] == 1
+
+
+def test_completion_confirmation_is_zero_error_level_not_capacity_maximum(tmp_path):
+    from performance.targets.echomem.acceptance.capacity_confirmation import _finalize
+    suite = {"assessment_mode": "completion", "levels": [
+        {"hot_users": 2, "status": "PASS", "mixed_aggregate": {}},
+        {"hot_users": 4, "status": "FAIL", "mixed_aggregate": {}},
+    ]}
+    result = _finalize(suite)
+    assert result["boundary"]["status"] == "ZERO_ERROR_CONFIRMED"
+    assert result["zero_error_max_hot_users"] == 2
+    assert result["first_nonzero_error_hot_users"] == 4
+    assert result["max_hot_users"] is None
+    assert result["dau"] is None
+
+
+def test_capacity_evidence_merge_keeps_zero_error_separate_from_hard_maximum(tmp_path):
+    source = tmp_path / "source.json"
+    source.write_text(json.dumps({"levels": [{"hot_users": 4,
+        "pure_aggregate": {"search": {"sent": 10}},
+        "mixed_aggregate": {"search": {"sent": 10}, "commit": {"submitted": 4}}}]}))
+    result = merge([source], zero_error_level=4, first_nonzero_error=8)
+    assert result["max_hot_users"] is None
+    assert result["zero_error_max_hot_users"] == 4
+    assert result["boundary"]["not_a_capacity_maximum"] is True
+    assert len(result["levels"]) == 2
 
 
 def test_report_never_labels_highest_attempted_level_as_maximum():

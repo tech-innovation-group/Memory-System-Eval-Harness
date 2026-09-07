@@ -59,7 +59,8 @@ def publish(*, confirmation: Path | None, output: Path, exploration: Path | None
             observations: list[Path] | None = None) -> dict:
     output.mkdir(parents=True, exist_ok=False)
     if confirmation:
-        report = recompute_confirmation(confirmation)
+        confirmation_mode = _read(confirmation / "report.json").get("assessment_mode", "observe")
+        report = recompute_confirmation(confirmation, assessment_mode=confirmation_mode)
     else:
         report = {"assessment_mode": "observe", "levels": [], "manifest": {},
                   "max_hot_users": None, "dau": None, "status": "MEASURED",
@@ -110,9 +111,10 @@ def publish(*, confirmation: Path | None, output: Path, exploration: Path | None
             report["levels"].append(summary)
         if value.get("operational_boundary"):
             report["operational_boundary"] = value["operational_boundary"]
-    report.update(assessment_mode="observe", max_hot_users=None, dau=None,
-                  boundary={"status": "NOT_ESTABLISHED"}, performance_requirements_applied=False)
-    if report.get("operational_boundary"):
+    if not confirmation or report.get("assessment_mode") == "observe":
+        report.update(assessment_mode="observe", max_hot_users=None, dau=None,
+                      boundary={"status": "NOT_ESTABLISHED"}, performance_requirements_applied=False)
+    if report.get("operational_boundary") and report.get("boundary", {}).get("status") != "CONFIRMED":
         report["boundary"] = {"status": "OBSERVED_FAILURE_STAGE",
                               "hot_users": report["operational_boundary"]["hot_users"]}
     samples = [l.get("resource_summary", {}) for l in report["levels"] if "search" in l]

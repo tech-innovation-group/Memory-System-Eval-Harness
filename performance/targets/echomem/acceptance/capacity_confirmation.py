@@ -18,9 +18,10 @@ from performance.targets.echomem.probes.docker_inspect import resource_sample, r
 def _shifted_rows(measurements: list[dict]) -> list[dict]:
     rows, offset = [], 0.0
     timing = ("scheduled_s", "start_s", "end_s", "accepted_at_s")
-    for measurement in measurements:
+    for repeat_index, measurement in enumerate(measurements, start=1):
         for source in measurement["rows"]:
             row = dict(source)
+            row["repeat_index"] = repeat_index
             if row.get("op") == "commit_done":
                 row["completed_in_window"] = bool(row.get("success") and row.get("end_s", float("inf")) <= measurement["duration_s"])
             for key in timing:
@@ -86,7 +87,18 @@ def _finalize(suite: dict) -> dict:
     highest = max((row["hot_users"] for row in passed), default=None)
     first_fail = min((row["hot_users"] for row in failed
                       if highest is None or row["hot_users"] > highest), default=None)
-    if highest is not None and first_fail is not None:
+    if (suite.get("assessment_mode") == "completion" and
+            highest is not None and first_fail is not None):
+        suite.update(status="MEASURED", evidence_complete=True, max_hot_users=None,
+                     zero_error_max_hot_users=highest,
+                     first_nonzero_error_hot_users=first_fail,
+                     boundary={"status": "ZERO_ERROR_CONFIRMED",
+                               "highest_zero_error": highest,
+                               "first_nonzero_error": first_fail,
+                               "evidence": "three-fresh-identity-repeats",
+                               "not_a_capacity_maximum": True},
+                     dau=None)
+    elif highest is not None and first_fail is not None:
         suite.update(status="PASS", evidence_complete=True, max_hot_users=highest,
                      boundary={"status": "CONFIRMED", "highest_pass": highest,
                                "first_fail": first_fail,
@@ -95,6 +107,14 @@ def _finalize(suite: dict) -> dict:
         suite["dau"] = {"status": "CONDITIONAL_ESTIMATE",
                         "basis": "PR397 standard user: 50 search/day, 40-60 commit/day",
                         "estimates": estimate_dau(winning["mixed_aggregate"])}
+    elif (suite.get("assessment_mode") == "completion" and highest is None and failed and
+          min(row["hot_users"] for row in failed) == 1):
+        suite.update(status="MEASURED", evidence_complete=True, max_hot_users=None,
+                     zero_error_max_hot_users=0, first_nonzero_error_hot_users=1,
+                     boundary={"status": "ZERO_ERROR_CONFIRMED",
+                               "highest_zero_error": 0, "first_nonzero_error": 1,
+                               "evidence": "three-fresh-identity-repeats",
+                               "not_a_capacity_maximum": True}, dau=None)
     elif highest is None and failed and min(row["hot_users"] for row in failed) == 1:
         suite.update(status="FAIL", evidence_complete=True, max_hot_users=0,
                      boundary={"status": "CONFIRMED", "highest_pass": 0, "first_fail": 1,
@@ -113,8 +133,10 @@ def recompute_confirmation(output: Path, *, assessment_mode: str = "observe") ->
     source = json.loads((output / "report.json").read_text(encoding="utf-8"))
     suite = {key: value for key, value in source.items() if key not in
              ("levels", "status", "boundary", "max_hot_users", "dau",
+              "zero_error_max_hot_users", "first_nonzero_error_hot_users",
               "evidence_complete", "current")}
     suite.update(status="RUNNING", levels=[], max_hot_users=None, dau=None,
+                 zero_error_max_hot_users=None, first_nonzero_error_hot_users=None,
                  assessment_mode=assessment_mode,
                  evidence_complete=False, current=None, derived_from_raw=True,
                  derivation="capacity_statistics.evaluate_level")
@@ -178,7 +200,7 @@ def run_confirmation(*, base_url: str, output: Path, topology: str,
                      pure_duration_s: float = 180, mixed_duration_s: float = 450,
                      warmup_s: float = 30, q: float = 1, memory_scale: int = 1,
                      manifest: dict | None = None, target_container: str = "",
-                     assessment_mode: str = "observe") -> dict:
+                     assessment_mode: str = "observe", seed_validation_queries: int = 40) -> dict:
     if output.exists():
         raise FileExistsError(f"Refuse to overwrite M1 confirmation: {output}")
     output.mkdir(parents=True, mode=0o700)
@@ -190,7 +212,9 @@ def run_confirmation(*, base_url: str, output: Path, topology: str,
              "repeats": repeats, "pure_duration_s": pure_duration_s,
              "mixed_duration_s": mixed_duration_s, "warmup_s": warmup_s,
              "per_user_search_rps": q, "memory_scale": memory_scale,
+             "seed_validation_queries": seed_validation_queries,
              "manifest": manifest or {}, "levels": [], "max_hot_users": None,
+             "zero_error_max_hot_users": None, "first_nonzero_error_hot_users": None,
              "dau": None, "evidence_complete": False, "current": None}
     _write(output / "report.json", suite)
 
@@ -244,7 +268,7 @@ def run_confirmation(*, base_url: str, output: Path, topology: str,
             actors = provision_actors(base_url, tenant_count, users_per_tenant,
                                       memory_scale=memory_scale, seed=42)
             _write(repeat_root / "identities.private.json", _private_actors(actors), private=True)
-            seed = prepare_actors(actors)
+            seed = prepare_actors(actors, validation_queries=seed_validation_queries)
             _write(repeat_root / "seed-evidence.json", seed)
             _write(repeat_root / "identities.private.json", _private_actors(actors), private=True)
             repeat_result = {"repeat": repeat + 1, "seed_status": seed["status"]}
@@ -280,8 +304,9 @@ def run_confirmation(*, base_url: str, output: Path, topology: str,
             _write(repeat_root / "mixed-measurement.json", mixed)
             mixed_result = evaluate_level(mixed, assessment_mode=assessment_mode)
             repeat_result.update(status="MEASURED" if assessment_mode == "observe" else
-                                 "PASS" if pure_result["slo_observed"] and
-                                 mixed_result["slo_observed"] else "FAIL",
+                                 "PASS" if pure_result["status"] == mixed_result["status"] == "PASS" else
+                                 "FAIL" if "FAIL" in {pure_result["status"], mixed_result["status"]} else
+                                 "INCONCLUSIVE",
                                  pure=pure_result, mixed=mixed_result,
                                  pure_resource_samples=len(pure_resources),
                                  mixed_resource_samples=len(mixed_resources))
@@ -303,9 +328,9 @@ def run_confirmation(*, base_url: str, output: Path, topology: str,
         else:
             level_result["status"] = "BLOCKED"
         _write(output / "report.json", suite)
-        if assessment_mode == "slo" and hot_users == 1 and level_result["status"] == "FAIL":
+        if assessment_mode in {"completion", "slo"} and hot_users == 1 and level_result["status"] == "FAIL":
             suite["early_stop"] = {
-                "reason": "lowest-load-level-failed-locked-slo",
+                "reason": "lowest-load-level-failed-locked-contract",
                 "skipped_levels": [candidate for candidate in levels if candidate > level],
             }
             break
@@ -326,9 +351,10 @@ def main() -> None:
     parser.add_argument("--mixed-duration-s", type=float, default=450)
     parser.add_argument("--warmup-s", type=float, default=30)
     parser.add_argument("--memory-scale", type=int, choices=(1, 10), default=1)
+    parser.add_argument("--seed-validation-queries", type=int, default=40)
     parser.add_argument("--manifest-json", default="{}")
     parser.add_argument("--target-container", default="")
-    parser.add_argument("--assessment-mode", choices=("observe", "slo"), default="observe")
+    parser.add_argument("--assessment-mode", choices=("observe", "completion", "slo"), default="observe")
     parser.add_argument("--recompute", action="store_true",
                         help="rebuild report.recomputed.json from existing raw files")
     args = parser.parse_args()
@@ -344,7 +370,8 @@ def main() -> None:
             pure_duration_s=args.pure_duration_s, mixed_duration_s=args.mixed_duration_s,
             warmup_s=args.warmup_s, memory_scale=args.memory_scale,
             manifest=json.loads(args.manifest_json), target_container=args.target_container,
-            assessment_mode=args.assessment_mode)
+            assessment_mode=args.assessment_mode,
+            seed_validation_queries=args.seed_validation_queries)
     print(json.dumps({"status": result["status"], "boundary": result.get("boundary"),
                       "max_hot_users": result["max_hot_users"], "dau": result["dau"]}))
 
