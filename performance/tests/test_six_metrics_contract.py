@@ -72,7 +72,7 @@ class EvidenceContractTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, '300'):
                 configure_profile(config)
             config['fault_isolation']['duration_s'] = 300
-            self.assertEqual(configure_profile(config)['fault_isolation']['duration_s'], 300)
+            self.assertEqual(configure_profile(config, live=False)['fault_isolation']['duration_s'], 300)
 
     def test_fault_control_error_is_retained_separately_from_baseline(self):
         payload = {'target_tenant': 'a', 'fault_type': 'reject', 'repetition': 1, 'checks': [

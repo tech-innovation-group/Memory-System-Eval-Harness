@@ -57,7 +57,8 @@ class _ProbeHandler(http.server.BaseHTTPRequestHandler):
             self._send(404, {"error": "model not found"})
             return
         if path in {"/chat/completions", "/embeddings"}:
-            self._send(200, {"ok": True})
+            self._send(200, {"data": [{"embedding": [0.1, 0.2]}]} if path == "/embeddings"
+                       else {"choices": [{"message": {"content": "pong"}}]})
         else:
             self._send(404, {"error": "not found"})
 
@@ -409,7 +410,8 @@ def test_run_preflight_env_failure(probe_server, tmp_path, monkeypatch):
     result = run_preflight(config, timeout_s=5.0)
     assert result["ok"] is False
     assert "PROBE_KEY" in result["error"]
-    assert result["engines_checked"] == 1
+    assert result["engines_checked"] == 0
+    assert result["probe_attempts"] == 0
     assert result["digest"]
 
 

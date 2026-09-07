@@ -15,7 +15,6 @@ from __future__ import annotations
 import csv
 import json
 import time
-import subprocess
 import os
 from pathlib import Path
 from typing import Any
@@ -214,14 +213,15 @@ def run_case(
 #  suite 编排（钩子 + 薄包装）                                            #
 # ---------------------------------------------------------------------- #
 
-def _preflight_stage(config: str) -> dict:
+def _preflight_stage(config: str, *, strict: bool = False) -> dict:
     """preflight 阶段条目：配置缺失时给 NOT_RUN，否则运行并附加 config。"""
     if not config:
         return {
             "status": "NOT_RUN", "config": "", "engines_checked": 0,
             "engines": [], "digest": "",
         }
-    result = run_preflight(config, timeout_s=30.0)
+    result = run_preflight(config, timeout_s=30.0,
+                           **({"required_kinds": ("llm", "embedding")} if strict else {}))
     return {**result, "config": config}
 
 
@@ -306,23 +306,15 @@ def run_suite(
     metrics_enabled = bool(profile.get("metrics_enabled", True))
     observation_before = None
     if profile.get("six_metrics"):
-        container = str(profile.get("resource_container") or (profile.get("commit_recovery") or {}).get("container") or "")
-        try:
-            from performance.targets.echomem.probes.docker_inspect import inspect_container
-            config = inspect_container(container)["HostConfig"]
-            cpus = float(config.get("NanoCpus", 0)) / 1e9
-            if not cpus and config.get("CpuPeriod", 0) > 0:
-                cpus = config.get("CpuQuota", 0) / config["CpuPeriod"]
-            resource = {"cpus": cpus, "memory_bytes": config.get("Memory"), "container": container}
-            if cpus != 4 or config.get("Memory") != 8 * 1024 ** 3:
-                raise ValueError("Container limits must be exactly 4 CPUs and 8 GiB")
-            profile = {**profile, "resource_evidence": resource}
-        except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        from performance.targets.echomem.acceptance.readiness import check_readiness
+        readiness = check_readiness(profile)
+        if not readiness["ok"]:
             suite_dir.mkdir(parents=True, exist_ok=True)
-            result = {"runs": [], "resource_preflight": {"status": "INCONCLUSIVE", "reason": str(exc)},
+            result = {"runs": [], "resource_preflight": {"status": "INCONCLUSIVE", "readiness": readiness},
                       "output_root": str(suite_dir), "instance_profile": profile.get("name")}
             (suite_dir / "suite.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
             return result
+        profile = {**profile, "resource_evidence": readiness["resource_evidence"]}
         observation = profile.get("tenant_observability", {})
         from performance.targets.echomem.probes.tenant_observability import collect
         observation_before = collect(
@@ -338,6 +330,12 @@ def run_suite(
             collect_metrics=metrics_enabled,
         )
 
+    def _select_cases(name, scenarios):
+        if profile.get("six_metrics"):
+            from performance.targets.echomem.orchestrator.suites import six_metric_cases
+            return six_metric_cases(profile.get("capacity_levels"))
+        return select_cases(name, scenarios)
+
     result = run_suite_impl(
         profile,
         suite_dir=suite_dir,
@@ -347,17 +345,19 @@ def run_suite(
         scenarios=scenarios,
         quick=quick,
         resume=resume,
-        select_cases=select_cases,
+        select_cases=_select_cases,
         build_profile=lambda case, url, tenant_count, q: build_case_profile(
             case, base_url=url, tenant_count=tenant_count, auth_headers={}, quick=q
         ),
         run_case=_run_case,
-        preflight=_preflight_stage,
+        preflight=lambda config: _preflight_stage(config, strict=bool(profile.get("six_metrics"))),
         seed=_prepare_seed,
         evaluate=evaluate_pr421_acceptance,
     )
     if profile.get("resource_evidence"):
         result["resource_evidence"] = profile["resource_evidence"]
+    if profile.get("six_metrics"):
+        result["readiness"] = readiness
     if observation_before is not None:
         result["tenant_observability_before"] = observation_before
     return result

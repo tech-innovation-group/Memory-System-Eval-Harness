@@ -376,6 +376,9 @@ def run_configured_probes(
             "duration_s",
             "delay_ms",
             "queries",
+            "phase_duration_s",
+            "search_rps_per_tenant",
+            "target_rps",
         ):
             value = fault_isolation.get(key)
             if value not in (None, ""):

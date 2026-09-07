@@ -6,6 +6,11 @@
       "resource_container": "echomem-stress-4u8g",
       "tenant_config": "./tenants.json",
       "preflight_config": "./echomem.config.json",
+      "capacity_levels": [2, 4, 8, 16, 32],
+      "dau_model": {
+        "requests_per_user_per_day": 20,
+        "peak_to_average_ratio": 5
+      },
       "fault_isolation": {
         "samples": 100,
         "repeats": 3,
@@ -21,6 +26,7 @@
         "token_env": "ECHOMEM_TEST_CONTROL_TOKEN"
       },
       "commit_recovery": {
+        "allow_container_restart": false,
         "messages": 12,
         "content_chars": 1000,
         "recovery_timeout_s": 180

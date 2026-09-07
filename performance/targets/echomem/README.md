@@ -1,6 +1,7 @@
 # EchoMem 压测 target（`performance/targets/echomem`）
 
 六项 4U8G 指标的输入、步骤、分母与判定见 [六指标用例](docs/six-metrics.md)。
+第一次运行请从 [安装、环境检查到生成报告的完整手册](docs/six-metrics-runbook.md) 开始。
 从仓库根目录运行 `python -m performance --target echomem`。
 正式六指标使用 `--six-metrics`，默认不包含 soak。
 

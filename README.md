@@ -3,6 +3,11 @@
 记忆系统评测框架。全 CLI，无网页 UI。直接通过 Python 脚本完成数据集加载、
 记忆注入、Agent 问答、Judge 评分和结果报告。
 
+**六项 4U8G 黑盒压测（基于 PR31）**：先看 [完整运行手册](performance/targets/echomem/docs/six-metrics-runbook.md)，
+再看 [六项测试方案与判定规则](performance/targets/echomem/docs/six-metrics.md)。
+使用 `python -m performance --target echomem --six-metrics`，不是 LoCoMo 准确率评测，
+也不是默认 26 场景长矩阵；先 `--check-only` 检查环境，再启动正式套件，默认不跑 soak。
+
 ## 设计目标
 
 ### 1. 支撑业界所有 agent 的评测
@@ -461,7 +466,7 @@ python -m performance.run --target echomem \
 缺少故障控制、重启控制或多规格实测时，报告保留 `INCONCLUSIVE`，不会
 根据客户端延迟或 HTTP 200 推断 EchoMem 已实现对应保证。
 
-本次 PR29 的专项验收口径已收紧：容量项必须有真实完成请求且 Search/Commit
+旧完整套件的专项验收口径已收紧：容量项必须有真实完成请求且 Search/Commit
 成功率达标；多规格必须有至少两种规格的实际运行记录；公平性必须同时有逐租户
 Commit 完成吞吐和 Search P95，取两者 Jain 的较小值；Search 优先级只接受已完成的
 洪泛场景，并直接检查 Search P95 是否不超过 5 秒；恢复项必须同时通过消息集合、
@@ -582,7 +587,7 @@ suite 摘要 + 探针制品 + O1-O7 汇总）与 `objective-suite.html`（自包
 
 ### 1. 拉取测试平台
 
-使用测试平台 PR29 的 `v3` 分支：
+以下为既有 `v3` 套件入口；基于 PR31 的无性能门槛观测请使用文首运行手册中的新 PR 分支：
 
 ```bash
 git clone -b v3 git@github.com:noi031/Memory-System-Eval-Harness.git

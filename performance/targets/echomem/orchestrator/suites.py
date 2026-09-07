@@ -21,7 +21,7 @@ from typing import Any
 from performance.profile import Profile
 from performance.suite import (
     QuickSpec,
-    apply_quick,
+    apply_quick as apply_quick,
     build_case_profile as _build_case_profile_general,
 )
 from performance.targets.echomem.protocol import DEFAULT_QUERIES
@@ -464,10 +464,15 @@ def select_cases(profile_name: str, scenarios: list[str] | None) -> list[dict]:
     return [by_label[item] for item in scenarios]
 
 
-def six_metric_cases() -> list[dict]:
+def six_metric_cases(capacity_levels: list[int] | None = None) -> list[dict]:
+    levels = capacity_levels if capacity_levels is not None else [2, 4, 8, 16, 32]
+    if (not isinstance(levels, list) or len(levels) < 2
+            or any(type(n) is not int or n < 2 for n in levels)
+            or levels != sorted(set(levels))):
+        raise ValueError("capacity_levels must contain at least two increasing integer levels >= 2")
     cases = [
         _case(label="recall-baseline", scene="scene_capacity", tenants=4,
-              duration_s=60, search_rps=8, commit_rpm=0, read_only=True),
+              duration_s=60, search_rps=16, search_workers=32, commit_rpm=0, read_only=True),
         _case(label="query-mixed", scene="scene_capacity", tenants=4,
               duration_s=60, search_rps=8, commit_rpm=0, read_only=True,
               query_mode="mixed"),
@@ -476,7 +481,7 @@ def six_metric_cases() -> list[dict]:
          "duration_s": 120, "sessions_per_tenant": 1, "commit_barrier_count": 32,
          "barrier_at_s": 15},
     ]
-    for level in (2, 4, 8, 16, 32):
+    for level in levels:
         cases.append(_case(label=f"capacity-{level}", scene="scene_capacity",
                            tenants=level, duration_s=60, search_rps=level,
                            search_workers=level * 2, commit_rpm=0, read_only=True))
