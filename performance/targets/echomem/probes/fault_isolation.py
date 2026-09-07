@@ -223,7 +223,13 @@ def sample_search(
         by_tenant[tenant_id] = {
             "submitted": len(selected),
             "succeeded": len(successful),
+            "errors": len(selected) - len(successful),
+            "timeouts": sum("timeout" in str(row.get("error") or "").lower() for row in selected),
+            "quality_observed": sum(bool(queries) for _ in selected),
+            "quality_ok": sum(bool(row.get("quality_ok")) for row in selected),
+            "p50_s": percentile(latencies, 0.50),
             "p95_s": percentile(latencies),
+            "p99_s": percentile(latencies, 0.99),
             "median_s": median(latencies) if latencies else None,
             "max_generator_lag_s": max((r["generator_lag_s"] for r in selected), default=None),
             "configured_rps": (target_rps if tenant_id == target_tenant else rps_per_tenant) if duration_s > 0 else None,
@@ -417,10 +423,13 @@ def run(ctx: Ctx) -> None:
         and fault_window_covered(endpoint, control_args["duration_s"], fault_elapsed)
         and generator_healthy
     )
+    observation_only = bool(params.get("observation_only"))
     if not baseline_healthy:
         status, reason = INCONCLUSIVE, "故障注入前基线已有错误或降级，保留数据但不能归因于单租户故障"
     elif not complete:
         status, reason = INCONCLUSIVE, "故障控制或旁观租户前后 Search P95 证据不完整"
+    elif observation_only:
+        status, reason = PASS, "故障已实际生效并完成前/中/后观测；未应用性能门槛"
     elif recovered_target and healthy_bystanders and bystander_p95_degradation is not None and bystander_p95_degradation <= 0.20:
         status, reason = PASS, "旁观租户 Search P95 劣化不超过 20%"
     else:
@@ -446,6 +455,15 @@ def run(ctx: Ctx) -> None:
             "after": after,
             "bystanders": bystanders,
             "fault_recovered": disable.get("status") == PASS and recovered_target,
+            "target_recovery_observed_s": (
+                disable.get("elapsed_s", 0) + min(
+                    (row.get("start_offset_s", 0) + row.get("elapsed_s", 0)
+                     for row in after.get("by_tenant", {}).get(target_tenant, {}).get("rows", [])
+                     if isinstance(row.get("status_code"), int)
+                     and 200 <= row["status_code"] < 300),
+                    default=after.get("elapsed_s"),
+                )
+            ),
             "bystander_p95_degradation": bystander_p95_degradation,
             "degradation_by_tenant": degradations,
             "p95_before_by_tenant": {

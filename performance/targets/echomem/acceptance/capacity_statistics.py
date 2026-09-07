@@ -101,7 +101,11 @@ def evaluate_level(measurement: dict, *, confirmation: bool = False,
     if assessment_mode not in {"observe", "slo"}:
         raise ValueError("assessment_mode must be observe or slo")
     reads = [r for r in measurement["rows"] if r["op"] == "read"]
-    classes = ("recall", "no_recall") if measurement["mixed"] else ("recall",)
+    load_mode = measurement.get("load_mode") or (
+        "mixed" if measurement["mixed"] else "search"
+    )
+    classes = (() if load_mode == "commit" else
+               ("recall", "no_recall") if measurement["mixed"] else ("recall",))
     cells = []
     for identity in range(measurement["identity_count"]):
         for kind in classes:
@@ -148,12 +152,22 @@ def evaluate_level(measurement: dict, *, confirmation: bool = False,
               "sent_search_rps": total["sent"] / measurement["duration_s"],
               "duration_s": measurement["duration_s"], "identity_count": measurement["identity_count"],
               "tenant_count": measurement["tenant_count"], "mixed": measurement["mixed"],
+              "load_mode": load_mode,
               "per_user_search_rps": measurement.get("per_user_search_rps"),
               "per_user_commit_interval_s": measurement.get("per_user_commit_interval_s"),
               "elapsed_with_drain_s": measurement.get("elapsed_with_drain_s")}
     if assessment_mode == "observe":
-        common.update(status="MEASURED" if total["sent"] else "NO_DATA",
-                      all_identities_and_classes_sampled=all(c["sent"] > 0 for c in cells),
+        operation_rows = [
+            row for row in measurement["rows"]
+            if row.get("op") in {"read", "add", "commit_submit"}
+        ]
+        sent_operations = sum(bool(row.get("sent")) for row in operation_rows)
+        common.update(status="MEASURED" if sent_operations else "PARTIAL",
+                      all_identities_and_classes_sampled=(
+                          all(c["sent"] > 0 for c in cells)
+                          if cells else len({r.get("identity_index") for r in submissions})
+                          == measurement["identity_count"]
+                      ),
                       performance_requirements_applied=False)
         return common
     if measurement["mixed"]:

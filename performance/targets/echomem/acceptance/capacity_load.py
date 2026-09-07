@@ -13,34 +13,71 @@ from performance.targets.echomem.acceptance.semantic_corpus import assess_retrie
 from performance.targets.echomem.probes._client import extract_archive, status_from
 
 
-def arrival_plan(identities: int, duration_s: float, q: float, mixed: bool,
-                 *, seed: int = 42) -> list[tuple]:
+LOAD_MODES = {"search", "commit", "mixed", "hotspot"}
+
+
+def arrival_plan(
+    identities: int,
+    duration_s: float,
+    q: float,
+    mixed: bool = False,
+    *,
+    seed: int = 42,
+    load_mode: str | None = None,
+    commit_interval_s: float = 30.0,
+    hotspot_multiplier: float = 8.0,
+) -> list[tuple]:
     if identities < 1 or duration_s <= 0 or q <= 0 or not all(math.isfinite(v) for v in (duration_s, q)):
         raise ValueError("Positive finite identities, duration and per-user rate required")
+    legacy_mixed = load_mode is None and mixed
+    mode = load_mode or ("mixed" if mixed else "search")
+    if mode not in LOAD_MODES:
+        raise ValueError(f"load_mode must be one of {sorted(LOAD_MODES)}")
+    if commit_interval_s <= 0 or not math.isfinite(commit_interval_s):
+        raise ValueError("commit_interval_s must be positive and finite")
+    if hotspot_multiplier < 1 or not math.isfinite(hotspot_multiplier):
+        raise ValueError("hotspot_multiplier must be finite and >= 1")
+    include_search = mode in {"search", "mixed", "hotspot"}
+    include_commit = mode in {"commit", "mixed", "hotspot"}
     events = []
     for actor in range(identities):
         # Seeded independent Poisson streams keep runs reproducible without
         # synchronising every actor on the same fixed tick.
-        rng = random.Random(f"{seed}:read:{actor}")
-        at, seq = rng.expovariate(q), 0
-        while at < duration_s:
-            events.append((at, "read", actor, seq))
-            seq += 1
-            at += rng.expovariate(q)
-        if mixed:
-            # Guarantee a non-empty first commit for every identity. Later
-            # messages still follow an independent Poisson process.
-            events.append((actor / identities, "add", actor, 0))
-            rng = random.Random(f"{seed}:add:{actor}")
-            at, seq = rng.expovariate(1 / 30), 1
+        rate = q * (hotspot_multiplier if mode == "hotspot" and actor == 0 else 1.0)
+        if include_search:
+            rng = random.Random(f"{seed}:read:{actor}")
+            at, seq = rng.expovariate(rate), 0
             while at < duration_s:
-                events.append((at, "add", actor, seq))
+                events.append((at, "read", actor, seq))
                 seq += 1
-                at += rng.expovariate(1 / 30)
-            for seq in range(math.ceil(duration_s / 300)):
-                at = 30 + actor / identities * 30 + seq * 300
-                if at < duration_s:
-                    events.append((at, "commit_submit", actor, seq))
+                at += rng.expovariate(rate)
+        if include_commit:
+            if legacy_mixed:
+                events.append((actor / identities, "add", actor, 0))
+                rng = random.Random(f"{seed}:add:{actor}")
+                at, seq = rng.expovariate(1 / 30), 1
+                while at < duration_s:
+                    events.append((at, "add", actor, seq))
+                    seq += 1
+                    at += rng.expovariate(1 / 30)
+                for seq in range(math.ceil(duration_s / 300)):
+                    at = 30 + actor / identities * 30 + seq * 300
+                    if at < duration_s:
+                        events.append((at, "commit_submit", actor, seq))
+                continue
+            # Pair every planned Commit with a preceding real message. The
+            # small offset keeps the two operations in independent pools while
+            # preserving a stable, auditable arrival schedule.
+            offset = actor / identities * min(1.0, commit_interval_s / 4)
+            sequence = 0
+            at = offset
+            while at < duration_s:
+                events.append((at, "add", actor, sequence))
+                commit_at = at + min(0.5, commit_interval_s / 4)
+                if commit_at < duration_s:
+                    events.append((commit_at, "commit_submit", actor, sequence))
+                sequence += 1
+                at += commit_interval_s
     return sorted(e for e in events if e[0] < duration_s)
 
 
@@ -55,8 +92,15 @@ def query_for(actor, sequence: int, mixed: bool) -> dict:
 
 def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = False,
             commit_timeout_s: float = 180, request_timeout_s: float = 10,
-            seed: int = 42) -> dict:
-    plan = arrival_plan(len(actors), duration_s, q, mixed, seed=seed)
+            seed: int = 42, load_mode: str | None = None,
+            commit_interval_s: float = 30.0,
+            hotspot_multiplier: float = 8.0) -> dict:
+    mode = load_mode or ("mixed" if mixed else "search")
+    plan = arrival_plan(
+        len(actors), duration_s, q, mixed, seed=seed, load_mode=mode,
+        commit_interval_s=commit_interval_s,
+        hotspot_multiplier=hotspot_multiplier,
+    )
     rows = []
     receipts = []
     window_id = uuid.uuid4().hex
@@ -115,7 +159,7 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
                   "user_index": actor.user_index, "sequence": sequence, "scheduled_s": scheduled,
                   "start_s": begin - started, "generator_lag_s": max(0, begin - started - scheduled)}
         if op == "read":
-            sample = query_for(actor, sequence, mixed)
+            sample = query_for(actor, sequence, mode in {"mixed", "hotspot"})
             record.update(query_type=sample["query_type"], query_id=sample["id"])
         try:
             if begin >= end:
@@ -185,7 +229,9 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
                         "user_index": actors[index].user_index, "sequence": sequence,
                         "scheduled_s": at, "sent": False, "success": False, "error": "generator_saturated"}
                 if op == "read":
-                    sample = query_for(actors[index], sequence, mixed)
+                    sample = query_for(
+                        actors[index], sequence, mode in {"mixed", "hotspot"}
+                    )
                     missed.update(query_type=sample["query_type"], query_id=sample["id"])
                 append(missed)
         remaining = end - time.monotonic()
@@ -197,12 +243,19 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
         polls.shutdown(wait=True)
     return {"rows": sorted(rows, key=lambda r: r.get("scheduled_s", r.get("start_s", r.get("end_s", 0)))),
             "planned_search": sum(event[1] == "read" for event in plan),
+            "planned_add": sum(event[1] == "add" for event in plan),
+            "planned_commit": sum(event[1] == "commit_submit" for event in plan),
             "started_at_monotonic_s": started,
             "duration_s": duration_s, "elapsed_with_drain_s": time.monotonic() - started,
-            "pools": widths, "per_user_search_rps": q, "mixed": mixed,
-            "per_user_message_rate_per_min": 2 if mixed else 0,
-            "per_user_commit_interval_s": 300 if mixed else None,
-            "recall_query_fraction": .7 if mixed else 1.0,
+            "pools": {**widths, "commit_poll": polls._max_workers},
+            "per_user_search_rps": q if mode != "commit" else 0,
+            "mixed": mode in {"mixed", "hotspot"},
+            "load_mode": mode,
+            "hotspot_identity_index": 0 if mode == "hotspot" else None,
+            "hotspot_multiplier": hotspot_multiplier if mode == "hotspot" else None,
+            "per_user_message_rate_per_min": 60 / commit_interval_s if mode != "search" else 0,
+            "per_user_commit_interval_s": commit_interval_s if mode != "search" else None,
+            "recall_query_fraction": .7 if mode in {"mixed", "hotspot"} else 1.0,
             "request_timeout_s": request_timeout_s, "commit_deadline_s": commit_timeout_s,
             "arrival_process": "independent-seeded-poisson", "arrival_seed": seed,
             "commit_receipts": receipts,

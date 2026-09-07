@@ -37,6 +37,7 @@ from performance.targets.echomem.probes._client import (
     values_from_payload,
     status_from,
 )
+from performance.targets.echomem.probes.docker_inspect import inspect_container
 
 PASS = "PASS"
 FAIL = "FAIL"
@@ -334,6 +335,9 @@ def run(ctx: Ctx) -> None:
         params.get("require_accepted_202") or ""
     ).lower() in ("1", "true", "yes", "on")
     accepted_wait_s = float(params.get("accepted_wait_s", 10.0))
+    second_restart = bool(params.get("second_restart", False))
+    expected_container_id = str(params.get("expected_container_id") or "")
+    expected_image_id = str(params.get("expected_image_id") or "")
     configured_key = str(params.get("idempotency_key") or "")
     started = time.monotonic()
 
@@ -367,6 +371,27 @@ def run(ctx: Ctx) -> None:
             elapsed_s=time.monotonic() - started,
         )
         return
+    if container and (expected_container_id or expected_image_id):
+        try:
+            actual_container = inspect_container(container)
+        except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
+            ctx.check("commit-recovery", status=INCONCLUSIVE,
+                      reason="target container identity could not be verified",
+                      detail=_detail({"error": f"{type(exc).__name__}: {exc}"}))
+            return
+        identity_matches = (
+            (not expected_container_id or actual_container.get("Id") == expected_container_id)
+            and (not expected_image_id or actual_container.get("Image") == expected_image_id)
+            and actual_container.get("State", {}).get("Running") is True
+        )
+        if not identity_matches:
+            ctx.check("commit-recovery", status=INCONCLUSIVE,
+                      reason="target container identity changed; refusing kill-9",
+                      detail=_detail({"expected_container_id": expected_container_id,
+                                      "expected_image_id": expected_image_id,
+                                      "actual_container_id": actual_container.get("Id"),
+                                      "actual_image_id": actual_container.get("Image")}))
+            return
     if not tenant_config:
         ctx.check(
             "commit-recovery",
@@ -525,6 +550,36 @@ def run(ctx: Ctx) -> None:
             }),
         )
         return
+
+    second_restart_evidence: dict[str, Any] = {
+        "requested": second_restart,
+        "exercised": False,
+    }
+    if second_restart and accepted_archive:
+        status_after_first = client.commit_status(session_id, str(accepted_archive))
+        state_after_first = status_from(status_after_first.payload)
+        second_restart_evidence["state_before_second_restart"] = state_after_first
+        if state_after_first in {"pending", "queued", "running", "processing", "in_progress", "awaiting_engines"}:
+            second_control = kill_and_start(
+                container, 0, pid=pid, restart_command=restart_command
+            )
+            second_restart_evidence.update(
+                exercised=True,
+                control=second_control,
+                control_ok=recovery_control_ok(second_control),
+            )
+            if recovery_control_ok(second_control):
+                second_deadline = time.monotonic() + max(1.0, recovery_timeout_s)
+                while time.monotonic() < second_deadline:
+                    second_health = health(health_url, health_timeout_s)
+                    if second_health["healthy"]:
+                        second_restart_evidence["healthy_after_second_restart"] = True
+                        break
+                    time.sleep(max(0.2, poll_s))
+                else:
+                    second_restart_evidence["healthy_after_second_restart"] = False
+        else:
+            second_restart_evidence["reason"] = "original archive reached terminal state before second kill"
 
     payload = commit_box.get("payload") or {}
     commit_payload = payload.get("result") if isinstance(payload.get("result"), dict) else payload
@@ -776,6 +831,7 @@ def run(ctx: Ctx) -> None:
             },
             "accepted_202": accepted_202,
             "autonomous_recovery_observed": final_state == "completed",
+            "second_restart": second_restart_evidence,
             "replay_submitted_after_completion": replay_response is not None,
             "idempotency_key": idempotency_key,
             "session_id": session_id,

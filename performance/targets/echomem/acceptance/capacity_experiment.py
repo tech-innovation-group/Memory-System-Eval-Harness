@@ -50,9 +50,10 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
                     fixed_tenants: int = 4, memory_scale: int = 1,
                     warmup_s: float = 30, duration_s: float = 60, q: float = 1,
                     target_container: str = "", manifest: dict | None = None,
-                    assessment_mode: str = "observe", load_profile: str = "pure",
+                    assessment_mode: str = "observe", load_profile: str = "search",
                     reuse_seed: Path | None = None, seed_validation_queries: int = 40,
-                    recovery_timeout_s: float = 300, request_timeout_s: float = 10) -> dict:
+                    recovery_timeout_s: float = 300, request_timeout_s: float = 10,
+                    persist_private_identities: bool = True) -> dict:
     if output.exists():
         raise FileExistsError(f"Refuse to overwrite M1 evidence directory: {output}")
     output.mkdir(parents=True, mode=0o700)
@@ -60,7 +61,10 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
         raise ValueError("levels must be unique ascending positive integers")
     if topology not in {"cross-tenant", "within-tenant"}:
         raise ValueError("topology must be cross-tenant or within-tenant")
-    if assessment_mode not in {"observe", "slo"} or load_profile not in {"pure", "mixed", "both"}:
+    aliases = {"pure": "search", "both": "search,mixed"}
+    load_profile = aliases.get(load_profile, load_profile)
+    allowed_profiles = {"search", "commit", "mixed", "hotspot", "search,mixed", "all"}
+    if assessment_mode not in {"observe", "slo"} or load_profile not in allowed_profiles:
         raise ValueError("Invalid assessment mode or load profile")
     tenants = max(levels) if topology == "cross-tenant" else fixed_tenants
     users = 1 if topology == "cross-tenant" else max(levels)
@@ -68,7 +72,8 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
         state = inspect_container(target_container)
         if not state.get("State", {}).get("Running"):
             raise RuntimeError("Target container is not running")
-    report = {"status": "PREPARING", "topology": topology, "levels_requested": levels,
+    report = {"status": "PARTIAL" if assessment_mode == "observe" else "PREPARING",
+              "topology": topology, "levels_requested": levels,
               "assessment_mode": assessment_mode, "load_profile": load_profile,
               "recovery_timeout_s": recovery_timeout_s, "request_timeout_s": request_timeout_s,
               "fixed_tenants": fixed_tenants if topology == "within-tenant" else None,
@@ -88,7 +93,8 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
         actors.extend(extension)
     if len(actors) != tenants * users:
         raise ValueError("Seed identities do not match the requested maximum topology")
-    _write(output / "identities.private.json", _private_actors(actors), private=True)
+    if persist_private_identities:
+        _write(output / "identities.private.json", _private_actors(actors), private=True)
 
     progress: dict[str, dict] = {}
     progress_lock = threading.Lock()
@@ -111,7 +117,8 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
     report["seed_reused"] = reused_seed is not None
     report["seed"] = seeded
     _write(output / "seed-evidence.json", seeded)
-    _write(output / "identities.private.json", _private_actors(actors), private=True)
+    if persist_private_identities:
+        _write(output / "identities.private.json", _private_actors(actors), private=True)
     if seeded["status"] != "PASS" and assessment_mode == "slo":
         report.update(status="BLOCKED", phase="semantic-seed")
         _write(output / "report.json", report)
@@ -148,21 +155,31 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
             if target_container and not inspect_container(target_container).get("State", {}).get("Running"):
                 report["stop_reason"] = "target-container-stopped"
                 break
-            profiles = (False, True) if load_profile == "both" else (load_profile == "mixed",)
-            for mixed in profiles:
-                label = "mixed" if mixed else "pure"
+            modes = {
+                "search,mixed": ("search", "mixed"),
+                "all": ("search", "commit", "mixed", "hotspot"),
+            }.get(load_profile, (load_profile,))
+            for mode in modes:
+                label = mode
                 before = lifecycle(target_container)
                 phase.update(name=label + "-warmup", level=level)
-                report.update(status="RUNNING", current=dict(phase))
+                report.update(status="PARTIAL" if assessment_mode == "observe" else "RUNNING",
+                              current=dict(phase))
                 _write(output / "report.json", report)
-                warmup = measure(selected, duration_s=warmup_s, q=q, seed=4200 + level_index,
-                                  request_timeout_s=request_timeout_s)
+                warmup = measure(
+                    selected, duration_s=warmup_s, q=q,
+                    seed=4200 + level_index, request_timeout_s=request_timeout_s,
+                    load_mode=mode,
+                )
                 _write(output / f"level-{level}-{label}-warmup.json", warmup)
                 phase.update(name=label + "-measurement", level=level)
                 report["current"] = dict(phase)
                 _write(output / "report.json", report)
-                measurement = measure(selected, duration_s=duration_s, q=q, mixed=mixed, seed=4300 + level_index,
-                                       request_timeout_s=request_timeout_s)
+                measurement = measure(
+                    selected, duration_s=duration_s, q=q,
+                    seed=4300 + level_index, request_timeout_s=request_timeout_s,
+                    load_mode=mode,
+                )
                 _write(output / f"level-{level}-{label}-measurement.json", measurement)
                 result = evaluate_level(measurement, assessment_mode=assessment_mode)
                 result.update(level=level, topology=topology, tenant_count=tenant_count,
@@ -178,9 +195,10 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
                     recovery = observe_recovery(selected, measurement, container=target_container,
                         before=before, timeout_s=recovery_timeout_s,
                         checkpoint=lambda value: _write(output / f"level-{level}-{label}-recovery.json", value))
+                    recovery["state"] = recovery.pop("status", "UNKNOWN")
                     result["recovery"] = recovery
                     _write(output / f"level-{level}-{label}-recovery.json", recovery)
-                    if recovery["status"] == "BOUNDARY_OBSERVED":
+                    if recovery["state"] == "BOUNDARY_OBSERVED":
                         report["stop_reason"] = recovery["reason"]
                         report["operational_boundary"] = {"hot_users": hot_users, "load_profile": label,
                                                            "evidence": recovery}
@@ -192,7 +210,8 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
             report["boundary"] = {"status": "EXPLORING",
                                   "highest_pass": max((row["hot_users"] for row in passes), default=None),
                                   "first_fail": min((row["hot_users"] for row in failures), default=None)}
-            report.update(status="RUNNING", phase="capacity-exploration")
+            report.update(status="PARTIAL" if assessment_mode == "observe" else "RUNNING",
+                          phase="capacity-exploration")
             _write(output / "report.json", report)
             if report.get("stop_reason") or assessment_mode == "slo" and result["status"] == "FAIL":
                 break
@@ -201,8 +220,7 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
         thread.join()
     if assessment_mode == "observe":
         observed = [r for r in report["levels"] if r["search"]["sent"]]
-        report.update(status="BOUNDARY_OBSERVED" if report.get("operational_boundary") else
-                      "PARTIAL" if report.get("stop_reason") else "MEASURED",
+        report.update(status="PARTIAL" if report.get("stop_reason") else "MEASURED",
                       phase="capacity-observation-complete", current=None, resources=resources,
                       highest_measured_hot_users=max((r["hot_users"] for r in observed), default=None),
                       max_hot_users=None, dau=None, performance_requirements_applied=False,
@@ -238,7 +256,12 @@ def main() -> None:
     parser.add_argument("--target-container", default="")
     parser.add_argument("--manifest-json", default="{}")
     parser.add_argument("--assessment-mode", choices=("observe", "slo"), default="observe")
-    parser.add_argument("--load-profile", choices=("pure", "mixed", "both"), default="pure")
+    parser.add_argument(
+        "--load-profile",
+        choices=("search", "commit", "mixed", "hotspot", "all", "pure", "both"),
+        default="search",
+        help="M1 load shape; pure/both are retained as legacy aliases",
+    )
     parser.add_argument("--reuse-seed", type=Path,
                         help="server-local previous run containing owner-only identities.private.json")
     parser.add_argument("--seed-validation-queries", type=int, default=40)

@@ -1,0 +1,411 @@
+"""Run the EchoMem 4U8G M1-M6 observation suite and publish one report."""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import os
+import subprocess
+import threading
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from performance.targets.echomem.acceptance.capacity_experiment import run_exploration
+from performance.targets.echomem.acceptance.observation import (
+    METRIC_NAMES,
+    evaluate_observation,
+    write_observation_report,
+)
+from performance.targets.echomem.acceptance.readiness import check_readiness
+from performance.targets.echomem.acceptance.preflight import run_preflight
+from performance.targets.echomem.main import _resolve_profile, load_profiles
+from performance.targets.echomem.orchestrator.probes import run_configured_probes
+from performance.targets.echomem.orchestrator.runner import run_suite
+from performance.targets.echomem.orchestrator.suites import QuickSpec
+from performance.targets.echomem.probes._client import load_tenant_specs
+from performance.targets.echomem.probes.tenant_observability import expected_lanes_from_config
+from performance.targets.echomem.probes.tenant_observability import collect as collect_tenant_observability
+from performance.util import acquire_output_lock, load_env_file, read_json
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _metrics(value: str) -> list[str]:
+    selected = [item.strip().upper() for item in value.split(",") if item.strip()]
+    unknown = [item for item in selected if item not in METRIC_NAMES]
+    if unknown or not selected:
+        raise ValueError("metrics must be a comma-separated subset of M1,M2,M3,M4,M5,M6")
+    return list(dict.fromkeys(selected))
+
+
+def _git_commit() -> str | None:
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True,
+            check=True, timeout=5,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _public_profile(profile: dict[str, Any]) -> dict[str, Any]:
+    allowed = {
+        "name", "base_url", "resource_container", "capacity_levels",
+        "m1_tenant_levels", "m1_user_levels", "dau_scenarios",
+        "preflight_config", "tenant_config",
+    }
+    return {key: profile.get(key) for key in allowed if profile.get(key) not in (None, "")}
+
+
+def _combine_csv(suite: dict[str, Any], output: Path, filename: str) -> None:
+    sources = []
+    for run in suite.get("runs", []):
+        path = Path(str(run.get("output_dir") or "")) / filename
+        if path.is_file():
+            sources.append((str(run.get("scenario") or ""), path))
+    destination = output / filename
+    fieldnames: list[str] = ["scenario"]
+    rows = []
+    for scenario, path in sources:
+        with path.open(encoding="utf-8", newline="") as handle:
+            for row in csv.DictReader(handle):
+                row = {"scenario": scenario, **row}
+                rows.append(row)
+                for key in row:
+                    if key not in fieldnames:
+                        fieldnames.append(key)
+    with destination.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> dict[str, Any]:
+    needs_m6_behaviors = "M6" in selected
+    needs_fault = "M2" in selected or needs_m6_behaviors
+    readiness = check_readiness({
+        **profile,
+        "fault_isolation": {**(profile.get("fault_isolation") or {}), "enabled": needs_fault},
+        "tenant_observability": {**(profile.get("tenant_observability") or {}),
+                                  "enabled": needs_m6_behaviors},
+    })
+    if not readiness.get("ok"):
+        raise RuntimeError(json.dumps(readiness, ensure_ascii=False))
+    if not profile.get("preflight_config"):
+        raise ValueError("preflight_config is required for real LLM and embedding verification")
+    model_preflight = run_preflight(
+        profile["preflight_config"], required_kinds=("llm", "embedding")
+    )
+    if not model_preflight.get("ok"):
+        raise RuntimeError(json.dumps(model_preflight, ensure_ascii=False))
+    tenant_document = read_json(Path(profile["tenant_config"]))
+    configured_tenants = tenant_document.get("tenants", [])
+    for tenant in configured_tenants:
+        if tenant.get("auth_key"):
+            raise ValueError("Observation runs forbid auth_key in tenant files; use auth_key_env")
+        env_name = str(tenant.get("auth_key_env") or "")
+        if not env_name or not os.environ.get(env_name, ""):
+            raise ValueError("Every observation tenant requires a non-empty auth_key_env")
+    specs = load_tenant_specs(profile["tenant_config"])
+    required = 8 if "M3" in selected else 4
+    if len(specs) < required or len({spec.auth_key for spec in specs[:required]}) != required:
+        raise ValueError(f"{required} independently authenticated tenants are required")
+    tenant_ids = [spec.tenant_id for spec in specs[:required]]
+    lanes = expected_lanes_from_config(profile["preflight_config"])
+    if "M6" in selected and not lanes:
+        raise ValueError("No effective scheduler lanes could be derived from preflight_config")
+    base_url = str(profile.get("base_url") or "").rstrip("/")
+    phase = 15 if quick else 60
+    fault = {
+        "enabled": "M2" in selected or needs_m6_behaviors,
+        "endpoint": base_url + "/api/inspect/test-control/fault",
+        "token_env": "ECHOMEM_TEST_CONTROL_TOKEN",
+        "samples": 10 if quick else 100,
+        "repeats": 3,
+        "phase_duration_s": phase,
+        "duration_s": min(300, phase * 3),
+        "search_rps_per_tenant": 2,
+        "target_rps": 1,
+        **(profile.get("fault_isolation") or {}),
+        "observation_only": True,
+    }
+    recovery = {
+        "enabled": "M5" in selected or needs_m6_behaviors,
+        "tenant": tenant_ids[0],
+        "container": profile.get("resource_container", ""),
+        "messages": 12, "content_chars": 1000,
+        "samples": 3, "require_accepted_202": True,
+        "expected_container_id": readiness["resource_evidence"].get("container_id"),
+        "expected_image_id": readiness["resource_evidence"].get("image_id"),
+        **(profile.get("commit_recovery") or {}),
+    }
+    if ("M5" in selected or needs_m6_behaviors) and recovery.get("allow_container_restart") is not True:
+        raise ValueError("M5/M6 RESET requires commit_recovery.allow_container_restart=true for the dedicated target container")
+    return {
+        **profile,
+        "six_metrics": False,
+        "six_metrics_observation": True,
+        "resource_evidence": readiness["resource_evidence"],
+        "readiness": readiness,
+        "model_preflight": model_preflight,
+        "seed_sessions": 1,
+        "seed_messages": 1,
+        "allow_partial_tenants": False,
+        "metrics_enabled": True,
+        "fault_isolation": fault if ("M2" in selected or needs_m6_behaviors) else {"enabled": False},
+        "tenant_observability": {
+            **(profile.get("tenant_observability") or {}),
+            "enabled": "M6" in selected,
+            "expected_tenants": tenant_ids,
+            "expected_lanes": lanes,
+            "token_env": "ECHOMEM_TEST_CONTROL_TOKEN",
+        },
+        "commit_recovery": recovery if ("M5" in selected or needs_m6_behaviors) else None,
+        "fairness_expectations": {"tenant_ids": tenant_ids[:4]},
+    }
+
+
+def run(args: argparse.Namespace) -> dict[str, Any]:
+    if args.env_file:
+        os.environ.update(load_env_file(args.env_file.expanduser().resolve()))
+    profiles = load_profiles(args.profiles)
+    matches = [item for item in profiles if str(item.get("name")) == args.profile]
+    if len(matches) != 1:
+        raise ValueError(f"profile {args.profile!r} was not found exactly once")
+    selected = _metrics(args.metrics)
+    profile = _configure(
+        _resolve_profile(matches[0], args.profiles), selected, quick=args.quick
+    )
+    output = args.out_dir.expanduser().resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    lock = acquire_output_lock(output)
+    started_at = _now()
+    (output / "execution-manifest.json").write_text(json.dumps({
+        "schema_version": 1, "started_at": started_at, "finished_at": None,
+        "git_commit": _git_commit(), "selected_metrics": selected,
+        "sampling_mode": "quick-non-complete" if args.quick else "full",
+        "soak_enabled": False, "execution_status": "PARTIAL",
+        "real_http_required": True, "real_llm_required": True,
+        "real_embedding_required": True,
+        "credentials_source": "environment variables only",
+        "profile": _public_profile(profile),
+    }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    try:
+        m1_reports = []
+        if "M1" in selected:
+            levels_by_topology = {
+                "cross-tenant": profile.get("m1_tenant_levels") or ([1, 2] if args.quick else [1, 2, 4, 8, 16, 32]),
+                "within-tenant": profile.get("m1_user_levels") or ([1, 2] if args.quick else [1, 2, 4, 8]),
+            }
+            for topology, levels in levels_by_topology.items():
+                target = output / "M1" / topology
+                report_path = target / "report.json"
+                if args.resume and report_path.is_file():
+                    m1_reports.append(read_json(report_path))
+                    continue
+                m1_reports.append(run_exploration(
+                    base_url=profile["base_url"], output=target,
+                    topology=topology, levels=[int(value) for value in levels],
+                    fixed_tenants=4, warmup_s=5 if args.quick else 30,
+                    duration_s=15 if args.quick else float(profile.get("m1_duration_s", 300)),
+                    q=float(profile.get("m1_search_rps_per_user", 1)),
+                    target_container=str(profile.get("resource_container") or ""),
+                    manifest={"resource_evidence": profile["resource_evidence"]},
+                    assessment_mode="observe", load_profile="all",
+                    seed_validation_queries=4 if args.quick else 40,
+                    recovery_timeout_s=30 if args.quick else 300,
+                    persist_private_identities=False,
+                ))
+
+        observation = profile.get("tenant_observability") or {}
+        observation_samples: list[dict[str, Any]] = []
+        sampler_stop = threading.Event()
+        sampler = None
+        token = os.environ.get(str(observation.get("token_env") or "ECHOMEM_TEST_CONTROL_TOKEN"), "")
+        if observation.get("enabled") and token:
+            def sample_observability() -> None:
+                while not sampler_stop.is_set():
+                    observation_samples.append(collect_tenant_observability(
+                        base_url=profile["base_url"], endpoint=str(observation.get("endpoint", "")),
+                        token=token,
+                        expected_tenants=list(observation.get("expected_tenants", [])),
+                        expected_lanes=list(observation.get("expected_lanes", [])), timeout_s=15,
+                    ))
+                    (output / "tenant-observability-samples.json").write_text(
+                        json.dumps(observation_samples, ensure_ascii=False, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+                    sampler_stop.wait(2)
+            sampler = threading.Thread(target=sample_observability, daemon=True)
+            sampler.start()
+
+        load_metrics = [name for name in selected if name in {"M3", "M4"}]
+        scenarios = []
+        if "M3" in load_metrics:
+            scenarios.extend(("m3-fairness-4t", "m3-fairness-8t"))
+        if "M4" in load_metrics:
+            scenarios.extend(("m4-baseline", "m4-flood-uniform", "m4-flood-single-tenant"))
+        if "M2" in selected and "m4-baseline" not in scenarios:
+            scenarios.append("m4-baseline")
+        if "M6" in selected:
+            for dependency in ("m4-baseline", "m4-flood-uniform"):
+                if dependency not in scenarios:
+                    scenarios.append(dependency)
+        if scenarios:
+            quick_spec = QuickSpec(duration_cap_s=15, barrier_count_cap=8, include_seed=True) if args.quick else None
+            suite = run_suite(
+                profile, suite_dir=output, quick=quick_spec,
+                profile_name="six-metrics-observation", base_url=profile["base_url"],
+                timeout_s=args.timeout_s, scenarios=scenarios, resume=args.resume,
+            )
+        else:
+            suite = {"runs": [], "output_root": str(output),
+                     "instance_profile": profile["name"],
+                     "resource_evidence": profile["resource_evidence"],
+                     "readiness": profile["readiness"]}
+
+        visibility = (suite.get("seed") or {}).get("visibility", [])
+        if visibility and isinstance(profile.get("fault_isolation"), dict):
+            profile["fault_isolation"] = {
+                **profile["fault_isolation"],
+                "queries": {row["tenant_id"]: row["marker"] for row in visibility},
+            }
+        tenant_config = read_json(Path(profile["tenant_config"]))
+        probes, commands = run_configured_probes(
+            profile, base_url=profile["base_url"], suite_dir=output,
+            auth_headers={}, tenant_config=tenant_config, quick=args.quick,
+            timeout_s=args.timeout_s,
+        )
+        suite = {**suite, **probes}
+        suite["m1"] = {
+            "reports": [
+                {"topology": report.get("topology"),
+                 "status": report.get("status"),
+                 "path": str(output / "M1" / str(report.get("topology")) / "report.json")}
+                for report in m1_reports
+            ]
+        }
+        if observation.get("enabled"):
+            after_all = collect_tenant_observability(
+                base_url=profile["base_url"],
+                endpoint=str(observation.get("endpoint", "")),
+                token=os.environ.get(str(observation.get("token_env") or "ECHOMEM_TEST_CONTROL_TOKEN"), ""),
+                expected_tenants=list(observation.get("expected_tenants", [])),
+                expected_lanes=list(observation.get("expected_lanes", [])),
+                timeout_s=15,
+            )
+            suite["tenant_observability_after_all"] = after_all
+            (output / "tenant-observability-after-all.json").write_text(
+                json.dumps(after_all, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        if sampler is not None:
+            sampler_stop.set()
+            sampler.join(timeout=20)
+        suite["tenant_observability_samples"] = observation_samples
+        (output / "suite.json").write_text(json.dumps(suite, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        _combine_csv(suite, output, "records.csv")
+        _combine_csv(suite, output, "metrics_samples.csv")
+        result = evaluate_observation(
+            suite, profile, m1_reports, quick=args.quick,
+            selected_metrics=selected,
+        )
+        (output / "summary.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        manifest = {
+            "schema_version": 1, "started_at": started_at, "finished_at": _now(),
+            "git_commit": _git_commit(), "selected_metrics": selected,
+            "sampling_mode": result["sampling_mode"], "soak_enabled": False,
+            "real_http_required": True, "real_llm_required": True,
+            "real_embedding_required": True,
+            "credentials_source": "environment variables; tenant config contains env names only",
+            "execution_status": result["status"],
+            "profile": _public_profile(profile),
+            "model_preflight": profile.get("model_preflight"),
+            "probe_executions": commands,
+        }
+        (output / "execution-manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        write_observation_report(result, output / "report.html")
+        return result
+    finally:
+        if "sampler_stop" in locals():
+            sampler_stop.set()
+        if "sampler" in locals() and sampler is not None and sampler.is_alive():
+            sampler.join(timeout=20)
+        lock.close()
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--profiles", required=True, type=Path)
+    parser.add_argument("--profile", default="4U8G")
+    parser.add_argument("--out-dir", required=True, type=Path)
+    parser.add_argument("--metrics", default="M1,M2,M3,M4,M5,M6")
+    parser.add_argument("--env-file", type=Path)
+    parser.add_argument("--quick", action="store_true")
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--timeout-s", type=float, default=7200)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    interrupted = False
+    try:
+        result = run(args)
+    except (ValueError, RuntimeError, OSError, KeyboardInterrupt) as exc:
+        interrupted = isinstance(exc, KeyboardInterrupt)
+        output = args.out_dir.expanduser().resolve()
+        output.mkdir(parents=True, exist_ok=True)
+        try:
+            selected = _metrics(args.metrics)
+        except ValueError:
+            selected = []
+        status = ("PARTIAL" if interrupted else "BLOCKED"
+                  if isinstance(exc, (ValueError, RuntimeError)) else "EXECUTION_ERROR")
+        blockers = []
+        if isinstance(exc, RuntimeError):
+            try:
+                detail = json.loads(str(exc))
+                blockers = [check for check in detail.get("checks", [])
+                            if check.get("status") == "BLOCKED"]
+            except (TypeError, ValueError):
+                blockers = []
+        concise_reason = (
+            f"环境预检阻塞：{', '.join(str(item.get('name')) for item in blockers)}"
+            if blockers else f"{type(exc).__name__}: {exc}"
+        )
+        result = {
+            "schema_version": 1, "assessment": "observation-only",
+            "performance_thresholds_applied": False,
+            "sampling_mode": "quick-non-complete" if args.quick else "full",
+            "status": status, "selected_metrics": selected,
+            "allowed_statuses": ["MEASURED", "PARTIAL", "BLOCKED", "EXECUTION_ERROR"],
+            "metrics": {
+                code: {"status": status if code in selected else "BLOCKED",
+                       "reason": concise_reason if code in selected else "本次命令未选择该指标"}
+                for code in METRIC_NAMES
+            },
+        }
+        (output / "summary.json").write_text(
+            json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        (output / "execution-manifest.json").write_text(json.dumps({
+            "schema_version": 1, "started_at": _now(), "finished_at": _now(),
+            "git_commit": _git_commit(), "selected_metrics": selected,
+            "soak_enabled": False, "execution_status": status,
+            "error_class": type(exc).__name__, "error": str(exc),
+            "blockers": blockers,
+        }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        write_observation_report(result, output / "report.html")
+    print(args.out_dir.expanduser().resolve() / "report.html")
+    if interrupted:
+        return 130
+    return 0 if result["status"] not in {"BLOCKED", "EXECUTION_ERROR"} else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

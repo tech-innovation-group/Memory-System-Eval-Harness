@@ -19,6 +19,26 @@
       "tenant_id": "tenant-d",
       "user_id": "user-d",
       "auth_key_env": "ECHOMEM_TENANT_D_KEY"
+    },
+    {
+      "tenant_id": "tenant-e",
+      "user_id": "user-e",
+      "auth_key_env": "ECHOMEM_TENANT_E_KEY"
+    },
+    {
+      "tenant_id": "tenant-f",
+      "user_id": "user-f",
+      "auth_key_env": "ECHOMEM_TENANT_F_KEY"
+    },
+    {
+      "tenant_id": "tenant-g",
+      "user_id": "user-g",
+      "auth_key_env": "ECHOMEM_TENANT_G_KEY"
+    },
+    {
+      "tenant_id": "tenant-h",
+      "user_id": "user-h",
+      "auth_key_env": "ECHOMEM_TENANT_H_KEY"
     }
   ]
 }

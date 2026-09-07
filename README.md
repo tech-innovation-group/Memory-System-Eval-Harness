@@ -3,10 +3,13 @@
 记忆系统评测框架。全 CLI，无网页 UI。直接通过 Python 脚本完成数据集加载、
 记忆注入、Agent 问答、Judge 评分和结果报告。
 
-**六项 4U8G 黑盒压测（基于 PR31）**：先看 [完整运行手册](performance/targets/echomem/docs/six-metrics-runbook.md)，
-再看 [六项测试方案与判定规则](performance/targets/echomem/docs/six-metrics.md)。
-使用 `python -m performance --target echomem --six-metrics`，不是 LoCoMo 准确率评测，
-也不是默认 26 场景长矩阵；先 `--check-only` 检查环境，再启动正式套件，默认不跑 soak。
+**EchoMem 4U8G 六项黑盒观测压测**：使用
+`python -m performance.targets.echomem.observation_run`，详见
+[观测型六项运行手册](performance/targets/echomem/docs/six-metrics-observation.md)。
+该入口不设置 P95、准确率、Jain、劣化比例或吞吐 PASS/FAIL 门槛；状态仅为
+`MEASURED / PARTIAL / BLOCKED / EXECUTION_ERROR`，默认不运行 soak。旧的
+`python -m performance --target echomem --six-metrics` 保留为历史 SLO
+验收入口，不要用于本轮观测结论。
 
 ## 设计目标
 

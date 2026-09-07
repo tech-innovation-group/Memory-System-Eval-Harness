@@ -16,6 +16,46 @@ FAIL = "FAIL"
 INCONCLUSIVE = "INCONCLUSIVE"
 
 
+def expected_lanes_from_config(path: str | Path) -> list[str]:
+    """Derive the effective scheduler lanes from the deployed JSON config.
+
+    Explicit ``lanes`` declarations win. For native configs without that
+    field, active provider paths are mapped to their runtime lane names. This
+    deliberately has no fixed four/five-lane fallback: an unknown config is a
+    missing prerequisite, not permission to fabricate an expected matrix.
+    """
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    explicit: list[str] = []
+    inferred: set[str] = set()
+
+    def visit(value: Any, parts: tuple[str, ...] = ()) -> None:
+        if isinstance(value, dict):
+            if value.get("enabled") is False:
+                return
+            lanes = value.get("lanes")
+            if isinstance(lanes, list):
+                explicit.extend(str(item).strip() for item in lanes if str(item).strip())
+            path_text = ".".join(parts).lower()
+            if value.get("api_base") and value.get("model"):
+                if "query_embedding" in path_text or "embedding" in path_text:
+                    inferred.add("recall_query_embedding")
+                elif "intent" in path_text:
+                    inferred.add("recall_intent_llm")
+                elif "rerank" in path_text:
+                    inferred.add("recall_rerank")
+                elif "recall" in path_text or "engine" in path_text:
+                    inferred.add("recall_engine")
+            for key, child in value.items():
+                visit(child, (*parts, str(key)))
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                visit(child, (*parts, str(index)))
+
+    visit(payload)
+    lanes = explicit or sorted(inferred | ({"commit"} if inferred else set()))
+    return list(dict.fromkeys(lanes))
+
+
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -143,6 +183,9 @@ def collect(
         "wait_seconds_total",
         "exec_seconds_total",
         "rejected_total",
+        "accepted_total",
+        "completed_total",
+        "failed_total",
     )
     missing: list[dict[str, Any]] = []
     invalid: list[dict[str, Any]] = []
@@ -156,7 +199,10 @@ def collect(
             if not fields_present:
                 missing.append({"tenant_id": tenant_id, "lane": lane})
             else:
-                integer_fields = {"queued", "rejected_total"}
+                integer_fields = {
+                    "queued", "rejected_total", "accepted_total",
+                    "completed_total", "failed_total",
+                }
                 invalid_fields = [
                     field
                     for field in required_fields
@@ -178,9 +224,6 @@ def collect(
                         "tenant_id": tenant_id,
                         "lane": lane,
                         **{field: row[field] for field in required_fields},
-                        "accepted_total": row.get("accepted_total"),
-                        "completed_total": row.get("completed_total"),
-                        "failed_total": row.get("failed_total"),
                     }
                 )
     empty_expectations = not expected_tenants or not expected_lanes
@@ -196,6 +239,9 @@ def collect(
             "status": PASS if complete else INCONCLUSIVE,
             "http_status": payload.get("_http_status"),
             "generated_at": payload.get("generated_at"),
+            "process_id": payload.get("process_id") or payload.get("pid"),
+            "process_started_at": payload.get("process_started_at") or payload.get("started_at"),
+            "boot_id": payload.get("boot_id"),
             "tenant_count": payload.get("tenant_count"),
             "lane_count": payload.get("lane_count"),
             "row_count": len(normalized_rows),

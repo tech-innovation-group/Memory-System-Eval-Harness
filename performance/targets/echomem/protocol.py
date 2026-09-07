@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import Any
 import json
 import re
+import time
 
 from performance.ctx import Ctx, Response, PollResult
 from performance.records import content_hash
@@ -142,7 +143,10 @@ def commit_session(ctx: Ctx, session_id: str) -> Response:
         session_id=session_id,
     )
     if resp.ok:
-        ctx.note(archive_id=archive_id(resp.json))
+        ctx.note(
+            archive_id=archive_id(resp.json),
+            accepted_at_ms=time.time() * 1000,
+        )
     return resp
 
 
@@ -155,7 +159,7 @@ def poll_commit(
     interval_s: float = 0.2,
 ) -> PollResult:
     """GET /api/sessions/{sid}/commits/{aid} 轮询到 completed/failed/timeout。"""
-    return ctx.poll(
+    result = ctx.poll(
         f"/api/sessions/{session_id}/commits/{archive_id}",
         op="commit_done",
         interval_s=interval_s,
@@ -167,6 +171,8 @@ def poll_commit(
         session_id=session_id,
         archive_id=archive_id,
     )
+    ctx.note(completed_at_ms=time.time() * 1000)
+    return result
 
 
 # --------------------------------------------------------------------- #

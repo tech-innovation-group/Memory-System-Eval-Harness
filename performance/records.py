@@ -28,6 +28,8 @@ class RequestRecord:
     http_status: int | None = None
     session_id: str = ""
     archive_id: str = ""
+    accepted_at_ms: float | None = None
+    completed_at_ms: float | None = None
     extra: str = ""  # e.g. "burst"
     # -- write retry instrumentation (commit_submit) ---------------------
     retry_count: int = 0
@@ -75,6 +77,8 @@ CSV_FIELDS: list[str] = [
     "ts_ms",
     "session_id",
     "archive_id",
+    "accepted_at_ms",
+    "completed_at_ms",
     "extra",
     "retry_count",
     "retried",

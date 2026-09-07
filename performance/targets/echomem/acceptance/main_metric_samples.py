@@ -76,8 +76,12 @@ def summarize_flood(baseline: dict, loaded: dict, commits: list[dict], identitie
     accepted = [c for c in commits if c.get("accepted_202")]
     intervals = [(c["accepted_at"] - start,
                   c.get("terminal_at", c.get("observed_until", end)) - start) for c in accepted]
+    # A Search belongs to the real overlap window only when its request start
+    # falls between a server-accepted Commit and that Commit's observed
+    # terminal time. Merely finishing after a Commit was accepted would
+    # over-count slow requests that actually started before the flood.
     overlap = [r for r in loaded["rows"] if r.get("op") == "read" and r.get("sent")
-               and any(r["end_s"] >= a and r["start_s"] <= b for a, b in intervals)]
+               and any(a <= r["start_s"] <= b for a, b in intervals)]
     tenants = []
     for i in range(identities):
         completed = sum(c.get("completed", False) and c.get("terminal_at", end + 1) <= end

@@ -77,11 +77,14 @@ def check_readiness(profile: dict) -> dict:
     for section, path in (("fault_isolation", "/api/inspect/test-control/fault"),
                           ("tenant_observability", "/api/inspect/tenant-observability")):
         params = profile.get(section) or {}
+        if params.get("enabled") is False:
+            record(section, True, "not selected", "No action required.", skipped=True)
+            continue
         token = os.environ.get(str(params.get("token_env") or "ECHOMEM_TEST_CONTROL_TOKEN"), "")
         endpoint = str(params.get("endpoint") or base + path)
         target = urlsplit(endpoint)
         same_origin = (target.scheme, target.netloc) == (parsed.scheme, parsed.netloc)
-        if not token or not same_origin or params.get("enabled") is False:
+        if not token or not same_origin:
             record(section, False, "deployment / configuration",
                    "Enable the protected API, pass the same token to the runner, and keep its endpoint on the target origin.")
             continue

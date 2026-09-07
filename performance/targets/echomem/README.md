@@ -1,9 +1,10 @@
 # EchoMem 压测 target（`performance/targets/echomem`）
 
-六项 4U8G 指标的输入、步骤、分母与判定见 [六指标用例](docs/six-metrics.md)。
-第一次运行请从 [安装、环境检查到生成报告的完整手册](docs/six-metrics-runbook.md) 开始。
-从仓库根目录运行 `python -m performance --target echomem`。
-正式六指标使用 `--six-metrics`，默认不包含 soak。
+观测型 4U8G 六项黑盒压测请从
+[六项观测运行手册](docs/six-metrics-observation.md) 开始，入口为
+`python -m performance.targets.echomem.observation_run`。它不应用性能门槛，
+默认不包含 soak。旧的 [六指标用例](docs/six-metrics.md) 与
+[旧运行手册](docs/six-metrics-runbook.md) 记录历史 SLO 验收语义，不作为观测结论。
 
 EchoMem 记忆服务的正式压测与验收入口。复用通用 HTTP 压测框架
 （`performance/`：`engine.py` worker 池 + `ctx.py` 请求原语 + `suite.py`

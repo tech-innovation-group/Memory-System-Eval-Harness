@@ -305,7 +305,7 @@ def run_suite(
     """
     metrics_enabled = bool(profile.get("metrics_enabled", True))
     observation_before = None
-    if profile.get("six_metrics"):
+    if profile.get("six_metrics") or profile.get("six_metrics_observation"):
         from performance.targets.echomem.acceptance.readiness import check_readiness
         readiness = check_readiness(profile)
         if not readiness["ok"]:
@@ -331,6 +331,13 @@ def run_suite(
         )
 
     def _select_cases(name, scenarios):
+        if profile.get("six_metrics_observation"):
+            from performance.targets.echomem.orchestrator.suites import six_metric_observation_cases
+            catalog = six_metric_observation_cases(quick=quick is not None)
+            if scenarios is None:
+                return catalog
+            selected = set(scenarios)
+            return [case for case in catalog if case["label"] in selected]
         if profile.get("six_metrics"):
             from performance.targets.echomem.orchestrator.suites import six_metric_cases
             return six_metric_cases(profile.get("capacity_levels"))
@@ -350,7 +357,10 @@ def run_suite(
             case, base_url=url, tenant_count=tenant_count, auth_headers={}, quick=q
         ),
         run_case=_run_case,
-        preflight=lambda config: _preflight_stage(config, strict=bool(profile.get("six_metrics"))),
+        preflight=lambda config: _preflight_stage(
+            config,
+            strict=bool(profile.get("six_metrics") or profile.get("six_metrics_observation")),
+        ),
         seed=_prepare_seed,
         evaluate=evaluate_pr421_acceptance,
     )

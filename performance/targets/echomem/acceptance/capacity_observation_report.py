@@ -52,7 +52,12 @@ def render_observation(report: dict) -> str:
     p95_points, rps_points = [], []
     for level in levels:
         h = level.get("hot_users", level.get("identity_count"))
-        name = "混合读写" if level.get("mixed") else "纯召回"
+        name = {
+            "search": "纯 Search",
+            "commit": "纯 Commit",
+            "mixed": "混合负载",
+            "hotspot": "热点租户",
+        }.get(level.get("load_mode"), "混合读写" if level.get("mixed") else "纯 Search")
         search, commit = level["search"], level.get("commit", {})
         limits = level.get("resource_summary", {})
         rss_peak = limits.get("rss_peak_bytes")
@@ -75,7 +80,7 @@ def render_observation(report: dict) -> str:
                 cell.get("nonempty_results"), cell.get("degraded"), cell.get("mean_s"),
                 cell.get("p95_s"), cell.get("atomic_p95_s"),
                 str(cell.get("p95_block_bootstrap_95")), str(cell.get("quality_wilson_95"))])
-        if level.get("mixed"):
+        if level.get("load_mode") in {"commit", "mixed", "hotspot"}:
             recovery_samples = level.get("recovery", {}).get("samples", [])
             commit_rows.append([h, commit.get("submitted"), commit.get("accepted_202"),
                 commit.get("completed"), commit.get("completed_in_window"),

@@ -488,6 +488,61 @@ def six_metric_cases(capacity_levels: list[int] | None = None) -> list[dict]:
     return cases
 
 
+def six_metric_observation_cases(*, quick: bool = False) -> list[dict]:
+    """Observation-only M3/M4 matrix.
+
+    M1 is executed by the T x U capacity runner and M2/M5/M6 are probes. The
+    cases here therefore contain only the paired Search/Commit windows needed
+    for fairness and flood observations. No case encodes a performance gate.
+    """
+    duration = 15 if quick else 300
+    barrier = 8 if quick else 64
+    common = {
+        "duration_s": duration,
+        "search_rps": 8.0,
+        "search_workers": 64,
+        "commit_workers": 64,
+        "sessions_per_tenant": 2,
+        "messages_per_session": 4,
+    }
+    return [
+        _case(
+            label="m3-fairness-4t", scene="scene_barrier", tenants=4,
+            commit_rpm=0.0, commit_barrier=True,
+            commit_barrier_count=barrier,
+            commit_tenant_distribution="uniform", fairness_bounded=True,
+            **common,
+        ),
+        _case(
+            label="m3-fairness-8t", scene="scene_barrier", tenants=8,
+            commit_rpm=0.0, commit_barrier=True,
+            commit_barrier_count=barrier * 2,
+            commit_tenant_distribution="uniform", fairness_bounded=True,
+            **common,
+        ),
+        _case(
+            label="m4-baseline", scene="scene_capacity", tenants=4,
+            commit_rpm=0.0, read_only=True, **common,
+        ),
+        _case(
+            label="m4-flood-uniform", scene="scene_barrier", tenants=4,
+            commit_rpm=0.0, commit_barrier=True,
+            commit_barrier_count=barrier,
+            commit_tenant_distribution="uniform", barrier_at_s=3 if quick else 30,
+            blackbox_search_priority=True, **common,
+        ),
+        _case(
+            label="m4-flood-single-tenant", scene="scene_barrier", tenants=4,
+            commit_rpm=0.0, commit_barrier=True,
+            commit_barrier_count=barrier,
+            commit_tenant_distribution="explicit",
+            commit_tenant_counts=[barrier, 0, 0, 0],
+            barrier_at_s=3 if quick else 30,
+            blackbox_search_priority=True, **common,
+        ),
+    ]
+
+
 def build_case_profile(
     case: dict,
     *,
