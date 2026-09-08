@@ -69,6 +69,18 @@ def test_semantic_fact_baseline_does_not_require_marker(tmp_path, found):
     assert result["status"] == ("MEASURED" if found else "PARTIAL")
 
 
+def test_baseline_quality_failures_are_data_not_performance_gate(tmp_path):
+    def mutate(name, rows):
+        if name.endswith("baseline"):
+            rows.append(read(0, at=550, marker_found=False, quality_ok=False))
+    result = summarize_m4(runs(tmp_path, mutate=mutate), quick=False)
+    assert result["status"] == "MEASURED"
+    assert result["baseline"]["quality_rate"] == .8
+    assert result["baseline_tenants"][0]["actual_recall_hits"] == 1
+    assert result["baseline_tenants"][0]["quality_ok"] == 1
+    assert result["baseline_tenants"][0]["planned_or_recorded"] == 2
+
+
 @pytest.mark.parametrize("commit_rpm", [0, 60])
 def test_read_only_baseline_cannot_inherit_background_writers(commit_rpm):
     case = next(c for c in six_metric_observation_cases() if c["label"] == "m4-baseline")

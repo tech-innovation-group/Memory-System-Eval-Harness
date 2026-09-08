@@ -483,14 +483,17 @@ def summarize_m4(runs: dict[str, dict[str, Any]], *, quick: bool) -> dict[str, A
     baseline = _request_stats(baseline_rows)
     if baseline_run.get("status") != "completed" or baseline_run.get("runner_timeout"):
         issues.append("baseline_execution_not_complete")
+    baseline_tenants = []
     for tenant in range(4):
         tenant_rows = [r for r in baseline_rows if r.get("op") == "read" and str(r.get("tenant_idx")) == str(tenant)]
         stats = _request_stats(tenant_rows)
+        factual_hits = sum(r.get("status") == "ok" and _truth(
+            r.get("expected_fact_found") if r.get("quality_assertion") == "fixed-fact-in-items"
+            else r.get("marker_found")) for r in tenant_rows)
+        baseline_tenants.append({"tenant_index": tenant, "actual_recall_hits": factual_hits, **stats})
         if (not stats["planned_or_recorded"] or stats["latency_missing_or_invalid"]
-                or stats["quality_ok"] != stats["planned_or_recorded"]
-                or any(r.get("query_type") != "recall" or not _truth(
-                    r.get("expected_fact_found") if r.get("quality_assertion") == "fixed-fact-in-items"
-                    else r.get("marker_found")) for r in tenant_rows)):
+                or stats["quality_missing"] or not factual_hits
+                or any(r.get("query_type") != "recall" for r in tenant_rows)):
             issues.append(f"baseline_tenant_{tenant}_recall_or_timing_unproven")
     if any(r.get("op") == "commit_submit" for r in baseline_rows):
         issues.append("baseline_contains_commit")
@@ -534,7 +537,7 @@ def summarize_m4(runs: dict[str, dict[str, Any]], *, quick: bool) -> dict[str, A
         issues.append("flood_windows_missing")
     return {"status": "MEASURED" if observed == 3 and not issues and not quick else "PARTIAL" if observed else "BLOCKED",
             "reason": "非终态轮询确认的重叠与宽观察窗口分别展示；MEASURED 仅代表配置负载与证据齐全，不代表性能达标或严格内部优先级",
-            "evidence_issues": issues, "baseline": baseline,
+            "evidence_issues": issues, "baseline": baseline, "baseline_tenants": baseline_tenants,
             "expected_windows": 3, "observed_windows": observed, "windows": windows,
             "internal_order_observation": "内部顺序未观测"}
 
@@ -937,6 +940,10 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             visual += table(overlap_rows, [("scenario", "场景"), ("scope", "窗口"),
                 ("planned_or_recorded", "Search 样本"), ("mean_ms", "平均 ms"), ("p95_ms", "P95 ms"),
                 ("errors", "错误"), ("quality_ok", "质量有效"), ("quality_missing", "质量未观测")])
+            visual += details("查看基线逐租户召回证据", table(metric.get("baseline_tenants", []), [
+                ("tenant_index", "租户"), ("planned_or_recorded", "样本数"),
+                ("actual_recall_hits", "真实内容命中"), ("quality_ok", "质量有效"),
+                ("errors", "HTTP/传输错误"), ("p95_ms", "P95 ms")]))
             visual += details("查看 Commit 受理、终态与观察范围", table(metric.get("windows", []), [
                 ("scenario", "场景"), ("commit_planned", "计划事务"), ("commit_planned_or_recorded", "实际提交"),
                 ("commit_accepted_202", "202"), ("commit_rejected", "拒绝"), ("commit_completed", "确认完成"),
