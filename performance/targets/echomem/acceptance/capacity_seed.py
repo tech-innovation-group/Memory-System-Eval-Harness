@@ -20,6 +20,43 @@ class CapacityActor:
     write_session: str = ""
 
 
+def semantic_checks(actor: CapacityActor, validation_queries: int):
+    available = actor.corpus["recall_queries"]
+    if not 1 <= validation_queries <= len(available):
+        raise ValueError("validation_queries must be between 1 and the corpus size")
+    for index in range(validation_queries):
+        sample = available[index * len(available) // validation_queries]
+        begin = time.monotonic()
+        result = actor.client.request("POST", "/api/retrieval/search", {
+            "query": sample["query"], "agent_id": actor.client.agent_id, "limit": 10,
+            "include_debug": True, "include_explain": True,
+        }, timeout_s=10, operation="search")
+        check = assess_retrieval(result.payload, sample)
+        yield {**check, "http_status": result.status_code, "elapsed_s": time.monotonic() - begin,
+               "success": result.status_code == 200 and check["quality_ok"]}
+
+
+def validate_cached_actors(actors: list[CapacityActor], validation_queries: int = 4) -> dict:
+    """Revalidate existing facts through real Search; never submit another Commit."""
+    def validate(actor):
+        row = {"tenant_index": actor.tenant_index, "user_index": actor.user_index,
+               "queries": [], "status": "INCONCLUSIVE", "seed_source": "validated-cache"}
+        try:
+            for result in semantic_checks(actor, validation_queries):
+                row["queries"].append(result)
+            row["valid_semantic_queries"] = sum(q["success"] for q in row["queries"])
+            row["status"] = "PASS" if row["valid_semantic_queries"] == validation_queries else "FAIL"
+        except (RuntimeError, OSError, ValueError) as exc:
+            row["error_class"] = type(exc).__name__
+        return row
+
+    with ThreadPoolExecutor(max_workers=min(4, max(1, len(actors)))) as pool:
+        rows = list(pool.map(validate, actors))
+    return {"status": "PASS" if rows and all(r["status"] == "PASS" for r in rows) else "INCONCLUSIVE",
+            "actors": rows, "actor_count": len(rows), "healthy_actors": sum(r["status"] == "PASS" for r in rows),
+            "raw_credentials_exported": False}
+
+
 def provision_actors(base_url: str, tenants: int, users: int, *, memory_scale: int = 1,
                      seed: int = 42, tenant_offset: int = 0) -> list[CapacityActor]:
     """Only for a dedicated test deployment with public bootstrap enabled."""
@@ -115,16 +152,8 @@ def seed_actor(actor: CapacityActor, *, timeout_s: float = 180, checkpoint=None,
                 row["memory_count"] = len(value)
                 break
         phase = "semantic-validation"
-        for sample in selected:
-            begin = time.monotonic()
-            result = client.request("POST", "/api/retrieval/search", {
-                "query": sample["query"], "agent_id": client.agent_id, "limit": 10,
-                "include_debug": True, "include_explain": True,
-            }, timeout_s=10, operation="search")
-            check = assess_retrieval(result.payload, sample)
-            row["queries"].append({**check, "http_status": result.status_code,
-                                   "elapsed_s": time.monotonic() - begin,
-                                   "success": result.status_code == 200 and check["quality_ok"]})
+        for check in semantic_checks(actor, validation_queries):
+            row["queries"].append(check)
             save()
         row["valid_semantic_queries"] = sum(r["success"] for r in row["queries"])
         row["status"] = "PASS" if row["valid_semantic_queries"] == len(selected) else "FAIL"

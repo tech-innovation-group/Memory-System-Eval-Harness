@@ -159,6 +159,14 @@ curl -fsS -X POST http://127.0.0.1:8010/api/inspect/test-control/fault \
 
 ### M3 独立周期公平性（新版正式入口）
 
+单独运行 M3 可在 profile 中显式配置 `semantic_seed_cache` 为已有容量运行目录的绝对路径。
+目录必须包含 `identities.private.json`（权限 0600）及 `seed-evidence.json`；它们不是公开报告，禁止提交仓库。
+配置的每个租户必须与缓存中的 tenant/user/account/agent/key 完全匹配且只匹配一次。
+平台不会再次 Commit，而是对每个租户现场抽取 4 道事实问题发起真实 Search；全部校验通过后才发压。
+旧的 PASS 不作本次证据，当前校验失败仍保留全部租户分母并阻止开始测量。
+报告标注 `validated-cache`，语料数量按实际缓存统计；这代表复用记忆，不代表本版本重新生成过记忆。
+未配置该选项仍走下述全新注入流程，组合 M2/M4 不使用此选项。
+
 独立运行 `--metrics M3` 时，种子使用 5 段固定事实文本（20 个事实、40 种自然语言问法），
 每租户先验证其中 4 个跨主题问题，再进入负载。问题中不包含所求日期、地点等答案；
 断言只检查返回 items 的记忆正文，忽略 query 回显、ID 和 debug 元数据。

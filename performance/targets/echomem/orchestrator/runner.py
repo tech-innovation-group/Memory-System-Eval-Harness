@@ -260,11 +260,11 @@ def _preflight_stage(config: str, *, strict: bool = False) -> dict:
     return {**result, "config": config}
 
 
-def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, seed_messages):
+def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, seed_messages, *, reuse_seed=None):
     """M3 uses explicit remembered facts, not a bare marker as a routing gate."""
     import uuid
     from performance.suite import SeedPreparationError
-    from performance.targets.echomem.acceptance.capacity_seed import CapacityActor, prepare_actors
+    from performance.targets.echomem.acceptance.capacity_seed import CapacityActor, prepare_actors, validate_cached_actors
     from performance.targets.echomem.acceptance.semantic_corpus import build_corpus
     from performance.targets.echomem.probes._client import EchoMemHTTP
 
@@ -276,7 +276,20 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
                     tenant_id=spec.tenant_id, user_id=spec.user_id,
                     account_id=spec.account_id, agent_id=spec.agent_id),
                 build_corpus(f"formal-m3-{run_tag}-{index}")) for index, spec in enumerate(specs)]
-    evidence = prepare_actors(actors, timeout_s=180, validation_queries=4)
+    if reuse_seed:
+        from dataclasses import replace
+        from performance.targets.echomem.acceptance.capacity_experiment import _load_actors
+        cached, _ = _load_actors(Path(reuse_seed), base_url)
+        actors = []
+        for spec in specs:
+            matches = [a for a in cached if all(getattr(a.client, field) == getattr(spec, field)
+                       for field in ("tenant_id", "user_id", "account_id", "agent_id", "auth_key"))]
+            if len(matches) != 1:
+                raise RuntimeError("Semantic cache must match each configured identity exactly once")
+            actors.append(replace(matches[0], tenant_index=len(actors)))
+        evidence = validate_cached_actors(actors, validation_queries=4)
+    else:
+        evidence = prepare_actors(actors, timeout_s=180, validation_queries=4)
     if evidence["healthy_actors"] != max_tenants:
         raise SeedPreparationError(f"Semantic seed validation failed: healthy={evidence['healthy_actors']}/{max_tenants}", evidence)
     contexts = [SeedContext(tenant_id=actor.client.tenant_id, auth_key=actor.client.auth_key,
@@ -284,12 +297,22 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
                     account_id=actor.client.account_id,
                     queries=[q["query"] for q in actor.corpus["recall_queries"]],
                     query_cases={q["query"]: q for q in actor.corpus["recall_queries"]}) for actor in actors]
+    counts = [{"documents": len(a.corpus["documents"]), "facts": len(a.corpus["facts"]),
+               "queries": len(a.corpus["recall_queries"])} for a in actors]
+    def uniform_count(field):
+        values = {row[field] for row in counts}
+        return next(iter(values)) if len(values) == 1 else None
+
     return contexts, {"status": "completed", "tenant_count": max_tenants,
                       "identity_mode": "independent", "keys_independent": True,
                       "seed_contract": "fixed-fact-in-items", "seed_evidence": evidence,
+                      "seed_source": "validated-cache" if reuse_seed else "fresh",
                       "corpus_fingerprints": [actor.corpus["fingerprint"] for actor in actors],
-                      "seed_documents_per_tenant": 5, "facts_per_tenant": 20,
-                      "query_variants_per_tenant": 40, "validated_queries_per_tenant": 4}
+                      "corpus_counts_by_tenant_index": counts,
+                      "seed_documents_per_tenant": uniform_count("documents"),
+                      "facts_per_tenant": uniform_count("facts"),
+                      "query_variants_per_tenant": uniform_count("queries"),
+                      "validated_queries_per_tenant": 4}
 
 
 def _prepare_seed(
@@ -410,6 +433,8 @@ def run_suite(
             return six_metric_cases(profile.get("capacity_levels"))
         return select_cases(name, scenarios)
 
+    from functools import partial
+    semantic_seed = partial(_prepare_semantic_seed, reuse_seed=profile.get("semantic_seed_cache"))
     result = run_suite_impl(
         profile,
         suite_dir=suite_dir,
@@ -428,7 +453,7 @@ def run_suite(
             config,
             strict=bool(profile.get("six_metrics") or profile.get("six_metrics_observation")),
         ),
-        seed=(_prepare_semantic_seed if profile.get("six_metrics_observation") and scenarios
+        seed=(semantic_seed if profile.get("six_metrics_observation") and scenarios
               and all(name.startswith("m3-fairness-") for name in scenarios) else _prepare_seed),
         evaluate=evaluate_pr421_acceptance,
     )

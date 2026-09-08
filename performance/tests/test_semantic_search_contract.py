@@ -81,3 +81,57 @@ def test_no_performance_blame_before_seed_passes():
         "setup_evidence": {"seed_status": "ENV_ERROR", "load_cases_completed": 0}})
     assert len(advice) == 1
     assert advice[0]["module"] == "测试准备 / Recall 验证"
+
+
+@pytest.mark.parametrize("healthy", [True, False])
+def test_cached_validation_only_searches_current_returned_facts(healthy):
+    from performance.targets.echomem.acceptance.capacity_seed import CapacityActor, validate_cached_actors
+    calls = []
+
+    def request(method, path, body, **kwargs):
+        calls.append((method, path))
+        return SimpleNamespace(status_code=200, payload={"items": [
+            {"content": "remembered-place" if healthy else "unrelated"}]})
+
+    client = SimpleNamespace(request=request, agent_id="unit-agent")
+    corpus = {"recall_queries": [{"id": str(i), "query": "Where did I go?",
+              "query_type": "recall", "aliases": ["remembered-place"]} for i in range(8)]}
+    result = validate_cached_actors([CapacityActor(0, 0, client, corpus)], validation_queries=4)
+    assert calls == [("POST", "/api/retrieval/search")] * 4
+    assert result["healthy_actors"] == int(healthy)
+    assert len(result["actors"][0]["queries"]) == 4
+
+
+@pytest.mark.parametrize("identity_matches", [True, False])
+def test_m3_cache_requires_exact_identity_and_reports_actual_corpus(monkeypatch, identity_matches):
+    from performance.targets.echomem.orchestrator import runner
+    from performance.targets.echomem.acceptance import capacity_seed, capacity_experiment
+    from performance.targets.echomem.acceptance.semantic_corpus import build_corpus
+    spec = SimpleNamespace(tenant_id="unit-tenant", auth_key="unit-secret", user_id="unit-user",
+                           account_id="unit-account", agent_id="unit-agent")
+    client = SimpleNamespace(**vars(spec))
+    if not identity_matches:
+        client.agent_id = "different-agent"
+    corpus = build_corpus("unit-cache")
+    corpus["documents"] = corpus["documents"][:2]
+    actor = capacity_seed.CapacityActor(7, 0, client, corpus)
+    monkeypatch.setattr(runner, "load_tenant_specs", lambda *a, **k: [spec])
+    monkeypatch.setattr(capacity_experiment, "_load_actors", lambda *a: ([actor], {}))
+    monkeypatch.setattr(capacity_seed, "prepare_actors", lambda *a, **k: pytest.fail("must not reseed"))
+    checked = []
+
+    def validate(actors, **kwargs):
+        checked.extend(actors)
+        return {"healthy_actors": 1, "actor_count": 1}
+
+    monkeypatch.setattr(capacity_seed, "validate_cached_actors", validate)
+    if not identity_matches:
+        with pytest.raises(RuntimeError, match="match each configured identity"):
+            runner._prepare_semantic_seed("http://unused.invalid", "unused", 1, 1, 1, reuse_seed="unused")
+        assert not checked
+        return
+    _, summary = runner._prepare_semantic_seed("http://unused.invalid", "unused", 1, 1, 1, reuse_seed="unused")
+    assert checked[0].tenant_index == 0
+    assert summary["seed_source"] == "validated-cache"
+    assert summary["seed_documents_per_tenant"] == 2
+    assert "unit-secret" not in str(summary)

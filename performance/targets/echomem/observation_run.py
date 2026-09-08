@@ -106,6 +106,36 @@ def _collect_observation(profile: dict[str, Any], token: str) -> dict[str, Any]:
     return result
 
 
+def _run_m1_profiles(profile: dict[str, Any], args: argparse.Namespace, output: Path) -> list[dict]:
+    reports = []
+    levels_by_topology = {
+        "cross-tenant": _m1_levels(profile, "m1_tenant_levels", [1, 2] if args.quick else [1, 2, 4, 8, 16, 32]),
+        "within-tenant": _m1_levels(profile, "m1_user_levels", [1, 2] if args.quick else [1, 2, 4, 8]),
+    }
+    for topology, levels in levels_by_topology.items():
+        target = output / "M1" / topology
+        report_path = target / "report.json"
+        duration_s = 15 if args.quick else float(profile.get("m1_duration_s", 300))
+        warmup_s = 5 if args.quick else 30
+        expected_resume = {"topology": topology, "levels_requested": levels,
+            "assessment_mode": "observe", "load_profile": "all", "warmup_s": warmup_s,
+            "duration_s": duration_s, "per_user_search_rps": float(profile.get("m1_search_rps_per_user", 1))}
+        if args.resume and report_path.is_file():
+            resumed_report = read_json(report_path)
+            _validate_m1_resume(resumed_report, expected_resume)
+            reports.append(resumed_report)
+            continue
+        reports.append(run_exploration(base_url=profile["base_url"], output=target,
+            topology=topology, levels=levels, fixed_tenants=4, warmup_s=warmup_s,
+            duration_s=duration_s, q=float(profile.get("m1_search_rps_per_user", 1)),
+            target_container=str(profile.get("resource_container") or ""),
+            manifest={"resource_evidence": profile["resource_evidence"]},
+            assessment_mode="observe", load_profile="all",
+            seed_validation_queries=4 if args.quick else 40,
+            recovery_timeout_s=30 if args.quick else 300, persist_private_identities=False))
+    return reports
+
+
 def _sample_observability(stop, collect, samples, errors, output: Path) -> None:
     try:
         while not stop.is_set():
@@ -237,50 +267,6 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     try:
         m1_reports = []
-        if "M1" in selected:
-            levels_by_topology = {
-                "cross-tenant": _m1_levels(
-                    profile, "m1_tenant_levels",
-                    [1, 2] if args.quick else [1, 2, 4, 8, 16, 32],
-                ),
-                "within-tenant": _m1_levels(
-                    profile, "m1_user_levels",
-                    [1, 2] if args.quick else [1, 2, 4, 8],
-                ),
-            }
-            for topology, levels in levels_by_topology.items():
-                target = output / "M1" / topology
-                report_path = target / "report.json"
-                duration_s = 15 if args.quick else float(profile.get("m1_duration_s", 300))
-                warmup_s = 5 if args.quick else 30
-                expected_resume = {
-                    "topology": topology,
-                    "levels_requested": levels,
-                    "assessment_mode": "observe",
-                    "load_profile": "all",
-                    "warmup_s": warmup_s,
-                    "duration_s": duration_s,
-                    "per_user_search_rps": float(profile.get("m1_search_rps_per_user", 1)),
-                }
-                if args.resume and report_path.is_file():
-                    resumed_report = read_json(report_path)
-                    _validate_m1_resume(resumed_report, expected_resume)
-                    m1_reports.append(resumed_report)
-                    continue
-                m1_reports.append(run_exploration(
-                    base_url=profile["base_url"], output=target,
-                    topology=topology, levels=levels,
-                    fixed_tenants=4, warmup_s=warmup_s,
-                    duration_s=duration_s,
-                    q=float(profile.get("m1_search_rps_per_user", 1)),
-                    target_container=str(profile.get("resource_container") or ""),
-                    manifest={"resource_evidence": profile["resource_evidence"]},
-                    assessment_mode="observe", load_profile="all",
-                    seed_validation_queries=4 if args.quick else 40,
-                    recovery_timeout_s=30 if args.quick else 300,
-                    persist_private_identities=False,
-                ))
-
         observation = profile.get("tenant_observability") or {}
         observation_samples: list[dict[str, Any]] = []
         observation_errors: list[str] = []
@@ -366,6 +352,29 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             )
         suite["tenant_observability_samples"] = list(observation_samples)
         suite["tenant_observability_monitor"] = observation_monitor
+        if "M1" in selected:
+            # Publish bounded scenes before the potentially long capacity search.
+            checkpoint = evaluate_observation(suite, profile, [], quick=args.quick, selected_metrics=selected)
+            checkpoint.update(platform_provenance=provenance, checkpoint=True, pending_metrics=["M1"])
+            (output / "suite.json").write_text(json.dumps(suite, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            (output / "summary.json").write_text(json.dumps(checkpoint, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            _combine_csv(suite, output, "records.csv")
+            _combine_csv(suite, output, "metrics_samples.csv")
+            write_observation_report(checkpoint, output / "report.html")
+            try:
+                capacity_readiness = check_readiness(profile)
+                if not capacity_readiness.get("ok"):
+                    checkpoint["capacity_start_readiness"] = capacity_readiness
+                    raise RuntimeError("capacity_control_preflight_failed")
+                m1_reports = _run_m1_profiles(profile, args, output)
+            except Exception as exc:
+                checkpoint.update(status="EXECUTION_ERROR", checkpoint=False,
+                                  incomplete_reason=type(exc).__name__)
+                (output / "summary.json").write_text(json.dumps(checkpoint, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                write_observation_report(checkpoint, output / "report.html")
+                raise
+            suite["m1"]["reports"] = [{"topology": report.get("topology"), "status": report.get("status"),
+                "path": str(output / "M1" / str(report.get("topology")) / "report.json")} for report in m1_reports]
         (output / "suite.json").write_text(json.dumps(suite, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         _combine_csv(suite, output, "records.csv")
         _combine_csv(suite, output, "metrics_samples.csv")
