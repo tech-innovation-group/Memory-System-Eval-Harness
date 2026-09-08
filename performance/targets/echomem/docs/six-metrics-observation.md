@@ -135,6 +135,37 @@ curl -fsS -X POST http://127.0.0.1:8010/api/inspect/test-control/fault \
 
 ### M3/M4 洪泛补测的 Commit 证据
 
+#### 突发与固定速率两种负载
+
+默认`--commit-submit-rps 0`保留一次性突发；正数表示所有租户合计的固定提交速率，
+不是每租户速率，也不是服务完成吞吐。两种模式分别报告，不能把降低入口突发后
+错误变少称为EchoMem性能优化。所有任务都是不同Session的一次提交，被拒绝后不补发。
+
+提交HTTP与终态轮询采用独立线程池：最多32个提交worker，每个已受理任务独立观察，
+总计划数上限256。完成观察的时限从收到202算起，不因轮询启动延迟重新计时。
+每个任务记录计划提交时间、实际开始时间与轮询启动时间；报告展示提交时间跨度、
+最大提交延迟和计时覆盖数。如果客户端来不及发出，不能把计划RPS写成实际RPS。
+轮询间隔为每次请求完成后1秒，其HTTP请求也会给服务增加负载，原始轮询数单列。
+
+例如，在完成真实种子注入后运行3轮固定速率场景：
+
+```bash
+python -m performance.targets.echomem.acceptance.contention_matrix \
+  --base-url "$ECHOMEM_BASE_URL" --container "$ECHOMEM_CONTAINER" \
+  --seed-directory "$SEED_DIR" --output results/contention-paced \
+  --expected-lanes commit,recall_engine,recall_intent_llm,recall_query_embedding \
+  --repeats 3 --duration-s 120 --search-rps 0.5 \
+  --commits-per-tenant 8 --commit-submit-rps 2 --commit-timeout-s 360
+```
+
+`SEED_DIR`使用容量测试保存的`identities.private.json`（权限0600）和
+`seed-evidence.json`，前4个身份必须是4个不同租户、4个不同鉴权Key，且记忆仍存在。
+`ECHOMEM_TEST_CONTROL_TOKEN`必须与服务只读观测接口一致，禁止写入命令输出或报告。
+目标容器必须实为4CPU/8GiB，输出目录必须不存在；计划提交区间必须落在Search窗口内。
+示例共32个Commit，按总2次/秒计划在15.5秒内提交；Search为每租户0.5次/秒。
+这仍是有限后台积压场景，不等于长期稳态公平性或最大容量测试。每轮保留所有错误，
+实际202受理不足32、预热召回无效或无法确认积压时，仍不给完整M4结论。
+
 `performance.targets.echomem.acceptance.contention_matrix` 的固定租户洪泛补测会保存
 每次提交的 HTTP 状态、可识别公共原因码、Retry-After、受理时间和终态轮询历史。
 综合报告按轮次列出计划/记录数、202、HTTP 拒绝、未知原因、完成、失败与未终态。
@@ -183,6 +214,31 @@ Search在确认区间内开始才进入`confirmed_overlap_search`，最后轮询
 入口为什么持续占用仍需工作线程容量、持有时长和同请求内部计时证据。
 M6本轮没有进程身份时间线，不能据此证明跨进程重启的计数连续性。
 运行源码快照SHA256：`3a32db45bb0f3eb237118d6d3f1a1c9a78d28d125f335d44cb6427f4568e7212`。
+
+#### 同日固定速率提交补测
+
+新增模式的单轮验证：总2 Commit/s、32个不同Session；每租户0.5 Search/s，
+基线和负载各60秒，原任务观察上限360秒。仍使用既有真实服务和记忆，不改配置、
+不重启、不自动补发。源码快照SHA256：
+`dac200119c2a4116255333f11da2b9fa28ebcff9080ec22118897e549d540941`。
+
+| 观察项 | 本轮数据 |
+| --- | --- |
+| 提交 / 受理 / 拒绝 | 32 / 32 / 0 |
+| 受理后完成 / 失败 / 未终态 | 32 / 0 / 0 |
+| 计划 / 实际提交跨度 | 15.5 / 15.496秒，计时覆盖32/32 |
+| 最大提交调度延迟 / 轮询启动延迟 | 14.549 / 1.151毫秒 |
+| 状态轮询 | 4,917次，全部HTTP 200 |
+| 非终态确认Search | 86/86严格有效，P95 2.385秒 |
+| 请求开始时确认在途下界 | 3–32个Commit，不是队列深度或全轮并发峰值 |
+| 60秒内Commit完成分布 | 1 / 1 / 1 / 1，Jain=1；样本少，不代表长期稳态 |
+| Search逆P95 Jain | 0.9959 |
+| M6采样 | 152/152帧，锁定4租户×4层字段完整；没有进程身份时间线 |
+| 资源及退出 | 4CPU/8GiB限制未变化，服务存活，未OOM、未容器重启 |
+
+这轮补到了单轮M4的受理数量、有效配对与确认积压样本，不是内部严格调度证明，
+也不是六项全部完成。它与突发模式的拒绝差异来自负载形态与压测端调度变化，
+不能称为EchoMem代码优化后的性能提升。两轮之间也有历史写入积累，记忆规模并非严格冻结。
 
 ### M6 过程完整性
 

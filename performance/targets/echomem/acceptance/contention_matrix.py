@@ -22,6 +22,7 @@ from performance.targets.echomem.probes.tenant_observability import collect
 def run(*, base_url: str, seed_directory: Path, output: Path, container: str,
         expected_lanes: list[str], repeats: int = 3, duration_s: float = 60,
         q: float = 1, commits_per_tenant: int = 8, commit_timeout_s: float = 180,
+        commit_submit_rps: float = 0,
         token_env: str = "ECHOMEM_TEST_CONTROL_TOKEN", max_sampling_gap_s: float = 15) -> dict:
     if output.exists():
         raise FileExistsError("Refuse to overwrite contention-matrix evidence")
@@ -29,6 +30,10 @@ def run(*, base_url: str, seed_directory: Path, output: Path, container: str,
         raise ValueError("invalid repeat, duration or Search rate")
     if not 1 <= commits_per_tenant <= 64 or not 10 <= commit_timeout_s <= 600:
         raise ValueError("invalid Commit matrix settings")
+    if type(commit_submit_rps) not in (int, float) or not math.isfinite(commit_submit_rps) or commit_submit_rps < 0:
+        raise ValueError("Commit submission rate must be finite and nonnegative")
+    if commit_submit_rps and 5 + (4 * commits_per_tenant - 1) / commit_submit_rps >= duration_s:
+        raise ValueError("The planned Commit submissions must fit inside the Search window")
     if not math.isfinite(max_sampling_gap_s) or max_sampling_gap_s <= 0:
         raise ValueError("max sampling gap must be positive and finite")
     state = inspect_container(container)
@@ -40,6 +45,8 @@ def run(*, base_url: str, seed_directory: Path, output: Path, container: str,
     actors = actors[:4]
     if len(actors) != 4 or len({a.client.tenant_id for a in actors}) != 4:
         raise ValueError("Four independently authenticated seeded tenants are required")
+    if len({a.client.auth_key for a in actors}) != 4 or any(not a.client.auth_key for a in actors):
+        raise ValueError("Four independent non-empty authentication keys are required")
     token = os.environ.get(token_env, "")
     if not token:
         raise ValueError("Tenant observability token is required")
@@ -56,6 +63,7 @@ def run(*, base_url: str, seed_directory: Path, output: Path, container: str,
     report = {"status": "RUNNING", "expected_samples": repeats, "samples": [],
               "duration_s": duration_s, "search_rps_per_tenant": q,
               "commits_per_tenant": commits_per_tenant,
+              "commit_submit_rps": commit_submit_rps,
               "commit_timeout_s": commit_timeout_s, "seed_status": seed.get("status"),
               "performance_requirements_applied": False, "current": None}
     _write(output / "report.json", report, private=True)
@@ -101,7 +109,7 @@ def run(*, base_url: str, seed_directory: Path, output: Path, container: str,
         try:
             with ThreadPoolExecutor(max_workers=1) as pool:
                 committing = pool.submit(flood, actors, sessions,
-                                         commit_timeout_s=commit_timeout_s)
+                                         commit_timeout_s=commit_timeout_s, commit_submit_rps=commit_submit_rps)
                 loaded = measure(actors, duration_s=duration_s, q=q, seed=71000 + repeat)
                 commits_rows = committing.result()
         finally:
@@ -131,6 +139,11 @@ def run(*, base_url: str, seed_directory: Path, output: Path, container: str,
         }
         sample = {"repeat": repeat, "M3_M4": summarize_flood(
                       baseline, loaded, commits_rows, 4), "M6": after}
+        sample["M3_M4"]["submission_schedule"] = {
+            "mode": "paced" if commit_submit_rps else "burst", "requested_rps": commit_submit_rps,
+            "planned_span_s": (len(sessions) - 1) / commit_submit_rps if commit_submit_rps else 0,
+            "submission_workers": 32, "poll_workers": len(sessions), "poll_interval_s": 1,
+            "commit_timeout_s": commit_timeout_s}
         report["samples"].append(sample)
         _write(root / "summary.json", sample, private=True)
         _write(output / "report.json", report, private=True)
@@ -154,6 +167,8 @@ def main() -> None:
     parser.add_argument("--search-rps", type=float, default=1)
     parser.add_argument("--commits-per-tenant", type=int, default=8)
     parser.add_argument("--commit-timeout-s", type=float, default=180)
+    parser.add_argument("--commit-submit-rps", type=float, default=0,
+                        help="Total Commit submissions/s across tenants; 0 keeps the burst workload")
     parser.add_argument("--max-sampling-gap-s", type=float, default=15,
                         help="Monitoring coverage limit, not a Search latency SLO")
     args = parser.parse_args()
@@ -162,7 +177,8 @@ def main() -> None:
                  expected_lanes=args.expected_lanes.split(","), repeats=args.repeats,
                  duration_s=args.duration_s, q=args.search_rps,
                  commits_per_tenant=args.commits_per_tenant,
-                 commit_timeout_s=args.commit_timeout_s, max_sampling_gap_s=args.max_sampling_gap_s)
+                 commit_timeout_s=args.commit_timeout_s, commit_submit_rps=args.commit_submit_rps,
+                 max_sampling_gap_s=args.max_sampling_gap_s)
     print(json.dumps({"status": result["status"], "samples": result["measured_samples"]}))
 
 

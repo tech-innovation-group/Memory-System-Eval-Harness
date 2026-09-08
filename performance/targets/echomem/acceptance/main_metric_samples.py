@@ -39,23 +39,19 @@ def comparison(before: dict, during: dict, identities: int) -> list[dict]:
 
 
 def flood(actors: list, sessions: list[tuple], *, delay_s: float = 5,
-          commit_timeout_s: float = 180) -> list[dict]:
+          commit_timeout_s: float = 180, commit_submit_rps: float = 0) -> list[dict]:
+    if number(commit_submit_rps) is None or number(delay_s) is None or not number(commit_timeout_s):
+        raise ValueError("Commit rate/delay must be finite and nonnegative; timeout must be positive")
+    if len(sessions) > 256:
+        raise ValueError("A bounded flood supports at most 256 distinct sessions")
     time.sleep(delay_s)
+    origin = time.monotonic()
 
-    def submit(item):
-        index, sid = item
-        client = actors[index].client
-        row = {"identity_index": index, "submit_at": time.monotonic(), "submission_attempts": 1}
+    def observe(client, sid, archive, row):
         try:
-            result = client.commit(sid, idempotency_key="main-sample-" + uuid.uuid4().hex)
-            archive = extract_archive(result.payload)
-            row.update(receipt(result), accepted_202=result.status_code == 202 and bool(archive),
-                       submit_finished_at=time.monotonic())
-            if not row["accepted_202"]:
-                return row
-            row["accepted_at"] = row["submit_finished_at"]
+            row["first_poll_worker_at"] = time.monotonic()
             row["polls"] = []
-            deadline = time.monotonic() + commit_timeout_s
+            deadline = row["accepted_at"] + commit_timeout_s
             while time.monotonic() < deadline:
                 poll_started = time.monotonic()
                 try:
@@ -83,8 +79,36 @@ def flood(actors: list, sessions: list[tuple], *, delay_s: float = 5,
             row["observed_until"] = time.monotonic()
         return row
 
-    with ThreadPoolExecutor(max_workers=32) as pool:
-        return list(pool.map(submit, sessions))
+    # Status observation must not occupy submission workers: slow Commit
+    # execution would otherwise turn an open-loop plan into closed-loop load.
+    with ThreadPoolExecutor(max_workers=max(1, len(sessions))) as observers:
+        def submit(item, scheduled_at):
+            index, sid = item
+            client = actors[index].client
+            row = {"identity_index": index, "scheduled_submit_at": scheduled_at,
+                   "submit_at": time.monotonic(), "submission_attempts": 1,
+                   "requested_submit_rps": commit_submit_rps}
+            try:
+                result = client.commit(sid, idempotency_key="main-sample-" + uuid.uuid4().hex)
+                archive = extract_archive(result.payload)
+                row.update(receipt(result), accepted_202=result.status_code == 202 and bool(archive),
+                           submit_finished_at=time.monotonic())
+                if row["accepted_202"]:
+                    row["accepted_at"] = row["submit_finished_at"]
+                    return row, observers.submit(observe, client, sid, archive, row)
+            except Exception as exc:
+                row["error_class"] = type(exc).__name__
+            row["observed_until"] = time.monotonic()
+            return row, None
+
+        with ThreadPoolExecutor(max_workers=32) as submitters:
+            futures = []
+            for ordinal, item in enumerate(sessions):
+                scheduled_at = origin + ordinal / commit_submit_rps if commit_submit_rps else origin
+                time.sleep(max(0, scheduled_at - time.monotonic()))
+                futures.append(submitters.submit(submit, item, scheduled_at))
+            submitted = [future.result() for future in futures]
+        return [pending.result() if pending is not None else row for row, pending in submitted]
 
 
 def summarize_flood(baseline: dict, loaded: dict, commits: list[dict], identities: int) -> dict:

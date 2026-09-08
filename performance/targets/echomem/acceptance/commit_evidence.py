@@ -32,8 +32,16 @@ def receipt(result) -> dict:
 def commit_outcomes(rows: list[dict]) -> dict:
     statuses, reasons, poll_statuses = Counter(), Counter(), Counter()
     accepted = rejected = missing_archive = transport = unexpected = 0
+    submit_delays, submit_starts, poll_delays = [], [], []
     known_rejection_reasons = poll_errors = poll_observations = completed = failed = unresolved = 0
     for row in rows:
+        scheduled, started = number(row.get("scheduled_submit_at")), number(row.get("submit_at"))
+        if scheduled is not None and started is not None and started >= scheduled:
+            submit_delays.append(started - scheduled)
+            submit_starts.append(started)
+        admitted_at, polled_at = number(row.get("accepted_at")), number(row.get("first_poll_worker_at"))
+        if admitted_at is not None and polled_at is not None and polled_at >= admitted_at:
+            poll_delays.append(polled_at - admitted_at)
         status = count(row.get("http_status"))
         status = status if status is not None and 100 <= status <= 599 else None
         statuses[str(status) if status is not None else "NOT_RECORDED"] += 1
@@ -69,4 +77,10 @@ def commit_outcomes(rows: list[dict]) -> dict:
             "completed": completed, "failed": failed, "unresolved": unresolved,
             "poll_history_submissions": poll_observations,
             "poll_http_status_counts": dict(poll_statuses),
+            "submission_timing_samples": len(submit_delays),
+            "submission_lag_max_s": max(submit_delays, default=None),
+            "submission_lag_mean_s": sum(submit_delays) / len(submit_delays) if submit_delays else None,
+            "observed_submission_span_s": max(submit_starts) - min(submit_starts) if submit_starts else None,
+            "poll_start_timing_samples": len(poll_delays),
+            "poll_start_lag_max_s": max(poll_delays, default=None),
             "poll_http_errors": poll_errors if poll_observations == accepted else None}

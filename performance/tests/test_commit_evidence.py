@@ -1,4 +1,6 @@
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 import pytest
@@ -174,3 +176,87 @@ def test_report_labels_separate_load_run_and_escapes_provenance():
     assert "不是六项同时复测" in page
     assert "&lt;script&gt;new batch&lt;/script&gt;" in page
     assert "<script>new batch</script>" not in page
+
+
+def test_slow_polling_does_not_hold_all_submission_workers():
+    release_polls, all_submitted = threading.Event(), threading.Event()
+
+    class BlockingPollClient:
+        def __init__(self):
+            self.lock, self.keys = threading.Lock(), []
+
+        def commit(self, session, **kwargs):
+            with self.lock:
+                self.keys.append(kwargs["idempotency_key"])
+                if len(self.keys) == 33:
+                    all_submitted.set()
+            return response(202, {"archive_id": "private-archive"})
+
+        def request(self, *args, **kwargs):
+            assert release_polls.wait(5)
+            return response(200, {"status": "completed"})
+
+    client = BlockingPollClient()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(flood, [SimpleNamespace(client=client)],
+                              [(0, str(i)) for i in range(33)], delay_s=0)
+        try:
+            assert all_submitted.wait(2), "Polling blocked the 33rd independent submission"
+        finally:
+            release_polls.set()
+        rows = pending.result(timeout=5)
+    assert len(set(client.keys)) == 33
+    assert commit_outcomes(rows)["completed"] == 33
+    assert "private-" not in json.dumps(rows)
+
+
+def test_paced_plan_records_actual_submission_lag_without_retry():
+    client = Client(response(503, {"error": "HTTP_LANE_SATURATED"}))
+    rows = flood([SimpleNamespace(client=client)], [(0, str(i)) for i in range(3)],
+                 delay_s=0, commit_submit_rps=100)
+    assert client.commits == 3 and client.poll_count == 0
+    assert rows[1]["scheduled_submit_at"] - rows[0]["scheduled_submit_at"] == pytest.approx(.01)
+    assert rows[2]["scheduled_submit_at"] - rows[0]["scheduled_submit_at"] == pytest.approx(.02)
+    assert all(row["submit_at"] >= row["scheduled_submit_at"] for row in rows)
+    result = commit_outcomes(rows)
+    assert result["submission_timing_samples"] == 3
+    assert result["submission_lag_max_s"] >= 0
+    assert result["observed_submission_span_s"] >= 0
+
+
+@pytest.mark.parametrize("rate", [-1, float("nan"), float("inf"), True])
+def test_invalid_rate_is_rejected_before_work(rate):
+    with pytest.raises(ValueError):
+        flood([], [], delay_s=0, commit_submit_rps=rate)
+
+
+def test_historical_submission_timing_is_unknown_not_zero():
+    result = commit_outcomes([{"http_status": 503}])
+    assert result["submission_timing_samples"] == 0
+    assert result["submission_lag_max_s"] is None
+    assert result["observed_submission_span_s"] is None
+
+
+@pytest.mark.parametrize("rate", [-1, float("nan"), True, .1])
+def test_contention_preflight_rejects_invalid_or_out_of_window_plan(tmp_path, monkeypatch, rate):
+    from performance.targets.echomem.acceptance import contention_matrix
+
+    def forbidden_inspect(*args):
+        pytest.fail("Invalid plan reached Docker inspection")
+
+    monkeypatch.setattr(contention_matrix, "inspect_container", forbidden_inspect)
+    with pytest.raises(ValueError):
+        contention_matrix.run(base_url="unused", seed_directory=tmp_path,
+                              output=tmp_path / "out", container="unused", expected_lanes=[],
+                              duration_s=60, commits_per_tenant=8, commit_submit_rps=rate)
+
+
+def test_submission_plan_survives_repeat_reduction_and_html():
+    schedule = {"mode": "paced", "requested_rps": 2, "planned_span_s": 15.5,
+                "commit_timeout_s": 360}
+    joint, _ = contention_matrix_counts({"samples": [{"repeat": 1, "M3_M4": {
+        "submission_schedule": schedule}}]})
+    assert joint["repeat_summaries"][0]["submission_schedule"] == schedule
+    page = render(redacted_report({"metrics": {"M3_M4": joint}}, {"levels": []}))
+    assert "paced" in page and "最大提交延迟 s" in page
+    assert "名义提交速率不等于服务吞吐" in page

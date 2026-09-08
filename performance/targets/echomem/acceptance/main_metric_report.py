@@ -75,6 +75,7 @@ def contention_matrix_counts(value: dict) -> tuple[dict, dict]:
                            "commit_planned": joint.get("commit_planned"),
                            "accepted_202": joint.get("accepted_202"),
                            "commit_outcomes": joint.get("commit_outcomes", {}),
+                           "submission_schedule": joint.get("submission_schedule"),
                            "completed_including_drain": joint.get("completed_including_drain"),
                            "unresolved_after_observation": joint.get("unresolved_after_observation"),
                            "overlap_search": joint.get("overlap_search") or {},
@@ -464,8 +465,15 @@ def render(report: dict) -> str:
         for p in priority_counts(joint)["pairs"]]
     commit_outcome_rows = []
     backlog_depth_rows = []
+    submission_schedule_rows = []
     for i, repeat in enumerate(joint.get("repeat_summaries") or [joint], 1):
         outcomes = repeat.get("commit_outcomes") or {}
+        schedule = repeat.get("submission_schedule") or {}
+        submission_schedule_rows.append([repeat.get("repeat", i), schedule.get("mode"),
+            schedule.get("requested_rps"), schedule.get("planned_span_s"),
+            outcomes.get("observed_submission_span_s"), outcomes.get("submission_timing_samples"),
+            outcomes.get("submission_lag_max_s"), outcomes.get("poll_start_lag_max_s"),
+            schedule.get("commit_timeout_s")])
         backlog = repeat.get("overlap_evidence") or {}
         backlog_depth_rows.append([repeat.get("repeat", i),
             backlog.get("accepted_with_nonterminal_poll"), backlog.get("confirmed_search"),
@@ -594,6 +602,8 @@ def render(report: dict) -> str:
 <p>Jain 接近 1 表示相对均匀，不代表快或可靠；零完成租户保留，全部零完成时指数留空。窗口后的排空完成不混入窗口吞吐；此为洪泛窗口观察，不是长时间稳态公平性结论。</p></section>
 <section><h2>M4 · Commit 洪泛下的 Search</h2><p><b>测试方式：</b>先在无Commit时用固定问题序列测Search基线；随后并发提交真实Commit，并用同一问题、同一到达计划测Search。选取开始于Commit受理之后、首次观测终态（或结束观察）之前的Search样本。轮询间隔内的实际完成时刻未知，该区间是客户端观察范围，不能证明服务内部严格调度顺序。</p>{conclusion_panel('M4')}<div class="flow"><span><b>1</b>预注入记忆</span><span><b>2</b>无Commit基线</span><span><b>3</b>并发提交，分别记录受理与拒绝</span><span><b>4</b>观察区间内Search</span><span><b>5</b>轮询原任务终态</span></div>{priority_chart}<p>受理 202：{fmt(joint.get('accepted_202'))}/{fmt(joint.get('commit_planned'))}；各任务配置的观察期限内完成：{fmt(joint.get('completed_including_drain'))}；观察期内未见终态：{fmt(joint.get('unresolved_after_observation', joint.get('pending_after_drain')))}。</p>
 <h3>Commit 受理、拒绝与终态</h3>
+{table(['轮次','提交模式','计划总提交/s','计划提交跨度 s','实际提交跨度 s','有效提交计时','最大提交延迟 s','最大轮询启动延迟 s','原任务观察上限 s'],submission_schedule_rows)}
+<p>burst是突发提交，paced是按固定总速率提交独立任务；提交与状态轮询使用不同线程池。提交延迟按实际开始减去计划开始计算，包含压测端调度等待，不归因于EchoMem。名义提交速率不等于服务吞吐；拒绝不自动补发。</p>
 {table(['轮次','已记录提交','受理202','HTTP拒绝','HTTP状态分布','拒绝原因分布','原因未明确','202缺archive','completed','failed/error','未终态','轮询HTTP错误'],commit_outcome_rows)}
 <p>每个Commit只提交一次；拒绝不自动重提，避免隐藏过载。503不自动归因于限流或API key；原因码仅保留已识别公共枚举。状态轮询可在原期限内继续，但全部轮询错误保留。旧数据未记录的字段显示未采集。</p>
 <h3>积压区间的证据强度</h3>
