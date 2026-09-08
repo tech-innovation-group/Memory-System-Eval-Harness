@@ -104,6 +104,52 @@ def test_uncleared_fault_prevents_capacity_without_losing_checkpoint(tmp_path, m
     assert events == ["bounded-suite", "probes"]
 
 
+@pytest.mark.parametrize("existing_report", [False, True])
+def test_competing_cli_never_publishes_into_locked_output(tmp_path, monkeypatch, existing_report):
+    args, events = setup_run(tmp_path, monkeypatch)
+    args.out_dir.mkdir()
+    if existing_report:
+        (args.out_dir / "summary.json").write_text('{"owner": "original"}')
+        (args.out_dir / "report.html").write_text("original report")
+    lock = module.acquire_output_lock(args.out_dir)
+    before = {p.name: p.read_bytes() for p in args.out_dir.iterdir()}
+    try:
+        code = module.main(["--profiles", str(args.profiles), "--profile", "4U8G",
+                            "--out-dir", str(args.out_dir), "--metrics", "M3", "--resume"])
+        assert code == 2
+        assert events == []
+        assert {p.name: p.read_bytes() for p in args.out_dir.iterdir()} == before
+    finally:
+        lock.close()
+
+
+def test_existing_results_require_explicit_resume(tmp_path, monkeypatch):
+    args, events = setup_run(tmp_path, monkeypatch)
+    args.out_dir.mkdir()
+    summary = args.out_dir / "summary.json"
+    summary.write_text('{"retained": true}')
+    code = module.main(["--profiles", str(args.profiles), "--out-dir", str(args.out_dir)])
+    assert code == 2
+    assert events == []
+    assert summary.read_text() == '{"retained": true}'
+
+
+def test_failure_report_written_while_lock_owned(tmp_path, monkeypatch):
+    args, _ = setup_run(tmp_path, monkeypatch)
+    monkeypatch.setattr(module, "_configure", lambda *a, **k: (_ for _ in ()).throw(ValueError("invalid profile")))
+    render = module.write_observation_report
+
+    def guarded_render(result, path):
+        with pytest.raises(RuntimeError, match="already locked"):
+            module.acquire_output_lock(path.parent)
+        return render(result, path)
+
+    monkeypatch.setattr(module, "write_observation_report", guarded_render)
+    assert module.main(["--profiles", str(args.profiles), "--out-dir", str(args.out_dir)]) == 2
+    assert json.loads((args.out_dir / "summary.json").read_text())["status"] == "BLOCKED"
+    module.acquire_output_lock(args.out_dir).close()
+
+
 @pytest.mark.parametrize("fail_capacity", [False, True])
 def test_observability_stays_live_through_capacity(tmp_path, monkeypatch, fail_capacity):
     args, _ = setup_run(tmp_path, monkeypatch)

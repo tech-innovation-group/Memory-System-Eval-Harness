@@ -52,6 +52,21 @@ def test_drain_completions_do_not_inflate_window_throughput(tmp_path):
         assert row["commit_pending"] == 0
         assert row["search"]["completed"] == 2
         assert row["arrivals"]["write"]["planned"] == 2
+        assert row["commit_poll_count_full_run"] == 4
+        assert row["commit_poll_http_errors_full_run"] == 0
+
+
+def test_missing_poll_counts_are_not_reported_as_zero(tmp_path, monkeypatch):
+    from performance.targets.echomem.acceptance import observation
+    run = write_run(tmp_path)
+    rows = observation._records(run)
+    for row in rows:
+        if row.get("op") == "commit_done":
+            row.pop("poll_count", None)
+    monkeypatch.setattr(observation, "_records", lambda _: rows)
+    window = observation._fairness_window(run, 4)
+    assert all(t["commit_poll_count_full_run"] is None for t in window["tenants"])
+    assert all(t["commit_poll_http_errors_full_run"] is None for t in window["tenants"])
 
 
 def test_zero_completion_tenant_stays_in_jain_denominator(tmp_path):

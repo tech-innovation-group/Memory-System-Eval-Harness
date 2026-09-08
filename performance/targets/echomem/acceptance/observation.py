@@ -284,6 +284,12 @@ def _fairness_window(run: dict[str, Any], tenant_count: int) -> dict[str, Any]:
             if planned is None or planned <= 0 or len(in_window) != planned or duplicate or invalid_sequence:
                 issues.append(f"租户 {tenant} {task} 计划/实际到达未完整对齐")
         search_rows = [row for row in selected if row.get("op") == "read" and inside(request_start(row))]
+        poll_rows = [row for row in selected if row.get("op") == "commit_done"]
+        poll_counts = [_number(row.get("poll_count")) for row in poll_rows]
+        poll_errors = [_number(row.get("poll_http_errors")) for row in poll_rows]
+        poll_totals_valid = not evidence["missing_poll_audit"] and all(n is not None and e is not None and n.is_integer()
+                                and e.is_integer() and 0 <= e <= n
+                                for n, e in zip(poll_counts, poll_errors))
         tenants.append({"tenant_index": tenant, "commit_submitted": len(submits),
                         "commit_accepted": len(accepted), "commit_completed": len(done),
                         "commit_completed_after_window": sum(
@@ -293,6 +299,8 @@ def _fairness_window(run: dict[str, Any], tenant_count: int) -> dict[str, Any]:
                         "commit_failed": len(failed),
                         "commit_pending": max(0, len(accepted) - len(terminal)),
                         "commit_observation_outcomes": evidence["observation_outcomes"],
+                        "commit_poll_count_full_run": int(sum(poll_counts)) if poll_totals_valid else None,
+                        "commit_poll_http_errors_full_run": int(sum(poll_errors)) if poll_totals_valid else None,
                         "commit_completed_per_s": len(done) / duration if duration else None,
                         "longest_no_completion_s": longest_gap,
                         "search": _request_stats(search_rows)})
@@ -919,7 +927,9 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             visual += bars("各租户 Search P95 / ms", [
                 (f"{row['scenario']} / 租户 {row['tenant_index']}", row.get("search_p95_ms")) for row in tenant_rows])
             visual += '<p>Commit 吞吐 = 窗口内完成数 ÷ 窗口秒数；Search 使用 1/P95（越大越快）。两者分别计算 J=(Σx)²/(n×Σx²)，n 包含零完成租户。J 接近 1 只表示均匀，不表示吞吐高、延迟低或长期稳态已得到证明。</p>'
-            visual += details("查看逐租户完成数与延迟", table(tenant_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("commit_submitted", "窗口内提交"), ("commit_accepted", "全程受理"), ("commit_completed", "窗口内完成"), ("commit_completed_after_window", "停压后完成"), ("commit_failed", "全程失败"), ("commit_pending", "最终未完成"), ("longest_no_completion_s", "窗口内最长无完成秒"), ("search_p95_ms", "Search P95 ms")]))
+            visual += details("查看逐租户完成数与延迟", table(tenant_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("commit_submitted", "窗口内提交"), ("commit_accepted", "全程受理"), ("commit_completed", "窗口内完成"), ("commit_completed_after_window", "停压后完成"), ("commit_failed", "全程失败"), ("commit_pending", "观察截止未确认"), ("longest_no_completion_s", "窗口内最长无完成秒"), ("search_p95_ms", "Search P95 ms")]))
+            visual += '<p>观察截止未确认不等于永久失败；后续原任务完成不能回填历史窗口吞吐。状态轮询也是服务负载，下面统计整个场景（含排空），不与测量窗口 Search 请求数混用。</p>'
+            visual += details("查看状态轮询额外负载", table(tenant_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("commit_poll_count_full_run", "全程状态请求数"), ("commit_poll_http_errors_full_run", "状态 HTTP/传输错误")]))
             visual += details("查看 Search 错误与召回质量", table(tenant_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("search_count", "请求数"), ("search_errors", "错误数"), ("search_quality_ok", "质量通过数"), ("search_mean_ms", "平均 ms"), ("search_p95_ms", "P95 ms")]))
             arrival_rows = [{"scenario": row["scenario"], "tenant_index": row["tenant_index"], "task": task, **values}
                             for row in tenant_rows for task, values in row.get("arrivals", {}).items()]

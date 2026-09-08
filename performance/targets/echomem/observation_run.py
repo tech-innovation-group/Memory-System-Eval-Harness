@@ -6,6 +6,7 @@ import argparse
 import csv
 import json
 import os
+import sys
 import threading
 import time
 from datetime import datetime, timezone
@@ -247,7 +248,7 @@ def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> 
     }
 
 
-def run(args: argparse.Namespace) -> dict[str, Any]:
+def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
     if args.env_file:
         os.environ.update(load_env_file(args.env_file.expanduser().resolve()))
     profiles = load_profiles(args.profiles)
@@ -260,7 +261,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     )
     output = args.out_dir.expanduser().resolve()
     output.mkdir(parents=True, exist_ok=True)
-    lock = acquire_output_lock(output)
+    lock = output_lock if output_lock is not None else acquire_output_lock(output)
     started_at = _now()
     provenance = platform_snapshot()
     (output / "execution-manifest.json").write_text(json.dumps({
@@ -430,7 +431,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             sampler_stop.set()
         if "sampler" in locals() and sampler is not None and sampler.is_alive():
             sampler.join(timeout=20)
-        lock.close()
+        if output_lock is None:
+            lock.close()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -449,14 +451,23 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     interrupted = False
+    output = args.out_dir.expanduser().resolve()
+    lock = None
     try:
-        result = run(args)
+        output.mkdir(parents=True, exist_ok=True)
+        lock = acquire_output_lock(output)
+        if (output / "summary.json").exists() and not args.resume:
+            print("Output already contains results; use a new directory or --resume.", file=sys.stderr)
+            return 2
+        result = run(args, output_lock=lock)
     except PublishedObservationError as exc:
         result = exc.result
     except (ValueError, RuntimeError, OSError, KeyboardInterrupt) as exc:
         interrupted = isinstance(exc, KeyboardInterrupt)
-        output = args.out_dir.expanduser().resolve()
-        output.mkdir(parents=True, exist_ok=True)
+        # A contender must never publish an error over the owning run's evidence.
+        if lock is None or (output / "summary.json").exists():
+            print(f"{type(exc).__name__}: {exc}; existing output left unchanged.", file=sys.stderr)
+            return 130 if interrupted else 2
         try:
             selected = _metrics(args.metrics)
         except ValueError:
@@ -498,6 +509,9 @@ def main(argv: list[str] | None = None) -> int:
             "blockers": blockers,
         }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         write_observation_report(result, output / "report.html")
+    finally:
+        if lock is not None:
+            lock.close()
     print(args.out_dir.expanduser().resolve() / "report.html")
     if interrupted:
         return 130
