@@ -99,8 +99,9 @@ M4 基线不要求 100% 准确率：必须每租户至少观察到一次真实�
   --out-dir results/m1 --metrics M1
 ```
 
-M6 单项会使用 4 个独立租户，执行一个真实 reject 故障用例和一次真实容器崩溃恢复，
-采集 NORMAL、QUEUE、REJECT、RESET 所需证据；不会把依赖数据冒充为 M2/M5 的完整执行。
+M6 单项会使用 4 个独立租户，以最长 45 秒、8 个 Commit 屏障的真实基线/洪泛负载，
+再执行一个真实 reject 故障用例和一次真实容器崩溃恢复，采集
+NORMAL、QUEUE、REJECT、RESET 所需证据；不会把依赖数据冒充为 M2/M4/M5 的完整执行。
 完整六项运行仍执行 M2 的 24 个故障用例和 M5 的 3 个恢复样本，测试目标没有缩减。
 quick smoke 使用短窗口和小样本，报告固定标记
 `quick-non-complete` 与 `PARTIAL`，不能与完整采样混用：

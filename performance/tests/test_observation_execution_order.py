@@ -81,6 +81,25 @@ def test_bounded_data_published_before_long_probes(tmp_path, monkeypatch, probe_
         assert not module.run(args).get("checkpoint")
 
 
+def test_m6_only_shortens_dependency_load_without_becoming_quick(tmp_path, monkeypatch):
+    args, _ = setup_run(tmp_path, monkeypatch)
+    args.metrics = "M6"
+    captured = {}
+
+    def load(*unused_args, **kwargs):
+        captured.update(kwargs)
+        return {"runs": []}
+
+    monkeypatch.setattr(module, "run_suite", load)
+    result = module.run(args)
+    spec = captured["quick"]
+    assert spec.duration_cap_s == 45
+    assert spec.barrier_count_cap == 8
+    assert spec.include_seed is True
+    assert captured["scenarios"] == ["m4-baseline", "m4-flood-uniform"]
+    assert result["sampling_mode"] == "full"
+
+
 def test_capacity_error_keeps_earlier_report_and_marks_interruption(tmp_path, monkeypatch):
     args, events = setup_run(tmp_path, monkeypatch)
 

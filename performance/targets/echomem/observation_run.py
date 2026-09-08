@@ -269,6 +269,7 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
     if len(matches) != 1:
         raise ValueError(f"profile {args.profile!r} was not found exactly once")
     selected = _metrics(args.metrics)
+    m6_only = set(selected) == {"M6"}
     profile = _configure(
         _resolve_profile(matches[0], args.profiles), selected, quick=args.quick
     )
@@ -371,7 +372,10 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
                 if dependency not in scenarios:
                     scenarios.append(dependency)
         if scenarios:
-            quick_spec = QuickSpec(duration_cap_s=45, barrier_count_cap=8, include_seed=True) if args.quick else None
+            quick_spec = (
+                QuickSpec(duration_cap_s=45, barrier_count_cap=8, include_seed=True)
+                if args.quick or m6_only else None
+            )
             try:
                 suite = run_suite(
                     profile, suite_dir=output, quick=quick_spec,
