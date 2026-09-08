@@ -10,6 +10,7 @@ from pathlib import Path
 
 from performance.stats import percentile
 from performance.targets.echomem.acceptance.route_path_report import render_route_paths
+from performance.targets.echomem.acceptance.capacity_statistics import qps_baseline
 
 
 def fmt(value, unit=""):
@@ -84,6 +85,7 @@ def render(report: dict) -> str:
     reasons = Counter(r for q in queries for r in q.get("degraded_reasons", []))
     levels = report.get("levels", [])
     snapshots = _level_snapshots(levels)
+    baseline = qps_baseline(snapshots)
     # Only an explicit confirmed boundary permits a maximum/DAU claim.
     boundary = report.get("boundary") or {}
     confirmed = boundary.get("status") == "CONFIRMED" and bool(boundary.get("evidence"))
@@ -131,7 +133,10 @@ def render(report: dict) -> str:
             breakdown.get("timeout_censored", search.get("timeout_censored")),
             _counts(breakdown.get("transport_error_types")),
             _counts(breakdown.get("reason_code_counts") or search.get("http_reason_counts")),
+            _counts(breakdown.get("failure_domain_counts")),
+            _counts(breakdown.get("provider_error_code_counts")),
             breakdown.get("unclassified_failures"),
+            "是" if breakdown.get("root_cause_attribution_complete") else "否 / 仍有未知根因",
             "是" if breakdown.get("partition_complete") else "旧数据未保留完整分区",
         )) + "</tr>")
         route_summaries.append((f"H={level.get('hot_users', level['identity_count'])} {level['phase']}", search))
@@ -261,6 +266,14 @@ def render(report: dict) -> str:
                            "零错误完成档不是最大容量；继续升档并分别报告错误率、有效吞吐和硬失败证据。"
                            if zero_error_confirmed else
                            "先修复或解释健康低负载召回问题，再测最大热用户边界；不降低质量门槛换取容量数字。")
+    provider_text = {
+        "OBSERVED": f"已观察到 {baseline['provider_failure_count']} 次明确模型Provider失败",
+        "NOT_OBSERVED": "已采集Provider证据，未观察到模型限流/失败",
+        "NOT_MEASURED": "未采集Provider错误码，不能判断模型是否限流",
+    }[baseline["provider_verdict"]]
+    baseline_rows = "".join("<tr>" + "".join(f"<td>{fmt(value)}</td>" for value in (
+        row["nominal_qps"], row["runs"], row["strict_failures"], row["degraded"],
+        row["request_errors"], row["provider_failures"])) + "</tr>" for row in baseline["rows"])
     download_links = '<a href="report.json">下载脱敏结构化证据</a>'
     if not report.get("publication", {}).get("redacted"):
         download_links += ' · <a href="seed-evidence.json">下载记忆验证证据</a>'
@@ -278,6 +291,13 @@ header{{border-bottom:2px solid #1b7869;padding-bottom:20px}}section{{padding:12
 </style><main><header><p class="note">M1 · 真实模型 · 黑盒 HTTP · 独立压测端</p><h1>{title}</h1>
 <p class="warn">{conclusion}</p><p>{blocker}</p></header>
 {render_platform_provenance(environment.get('platform_provenance'))}
+<section><h2>性能基线与异常拐点</h2><div class="grid">
+<div class="metric">全部轮次严格成功最高档<strong>{fmt(baseline['highest_all_runs_strict_qps'])} QPS</strong></div>
+<div class="metric">首个严格异常<strong>{fmt(baseline['first_strict_failure_qps'])} QPS</strong></div>
+<div class="metric">首个服务降级<strong>{fmt(baseline['first_degraded_qps'])} QPS</strong></div>
+<div class="metric">首个HTTP/传输错误<strong>{fmt(baseline['first_request_error_qps'])} QPS</strong></div></div>
+<p class="warn">{escape(provider_text)}。没有明确Provider错误码或安全日志时，不把EchoMem 429、Atomic bulkhead或网络超时归因到API Key。</p>
+<div class="scroll"><table><tr><th>名义QPS</th><th>轮数</th><th>严格失败</th><th>HTTP 200降级</th><th>HTTP/传输错误</th><th>明确Provider失败</th></tr>{baseline_rows or '<tr><td colspan="6">尚无QPS阶梯数据。</td></tr>'}</table></div></section>
 <div class="grid"><div class="metric">最大热用户数<strong>{fmt(maximum)}</strong></div>
 <div class="metric">三轮零错误档<strong>{fmt(zero_error_level)}</strong></div>
 <div class="metric">DAU<strong>{_dau_label(dau)}</strong></div>
@@ -312,7 +332,7 @@ PR421 文档中的 40–60 DAU、16 热租户（hard_cap 20）属于设计估算
 <section><h2>3. 容量阶梯与诊断窗口</h2><div class="scroll"><table><tr><th>T</th><th>H</th><th>负载</th><th>时长 s</th><th>计划</th><th>发出</th><th>有效</th><th>平均 s</th><th>P95 s</th><th>P99 s</th><th>降级</th><th>超时</th><th>Atomic P95 s</th><th>未归属残差 P95 s</th><th>有效 RPS</th><th>结论</th></tr>{''.join(level_rows) or '<tr><td colspan="16">未开始有效的容量阶梯，不宣称“最多支持 2 人”，也不折算 DAU。</td></tr>'}</table></div>
 <p>T 是租户数，U 是每租户热用户数，H=T×U。每个热用户计划每秒 1 次 Search；每身份、每类问题单独计算成功率与 P95。
 标有“诊断”的窗口是在健康门槛未通过时收集现象，不能用于确认容量边界，也不能拿它的有效 RPS 折算 DAU。</p>
-<h3>Search 错误完整拆分</h3><div class="scroll"><table><tr><th>H</th><th>窗口</th><th>已发出分母</th><th>严格成功</th><th>HTTP 200质量失败</th><th>其中降级</th><th>HTTP非200</th><th>4xx</th><th>401/403</th><th>429</th><th>5xx</th><th>传输错误</th><th>超时</th><th>传输类型</th><th>EchoMem reason_code</th><th>未分类</th><th>分母对账</th></tr>{''.join(error_rows) or '<tr><td colspan="17">尚无请求数据。</td></tr>'}</table></div>
+<h3>Search 错误完整拆分</h3><div class="scroll"><table><tr><th>H</th><th>窗口</th><th>已发出分母</th><th>严格成功</th><th>HTTP 200质量失败</th><th>其中降级</th><th>HTTP非200</th><th>4xx</th><th>401/403</th><th>429</th><th>5xx</th><th>传输错误</th><th>超时</th><th>传输类型</th><th>EchoMem reason_code</th><th>失败责任域</th><th>Provider错误码</th><th>未分类</th><th>根因归属完整</th><th>分母对账</th></tr>{''.join(error_rows) or '<tr><td colspan="20">尚无请求数据。</td></tr>'}</table></div>
 <p class="note">每个已发请求只进入一个结果类别，分母对账为“是”时类别之和等于已发出数。401/403 仅证明当前 HTTP 层鉴权或权限失败；没有上游 provider 明确原因码或日志时，不能据此断言模型 API Key 异常。</p>
 <p>“未归属残差”是 Search 端到端耗时减去 Explain 中已报告引擎耗时，包含意图路由、模型调用、序列化及未上报工作，<strong>不能直接当成 LLM 精确耗时</strong>；它用于区分检索引擎本身与外围编排瓶颈。</p>
 {render_route_paths(route_summaries)}

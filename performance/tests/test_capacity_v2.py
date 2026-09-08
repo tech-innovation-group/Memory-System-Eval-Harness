@@ -4,7 +4,12 @@ import urllib.error
 from types import SimpleNamespace
 
 from performance.targets.echomem.acceptance.capacity_load import arrival_plan, query_for
-from performance.targets.echomem.acceptance.capacity_statistics import evaluate_level, search_summary, wilson
+from performance.targets.echomem.acceptance.capacity_statistics import (
+    evaluate_level,
+    qps_baseline,
+    search_summary,
+    wilson,
+)
 from performance.targets.echomem.acceptance.semantic_corpus import build_corpus
 from performance.targets.echomem.acceptance.capacity_report import render
 from performance.targets.echomem.acceptance.capacity_publish import redacted_resources, seed_summary
@@ -101,6 +106,17 @@ def test_search_error_breakdown_preserves_complete_denominator():
     assert detail["http_200_non_degraded_quality_failures"] == 1
     assert detail["reason_code_counts"] == {
         "UNAUTHENTICATED": 1, "TENANT_RATE_LIMITED": 1, "RETRIEVAL_BUSY": 1}
+    assert detail["failure_domain_counts"] == {
+        "recall_quality": 1,
+        "routing_or_recall_orchestration": 1,
+        "echomem_auth": 1,
+        "echomem_admission": 2,
+        "network_transport": 2,
+        "unknown": 1,
+    }
+    assert detail["failure_domain_total"] == 8
+    assert detail["failure_domain_matches_failed_requests"]
+    assert not detail["root_cause_attribution_complete"]
     assert detail["unclassified_failures"] == 1
     assert summary["transport_or_http_errors"] == 5
 
@@ -122,6 +138,61 @@ def test_transport_exception_categories_are_stable_and_secret_free():
     assert _transport_error_type(
         http.client.RemoteDisconnected("private endpoint")
     ) == "remote_disconnected"
+
+
+def test_qps_baseline_requires_all_runs_and_does_not_infer_provider_limits():
+    def level(qps, *, success, sent=100, degraded=0, request_errors=0,
+              provider_available=False, provider_failures=0):
+        return {
+            "identity_count": 4, "per_user_search_rps": qps / 4,
+            "effective_search_rps": success / 10,
+            "search": {"sent": sent, "success": success, "errors": sent - success,
+                       "degraded": degraded,
+                       "transport_or_http_errors": request_errors,
+                       "error_breakdown": {
+                           "provider_evidence_available": provider_available,
+                           "provider_failure_count": provider_failures,
+                       }},
+        }
+
+    baseline = qps_baseline([
+        level(2, success=100), level(2, success=100),
+        level(3, success=94, degraded=6),
+        level(4, success=99, request_errors=1, provider_available=True),
+    ])
+    assert baseline["highest_all_runs_strict_qps"] == 2
+    assert baseline["first_strict_failure_qps"] == 3
+    assert baseline["first_degraded_qps"] == 3
+    assert baseline["first_request_error_qps"] == 4
+    assert baseline["peak_strict_success_rps"] == 10
+    assert baseline["provider_verdict"] == "NOT_OBSERVED"
+
+
+def test_qps_baseline_only_reports_provider_limit_from_explicit_evidence():
+    baseline = qps_baseline([{
+        "nominal_qps": 8, "effective_search_rps": 6,
+        "search": {"sent": 100, "success": 80, "errors": 20,
+                   "degraded": 0, "transport_or_http_errors": 20,
+                   "error_breakdown": {"provider_evidence_available": True,
+                                       "provider_failure_count": 7}},
+    }])
+    assert baseline["provider_verdict"] == "OBSERVED"
+    assert baseline["provider_failure_count"] == 7
+
+
+def test_explicit_provider_error_is_not_mixed_with_echomem_http_limit():
+    detail = search_summary([
+        {"sent": True, "success": False, "http_status": 200, "elapsed_s": 1,
+         "degraded": True, "provider_failure_kind": "rate_limit",
+         "provider_error_code": "RATE_LIMIT_EXCEEDED"},
+        {"sent": True, "success": False, "http_status": 429, "elapsed_s": .1,
+         "reason_code": "retrieval_inflight_full"},
+    ])["error_breakdown"]
+    assert detail["failure_domain_counts"] == {
+        "model_provider": 1, "echomem_admission": 1}
+    assert detail["provider_evidence_available"]
+    assert detail["provider_failure_count"] == 1
+    assert detail["provider_error_code_counts"] == {"RATE_LIMIT_EXCEEDED": 1}
 
 
 def test_observation_mode_records_slow_errors_without_performance_rejection():
@@ -432,6 +503,8 @@ def test_observation_report_renders_complete_error_breakdown():
     assert "timeout: 1" in html
     assert "分母对账" in html
     assert "不能据此断言是模型 API Key" in html
+    assert "性能基线与异常拐点" in html
+    assert "未采集Provider错误码" in html
 
 
 def test_redacted_zero_capacity_report_has_no_broken_seed_link():

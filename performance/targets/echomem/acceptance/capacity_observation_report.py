@@ -5,6 +5,7 @@ from __future__ import annotations
 from html import escape
 
 from performance.targets.echomem.acceptance.capacity_confirmation import estimate_dau
+from performance.targets.echomem.acceptance.capacity_statistics import qps_baseline
 from performance.targets.echomem.acceptance.route_path_report import render_route_paths
 
 
@@ -48,7 +49,10 @@ def _error_row(h, name, search):
         detail.get("transport_errors"), detail.get("timeout_censored", search.get("timeout_censored")),
         _counts(detail.get("transport_error_types")),
         _counts(detail.get("reason_code_counts") or search.get("http_reason_counts")),
+        _counts(detail.get("failure_domain_counts")),
+        _counts(detail.get("provider_error_code_counts")),
         detail.get("unclassified_failures"),
+        "是" if detail.get("root_cause_attribution_complete") else "否 / 仍有未知根因",
         "是" if detail.get("partition_complete") else "旧数据未保留完整分区",
     ]
 
@@ -71,6 +75,7 @@ def render_observation(report: dict) -> str:
                                         "repeat": repeat["repeat"]})
     highest = max((l.get("hot_users", l.get("identity_count", 0)) for l in levels
                    if l.get("search", {}).get("sent")), default=None)
+    baseline = qps_baseline(levels)
     total_sent = sum(l["search"]["sent"] for l in levels)
     total_errors = sum(l["search"]["errors"] for l in levels)
     summary_rows, detail_rows, class_rows, commit_rows, dau_rows, issue_rows = [], [], [], [], [], []
@@ -169,13 +174,24 @@ def render_observation(report: dict) -> str:
         tested = (operational or {}).get("highest_tested_hot_users", highest)
         boundary_text = (f"已测到 H={tested}，尚未提供崩溃、OOM或停止发压后无法恢复的边界证据；"
                          "该数字只是最高观察档，不是容量上限。")
+    provider_text = {
+        "OBSERVED": f"已观察到 {baseline['provider_failure_count']} 次明确模型Provider失败",
+        "NOT_OBSERVED": "已采集Provider证据，未观察到模型限流/失败",
+        "NOT_MEASURED": "未采集Provider错误码，不能判断模型是否限流",
+    }[baseline["provider_verdict"]]
+    breakpoint_rows = [[row["nominal_qps"], row["runs"], row["strict_failures"],
+                        row["degraded"], row["request_errors"], row["provider_failures"]]
+                       for row in baseline["rows"]]
     return f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>4U8G 热用户与 DAU 实测数据</title><style>
 *{{box-sizing:border-box}}body{{margin:0;background:#f5f7f8;color:#202a30;font:15px/1.7 system-ui,-apple-system,"PingFang SC",sans-serif;letter-spacing:0}}main{{max-width:1400px;margin:auto;padding:26px}}h1{{font-size:28px;margin:6px 0 12px}}h2{{font-size:21px;margin:24px 0 12px}}h3{{font-size:16px}}header,section{{border-bottom:1px solid #cdd7dc;padding:18px 0}}.muted{{color:#566773}}.notice{{border-left:4px solid #b74c39;padding:8px 14px;background:#fff4ec}}.kpis{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px;margin:22px 0}}.kpis div{{border-top:3px solid #258577;padding:10px 0}}.kpis strong{{display:block;font-size:26px}}.charts{{display:grid;grid-template-columns:1fr 1fr;gap:30px}}.barrow{{display:grid;grid-template-columns:112px minmax(0,1fr) 85px;align-items:center;gap:10px;margin:12px 0;font-size:13px}}.barrow b{{text-align:right;font-variant-numeric:tabular-nums}}.track{{height:15px;background:#e0e6e8}}.track span{{display:block;height:100%;background:#268978}}.charts>div+div .track span{{background:#4c7fba}}.scroll{{overflow:auto}}table{{width:100%;border-collapse:collapse;background:white;font-size:13px}}th,td{{padding:9px 12px;border-bottom:1px solid #dce3e6;text-align:left;vertical-align:top}}th{{white-space:nowrap;background:#e8eff1}}td{{overflow-wrap:anywhere}}code{{overflow-wrap:anywhere}}summary{{cursor:pointer;font-weight:600;padding:12px 0}}a{{color:#1568a3}}@media(max-width:720px){{main{{padding:14px}}.kpis{{grid-template-columns:1fr 1fr}}.charts{{grid-template-columns:1fr}}h1{{font-size:24px}}}}
 </style></head><body><main><header><p class="muted">M1 · 服务器实测 · 4 CPU / 8 GiB · 真实模型</p><h1>单实例热用户与 DAU 实测数据</h1>
 <p>按你的要求只呈现数据，不应用延迟、吞吐或准确率的合格门槛。记录所有未发出、错误、超时、降级和未完成 Commit。</p>
 <p class="notice">{notice}</p><p>{escape(boundary_text)}</p></header>
-<div class="kpis"><div>最高已测热用户<strong>{_fmt(highest)}</strong></div><div>Search 已发出<strong>{total_sent}</strong></div><div>严格有效性未满足<strong>{total_errors}</strong></div><div>绝对最大容量<strong>尚未确定</strong></div></div>
+<section><h2>性能基线与异常拐点</h2><div class="kpis"><div>全部轮次严格成功最高档<strong>{_fmt(baseline['highest_all_runs_strict_qps'])} QPS</strong></div><div>首个严格异常<strong>{_fmt(baseline['first_strict_failure_qps'])} QPS</strong></div><div>首个服务降级<strong>{_fmt(baseline['first_degraded_qps'])} QPS</strong></div><div>首个HTTP/传输错误<strong>{_fmt(baseline['first_request_error_qps'])} QPS</strong></div></div>
+<p class="notice">{escape(provider_text)}。只有明确的Provider错误码或服务端安全日志才能归因为模型限流；EchoMem返回的429、Atomic bulkhead和客户端超时分别统计。</p>
+{_table(['名义QPS','轮数','严格失败','HTTP 200降级','HTTP/传输错误','明确Provider失败'],breakpoint_rows)}</section>
+<div class="kpis"><div>最高已测热用户<strong>{_fmt(highest)}</strong></div><div>Search 已发出<strong>{total_sent}</strong></div><div>严格有效性未满足<strong>{total_errors}</strong></div><div>绝对最大容量<strong>尚未确定</strong></div><div>峰值严格成功吞吐<strong>{_fmt(baseline['peak_strict_success_rps'])}/s</strong></div></div>
 <section><h2>环境与负载</h2><p>服务器 {_fmt(env.get('host'))}；限制 {_fmt(env.get('cpus'))} CPU / {_fmt(env.get('memory_bytes'))} 字节。EchoMem <code>{_fmt(env.get('echomem_commit'))}</code>，develop <code>{_fmt(env.get('develop_commit'))}</code>。</p>
 <p>配置摘要 <code>{_fmt(env.get('config_sha256'))}</code>。每热用户 Search 1/s，独立泊松到达；纯召回和 70% recall + 30% no-recall 混合组分别测量。混合组每用户约每分钟 2 条新消息，每 300 秒一次显式 Commit；搜索和写入独立并发。</p>
 <p>记忆准备：{_fmt(seed.get('actors'))} 个身份，{_fmt(seed.get('strict_valid'))}/{_fmt(seed.get('queries'))} 道严格有效验证。当前窗口复用记忆：{_fmt(report.get('seed_reused'))}。配置和 API key 不包含在报告内。</p></section>
@@ -184,7 +200,7 @@ def render_observation(report: dict) -> str:
 <p class="muted">H=T×U，用户请求率决定在途请求量。严格有效性同时要求 HTTP 正常、满足问题预期、无降级；其错误数不等于传输错误数。短窗口数字不代表全天稳态。</p></section>
 <details><summary>各档完整计数、延迟与 HTTP 状态</summary>{_table(['H','租户 T','负载','时长 s','计划','发出','严格有效','平均 s','P50 s','P95 s','P99 s','超时','未发出','降级','HTTP 状态计数'],detail_rows)}</details>
 <section><h2>Search 错误完整拆分</h2>
-{_table(['H','负载','已发出分母','严格成功','HTTP 200质量失败','其中降级','HTTP非200','4xx','401/403','429','5xx','其他HTTP','传输错误','超时','传输类型','EchoMem reason_code','未分类','分母对账'],error_rows)}
+{_table(['H','负载','已发出分母','严格成功','HTTP 200质量失败','其中降级','HTTP非200','4xx','401/403','429','5xx','其他HTTP','传输错误','超时','传输类型','EchoMem reason_code','失败责任域','Provider错误码','未分类','根因归属完整','分母对账'],error_rows)}
 <p class="muted">每个已发请求只进入“严格成功、HTTP 200 质量失败、HTTP 非 200、传输错误、未分类”之一；分母对账为“是”时五类之和等于已发出数。401/403 只表示当前 HTTP 层鉴权或权限失败，429 表示当前服务响应限流；没有上游 provider 的明确原因码或日志时，不能据此断言是模型 API Key。</p></section>
 <section><h2>Commit 实际执行</h2>{_table(['H','计划提交','受理 202','原期限内completed','其中负载窗口内','追加观察completed','追加观察failed','未受理','原期限内未成功','P95 s','窗口内完成/s','积压峰值'],commit_rows)}
 <p>原期限为每个 Commit 受理后最多 180 秒；追加观察会重新对全部受理任务核对状态，因此 completed 数含原期限内已完成任务，不能相加。排空只表示无未终态任务，不保证全部成功。完成判定来自 commit_status，当前 M1 还没有逐条源消息对账；M5 单独核验持久化与恢复。</p></section>

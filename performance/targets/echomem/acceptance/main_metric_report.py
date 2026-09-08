@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 
 from performance.targets.echomem.acceptance.capacity_observation_report import render_observation
+from performance.targets.echomem.acceptance.capacity_statistics import qps_baseline
 from performance.targets.echomem.acceptance.route_path_report import render_route_paths
 from performance.targets.echomem.acceptance.provenance import render_platform_provenance
 from performance.targets.echomem.acceptance.reliability_evidence import observability_counts, recovery_counts
@@ -411,6 +412,7 @@ def render(report: dict) -> str:
                 f'<small><b>补齐方式：</b>{escape(value["next"])}</small></div>')
 
     levels = report["M1"]["levels"]
+    baseline = qps_baseline(levels)
     highest = max((r.get("hot_users", 0) for r in levels), default=None)
     m2, joint, m5, m6 = (report[k] for k in ("M2", "M3_M4", "M5", "M6"))
     conclusions = derive_conclusions(report)
@@ -463,7 +465,10 @@ def render(report: dict) -> str:
             detail.get("timeout_censored", search.get("timeout_censored")),
             _counts(detail.get("transport_error_types")),
             _counts(detail.get("reason_code_counts") or search.get("http_reason_counts")),
+            _counts(detail.get("failure_domain_counts")),
+            _counts(detail.get("provider_error_code_counts")),
             detail.get("unclassified_failures"),
+            "是" if detail.get("root_cause_attribution_complete") else "否 / 仍有未知根因",
             "是" if detail.get("partition_complete") else "旧数据未保留完整分区",
         ])
     fault_rows = [[f"T{p['identity_index']+1}", p["before"].get("sent"), p["during"].get("sent"),
@@ -565,6 +570,14 @@ def render(report: dict) -> str:
         ("priority", "module", "evidence", "verify")]
         for item in module_recommendations]
     env = report.get("environment", {})
+    provider_text = {
+        "OBSERVED": f"已观察到 {baseline['provider_failure_count']} 次明确模型Provider失败",
+        "NOT_OBSERVED": "已采集Provider证据，未观察到模型限流/失败",
+        "NOT_MEASURED": "未采集Provider错误码，不能判断模型是否限流",
+    }[baseline["provider_verdict"]]
+    baseline_rows = [[row["nominal_qps"], row["runs"], row["strict_failures"],
+                      row["degraded"], row["request_errors"], row["provider_failures"]]
+                     for row in baseline["rows"]]
     capacity_paths = [(f"H={r.get('hot_users')} {'混合' if r.get('mixed') else '纯召回'}",
                        r["search"]) for r in levels]
     fault_paths = []
@@ -594,6 +607,14 @@ def render(report: dict) -> str:
 {render_platform_provenance(env.get('platform_provenance'))}
 <p class="notice">版本口径：容量详情保留各档 platform_base_pr / platform_base_commit；缺失表示历史快照未记录该字段，不能称所有档位均已重跑本版本。容器4U8G是资源限额，不代表宿主机资源独占。</p></header>
 <div class="stats">{''.join('<div>'+escape(label)+'<b>'+fmt(value)+'</b></div>' for label,value in cards)}</div>
+<section><h2>性能基线与异常拐点</h2><div class="stats">
+<div>全部轮次严格成功最高档<b>{fmt(baseline['highest_all_runs_strict_qps'])} QPS</b></div>
+<div>首个严格异常<b>{fmt(baseline['first_strict_failure_qps'])} QPS</b></div>
+<div>首个服务降级<b>{fmt(baseline['first_degraded_qps'])} QPS</b></div>
+<div>首个HTTP/传输错误<b>{fmt(baseline['first_request_error_qps'])} QPS</b></div>
+<div>峰值严格成功吞吐<b>{fmt(baseline['peak_strict_success_rps'])}/s</b></div></div>
+<p class="notice">{escape(provider_text)}。EchoMem 429、Atomic Engine bulkhead、网络传输异常与模型Provider限流分别统计；没有明确Provider错误码或安全日志时不归因到API Key。</p>
+{table(['名义QPS','轮数','严格失败','HTTP 200降级','HTTP/传输错误','明确Provider失败'],baseline_rows)}</section>
 <section><h2>六项结论总览</h2>{table(['指标','结论等级','具体结论','关键证据','下一步'],[[key,value['level'],value['conclusion'],value['evidence'],value['next']] for key,value in conclusions.items()])}</section>
 <section><h2>六个指标分别反映什么</h2>{table(['指标','反映什么','测试方式','暴露的线上风险','主要关联模块'],[
 ['M1 容量与DAU','单个4U8G实例在不同热用户数下能完成多少真实Search和Commit？从哪一档开始拒绝、超时或积压？','逐档增加独立热用户，分别运行纯召回和召回+no-recall+Commit混合流量，记录请求、质量、积压和资源。','扩容过晚、请求大量失败、后台任务长期堆积。','Admission、Search编排、Provider并发、Commit队列、资源限制'],
@@ -611,7 +632,7 @@ def render(report: dict) -> str:
 ['崩溃恢复','专用session写带序号消息，实际消息数见M5逐样本表；Commit返回202且仍pending时kill -9容器。','启动同一容器后轮询原任务，不重新提交；再读取history/archive/cursor并做一次同幂等键重试。','原任务自主completed，全部源消息集合和顺序无缺失，cursor一致，幂等重试指向同archive。'],
 ['租户与观测','四个独立tenant/user/key，不用同一key伪装多租户。','负载前、中、后调用受保护只读观测接口；故障通过受保护test-control端点注入。','每个预期tenant×lane都有queue/wait/exec/reject四元组，字段非负、唯一且负载变化可见。']]))}</section>
 <section><h2>M1 · 热用户与 DAU</h2><p><b>测试方式：</b>每个热用户拥有独立身份和预注入记忆，以1 Search/s开放到达率同时发请求；纯召回与“召回+不召回+Commit”混合流量分别测。混合场景在第30–60秒为每个热用户错峰提交1个非空Commit，因此H4代表计划4个、H8代表计划8个；“峰值在途”按每个已获202任务从受理到终态的真实时间区间计算，不把总提交数冒充服务端并行度。每档记录全部请求、P95/P99、有效吞吐、错误/降级、CPU/RSS及积压恢复。分别展示每档请求完成与召回质量，不设性能合格线；历史零错误档仅作参考。继续升档并在停压后观察恢复，只有服务无法完成请求、崩溃、OOM或积压在明确观察窗口内无法恢复，才记录运行边界。</p>{conclusion_panel('M1')}<div class="chart-grid"><div><h3>P95 / 秒</h3>{curves}</div><div><h3>HTTP/传输错误率 / %</h3>{capacity_error_curves}</div><div><h3>严格有效 Search/s</h3>{capacity_rps_curves}</div></div>{details('查看每档完整计数、Commit 和资源数据',table(['H','负载','Search P95 s','有效 Search/s','HTTP/传输错误','严格有效/发出','Commit提交','Commit 202','Commit完成','Commit未完成/失败','Commit峰值在途','提交跨度 s','Commit P95 s','CPU峰值 %','RSS峰值 MiB'],capacity_rows))}
-{details('查看 Search 错误完整拆分',table(['H','负载','已发出分母','严格成功','HTTP 200质量失败','其中降级','HTTP非200','4xx','401/403','429','5xx','传输错误','超时','传输类型','EchoMem reason_code','未分类','分母对账'],capacity_error_rows))}
+{details('查看 Search 错误完整拆分',table(['H','负载','已发出分母','严格成功','HTTP 200质量失败','其中降级','HTTP非200','4xx','401/403','429','5xx','传输错误','超时','传输类型','EchoMem reason_code','失败责任域','Provider错误码','未分类','根因归属完整','分母对账'],capacity_error_rows))}
 {render_route_paths(capacity_paths)}
 <p>错误拆分将每个已发请求唯一归入严格成功、HTTP 200质量失败、HTTP非200、传输错误或未分类；分母对账为“是”时类别总和等于已发请求数。401/403不能在缺少provider原因码或日志时直接归因为模型API Key。100% CPU 表示一个 CPU 核。最高已测档位不是最大用户量；最大 DAU 尚未验证，画像换算及每题数据见 <a href="capacity-report.html">容量详细报告</a>。</p></section>
 <section><h2>M2 · 单租户故障隔离</h2><p><b>测试方式：</b>四租户同时执行召回问题；每个目标重新测故障前基线，随后只对该目标注入reject或delay，再撤销并测恢复窗口。前中后使用同一问题/到达随机种子，目标和旁观租户按同速率发Search。reject需明确TEST_FAULT_INJECTED原因码，delay需匹配配置和目标延迟增量；同时核验目标控制回执与故障窗口有效期。劣化=(故障中P95/基线P95−1)×100%，不设置性能通过阈值。旧结果不会补造缺失的原因码与控制回执。</p>{conclusion_panel('M2')}

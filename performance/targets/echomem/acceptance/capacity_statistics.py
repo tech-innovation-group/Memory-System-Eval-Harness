@@ -48,11 +48,43 @@ def _status_code(row: dict) -> int | None:
         return None
 
 
+_ADMISSION_REASONS = {
+    "retrieval_inflight_full", "tenant_concurrency_exceeded",
+    "http_ingress_saturated", "http_lane_saturated", "tenant_rate_limited",
+    "retrieval_busy", "commit_queue_full",
+}
+
+
+def _failure_domain(row: dict, status: int | None) -> str | None:
+    if row.get("success"):
+        return None
+    if row.get("provider_error_code") or row.get("provider_failure_kind"):
+        return "model_provider"
+    if status is None:
+        return ("network_transport" if row.get("transport_error_type") or row.get("error")
+                or row.get("timeout_censored") else "unknown")
+    if status in {401, 403}:
+        return "echomem_auth"
+    reason = str(row.get("reason_code") or "").strip().lower()
+    if status in {429, 503, 504} and reason in _ADMISSION_REASONS:
+        return "echomem_admission"
+    if status != 200:
+        return "echomem_http_unattributed"
+    degraded_reasons = [str(value).lower() for value in row.get("degraded_reasons", [])]
+    if row.get("degraded") and any("atomic_engine" in value for value in degraded_reasons):
+        return "atomic_engine"
+    if row.get("degraded"):
+        return "routing_or_recall_orchestration"
+    return "recall_quality"
+
+
 def error_breakdown(sent: list[dict]) -> dict:
     """Build a complete, mutually exclusive Search outcome denominator."""
     status_counts = Counter()
     reason_counts = Counter()
     transport_types = Counter()
+    failure_domains = Counter()
+    provider_codes = Counter()
     partition = Counter()
     http_4xx = http_5xx = http_other = 0
     auth = rate_limited = timeout_censored = 0
@@ -65,6 +97,11 @@ def error_breakdown(sent: list[dict]) -> dict:
             status_counts[str(status)] += 1
         if row.get("reason_code"):
             reason_counts[str(row["reason_code"])] += 1
+        domain = _failure_domain(row, status)
+        if domain:
+            failure_domains[domain] += 1
+        if row.get("provider_error_code"):
+            provider_codes[str(row["provider_error_code"])] += 1
         if row.get("timeout_censored"):
             timeout_censored += 1
 
@@ -119,7 +156,79 @@ def error_breakdown(sent: list[dict]) -> dict:
         "http_200_degraded": degraded_200,
         "http_200_non_degraded_quality_failures": quality_failed_200 - degraded_200,
         "reason_code_counts": dict(reason_counts),
+        "failure_domain_counts": dict(failure_domains),
+        "failure_domain_total": sum(failure_domains.values()),
+        "failure_domain_matches_failed_requests": (
+            sum(failure_domains.values()) == len(sent) - sum(bool(row.get("success")) for row in sent)
+        ),
+        "root_cause_attribution_complete": not (
+            failure_domains.get("unknown") or failure_domains.get("echomem_http_unattributed")
+        ),
+        "provider_evidence_available": any(
+            "provider_error_code" in row or "provider_failure_kind" in row for row in sent
+        ),
+        "provider_failure_count": failure_domains.get("model_provider", 0),
+        "provider_error_code_counts": dict(provider_codes),
         "unclassified_failures": partition["unclassified"],
+    }
+
+
+def qps_baseline(levels: list[dict]) -> dict:
+    """Derive observed QPS breakpoints without inventing missing root-cause evidence."""
+    groups: dict[float, list[dict]] = {}
+    peak_strict_rps = None
+    for level in levels:
+        search = level.get("search") or {}
+        identities = level.get("identity_count", level.get("hot_users"))
+        per_user = level.get("per_user_search_rps")
+        if isinstance(identities, (int, float)) and isinstance(per_user, (int, float)):
+            nominal = float(identities * per_user)
+        elif isinstance(level.get("nominal_qps"), (int, float)):
+            nominal = float(level["nominal_qps"])
+        elif isinstance(level.get("hot_users"), (int, float)):
+            nominal = float(level["hot_users"])
+        else:
+            continue
+        groups.setdefault(nominal, []).append(level)
+        value = level.get("effective_search_rps")
+        if isinstance(value, (int, float)):
+            peak_strict_rps = value if peak_strict_rps is None else max(peak_strict_rps, value)
+
+    rows = []
+    for nominal, group in sorted(groups.items()):
+        searches = [level.get("search") or {} for level in group]
+        request_errors = sum(int(search.get("transport_or_http_errors") or 0) for search in searches)
+        degraded = sum(int(search.get("degraded") or 0) for search in searches)
+        strict_failures = sum(int(search.get("errors") or 0) for search in searches)
+        provider_failures = sum(int((search.get("error_breakdown") or {}).get(
+            "provider_failure_count") or 0) for search in searches)
+        provider_evidence_runs = sum(bool((search.get("error_breakdown") or {}).get(
+            "provider_evidence_available")) for search in searches)
+        rows.append({
+            "nominal_qps": nominal, "runs": len(group), "request_errors": request_errors,
+            "degraded": degraded, "strict_failures": strict_failures,
+            "all_runs_strict": strict_failures == 0,
+            "provider_failures": provider_failures,
+            "provider_evidence_runs": provider_evidence_runs,
+        })
+
+    def first(field):
+        return next((row["nominal_qps"] for row in rows if row[field] > 0), None)
+
+    stable = [row["nominal_qps"] for row in rows if row["all_runs_strict"]]
+    provider_failures = sum(row["provider_failures"] for row in rows)
+    provider_evidence_runs = sum(row["provider_evidence_runs"] for row in rows)
+    return {
+        "highest_all_runs_strict_qps": max(stable, default=None),
+        "first_strict_failure_qps": first("strict_failures"),
+        "first_degraded_qps": first("degraded"),
+        "first_request_error_qps": first("request_errors"),
+        "peak_strict_success_rps": peak_strict_rps,
+        "provider_failure_count": provider_failures,
+        "provider_evidence_available": provider_evidence_runs > 0,
+        "provider_verdict": ("OBSERVED" if provider_failures else
+                             "NOT_OBSERVED" if provider_evidence_runs else "NOT_MEASURED"),
+        "rows": rows,
     }
 
 
