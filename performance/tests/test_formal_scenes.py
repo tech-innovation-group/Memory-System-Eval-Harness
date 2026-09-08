@@ -124,6 +124,24 @@ def test_scene_barrier_explicit_distribution(server):
     assert per_tenant == {0: 100, 1: 10, 2: 10}
 
 
+def test_scene_barrier_single_writer_retains_bystander_search(server):
+    _, _, base_url = server
+    scene = load_scene(SCENES_DIR / "scene_barrier.py")
+    profile = _profile(base_url, workers=4, duration_s=2.0, tenant_count=4,
+                       barrier_count=8, barrier_max_workers=4,
+                       barrier_distribution="explicit", commit_tenant_counts=[8, 0, 0, 0])
+    result = Engine(profile, scene).run()
+    submits = [r for r in result.records if r.extra == "barrier" and r.op == "commit_submit"]
+    assert len(submits) == 8
+    assert {r.tenant_idx for r in submits} == {0}
+    assert {r.tenant_idx for r in result.records if r.op == "read"} == {0, 1, 2, 3}
+
+
+def test_explicit_barrier_rejects_negative_counts():
+    with pytest.raises(ValueError, match="non-negative"):
+        barrier_tenant_counts(8, 4, distribution="explicit", explicit=[9, -1, 0, 0])
+
+
 def test_scene_barrier_floor_to_tenants(server):
     _, _, base_url = server
     scene = load_scene(SCENES_DIR / "scene_barrier.py")

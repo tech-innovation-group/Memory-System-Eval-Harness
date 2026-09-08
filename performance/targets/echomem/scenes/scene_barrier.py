@@ -53,7 +53,7 @@ def schedule(ctx: Ctx) -> None:
         ctx.at_time(
             at_s + wave * cooldown,
             _barrier_job,
-            tenant_counts=dict(tenant_counts),
+            tenant_counts={tenant: jobs for tenant, jobs in tenant_counts.items() if jobs > 0},
             max_workers=max_workers,
             name="barrier",
         )

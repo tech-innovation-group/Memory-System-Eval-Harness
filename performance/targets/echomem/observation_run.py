@@ -333,11 +333,33 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
                 "queries": {row["tenant_id"]: row["marker"] for row in visibility},
             }
         tenant_config = read_json(Path(profile["tenant_config"]))
-        probes, commands = run_configured_probes(
-            profile, base_url=profile["base_url"], suite_dir=output,
-            auth_headers={}, tenant_config=tenant_config, quick=args.quick,
-            timeout_s=args.timeout_s,
-        )
+        pending = [code for code in selected if code in {"M1", "M2", "M5", "M6"}]
+        early_report = None
+        if scenarios and pending:
+            early_report = evaluate_observation(suite, profile, [], quick=args.quick, selected_metrics=selected)
+            early_report.update(platform_provenance=provenance, checkpoint=True, pending_metrics=pending)
+            (output / "suite.json").write_text(json.dumps(suite, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            (output / "summary.json").write_text(json.dumps(early_report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            _combine_csv(suite, output, "records.csv")
+            _combine_csv(suite, output, "metrics_samples.csv")
+            write_observation_report(early_report, output / "report.html")
+        try:
+            probes, commands = run_configured_probes(
+                profile, base_url=profile["base_url"], suite_dir=output,
+                auth_headers={}, tenant_config=tenant_config, quick=args.quick,
+                timeout_s=args.timeout_s,
+            )
+        except Exception as exc:
+            if early_report is None:
+                raise
+            early_report.update(status="EXECUTION_ERROR", checkpoint=False, error_class=type(exc).__name__)
+            (output / "summary.json").write_text(json.dumps(early_report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            write_observation_report(early_report, output / "report.html")
+            manifest_path = output / "execution-manifest.json"
+            manifest = read_json(manifest_path)
+            manifest.update(execution_status="EXECUTION_ERROR", finished_at=_now(), error_class=type(exc).__name__)
+            manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            raise PublishedObservationError(str(exc), early_report) from exc
         suite = {**suite, **probes}
         if observation.get("enabled"):
             suite["tenant_observability_before"] = observation_before

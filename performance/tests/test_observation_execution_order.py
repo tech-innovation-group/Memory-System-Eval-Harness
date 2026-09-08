@@ -53,6 +53,34 @@ def test_publish_checkpoint_before_capacity(tmp_path, monkeypatch):
     assert not result.get("checkpoint")
 
 
+@pytest.mark.parametrize("probe_failure", [False, True])
+def test_bounded_data_published_before_long_probes(tmp_path, monkeypatch, probe_failure):
+    args, _ = setup_run(tmp_path, monkeypatch)
+    args.metrics = "M3,M2"
+
+    def probes(*a, **k):
+        summary = json.loads((args.out_dir / "summary.json").read_text())
+        assert summary["checkpoint"] is True
+        assert summary["pending_metrics"] == ["M2"]
+        assert (args.out_dir / "report.html").is_file()
+        assert (args.out_dir / "records.csv").is_file()
+        if probe_failure:
+            raise RuntimeError("probe interrupted")
+        return {}, []
+
+    monkeypatch.setattr(module, "run_configured_probes", probes)
+    if probe_failure:
+        with pytest.raises(module.PublishedObservationError):
+            module.run(args)
+        summary = json.loads((args.out_dir / "summary.json").read_text())
+        assert summary["status"] == "EXECUTION_ERROR"
+        assert summary["checkpoint"] is False
+        assert "M3" in summary["metrics"]
+        assert "运行中断" in (args.out_dir / "report.html").read_text()
+    else:
+        assert not module.run(args).get("checkpoint")
+
+
 def test_capacity_error_keeps_earlier_report_and_marks_interruption(tmp_path, monkeypatch):
     args, events = setup_run(tmp_path, monkeypatch)
 
