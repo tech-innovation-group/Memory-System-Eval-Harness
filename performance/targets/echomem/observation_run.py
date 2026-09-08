@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -98,6 +99,35 @@ def _validate_m1_resume(report: dict[str, Any], expected: dict[str, Any]) -> Non
         raise ValueError(
             "M1 resume configuration differs for " + ", ".join(mismatches)
         )
+
+
+def _collect_observation(profile: dict[str, Any], token: str) -> dict[str, Any]:
+    observation = profile.get("tenant_observability") or {}
+    result = collect_tenant_observability(
+        base_url=profile["base_url"], endpoint=str(observation.get("endpoint", "")),
+        token=token, expected_tenants=list(observation.get("expected_tenants", [])),
+        expected_lanes=list(observation.get("expected_lanes", [])), timeout_s=15,
+    )
+    result["observed_at_s"] = time.monotonic()
+    return result
+
+
+def _sample_observability(stop, collect, samples, errors, output: Path) -> None:
+    try:
+        while not stop.is_set():
+            try:
+                sample = collect()
+            except Exception as exc:
+                errors.append(type(exc).__name__)
+                sample = {"status": "FAIL", "observed_at_s": time.monotonic(),
+                          "reason": type(exc).__name__, "rows": []}
+            samples.append(sample)
+            (output / "tenant-observability-samples.json").write_text(
+                json.dumps(samples, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            stop.wait(2)
+    except Exception as exc:
+        # Exception text can contain a protected endpoint or credentials.
+        errors.append(type(exc).__name__)
 
 
 def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> dict[str, Any]:
@@ -258,36 +288,24 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
         observation = profile.get("tenant_observability") or {}
         observation_samples: list[dict[str, Any]] = []
+        observation_errors: list[str] = []
+        observation_monitor: dict[str, Any] = {"errors": observation_errors,
+            "max_sampling_gap_s": observation.get("max_sampling_gap_s", 20)}
         sampler_stop = threading.Event()
         sampler = None
         token = os.environ.get(str(observation.get("token_env") or "ECHOMEM_TEST_CONTROL_TOKEN"), "")
         observation_before: dict[str, Any] = {}
         if observation.get("enabled") and token:
-            observation_before = collect_tenant_observability(
-                base_url=profile["base_url"], endpoint=str(observation.get("endpoint", "")),
-                token=token,
-                expected_tenants=list(observation.get("expected_tenants", [])),
-                expected_lanes=list(observation.get("expected_lanes", [])), timeout_s=15,
-            )
+            observation_before = _collect_observation(profile, token)
             (output / "tenant-observability-before.json").write_text(
                 json.dumps(observation_before, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
 
-            def sample_observability() -> None:
-                while not sampler_stop.is_set():
-                    observation_samples.append(collect_tenant_observability(
-                        base_url=profile["base_url"], endpoint=str(observation.get("endpoint", "")),
-                        token=token,
-                        expected_tenants=list(observation.get("expected_tenants", [])),
-                        expected_lanes=list(observation.get("expected_lanes", [])), timeout_s=15,
-                    ))
-                    (output / "tenant-observability-samples.json").write_text(
-                        json.dumps(observation_samples, ensure_ascii=False, indent=2) + "\n",
-                        encoding="utf-8",
-                    )
-                    sampler_stop.wait(2)
-            sampler = threading.Thread(target=sample_observability, daemon=True)
+            observation_monitor["window_start_s"] = time.monotonic()
+            sampler = threading.Thread(target=_sample_observability,
+                args=(sampler_stop, lambda: _collect_observation(profile, token),
+                      observation_samples, observation_errors, output), daemon=True)
             sampler.start()
 
         load_metrics = [name for name in selected if name in {"M3", "M4"}]
@@ -338,24 +356,21 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 for report in m1_reports
             ]
         }
+        if sampler is not None:
+            sampler_stop.set()
+            sampler.join(timeout=20)
+            if sampler.is_alive():
+                observation_errors.append("SamplerStopTimeout")
+            observation_monitor["window_end_s"] = time.monotonic()
         if observation.get("enabled"):
-            after_all = collect_tenant_observability(
-                base_url=profile["base_url"],
-                endpoint=str(observation.get("endpoint", "")),
-                token=os.environ.get(str(observation.get("token_env") or "ECHOMEM_TEST_CONTROL_TOKEN"), ""),
-                expected_tenants=list(observation.get("expected_tenants", [])),
-                expected_lanes=list(observation.get("expected_lanes", [])),
-                timeout_s=15,
-            )
+            after_all = _collect_observation(profile, token)
             suite["tenant_observability_after_all"] = after_all
             (output / "tenant-observability-after-all.json").write_text(
                 json.dumps(after_all, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
-        if sampler is not None:
-            sampler_stop.set()
-            sampler.join(timeout=20)
-        suite["tenant_observability_samples"] = observation_samples
+        suite["tenant_observability_samples"] = list(observation_samples)
+        suite["tenant_observability_monitor"] = observation_monitor
         (output / "suite.json").write_text(json.dumps(suite, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         _combine_csv(suite, output, "records.csv")
         _combine_csv(suite, output, "metrics_samples.csv")

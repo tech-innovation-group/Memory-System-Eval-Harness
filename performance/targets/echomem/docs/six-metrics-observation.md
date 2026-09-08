@@ -121,7 +121,7 @@ curl -fsS -X POST http://127.0.0.1:8010/api/inspect/test-control/fault \
 结果根目录固定保留：
 
 - `execution-manifest.json`：运行时间、Git commit、所选指标、环境摘要和探针执行记录
-- `suite.json`：场景、探针及完整原始引用
+- `suite.json`：场景、探针及完整原始引用；`tenant_observability_monitor` 保留本机单调时钟窗口、采样间隔上限及采集异常类型
 - `records.csv`：合并后的逐请求记录
 - `metrics_samples.csv`：合并后的资源/Prometheus 采样
 - `summary.json`：M1-M6 四态观测汇总
@@ -133,11 +133,32 @@ curl -fsS -X POST http://127.0.0.1:8010/api/inspect/test-control/fault \
 汇总值均可追溯到 JSON/CSV。字段未采集时保持 `null`；运行器不会删除失败样本、
 隐藏错误或用 0 填补缺失值。
 
+### M6 过程完整性
+
+M6 不只比较首尾。每一帧均使用运行前锁定的 `tenant × lane` 分母，空帧、
+缺失字段、重复行、布尔值、负数及 NaN 不会被跳过。报告同时展示有效快照数、
+每帧有效单元数，以及在全部采样帧中均完整的单元数；后者不是服务可用租户数量。
+
+采样器在一次请求结束后等待 2 秒；HTTP 超时为 15 秒。默认最大采样空档为 20 秒，
+可通过 `tenant_observability.max_sampling_gap_s` 调整。该参数约束证据完整性，
+不是 Search 性能合格线。比较包括负载窗口首尾；旧产物没有本机时钟边界时，
+只计算实际相邻帧间隔，不补造窗口覆盖证据。
+
+计数器只在已确认的同一进程内做差。`queued` 下降是正常现象，累计计数下降
+需要解释：同进程下降记录为异常；已确认重启则分段，不跨进程相减；身份未知
+保持证据不足。M6 的 RESET 必须来自进程身份变化，不能仅凭计数下降或 PID
+缺失推断重启。故障期间无法获取的帧仍保留，不能借“计划重启”隐藏采集失败。
+
+只有每帧覆盖、采样间隔和进程分段核验完整，且实际观察到四种行为，M6 才为
+`MEASURED`；缺数据为 `PARTIAL`，没有有效分母为 `BLOCKED`，采集失败或同进程
+计数异常为 `EXECUTION_ERROR`。这些状态不代表服务性能是否达标。
+
 ## EchoMem 接口契约
 
 当前完整执行需要：公开 Search、session open/message/Commit、commit status、history、
 archive、cursor，以及受保护的 `/api/inspect/test-control/fault` 和
 `/api/inspect/tenant-observability`。后者需返回 tenant、lane、queued、
-wait/exec seconds total、rejected/accepted/completed/failed total，并建议返回
-`process_id`、`process_started_at` 或 `boot_id` 以可靠切分 RESET。缺接口时报告会
+wait/exec seconds total、rejected/accepted/completed/failed total。可靠切分 RESET
+还需 `process_started_at`（可附 `process_id`）或每进程唯一的 `boot_id`；单独 PID
+可能复用，不足以证明一直是同一进程。缺接口或身份字段时报告会
 标记 `BLOCKED/PARTIAL`，不会降低测试要求。

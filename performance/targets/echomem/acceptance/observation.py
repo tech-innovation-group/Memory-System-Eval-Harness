@@ -39,7 +39,7 @@ METRIC_METHODS = {
     "M3": "让 4 租户和 8 租户以相同速率同时 Search 与 Commit，保留零完成租户，用逐租户完成吞吐和 Search P95 倒数计算 Jain 指数。",
     "M4": "先测无 Commit 的 Search 基线，再分别制造均匀 Commit 洪泛和单租户洪泛，只统计与已受理且未终态 Commit 真正重叠的 Search。",
     "M5": "Commit 返回 202 且仍未完成时 kill -9 专用容器，重启后只轮询原任务，再对账消息集合、顺序、cursor、archive 和幂等重试。",
-    "M6": "负载前、中、后持续读取受保护观测接口，按实际配置枚举 tenant×lane，检查 queued、wait、exec、rejected 以及 NORMAL/QUEUE/REJECT/RESET。",
+    "M6": "负载前、中、后持续读取受保护观测接口，按实际配置逐帧枚举 tenant×lane；空帧、非法值、重复行和采样空档均保留。进程重启按身份分段，计数回退不能单独证明RESET；检查四元组及NORMAL/QUEUE/REJECT/RESET。",
 }
 
 
@@ -378,101 +378,121 @@ def summarize_m5(suite: dict[str, Any], *, quick: bool) -> dict[str, Any]:
 
 
 def summarize_m6(suite: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
+    from performance.targets.echomem.acceptance.observability_timeline import (
+        _epoch as process_identity,
+        timeline_counts,
+    )
+    from performance.targets.echomem.acceptance.reliability_evidence import observability_counts
+
     before = suite.get("tenant_observability_before") or {}
     final_payload = suite.get("tenant_observability_after_all") or suite.get("tenant_observability") or {}
     after = _probe_detail(final_payload, "tenant-observability") or final_payload
-    initial = {(row.get("tenant_id"), row.get("lane")): row for row in before.get("rows", [])}
-    final = {(row.get("tenant_id"), row.get("lane")): row for row in after.get("rows", [])}
-    tenants = list((profile.get("tenant_observability") or {}).get("expected_tenants", []))
-    lanes = list((profile.get("tenant_observability") or {}).get("expected_lanes", []))
-    process_changed = any(
-        before.get(field) is not None and after.get(field) is not None
-        and before.get(field) != after.get(field)
-        for field in ("process_id", "process_started_at", "boot_id")
-    )
+    config = profile.get("tenant_observability") or {}
+    tenants = list(config.get("expected_tenants", []))
+    lanes = list(config.get("expected_lanes", []))
+    during = suite.get("tenant_observability_samples") or []
+    monitoring = suite.get("tenant_observability_monitor") or {}
+    timeline = timeline_counts({
+        "expected_tenants": tenants, "expected_lanes": lanes,
+        "before": before, "during": during, "after": after,
+        "window_start_s": monitoring.get("window_start_s"),
+        "window_end_s": monitoring.get("window_end_s"),
+        "max_sampling_gap_s": monitoring.get("max_sampling_gap_s"),
+        "monitor_errors": monitoring.get("errors"),
+    }, allow_restarts=True)
+    raw_samples = [before, *during, after]
+    snapshots = [observability_counts({
+        **(sample if isinstance(sample, dict) else {}),
+        "expected_tenants": tenants, "expected_lanes": lanes,
+    }) for sample in raw_samples]
     fields = ("queued", "wait_seconds_total", "exec_seconds_total", "rejected_total",
               "accepted_total", "completed_total", "failed_total")
+    counters = fields[1:]
+    initial = {(r["tenant"], r["lane"]): r for r in snapshots[0]["rows"]}
+    final = {(r["tenant"], r["lane"]): r for r in snapshots[-1]["rows"]}
+    first_epoch, last_epoch = process_identity(before), process_identity(after)
+    same_process = first_epoch is not None and first_epoch == last_epoch
     matrix = []
-    for tenant in tenants:
+    for i, _tenant in enumerate(tenants):
         for lane in lanes:
-            left, right = initial.get((tenant, lane)), final.get((tenant, lane))
-            missing = [field for field in fields if not left or not right or field not in left or field not in right]
-            deltas = {}
-            invalid = []
-            for field in fields:
-                a, b = _number((left or {}).get(field)), _number((right or {}).get(field))
-                if a is None or b is None:
-                    deltas[field] = None
-                else:
-                    deltas[field] = b - a
-                    if b < 0 or (field != "queued" and b < a and not process_changed):
-                        invalid.append(field)
-            matrix.append({"tenant_id": tenant, "lane": lane, "before": left, "after": right,
-                           "delta": deltas, "missing_fields": missing, "invalid_fields": invalid})
-    complete = [row for row in matrix if not row["missing_fields"] and not row["invalid_fields"]]
+            key = (f"T{i + 1}", lane)
+            left, right = initial.get(key, {}), final.get(key, {})
+            missing = [field for field in fields if left.get(field) is None or right.get(field) is None]
+            invalid = [field for field in counters
+                       if same_process and left.get(field) is not None and right.get(field) is not None
+                       and right[field] < left[field]]
+            matrix.append({"tenant_id": key[0], "lane": lane,
+                           "before": {field: left.get(field) for field in fields},
+                           "after": {field: right.get(field) for field in fields},
+                           "delta": {field: right[field] - left[field]
+                                     if same_process and field not in missing else None for field in fields},
+                           "missing_fields": missing, "invalid_fields": invalid,
+                           "delta_scope": "same_process" if same_process else "unavailable_across_restart_or_unknown_process"})
     scenarios = {"NORMAL": False, "QUEUE": False, "REJECT": False, "RESET": False}
-    for row in complete:
-        delta = row["delta"]
-        scenarios["NORMAL"] |= bool((delta.get("accepted_total") or 0) > 0)
-        scenarios["QUEUE"] |= bool((row["after"].get("queued") or 0) > 0 or (delta.get("wait_seconds_total") or 0) > 0)
-        scenarios["REJECT"] |= bool((delta.get("rejected_total") or 0) > 0)
-    samples = [before, *(suite.get("tenant_observability_samples") or []), after]
-    valid_samples = [sample for sample in samples if sample.get("rows")]
-    queue_timeline = []
-    rejection_timeline = []
-    process_segments = []
-    previous_rows: dict[tuple[Any, Any], dict[str, Any]] = {}
-    previous_process = None
-    for sample_index, sample in enumerate(valid_samples):
-        process = tuple(sample.get(field) for field in ("process_id", "process_started_at", "boot_id"))
-        if process != previous_process:
-            process_segments.append({"sample_index": sample_index, "process": process})
-            previous_process = process
-        current_rows = {(row.get("tenant_id"), row.get("lane")): row for row in sample.get("rows", [])}
-        for key, row in current_rows.items():
-            queued = _number(row.get("queued"))
+    queue_timeline, rejection_timeline, process_segments = [], [], []
+    previous_rows, previous_epoch = {}, None
+    last_known_epoch = None
+    for index, (raw, public) in enumerate(zip(raw_samples, snapshots)):
+        raw = raw if isinstance(raw, dict) else {}
+        epoch = process_identity(raw)
+        if epoch is not None and epoch != last_known_epoch:
+            if last_known_epoch is not None:
+                scenarios["RESET"] = True
+            process_segments.append({"sample_index": index, "segment": len(process_segments) + 1})
+            last_known_epoch = epoch
+        if public["status"] != "PASS":
+            # Do not bridge a missing/invalid snapshot with a fabricated delta.
+            previous_rows, previous_epoch = {}, None
+            continue
+        current = {(r["tenant"], r["lane"]): r for r in public["rows"]
+                   if r["tenant"] != "unknown" and r["lane"] in lanes}
+        for key, row in current.items():
+            queued = row.get("queued")
             if queued is not None:
-                queue_timeline.append({"sample_index": sample_index, "created_at": sample.get("created_at"),
+                queue_timeline.append({"sample_index": index, "created_at": raw.get("created_at"),
                                        "tenant_id": key[0], "lane": key[1], "queued": queued})
                 scenarios["QUEUE"] |= queued > 0
             prior = previous_rows.get(key)
-            if prior:
-                accepted_delta = (_number(row.get("accepted_total")) or 0) - (_number(prior.get("accepted_total")) or 0)
-                wait_delta = (_number(row.get("wait_seconds_total")) or 0) - (_number(prior.get("wait_seconds_total")) or 0)
-                rejected_delta = (_number(row.get("rejected_total")) or 0) - (_number(prior.get("rejected_total")) or 0)
+            if prior and epoch is not None and epoch == previous_epoch:
+                accepted_delta = row["accepted_total"] - prior["accepted_total"]
+                wait_delta = row["wait_seconds_total"] - prior["wait_seconds_total"]
+                rejected_delta = row["rejected_total"] - prior["rejected_total"]
                 scenarios["NORMAL"] |= accepted_delta > 0
                 scenarios["QUEUE"] |= wait_delta > 0
                 scenarios["REJECT"] |= rejected_delta > 0
                 if rejected_delta > 0:
-                    rejection_timeline.append({"sample_index": sample_index, "created_at": sample.get("created_at"),
+                    rejection_timeline.append({"sample_index": index, "created_at": raw.get("created_at"),
                                                "tenant_id": key[0], "lane": key[1],
                                                "rejected_delta": rejected_delta})
-        previous_rows = current_rows
-    counter_reset = any(
-        (row["delta"].get(field) or 0) < 0
-        for row in matrix
-        for field in ("accepted_total", "completed_total", "failed_total",
-                      "rejected_total", "wait_seconds_total", "exec_seconds_total")
-    )
-    scenarios["RESET"] = process_changed or counter_reset or len(process_segments) > 1
+        previous_rows, previous_epoch = current, epoch
     expected_cells = len(tenants) * len(lanes)
-    status = _status(expected=expected_cells, observed=len(complete), blocked=not tenants or not lanes)
-    if status == "MEASURED" and not all(scenarios.values()):
-        status = "PARTIAL"
-    return {"status": status, "reason": "expected tenant x lane 来自实际配置；缺失值保持 null",
-            "expected_tenants": tenants, "expected_lanes": lanes,
-            "expected_cells": expected_cells, "complete_cells": len(complete),
-            "duplicate_keys": after.get("duplicate_rows", []), "scenarios": scenarios,
-            "process_segments": {
-                "before": {field: before.get(field) for field in ("process_id", "process_started_at", "boot_id")},
-                "after": {field: after.get(field) for field in ("process_id", "process_started_at", "boot_id")},
-                "changed": process_changed,
-                "counter_reset": counter_reset,
-                "segments": process_segments,
-            },
-            "sample_count": len(valid_samples), "queue_timeline": queue_timeline,
-            "rejection_timeline": rejection_timeline,
-            "matrix": matrix}
+    complete_keys = {(f"T{i + 1}", lane) for i in range(len(tenants)) for lane in lanes}
+    for snapshot in snapshots:
+        bad = {(r["tenant"], r["lane"]) for name in ("missing_details", "invalid_details", "duplicate_details")
+               for r in snapshot[name]}
+        complete_keys -= bad
+        if snapshot["status"] != "PASS" and not bad:
+            # Declaration/HTTP errors can invalidate an otherwise present row set.
+            complete_keys.clear()
+    if not timeline["contract_valid"]:
+        complete_keys.clear()
+    status = ("BLOCKED" if not timeline["contract_valid"] else
+              "EXECUTION_ERROR" if timeline["status"] == "FAIL" or timeline["monitor_failed"] else
+              "MEASURED" if timeline["status"] == "PASS" and all(scenarios.values()) else "PARTIAL")
+    return {"status": status,
+            "reason": "固定分母逐帧核验；重启按进程身份分段，缺失不补零。观测状态不是服务性能合格线。",
+            "expected_tenants": [f"T{i + 1}" for i in range(len(tenants))], "expected_lanes": lanes,
+            "expected_cells": expected_cells, "complete_cells": len(complete_keys),
+            "endpoint_complete_cells": min(snapshots[0]["valid_cells"], snapshots[-1]["valid_cells"]),
+            "duplicate_keys": [{"sample_index": i, **row} for i, snapshot in enumerate(snapshots)
+                               for row in snapshot["duplicate_details"]],
+            "scenarios": scenarios, "timeline": timeline,
+            "process_segments": {"changed": scenarios["RESET"],
+                                 "counter_reset": any(r["classification"] == "restart"
+                                                      for r in timeline["counter_regressions"]),
+                                 "segments": process_segments},
+            "sample_count": len(raw_samples), "queue_timeline": queue_timeline,
+            "rejection_timeline": rejection_timeline, "matrix": matrix}
 
 
 def evaluate_observation(suite: dict[str, Any], profile: dict[str, Any],
@@ -557,7 +577,7 @@ def derive_observation_recommendations(result: dict[str, Any]) -> list[dict[str,
     ]
     levels = m1.get("levels", [])
     highest = max((int(level.get("hot_users") or 0) for level in levels), default=None)
-    return [
+    recommendations = [
         {"priority": "P0", "module": "Admission 与容量保护", "metrics": "M1 / M4",
          "evidence": (f"最高已测热用户档 H={highest}；首个运行异常="
                       f"{m1.get('first_operational_anomaly') or '尚未观测'}。"),
@@ -580,10 +600,13 @@ def derive_observation_recommendations(result: dict[str, Any]) -> list[dict[str,
          "evidence": f"完整恢复样本 {m5.get('complete_samples', 0)}/{m5.get('expected_samples', 0)}。",
          "action": "保证返回 202 前持久化任务、幂等键和 cursor；扩大到入队后、执行中、落 archive 前后的崩溃矩阵。"},
         {"priority": "P1", "module": "可观测性", "metrics": "M6",
-         "evidence": (f"完整 tenant×lane 单元 {m6.get('complete_cells', 0)}/{m6.get('expected_cells', 0)}；"
-                      f"场景覆盖={m6.get('scenarios', {})}。"),
-         "action": "所有启用层统一输出 queued/wait/exec/rejected，并补 accepted/completed/failed、reason_code 与进程代际。"},
+         "evidence": (f"全部采样均完整的单元 {m6.get('complete_cells', 0)}/{m6.get('expected_cells', 0)}；"
+                      f"已观察行为：{', '.join(k for k, v in m6.get('scenarios', {}).items() if v is True) or '无'}。"),
+         "action": "先补平台采样时间边界并核对启用层分母；确认服务未提供的四元组或进程代际，再补只读观测接口。"},
     ]
+    selected = set(result.get("selected_metrics") or metrics)
+    return [item for item in recommendations
+            if selected.intersection(part.strip() for part in item["metrics"].split("/"))]
 
 
 def write_observation_report(result: dict[str, Any], path: Path) -> None:
@@ -600,11 +623,12 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
     def details(label: str, content: str) -> str:
         return f"<details><summary>{esc(label)}</summary>{content}</details>"
 
-    def bars(title: str, points: list[tuple[str, float | None]], *, signed: bool = False) -> str:
+    def bars(title: str, points: list[tuple[str, float | None]], *, signed: bool = False,
+             axis_max: float | None = None) -> str:
         normalized = [(label, _number(value)) for label, value in points]
-        maximum = max((abs(value) for _, value in normalized if value is not None), default=0) or 1
+        maximum = axis_max or max((abs(value) for _, value in normalized if value is not None), default=0) or 1
         body = "".join(
-            f"<div class='bar'><span>{esc(label)}</span><i><b class='{'worse' if signed and value > 0 else 'better'}' style='width:{100 * abs(value) / maximum:.2f}%'></b></i><strong>{esc(round(value, 3))}</strong></div>"
+            f"<div class='bar'><span>{esc(label)}</span><i><b class='{'worse' if signed and value > 0 else 'better'}' style='width:{min(100, 100 * abs(value) / maximum):.2f}%'></b></i><strong>{esc(round(value, 3))}</strong></div>"
             for label, value in normalized if value is not None
         )
         return f"<h3>{esc(title)}</h3>{body or '<p>暂无数据</p>'}"
@@ -647,7 +671,7 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             ] + [
                 (f"{window.get('tenant_count')}租户 Search Jain", window.get("search_inverse_p95_jain"))
                 for window in metric.get("windows", [])
-            ])
+            ], axis_max=1)
             visual += details("查看公平窗口汇总", table(metric.get("windows", []), [("scenario", "场景"), ("tenant_count", "租户"), ("duration_s", "窗口秒"), ("commit_throughput_jain", "Commit Jain"), ("search_inverse_p95_jain", "Search inverse-P95 Jain")]))
             tenant_rows = [{"scenario": window.get("scenario"), **tenant,
                             "search_p95_ms": tenant.get("search", {}).get("p95_ms")}
@@ -665,15 +689,32 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                            for window in metric.get("windows", []) for tenant in window.get("tenants", [])]
             visual += details("查看逐租户基线与洪泛对比", table(tenant_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("baseline_p95_ms", "Baseline P95"), ("overlap_p95_ms", "Overlap P95"), ("p95_delta_ms", "差值"), ("p95_ratio", "比值")]))
         elif code == "M5":
-            visual = bars("完整恢复样本", [("完成 / 期望", 100 * (metric.get("complete_samples") or 0) / max(1, metric.get("expected_samples") or 0))])
+            visual = bars("完整恢复样本 / %", [("完成 / 期望",
+                100 * metric["complete_samples"] / metric["expected_samples"]
+                if metric.get("expected_samples") and metric.get("complete_samples") is not None else None)], axis_max=100)
             visual += details("查看每次 kill-9 恢复检查", table(metric.get("samples", []), [("sample_index", "样本"), ("received_202", "收到202"), ("unfinished_at_kill", "崩溃时未完成"), ("autonomous_completed", "自主完成"), ("fully_reconciled", "完整对账"), ("recovery_elapsed_s", "恢复秒")]))
         elif code == "M6":
+            timeline = metric.get("timeline", {})
             visual = bars("四元组完整率与行为覆盖率 / %", [
-                ("tenant×lane 完整率", 100 * (metric.get("complete_cells") or 0) / max(1, metric.get("expected_cells") or 0)),
+                ("全过程采样单元完整率", 100 * metric["complete_cells"] / metric["expected_cells"]
+                 if metric.get("expected_cells") and metric.get("complete_cells") is not None else None),
                 ("NORMAL/QUEUE/REJECT/RESET", 25 * sum(value is True for value in metric.get("scenarios", {}).values())),
-            ])
+            ], axis_max=100)
+            visual += ("<p>全过程采样核验：" + esc(timeline.get("status")) +
+                       "；完整快照 " + esc(timeline.get("passed_snapshots")) + "/" + esc(timeline.get("snapshot_count")) +
+                       "；含窗口边界最大间隔 " + esc(timeline.get("max_gap_s")) + " 秒。</p>"
+                       "<p>末次字段齐全不代表中途齐全。RESET需进程身份变化证据；跨重启不计算累计差值。"
+                       "已确认重启允许分段核验，无法访问的快照仍计为采样失败；快照间的全部活动不能由采样证明。</p>")
             visual += details("查看四种行为覆盖", table([{"scenario": name, "observed": observed} for name, observed in metric.get("scenarios", {}).items()], [("scenario", "行为"), ("observed", "已观测")]))
             visual += details("查看逐租户逐 Lane 完整性", table(metric.get("matrix", []), [("tenant_id", "租户"), ("lane", "Lane"), ("missing_fields", "缺失"), ("invalid_fields", "非法")]))
+            visual += details("查看每次快照与完整分母", table(timeline.get("snapshots", []), [
+                ("index", "序号"), ("phase", "阶段"), ("status", "核验状态"),
+                ("valid_cells", "有效单元"), ("expected_cells", "预期单元"),
+                ("missing_cells", "缺失"), ("invalid_cells", "非法"), ("duplicate_cells", "重复")]))
+            visual += details("查看计数回退与进程分段", table(timeline.get("counter_regressions", []), [
+                ("tenant", "租户"), ("lane", "层"), ("counter", "计数"),
+                ("before_index", "前序号"), ("after_index", "后序号"),
+                ("before", "之前"), ("after", "之后"), ("classification", "归类")]))
         sections.append(
             f"<section><h2>{code} {esc(METRIC_NAMES[code])}</h2>"
             f"<p class='purpose'><b>反映什么：</b>{esc(METRIC_PURPOSES[code])}</p>"

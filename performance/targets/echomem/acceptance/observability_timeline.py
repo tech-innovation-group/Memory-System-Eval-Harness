@@ -29,11 +29,16 @@ def _snapshot_time(snapshot):
     return None, None
 
 
-def timeline_counts(evidence: dict) -> dict:
+def timeline_counts(evidence: dict, *, allow_restarts: bool = False) -> dict:
     from performance.targets.echomem.acceptance.reliability_evidence import observability_counts
 
     tenants = evidence.get("expected_tenants", [])
     lanes = evidence.get("expected_lanes", [])
+    contract_valid = all(isinstance(values, list) and bool(values)
+                         and all(isinstance(v, str) and bool(v.strip()) for v in values)
+                         and len(set(values)) == len(values) for values in (tenants, lanes))
+    if not contract_valid:
+        tenants, lanes = [], []
     frames = [("before", evidence.get("before"))]
     frames += [("during", item) for item in evidence.get("during", [])]
     frames += [("after", evidence.get("after"))]
@@ -63,7 +68,10 @@ def timeline_counts(evidence: dict) -> dict:
         current = {(r["tenant"], r["lane"]): r for r in public["rows"]}
         epoch = _epoch(raw)
         if previous:
-            old_index, old_epoch, old_rows = previous
+            old_index, old_epoch, old_rows, old_time, old_clock = previous
+            if observed_at is None or old_time is None or clock != old_clock or observed_at <= old_time:
+                previous = index, epoch, current, observed_at, clock
+                continue
             restarted = epoch is not None and old_epoch is not None and epoch != old_epoch
             if restarted:
                 restarts.append({"before_index": old_index, "after_index": index})
@@ -81,7 +89,7 @@ def timeline_counts(evidence: dict) -> dict:
                                             "classification": "restart" if restarted else
                                             "same_process" if epoch is not None and epoch == old_epoch else
                                             "process_identity_unknown"})
-        previous = index, epoch, current
+        previous = index, epoch, current, observed_at, clock
     during = [s for s in snapshots if s["phase"] == "during"]
     start, end = evidence.get("window_start_s"), evidence.get("window_end_s")
     limit = evidence.get("max_sampling_gap_s")
@@ -100,10 +108,16 @@ def timeline_counts(evidence: dict) -> dict:
     coverage_complete = bool(tenants and lanes and during
                              and all(s["status"] == "PASS" for s in snapshots))
     unexplained = any(r["classification"] == "same_process" for r in regressions)
+    identities_complete = all(_epoch(raw) is not None for _, raw in frames if isinstance(raw, dict))
+    explained_restarts = bool(allow_restarts and identities_complete
+                              and all(r["classification"] == "restart" for r in regressions))
     status = ("FAIL" if unexplained or any(s["status"] == "FAIL" for s in snapshots) else
               "PASS" if coverage_complete and gap_valid and exceeded == 0 and comparisons
-              and not regressions and not restarts and not evidence.get("monitor_errors") else "INCONCLUSIVE")
-    return {"status": status, "snapshot_count": len(snapshots), "during_count": len(during),
+              and ((not regressions and not restarts) or explained_restarts)
+              and (not allow_restarts or identities_complete)
+              and not evidence.get("monitor_errors") else "INCONCLUSIVE")
+    return {"status": status, "contract_valid": contract_valid,
+            "snapshot_count": len(snapshots), "during_count": len(during),
             "passed_snapshots": sum(s["status"] == "PASS" for s in snapshots),
             "snapshots": snapshots, "counter_comparisons": comparisons,
             "counter_regressions": regressions, "restart_observations": restarts,
@@ -114,4 +128,6 @@ def timeline_counts(evidence: dict) -> dict:
             "max_sampling_gap_s": limit if _time(limit) else None, "gaps_exceeded": exceeded,
             "sampling_times_valid": time_valid,
             "monitor_failed": bool(evidence.get("monitor_errors")),
+            "restarts_allowed": allow_restarts,
+            "process_identities_complete": identities_complete,
             "scope": "sampled snapshots only; activity between samples is not fully observed"}

@@ -133,7 +133,9 @@ def test_lanes_are_derived_from_effective_config(tmp_path: Path) -> None:
 
 def test_m6_uses_explicit_before_snapshot_for_deltas() -> None:
     def snapshot(accepted: int, rejected: int = 0) -> dict:
-        return {"process_id": "p1", "rows": [{
+        return {"process_id": "p1", "process_started_at": "start-1", "status": "PASS",
+                "lane_count_matches_observed": True, "expected_lanes_match_observed": True,
+                "rows": [{
             "tenant_id": "t1", "lane": "commit", "queued": 0,
             "wait_seconds_total": accepted, "exec_seconds_total": accepted,
             "rejected_total": rejected, "accepted_total": accepted,
