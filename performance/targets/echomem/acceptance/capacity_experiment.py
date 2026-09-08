@@ -12,7 +12,7 @@ from performance.targets.echomem.acceptance.capacity_load import measure
 from performance.targets.echomem.acceptance.provenance import platform_snapshot
 from performance.targets.echomem.acceptance.capacity_seed import CapacityActor, prepare_actors, provision_actors
 from performance.targets.echomem.probes._client import EchoMemHTTP
-from performance.targets.echomem.acceptance.capacity_statistics import evaluate_level
+from performance.targets.echomem.acceptance.capacity_statistics import evaluate_level, detect_congestion
 from performance.targets.echomem.acceptance.capacity_recovery import lifecycle, observe_recovery
 from performance.targets.echomem.probes.docker_inspect import inspect_container, resource_sample
 
@@ -199,6 +199,15 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
                         checkpoint=lambda value: _write(output / f"level-{level}-{label}-recovery.json", value))
                     recovery["state"] = recovery.pop("status", "UNKNOWN")
                     result["recovery"] = recovery
+                    congestion = detect_congestion(measurement)
+                    result["congestion"] = congestion
+                    if congestion["observed"]:
+                        report["stop_reason"] = "sustained-service-congestion"
+                        report["operational_boundary"] = {
+                            "hot_users": hot_users, "load_profile": label,
+                            "kind": "congestion", "evidence": congestion,
+                            "recovered_after_load": recovery["state"],
+                        }
                     _write(output / f"level-{level}-{label}-recovery.json", recovery)
                     if recovery["state"] == "BOUNDARY_OBSERVED":
                         report["stop_reason"] = recovery["reason"]
@@ -226,7 +235,11 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
                       phase="capacity-observation-complete", current=None, resources=resources,
                       highest_measured_hot_users=max((r["hot_users"] for r in observed), default=None),
                       max_hot_users=None, dau=None, performance_requirements_applied=False,
-                      boundary={"status": "NOT_ESTABLISHED", "reason": "observation-without-performance-thresholds"})
+                      boundary=({"status": "CONGESTION_OBSERVED",
+                                 "reason": "sustained-service-congestion",
+                                 "first_congested_hot_users": report["operational_boundary"]["hot_users"]}
+                                if report.get("stop_reason") == "sustained-service-congestion"
+                                else {"status": "NOT_ESTABLISHED", "reason": "observation-without-performance-thresholds"}))
         _write(output / "report.json", report)
         return report
     highest = report["boundary"]["highest_pass"]

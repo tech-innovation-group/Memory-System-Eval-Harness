@@ -38,6 +38,37 @@ def _valid_duration(value) -> bool:
             and math.isfinite(value) and value >= 0)
 
 
+def detect_congestion(measurement: dict, *, window_s: float = 10,
+                      minimum_requests: int = 20, rejection_ratio: float = .10) -> dict:
+    """Stop on sustained service pressure, not recall quality or generator lag."""
+    if window_s <= 0 or minimum_requests < 1 or not 0 < rejection_ratio <= 1:
+        raise ValueError("Invalid congestion observation parameters")
+    buckets = {}
+    for row in measurement.get("rows", []):
+        if row.get("op") not in {"read", "commit_submit"} or not row.get("sent"):
+            continue
+        start = row.get("start_s")
+        if not _valid_duration(start):
+            continue
+        bucket = buckets.setdefault(int(start // window_s), {"requests": 0, "pressure_errors": 0})
+        bucket["requests"] += 1
+        bucket["pressure_errors"] += str(row.get("http_status")) in {"429", "503", "504"} or bool(row.get("timeout_censored"))
+    windows = []
+    previous = None
+    sustained = False
+    for index, counts in sorted(buckets.items()):
+        ratio = counts["pressure_errors"] / counts["requests"]
+        congested = counts["requests"] >= minimum_requests and ratio >= rejection_ratio
+        sustained |= congested and previous == index - 1
+        previous = index if congested else None
+        windows.append({"window_index": index, **counts, "pressure_error_ratio": ratio,
+                        "congested": congested})
+    return {"observed": sustained, "kind": "sustained-rejection-or-timeout",
+            "window_s": window_s, "minimum_requests": minimum_requests,
+            "rejection_ratio": rejection_ratio, "required_consecutive_windows": 2,
+            "windows": windows}
+
+
 def search_summary(rows: list[dict]) -> dict:
     sent = [r for r in rows if r.get("sent")]
     successful = [r for r in sent if r.get("success")]

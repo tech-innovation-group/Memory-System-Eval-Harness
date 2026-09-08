@@ -910,6 +910,10 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                 for level in metric.get("levels", [])
             ])
             visual += details("查看各档吞吐与完成状态", table(metric.get("levels", []), [("topology", "拓扑"), ("hot_users", "热用户"), ("load_mode", "负载"), ("status", "数据状态"), ("sent_search_rps", "Search发送/s"), ("effective_search_rps", "Search完成/s")]))
+            anomaly = metric.get("first_operational_anomaly") or {}
+            if anomaly.get("kind") == "congestion":
+                visual += f"<p><b>已观测拥塞档：{esc(anomaly.get('hot_users'))} 热用户，负载 {esc(anomaly.get('load_profile'))}。</b>已按持续阻塞规则停止加压；这不是稳定承载量，也不证明服务崩溃。停压后恢复情况另列。</p>"
+                visual += details("查看拥塞停止规则与逐窗口分母", "<pre>" + esc(json.dumps(anomaly, ensure_ascii=False, indent=2)) + "</pre>")
             visual += details("查看 DAU 画像换算", table(metric.get("dau_scenarios", []), [("name", "DAU情景"), ("searches_per_user_day", "Search/日"), ("commits_per_user_day", "Commit/日"), ("peak_to_average_ratio", "峰均比"), ("traffic_equivalent_dau", "流量等价DAU"), ("is_measured_maximum", "实测最大值")]))
             resource_rows = [{"topology": level.get("topology"), "hot_users": level.get("hot_users"),
                               "load_mode": level.get("load_mode"), **sample}
