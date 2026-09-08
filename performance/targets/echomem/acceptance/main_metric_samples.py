@@ -17,6 +17,7 @@ from performance.probe import ProbeModule, ProbeRunner
 from performance.targets.echomem.acceptance.capacity_experiment import _load_actors, _write
 from performance.targets.echomem.acceptance.capacity_load import measure
 from performance.targets.echomem.acceptance.capacity_statistics import evaluate_level, search_summary
+from performance.targets.echomem.acceptance.commit_evidence import STATES, commit_outcomes, receipt
 from performance.targets.echomem.acceptance.six_metrics import jain
 from performance.targets.echomem.probes import commit_recovery
 from performance.targets.echomem.probes._client import extract_archive, status_from
@@ -43,27 +44,42 @@ def flood(actors: list, sessions: list[tuple], *, delay_s: float = 5,
     def submit(item):
         index, sid = item
         client = actors[index].client
-        row = {"identity_index": index, "submit_at": time.monotonic()}
+        row = {"identity_index": index, "submit_at": time.monotonic(), "submission_attempts": 1}
         try:
             result = client.commit(sid, idempotency_key="main-sample-" + uuid.uuid4().hex)
             archive = extract_archive(result.payload)
-            row.update(http_status=result.status_code, accepted_202=result.status_code == 202 and bool(archive),
-                       accepted_at=time.monotonic())
+            row.update(receipt(result), accepted_202=result.status_code == 202 and bool(archive),
+                       submit_finished_at=time.monotonic())
             if not row["accepted_202"]:
                 return row
+            row["accepted_at"] = row["submit_finished_at"]
+            row["polls"] = []
             deadline = time.monotonic() + commit_timeout_s
             while time.monotonic() < deadline:
-                response = client.request("GET", f"/api/sessions/{sid}/commits/{archive}",
-                    timeout_s=min(10, max(.01, deadline - time.monotonic())), operation="commit_poll")
+                poll_started = time.monotonic()
+                try:
+                    response = client.request("GET", f"/api/sessions/{sid}/commits/{archive}",
+                        timeout_s=min(10, max(.01, deadline - time.monotonic())), operation="commit_poll")
+                except Exception:
+                    row["polls"].append({"started_at": poll_started, "http_status": None,
+                                         "state": "unknown", "transport_exception": True})
+                    time.sleep(min(1, max(0, deadline - time.monotonic())))
+                    continue
                 state = status_from(response.payload)
-                row["state"] = state
+                row["polls"].append({**receipt(response), "started_at": poll_started,
+                                     "state": state if state in STATES else "unknown"})
+                if response.status_code == 200:
+                    row["state"] = state if state in STATES else "unknown"
                 if response.status_code == 200 and state in {"completed", "failed", "error"}:
                     row.update(completed=state == "completed", terminal_at=time.monotonic())
                     break
+                if response.status_code == 200 and state in STATES:
+                    row["last_nonterminal_at"] = poll_started
                 time.sleep(min(1, max(0, deadline - time.monotonic())))
-            row["observed_until"] = time.monotonic()
         except Exception as exc:
             row["error_class"] = type(exc).__name__
+        finally:
+            row["observed_until"] = time.monotonic()
         return row
 
     with ThreadPoolExecutor(max_workers=32) as pool:
@@ -94,6 +110,7 @@ def summarize_flood(baseline: dict, loaded: dict, commits: list[dict], identitie
     return {"status": "MEASURED", "performance_requirements_applied": False,
             "expected_identity_indices": list(range(identities)), "minimum_flood_commits": 32,
             "commit_planned": len(commits), "accepted_202": len(accepted),
+            "commit_outcomes": commit_outcomes(commits),
             "completed_including_drain": sum(bool(c.get("completed")) for c in commits),
             "unresolved_after_observation": sum(
                 c.get("accepted_202", False) and not c.get("terminal_at") for c in commits

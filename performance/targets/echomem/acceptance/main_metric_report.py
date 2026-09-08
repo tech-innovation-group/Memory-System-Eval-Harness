@@ -74,9 +74,10 @@ def contention_matrix_counts(value: dict) -> tuple[dict, dict]:
                            "search_inverse_p95_jain": joint.get("search_inverse_p95_jain"),
                            "commit_planned": joint.get("commit_planned"),
                            "accepted_202": joint.get("accepted_202"),
+                           "commit_outcomes": joint.get("commit_outcomes", {}),
                            "completed_including_drain": joint.get("completed_including_drain"),
                            "unresolved_after_observation": joint.get("unresolved_after_observation"),
-                           "overlap_search": joint.get("overlap_search"),
+                           "overlap_search": joint.get("overlap_search") or {},
                            "paired": joint.get("paired", [])}
                           for sample, joint in zip(samples, joints)],
         commit_jain_values=[joint.get("commit_jain") for joint in joints],
@@ -448,6 +449,16 @@ def render(report: dict) -> str:
     priority_rows = [[f"T{p['identity_index']+1}", p["before_p95_s"], p["during_p95_s"],
         p["p95_degradation_percent"], p["during_sent"], p["during_http_errors"]]
         for p in priority_counts(joint)["pairs"]]
+    commit_outcome_rows = []
+    for i, repeat in enumerate(joint.get("repeat_summaries") or [joint], 1):
+        outcomes = repeat.get("commit_outcomes") or {}
+        commit_outcome_rows.append([
+            repeat.get("repeat", i), outcomes.get("recorded_submissions"),
+            outcomes.get("accepted_202"), outcomes.get("http_rejected"),
+            outcomes.get("http_status_counts"), outcomes.get("rejection_reason_counts"),
+            outcomes.get("unknown_rejection_reasons"), outcomes.get("missing_archive_on_202"),
+            outcomes.get("completed"), outcomes.get("failed"), outcomes.get("unresolved"),
+            outcomes.get("poll_http_errors")])
     observable_rows = [[r["tenant"],r["lane"],r["queued_peak_during_load"],r["queued"],r["wait_seconds_total"],
         r["exec_seconds_total"],r["rejected_total"],r["accepted_delta"]] for r in m6["rows"]]
     recovery_sample_rows = [[i+1, sample.get("kill_delay_s"), sample.get("status"),
@@ -522,7 +533,8 @@ def render(report: dict) -> str:
 <title>4U8G 六项指标 · 综合实测</title><style>*{{box-sizing:border-box}}body{{margin:0;color:#24323a;background:#f6f8f9;font:15px/1.7 system-ui,"PingFang SC",sans-serif;letter-spacing:0}}main{{max-width:1360px;margin:auto;padding:28px}}h1{{font-size:28px}}h2{{font-size:21px}}h3{{font-size:17px}}header,section{{padding:20px 0;border-bottom:1px solid #ccd8dc}}.muted{{color:#576b74}}.notice{{border-left:4px solid #ad4637;padding:8px 16px;background:#fff1ec}}.conclusion{{border-left:4px solid #2b8175;padding:10px 16px;background:#edf7f4;margin:12px 0}}.conclusion>strong{{display:block;color:#17685e;font-size:17px}}.conclusion p{{margin:5px 0}}.conclusion small{{display:block;color:#40555e;margin-top:5px}}.stats{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin:24px 0}}.stats div{{border-top:3px solid #278575;padding-top:12px}}.stats b{{display:block;font-size:27px}}.scroll{{overflow:auto}}table{{width:100%;border-collapse:collapse;background:white;font-size:13px}}th,td{{padding:10px;border-bottom:1px solid #d7e0e5;text-align:left;vertical-align:top}}th{{background:#e6eef1;white-space:nowrap}}td{{overflow-wrap:anywhere}}code{{overflow-wrap:anywhere}}details{{border-top:1px solid #dbe3e6;margin-top:14px;padding-top:9px}}summary{{cursor:pointer;color:#176b73;font-weight:650}}.chart-grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;margin:18px 0}}.chart-grid>div{{min-width:0;border-top:2px solid #9eb3bc;padding-top:8px}}.chart-wide{{max-width:900px}}.bar{{display:grid;grid-template-columns:145px minmax(0,1fr) 70px;gap:12px;align-items:center;margin:10px 0}}.bar>div,.track{{height:14px;background:#dae3e7;display:block}}.bar i,.track em{{display:block;height:100%;font-style:normal}}.bar b{{text-align:right}}.comparison-chart{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:16px 0}}.compare{{display:grid;grid-template-columns:58px minmax(0,1fr) 62px;gap:5px 8px;align-items:center;background:#fff;padding:10px;border-top:2px solid #9eb3bc}}.compare>b{{grid-column:1/-1}}.compare strong{{text-align:right}}.flow{{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:16px 0}}.flow span{{background:#fff;border-top:3px solid #278575;padding:10px;text-align:center;font-size:13px}}.flow b{{display:block}}a{{color:#16699b}}@media(max-width:900px){{.chart-grid{{grid-template-columns:1fr}}}}@media(max-width:700px){{main{{padding:14px}}.stats,.comparison-chart{{grid-template-columns:1fr}}h1{{font-size:24px}}.bar{{grid-template-columns:110px minmax(0,1fr) 58px;font-size:12px}}.flow{{grid-template-columns:1fr}}}}</style></head><body><main>
 <header><p class="muted">服务器真实 HTTP / 真实模型 / 4 CPU · 8 GiB / PR31 基线 + PR32 测试增强</p><h1>EchoMem 六项指标综合压测报告</h1>
 <p>报告按“指标含义、测试方法、图表数据、结论、模块改进”组织。未设置业务性能合格线；所有失败、超时、拒绝和召回错误均保留在分母。</p>
-{'<p class="notice">多批次汇总：M2来自本次单独指定的故障矩阵，其他指标来自各自选定的历史样本；不是六项同时复测。不同批次的配置、基线和采样方法需分别核对，数值变化不等于EchoMem性能提升。</p>' if report.get('publication', {}).get('separate_fault_matrix') else ''}
+{'<p class="notice">多批次汇总：各指标来自分别选定的测试批次，不是六项同时复测。不同批次的配置、基线、请求率和采样方法需分别核对，数值变化不等于EchoMem性能提升。</p>' if report.get('publication', {}).get('separate_fault_matrix') or report.get('publication', {}).get('metric_sources') else ''}
+{''.join('<p><b>' + escape(str(row.get('metrics', ''))) + '：</b>' + escape(str(row.get('description', ''))) + '</p>' for row in report.get('publication', {}).get('metric_sources', []))}
 <p>EchoMem <code>{fmt(env.get('echomem_commit'))}</code>；测试平台 <code>{fmt(env.get('platform_base_commit'))}</code>。</p>
 <p class="notice">版本口径：容量详情保留各档 platform_base_pr / platform_base_commit；缺失表示历史快照未记录该字段，不能称所有档位均已重跑本版本。容器4U8G是资源限额，不代表宿主机资源独占。</p></header>
 <div class="stats">{''.join('<div>'+escape(label)+'<b>'+fmt(value)+'</b></div>' for label,value in cards)}</div>
@@ -559,7 +571,10 @@ def render(report: dict) -> str:
 {bar('代表轮 Commit Jain',fairness.get('commit_jain'),1,'#258875')}{bar('代表轮 Search Jain',fairness.get('search_inverse_p95_jain'),1,'#327d9d')}
 {table(['轮次','证据状态','窗口 s','预期租户','Commit计数覆盖','Search覆盖','重算Commit Jain','重算Search逆P95 Jain'],[[r['repeat'],r['fairness']['status'],r['fairness']['window_s'],r['fairness']['expected_tenants'],r['fairness']['commit_tenants'],r['fairness']['search_tenants'],r['fairness']['commit_jain'],r['fairness']['search_inverse_p95_jain']] for r in load_evidence['rows']])}
 <p>Jain 接近 1 表示相对均匀，不代表快或可靠；零完成租户保留，全部零完成时指数留空。窗口后的排空完成不混入窗口吞吐；此为洪泛窗口观察，不是长时间稳态公平性结论。</p></section>
-<section><h2>M4 · Commit 洪泛下的 Search</h2><p><b>测试方式：</b>先在无Commit时用固定问题序列测Search基线；随后同时提交32个真实Commit，并用同一问题、同一到达计划测Search。只选与至少一个已受理且未终态Commit时间区间重叠的Search样本计算优先级结果。</p>{conclusion_panel('M4')}<div class="flow"><span><b>1</b>预注入记忆</span><span><b>2</b>无Commit基线</span><span><b>3</b>32个Commit并发受理</span><span><b>4</b>积压重叠Search</span><span><b>5</b>轮询终态并对账</span></div>{priority_chart}<p>受理 202：{fmt(joint.get('accepted_202'))}/{fmt(joint.get('commit_planned'))}；每任务 180 秒观察期内完成：{fmt(joint.get('completed_including_drain'))}；观察期内未见终态：{fmt(joint.get('unresolved_after_observation', joint.get('pending_after_drain')))}。</p>
+<section><h2>M4 · Commit 洪泛下的 Search</h2><p><b>测试方式：</b>先在无Commit时用固定问题序列测Search基线；随后并发提交真实Commit，并用同一问题、同一到达计划测Search。选取开始于Commit受理之后、首次观测终态（或结束观察）之前的Search样本。轮询间隔内的实际完成时刻未知，该区间是客户端观察范围，不能证明服务内部严格调度顺序。</p>{conclusion_panel('M4')}<div class="flow"><span><b>1</b>预注入记忆</span><span><b>2</b>无Commit基线</span><span><b>3</b>并发提交，分别记录受理与拒绝</span><span><b>4</b>观察区间内Search</span><span><b>5</b>轮询原任务终态</span></div>{priority_chart}<p>受理 202：{fmt(joint.get('accepted_202'))}/{fmt(joint.get('commit_planned'))}；各任务配置的观察期限内完成：{fmt(joint.get('completed_including_drain'))}；观察期内未见终态：{fmt(joint.get('unresolved_after_observation', joint.get('pending_after_drain')))}。</p>
+<h3>Commit 受理、拒绝与终态</h3>
+{table(['轮次','已记录提交','受理202','HTTP拒绝','HTTP状态分布','拒绝原因分布','原因未明确','202缺archive','completed','failed/error','未终态','轮询HTTP错误'],commit_outcome_rows)}
+<p>每个Commit只提交一次；拒绝不自动重提，避免隐藏过载。503不自动归因于限流或API key；原因码仅保留已识别公共枚举。状态轮询可在原期限内继续，但全部轮询错误保留。旧数据未记录的字段显示未采集。</p>
 {details('查看逐租户基线与洪泛对比',table(['租户','无Commit P95 s','洪泛窗口P95 s','变化 %','洪泛Search样本','HTTP错误'],priority_rows))}
 {table(['轮次','证据状态','有效配对','预期租户','Commit计划','实际202受理','最低洪泛受理','重叠Search发出','严格有效','HTTP/传输错误','重叠P95 s'],[[r['repeat'],r['priority']['status'],r['priority']['valid_pairs'],r['priority']['expected_tenants'],r['priority']['commit_planned'],r['priority']['accepted_202'],r['priority']['minimum_flood_commits'],r['priority']['sent'],r['priority']['success'],r['priority']['transport_or_http_errors'],r['priority']['p95_s']] for r in load_evidence['rows']])}
 {render_route_paths(priority_paths)}

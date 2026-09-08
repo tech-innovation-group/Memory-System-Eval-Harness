@@ -18,6 +18,18 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+# EchoMem's HTTP handlers put these public enums in a string-valued `error`.
+# Never treat an arbitrary error message as public observability data.
+PUBLIC_HTTP_ERROR_CODES = frozenset({
+    "AUTH_UNAVAILABLE", "COMMIT_UNAVAILABLE", "COMMIT_QUEUE_FULL",
+    "HTTP_INGRESS_SATURATED", "HTTP_LANE_SATURATED", "TENANT_RATE_LIMITED",
+    "TEST_FAULT_INJECTED", "RETRIEVAL_BUSY", "USAGE_QUERY_BUSY",
+    "TENANT_OWNER_CONFLICT", "TENANT_HOME_CONFLICT", "TENANT_FENCE_STALE",
+    "UNAUTHENTICATED", "INVALID_ARGUMENT", "CONFLICT", "NOT_FOUND",
+    "INPUT_ASSOCIATION_NOT_CONFIGURED", "LOG_QUERY_FORBIDDEN",
+    "LOG_QUERY_UNAVAILABLE", "INTERNAL_ERROR",
+})
+
 @dataclass
 class HttpResult:
     method: str
@@ -124,10 +136,9 @@ def _server_observability(
         result[target] = str(value) if target.startswith("server_") and target not in {
             "server_queue_depth", "server_active_workers"
         } else value
-    # EchoMem emits this public enum under `error`, not `error_code`.
-    # Do not export arbitrary error messages (which can contain tenant data).
-    if not result.get("reason_code") and payload.get("error") == "TEST_FAULT_INJECTED":
-        result["reason_code"] = "TEST_FAULT_INJECTED"
+    error = payload.get("error")
+    if not result.get("reason_code") and isinstance(error, str) and error in PUBLIC_HTTP_ERROR_CODES:
+        result["reason_code"] = error
     return result
 
 

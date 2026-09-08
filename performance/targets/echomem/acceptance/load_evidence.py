@@ -38,6 +38,7 @@ def _indexed(rows, expected):
 
 
 def _search(summary):
+    summary = summary if isinstance(summary, dict) else {}
     sent, success, errors = (count(summary.get(k)) for k in
                              ("sent", "success", "transport_or_http_errors"))
     p95 = number(summary.get("p95_s"))

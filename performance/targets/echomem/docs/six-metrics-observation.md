@@ -133,6 +133,25 @@ curl -fsS -X POST http://127.0.0.1:8010/api/inspect/test-control/fault \
 汇总值均可追溯到 JSON/CSV。字段未采集时保持 `null`；运行器不会删除失败样本、
 隐藏错误或用 0 填补缺失值。
 
+### M3/M4 洪泛补测的 Commit 证据
+
+`performance.targets.echomem.acceptance.contention_matrix` 的固定租户洪泛补测会保存
+每次提交的 HTTP 状态、可识别公共原因码、Retry-After、受理时间和终态轮询历史。
+综合报告按轮次列出计划/记录数、202、HTTP 拒绝、未知原因、完成、失败与未终态。
+
+负载中的 Commit 只提交一次：503/429 不自动重提，不能用后来成功的尝试覆盖拒绝。
+轮询是对已受理原任务的只读观察，可在原期限内继续；轮询的错误也全部保留。
+503 本身不能证明限流、模型欠费或 API key 异常，必须结合实际原因码和服务证据。
+未识别的原因仅标 `UNRECOGNIZED`；历史未记录原因标 `NOT_RECORDED`，不导出响应正文。
+
+兼容 EchoMem 的字符串 `error` 响应（如 `HTTP_LANE_SATURATED`、
+`HTTP_INGRESS_SATURATED`、`COMMIT_UNAVAILABLE`），只导出固定公共枚举。
+这一区分可用于定位 HTTP 入口拒绝、Commit 服务不可用等不同阶段，不能仅凭503推断。
+采集器修复不会回填历史缺失原因，也不会改变历史样本的通过状态。
+
+洪泛计划数与实际受理量分开。若锁定场景要求至少32个已受理Commit而实际只有16个，
+报告会同时展示16次受理、剩余拒绝和真实Search结果，但不会将该轮判为完整洪泛证据。
+
 ### M6 过程完整性
 
 M6 不只比较首尾。每一帧均使用运行前锁定的 `tenant × lane` 分母，空帧、
