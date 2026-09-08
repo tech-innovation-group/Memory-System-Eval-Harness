@@ -102,6 +102,18 @@ def test_real_engine_read_only_baseline_emits_no_write_http(server):
     assert {row.op for row in result.records} == {"read"}
 
 
+def test_report_exposes_baseline_counts_quality_and_mean(tmp_path):
+    from performance.targets.echomem.acceptance.observation import evaluate_observation, write_observation_report
+    result = evaluate_observation({"runs":[]}, {}, [], quick=True, selected_metrics=["M4"])
+    result["metrics"]["M4"]["baseline"] = {"planned_or_recorded":120, "mean_ms":1170.763,
+        "p95_ms":2943.393, "errors":0, "quality_ok":109, "quality_missing":0}
+    path = tmp_path / "report.html"
+    write_observation_report(result, path)
+    content = path.read_text()
+    assert "独立基线" in content
+    assert "1170.76" in content and ">109<" in content and ">120<" in content
+
+
 @pytest.mark.parametrize("change", ["legacy", "timeout", "rejected", "duplicate", "missing_tenant", "invalid_time", "no_pending", "baseline_empty_recall"])
 def test_three_files_do_not_prove_formal_m4(tmp_path, change):
     def mutate(name, rows):

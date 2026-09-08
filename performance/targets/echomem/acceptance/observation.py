@@ -929,7 +929,9 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                 for window in metric.get("windows", [])
             ])
             visual += "<p>宽观察窗口不等于任务始终未完成；最后一次成功 pending/running 轮询之前才有确认重叠证据。下表错误和质量失败保留在分母，不以延迟或质量阈值判性能失败。未确认终态不等于任务执行失败。</p>"
-            overlap_rows = [{"scenario": w.get("scenario"), "scope": scope, **(w.get(key) or {})}
+            overlap_rows = ([{"scenario": "无 Commit 基线", "scope": "独立基线", **metric["baseline"]}]
+                            if metric.get("baseline") else [])
+            overlap_rows += [{"scenario": w.get("scenario"), "scope": scope, **(w.get(key) or {})}
                             for w in metric.get("windows", []) for scope, key in (
                                 ("宽观察窗口", "overlap"), ("非终态确认窗口", "confirmed_overlap"))]
             visual += table(overlap_rows, [("scenario", "场景"), ("scope", "窗口"),

@@ -14,6 +14,7 @@ from __future__ import annotations
 import contextlib
 import http.client
 import json
+import os
 import socket
 import ssl
 import threading
@@ -602,6 +603,14 @@ class ConnectionRegistry:
             sock = _response_socket(response)
             if sock is not None:
                 _cancel_socket(sock)
+            # Registration precedes body reads: this thread still owns cleanup.
+            close_response = getattr(response, "close", None)
+            if callable(close_response):
+                with contextlib.suppress(OSError):
+                    close_response()
+            if sock is not None:
+                with contextlib.suppress(OSError):
+                    sock.close()
             raise _transport_fail("stopped")
 
     def unregister_response(self, response: Any) -> None:
@@ -615,9 +624,9 @@ class ConnectionRegistry:
     def shutdown_all(self) -> None:
         """中断路径：置关闭守卫并清空注册表，打断每个连接与在途响应的读取。
 
-        shutdown 让 POSIX 上的阻塞读以 EOF 返回；``_real_close`` 立即关闭 OS
-        句柄（``socket.close`` 因 makefile 的 SocketIO 引用而延迟关 fd），
-        Windows 上 closesocket 打断 pending 阻塞读。两者都非阻塞、不等待
+        POSIX 明文连接使用 shutdown 唤醒读取，由读取线程关闭句柄，避免
+        取消线程提前关闭仍在 poll/read 中使用的 fd。Windows/TLS 保留原有
+        立即关闭路径。取消操作非阻塞、不等待
         缓冲响应读取持有的锁；连接由被打断的 worker 在
         :func:`_drop_connection` 中自行关闭。``Connection: close`` 响应会让
         ``getresponse`` 把 ``conn.sock`` 摘除——socket 所有权转给响应，因此
@@ -653,9 +662,8 @@ class ConnectionRegistry:
             with contextlib.suppress(OSError):
                 conn.close()
         for response in responses:
-            sock = _response_socket(response)
-            if sock is not None:
-                _cancel_socket(sock)
+            with contextlib.suppress(OSError):
+                response.close()
 
 
 def _response_socket(response: Any) -> Any:
@@ -666,10 +674,12 @@ def _response_socket(response: Any) -> Any:
 
 
 def _cancel_socket(sock: Any) -> None:
-    """非阻塞打断 socket 上的在途读取：shutdown + 立即关闭 OS 句柄。"""
+    """Interrupt I/O without retiring a POSIX plaintext fd owned by a reader."""
     if not isinstance(sock, ssl.SSLSocket):
         with contextlib.suppress(OSError):
             sock.shutdown(socket.SHUT_RDWR)
+        if os.name != "nt" and isinstance(sock, socket.socket):
+            return
     real_close = getattr(sock, "_real_close", None)
     if callable(real_close):
         with contextlib.suppress(OSError):
