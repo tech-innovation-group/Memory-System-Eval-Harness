@@ -228,6 +228,13 @@ def run_case(
     # Persist the effective, quick-capped workload, not credentials or query pools.
     contract = {"version": "echomem-case-v1", "tenant_count": len(profile.tenants),
                 "query_mode": profile.params.get("query_mode", "recall")}
+    if case.get("fairness_mode") == "independent-periodic-v1":
+        contract.update({"fairness_mode": case["fairness_mode"],
+                         "measurement_start_s": case["measurement_start_s"],
+                         "measurement_end_s": case["measurement_end_s"],
+                         "arrival": {name: {"scope": spec.scope, "rps": spec.rps,
+                                            "start_s": spec.start_s, "end_s": spec.end_s}
+                                     for name, spec in profile.load.arrival.items()}})
     if case["scene"] == "scene_barrier":
         contract.update({name: profile.params.get(name) for name in (
             "barrier_count", "barrier_waves", "barrier_distribution", "commit_tenant_counts")})

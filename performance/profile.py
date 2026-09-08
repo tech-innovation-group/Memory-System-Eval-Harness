@@ -36,6 +36,9 @@ class ArrivalSpec:
     model: str = "none"  # none | fixed_rps | poisson
     rps: float = 0.0
     ramp_s: float = 0.0
+    scope: str = "global"  # global | per_tenant; rps applies to this scope
+    start_s: float = 0.0
+    end_s: float | None = None
 
 
 @dataclass
@@ -179,11 +182,23 @@ def _parse_arrival(raw: Any) -> dict[str, ArrivalSpec]:
             )
         rps = _non_negative_float(spec.get("rps"), 0.0, "load.arrival.rps")
         ramp_s = _non_negative_float(spec.get("ramp_s"), 0.0, "load.arrival.ramp_s")
+        scope = str(spec.get("scope", "global"))
+        if scope not in ("global", "per_tenant"):
+            raise ProfileError("load.arrival.scope must be global|per_tenant")
+        start_s = _non_negative_float(spec.get("start_s"), 0.0, "load.arrival.start_s")
+        end_s = (_non_negative_float(spec["end_s"], 0, "load.arrival.end_s")
+                 if spec.get("end_s") is not None else None)
+        if end_s is not None and end_s <= start_s:
+            raise ProfileError("load.arrival.end_s must be greater than start_s")
         if model != "none" and rps <= 0:
             raise ProfileError(f"load.arrival['{task_name}'].rps must be > 0 for {model}")
         if model == "none":
             rps = 0.0
-        result[task_name] = ArrivalSpec(model=model, rps=rps, ramp_s=ramp_s)
+        if model == "none" and (scope != "global" or start_s or end_s is not None):
+            raise ProfileError("load.arrival scope/start_s require an arrival model")
+        result[task_name] = ArrivalSpec(
+            model=model, rps=rps, ramp_s=ramp_s, scope=scope, start_s=start_s, end_s=end_s,
+        )
     return result
 
 

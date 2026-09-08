@@ -62,6 +62,9 @@ class RequestRecord:
     degraded_reasons: str = ""
     # -- worker-level failure context --------------------------------------
     detail: str = ""
+    arrival_task: str = ""
+    arrival_sequence: int | None = None
+    planned_at_ms: float | None = None
 
     def to_csv_row(self) -> dict[str, Any]:
         row: dict[str, Any] = {}
@@ -74,6 +77,7 @@ class RequestRecord:
 
 
 CSV_FIELDS: list[str] = [
+    "arrival_task", "arrival_sequence", "planned_at_ms",
     "scene",
     "worker_id",
     "tenant_idx",

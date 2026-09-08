@@ -507,18 +507,20 @@ def six_metric_observation_cases(*, quick: bool = False) -> list[dict]:
     }
     return [
         _case(
-            label="m3-fairness-4t", scene="scene_barrier", tenants=4,
-            commit_rpm=0.0, commit_barrier=True,
-            commit_barrier_count=barrier,
-            commit_tenant_distribution="uniform", fairness_bounded=True,
-            **common,
+            label="m3-fairness-4t", scene="scene_c_mixed", tenants=4,
+            commit_rpm=20.0 if quick else 2.0, commit_barrier=False,
+            arrival_scope="per_tenant", commit_start_s=3 if quick else 30,
+            arrival_end_s=duration, measurement_start_s=3 if quick else 30,
+            measurement_end_s=duration, fairness_mode="independent-periodic-v1",
+            **{**common, "search_rps": 1.0, "duration_s": duration + (30 if quick else 180)},
         ),
         _case(
-            label="m3-fairness-8t", scene="scene_barrier", tenants=8,
-            commit_rpm=0.0, commit_barrier=True,
-            commit_barrier_count=barrier * 2,
-            commit_tenant_distribution="uniform", fairness_bounded=True,
-            **common,
+            label="m3-fairness-8t", scene="scene_c_mixed", tenants=8,
+            commit_rpm=20.0 if quick else 2.0, commit_barrier=False,
+            arrival_scope="per_tenant", commit_start_s=3 if quick else 30,
+            arrival_end_s=duration, measurement_start_s=3 if quick else 30,
+            measurement_end_s=duration, fairness_mode="independent-periodic-v1",
+            **{**common, "search_rps": 1.0, "duration_s": duration + (30 if quick else 180)},
         ),
         _case(
             label="m4-baseline", scene="scene_capacity", tenants=4,

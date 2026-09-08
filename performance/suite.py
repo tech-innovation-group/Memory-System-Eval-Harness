@@ -134,11 +134,15 @@ def build_case_profile(
     if "read" in scene.tasks:
         mix["read"] = max(1, read_workers)
         if search_rps > 0:
-            arrival["read"] = ArrivalSpec(model="fixed_rps", rps=search_rps)
+            arrival["read"] = ArrivalSpec(model="fixed_rps", rps=search_rps,
+                scope=case.get("arrival_scope", "global"), start_s=float(case.get("search_start_s", 0)),
+                end_s=case.get("arrival_end_s"))
     if "write" in scene.tasks:
         mix["write"] = max(1, write_workers) if write_workers > 0 else 0
         if commit_rps > 0:
-            arrival["write"] = ArrivalSpec(model="fixed_rps", rps=commit_rps)
+            arrival["write"] = ArrivalSpec(model="fixed_rps", rps=commit_rps,
+                scope=case.get("arrival_scope", "global"), start_s=float(case.get("commit_start_s", 0)),
+                end_s=case.get("arrival_end_s"))
 
     params: dict[str, Any] = {
         "top_k": int(case.get("top_k", 5)),
@@ -295,6 +299,7 @@ def run_case(
     status = "completed"
     stubborn = False
     records: list[RequestRecord] = []
+    run_result = None
     try:
         if timeout_s and timeout_s > 0:
             holder: dict[str, Any] = {}
@@ -318,16 +323,22 @@ def run_case(
                         "持久化 TIMEOUT 产物后中止套件",
                         case["label"],
                     )
-            else:
-                records = holder["result"].records
+            # A stopped run still owns real evidence; timeout changes status,
+            # not the denominator. Never read a result while its thread is live.
+            if not thread.is_alive():
+                run_result = holder["result"]
+                records = run_result.records
         else:
-            records = Engine(profile, scene).run().records
+            run_result = Engine(profile, scene).run()
+            records = run_result.records
     except Exception:
         status = "ENV_ERROR"
     summarize_fn = summarize or summarize_case_records
     summary = summarize_fn(records)
     summary["status"] = status
     summary["runner_timeout"] = runner_timeout
+    summary["run_clock"] = {"started_wall_ms": getattr(run_result, "started_wall_ms", None),
+                            "load_duration_s": profile.load.duration_s}
     write_records(case_dir, records, summary)
     if write_evidence is not None:
         write_evidence(case_dir, records)

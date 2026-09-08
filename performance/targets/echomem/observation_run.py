@@ -316,7 +316,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 if dependency not in scenarios:
                     scenarios.append(dependency)
         if scenarios:
-            quick_spec = QuickSpec(duration_cap_s=15, barrier_count_cap=8, include_seed=True) if args.quick else None
+            quick_spec = QuickSpec(duration_cap_s=45, barrier_count_cap=8, include_seed=True) if args.quick else None
             suite = run_suite(
                 profile, suite_dir=output, quick=quick_spec,
                 profile_name="six-metrics-observation", base_url=profile["base_url"],

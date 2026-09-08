@@ -48,6 +48,7 @@ class RunResult:
     records: list[RequestRecord]
     started_at: float
     finished_at: float
+    started_wall_ms: float | None = None
 
     @property
     def elapsed_s(self) -> float:
@@ -123,38 +124,44 @@ def split_workers(total: int, weights: dict[str, int]) -> dict[str, int]:
 
 
 class RateGate:
-    """Global arrival gate for one task type.
+    """Arrival gate shared by one task's workers within its configured scope.
 
     ``fixed_rps`` spaces starts on an exact schedule: during ``ramp_s``
     the rate ramps linearly from zero (slot times follow
     ``t(k) = sqrt(2 * ramp_s * k / rps)``), then becomes constant.  The
-    first start fires immediately.  ``poisson`` samples global
+    first start fires at ``start_s``.  ``poisson`` samples
     exponential inter-arrival gaps at the target rate (no ramp).
     """
 
-    def __init__(self, arrival: ArrivalSpec):
+    def __init__(self, arrival: ArrivalSpec, task_name: str = ""):
         self.arrival = arrival
+        self.task_name = task_name
         self._lock = threading.Lock()
         self._claimed = 0
-        self._next_slot = 0.0
+        self._next_slot = arrival.start_s
 
-    def wait(self, started_at: float, stop: threading.Event) -> None:
+    def wait(self, started_at: float, stop: threading.Event) -> tuple[int, float] | None:
         if self.arrival.model == "fixed_rps":
             with self._lock:
                 k = self._claimed
                 self._claimed += 1
-            slot = self._fixed_slot_time(k)
+            slot = self.arrival.start_s + self._fixed_slot_time(k)
         else:
             with self._lock:
+                k = self._claimed
+                self._claimed += 1
                 now = time.perf_counter() - started_at
                 slot = max(now, self._next_slot)
                 self._next_slot = slot + random.expovariate(self.arrival.rps)
         while True:
+            end_s = self.arrival.end_s
+            if end_s is not None and (slot >= end_s or time.perf_counter() >= started_at + end_s):
+                return None
             remaining = started_at + slot - time.perf_counter()
             if remaining <= 0:
-                return
+                return k, slot
             if stop.wait(remaining):
-                return
+                return None
 
     def _fixed_slot_time(self, k: int) -> float:
         arrival = self.arrival
@@ -183,21 +190,27 @@ class Engine:
         self._phases: list[Phase] = []
         self._phases_lock = threading.Lock()
         self._started_at = 0.0
+        self._started_wall_ms = 0.0
         self._finished_at = 0.0
 
     # -- lifecycle --------------------------------------------------------
 
     def run(self) -> RunResult:
         self._started_at = time.perf_counter()
+        self._started_wall_ms = time.time() * 1000
         try:
             assignment = self._assign_workers()
             self._gates = self._build_gates()
             workers: list[tuple[threading.Thread, Callable[[Ctx], None]]] = []
             worker_index = 0
             for task_name, count in assignment.items():
-                gate = self._gates.get(task_name)
+                arrival = self.profile.load.arrival.get(task_name)
+                per_tenant = arrival is not None and arrival.scope == "per_tenant"
+                if per_tenant and count and count < len(self._tenants()):
+                    raise SceneError(f"per_tenant arrival for {task_name} requires at least one worker per tenant")
                 for _ in range(count):
                     tenant_idx = worker_index % len(self._tenants())
+                    gate = self._gates.get((task_name, tenant_idx if per_tenant else None))
                     ctx = self._make_ctx(worker_id=worker_index, tenant_idx=tenant_idx)
                     thread = threading.Thread(
                         target=self._worker_loop,
@@ -232,6 +245,7 @@ class Engine:
             records=list(self.records),
             started_at=self._started_at,
             finished_at=self._finished_at,
+            started_wall_ms=self._started_wall_ms,
         )
 
     def stop(self) -> None:
@@ -258,11 +272,15 @@ class Engine:
             )
         return split_workers(self.profile.load.workers, weights)
 
-    def _build_gates(self) -> dict[str, RateGate]:
-        gates: dict[str, RateGate] = {}
+    def _build_gates(self) -> dict[tuple[str, int | None], RateGate]:
+        gates: dict[tuple[str, int | None], RateGate] = {}
         for task_name, arrival in self.profile.load.arrival.items():
             if arrival.model != "none":
-                gates[task_name] = RateGate(arrival)
+                if arrival.scope == "per_tenant":
+                    for tenant_idx in range(len(self._tenants())):
+                        gates[(task_name, tenant_idx)] = RateGate(arrival, task_name)
+                else:
+                    gates[(task_name, None)] = RateGate(arrival, task_name)
         return gates
 
     def _tenants(self) -> list[TenantSpec]:
@@ -276,9 +294,13 @@ class Engine:
     ) -> None:
         while not self._stop.is_set():
             if gate is not None:
-                gate.wait(self._started_at, self._stop)
-                if self._stop.is_set():
+                slot = gate.wait(self._started_at, self._stop)
+                if self._stop.is_set() or slot is None:
                     return
+                if gate.arrival.scope == "per_tenant":
+                    ctx.record(op="arrival", stage_ms=max(0, (time.perf_counter() - self._started_at - slot[1]) * 1000),
+                               status="ok", arrival_task=gate.task_name, arrival_sequence=slot[0],
+                               planned_at_ms=self._started_wall_ms + slot[1] * 1000)
             try:
                 task_fn(ctx)
             except Exception as exc:

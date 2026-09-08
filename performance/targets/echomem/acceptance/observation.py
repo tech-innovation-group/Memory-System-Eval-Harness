@@ -37,7 +37,7 @@ METRIC_PURPOSES = {
 METRIC_METHODS = {
     "M1": "按跨租户和租户内两种拓扑逐档增加热用户，分别运行 Search、Commit、混合和热点负载，记录吞吐、延迟、错误、积压、CPU 与内存。",
     "M2": "四个目标租户依次注入 reject 和 delay，分别采集故障前、故障中、恢复后数据，对比三个旁观租户的 Search P95 与错误。",
-    "M3": "让 4 租户和 8 租户以相同速率同时 Search 与 Commit，保留零完成租户，用逐租户完成吞吐和 Search P95 倒数计算 Jain 指数。",
+    "M3": "分别用 4/8 个独立租户，每租户 Search 1 次/秒；预热 30 秒后每租户每 30 秒启动一次 open→add×4→Commit→轮询。第 300 秒停压，最多再观察 180 秒。只统计 [30,300) 秒内的完成吞吐与该窗口发起的 Search 延迟；窗口外排空另列。快速模式使用更短周期，仅验证采集链路。",
     "M4": "先测四租户已预注入记忆的 Search 基线，再分别制造均匀和单租户 Commit 洪泛。按同一 tenant/session/archive 对账受理与轮询；Search 开始时刻落在受理至最后成功非终态轮询之间才计入确认重叠。宽观察窗口另列，未测到的内部调度顺序不作结论。",
     "M5": "Commit 返回 202 且仍未完成时 kill -9 专用容器，重启后只轮询原任务，再对账消息集合、顺序、cursor、archive 和幂等重试。",
     "M6": "负载前、中、后持续读取受保护观测接口，按实际配置逐帧枚举 tenant×lane；空帧、非法值、重复行和采样空档均保留。进程重启按身份分段，计数回退不能单独证明RESET；检查四元组及NORMAL/QUEUE/REJECT/RESET。",
@@ -206,36 +206,93 @@ def summarize_m2(suite: dict[str, Any], profile: dict[str, Any], *, quick: bool)
 
 def _fairness_window(run: dict[str, Any], tenant_count: int) -> dict[str, Any]:
     rows = _records(run)
-    duration = float(run.get("duration_s") or (run.get("summary") or {}).get("run", {}).get("duration_s") or 0)
+    summary = run.get("summary") or {}
+    contract = summary.get("measurement_contract") or {}
+    clock = summary.get("run_clock") or {}
+    origin = _number(clock.get("started_wall_ms"))
+    start = _number(contract.get("measurement_start_s"))
+    end = _number(contract.get("measurement_end_s"))
+    load_end = _number(clock.get("load_duration_s"))
+    valid_window = (origin is not None and start is not None and end is not None
+                    and load_end is not None and 0 <= start < end <= load_end)
+    window_start = origin + start * 1000 if valid_window else None
+    window_end = origin + end * 1000 if valid_window else None
+    duration = end - start if valid_window else float(run.get("duration_s") or 0)
+    issues = []
+    if not valid_window:
+        issues.append("缺少有效的运行起点/测量窗口；历史数据仅展示全程计数")
+    if contract.get("fairness_mode") != "independent-periodic-v1":
+        issues.append("不是独立周期公平性场景，不能作为稳态公平性完整证据")
+
+    def inside(value):
+        return value is not None and (not valid_window or window_start <= value < window_end)
+
+    def request_start(row):
+        ts, elapsed = _number(row.get("ts_ms")), _number(row.get("stage_ms"))
+        return ts - elapsed if ts is not None and elapsed is not None else None
+
     tenants = []
     for tenant in range(tenant_count):
         selected = [row for row in rows if str(row.get("tenant_idx")) == str(tenant)]
-        submits = [row for row in selected if row.get("op") == "commit_submit"]
+        submits = [row for row in selected if row.get("op") == "commit_submit" and inside(request_start(row))]
         evidence = _commit_window_evidence(selected)
+        if any(evidence.get(name) for name in ("missing_poll_audit", "invalid_intervals", "invalid_202_receipts",
+                                               "duplicate_receipts", "duplicate_observations", "orphan_observations")):
+            issues.append(f"租户 {tenant} Commit 回执/轮询证据不完整")
         accepted = evidence["accepted"]
         terminal = list(evidence["terminals"].values())
-        done = [row for row in terminal if row.get("status") == "ok"]
+        all_done = [row for row in terminal if row.get("status") == "ok"]
+        done = [row for row in all_done if inside(_number(row.get("completed_at_ms")))]
         failed = [row for row in terminal if row.get("status") != "ok"]
-        completion_times = sorted(value for row in done if (value := _number(row.get("completed_at_ms") or row.get("ts_ms"))) is not None)
+        completion_times = sorted(value for row in done if (value := _number(row.get("completed_at_ms"))) is not None)
         longest_gap = None
-        if completion_times:
-            request_times = [_number(row.get("ts_ms")) for row in selected]
-            request_times = [value for value in request_times if value is not None]
-            window_start = min(request_times, default=completion_times[0])
-            window_end = window_start + duration * 1000
+        if valid_window:
             points = [window_start, *completion_times, window_end]
             longest_gap = max((b - a for a, b in zip(points, points[1:])), default=0) / 1000
+        arrivals = {}
+        for task in ("read", "write"):
+            spec = (contract.get("arrival") or {}).get(task) or {}
+            rate, offset = _number(spec.get("rps")), _number(spec.get("start_s"))
+            arrival_end = _number(spec.get("end_s"))
+            planned = None
+            if (valid_window and spec.get("scope") == "per_tenant" and rate is not None
+                    and rate > 0 and offset is not None and arrival_end is not None):
+                upper = max(0, math.ceil((min(end, arrival_end) - offset) * rate - 1e-9))
+                lower = max(0, math.ceil((start - offset) * rate - 1e-9))
+                planned = max(0, upper - lower)
+            emitted = [row for row in selected if row.get("op") == "arrival"
+                       and row.get("arrival_task") == task and inside(_number(row.get("planned_at_ms")))]
+            in_window = [row for row in emitted if inside(_number(row.get("ts_ms")))]
+            seqs = [row.get("arrival_sequence") for row in in_window]
+            lag = [value for row in in_window if (value := _number(row.get("stage_ms"))) is not None]
+            duplicate = len(seqs) - len(set(seqs))
+            invalid_sequence = any((value := _number(seq)) is None or value < 0 or not value.is_integer() for seq in seqs)
+            arrivals[task] = {"planned": planned, "started_in_window": len(in_window),
+                              "started_after_window": len(emitted) - len(in_window),
+                              "missing_starts": max(0, planned - len(set(seqs))) if planned is not None else None,
+                              "duplicate_starts": duplicate,
+                              "start_lag_p95_ms": percentile(lag, 95)}
+            if planned is None or planned <= 0 or len(in_window) != planned or duplicate or invalid_sequence:
+                issues.append(f"租户 {tenant} {task} 计划/实际到达未完整对齐")
+        search_rows = [row for row in selected if row.get("op") == "read" and inside(request_start(row))]
         tenants.append({"tenant_index": tenant, "commit_submitted": len(submits),
                         "commit_accepted": len(accepted), "commit_completed": len(done),
+                        "commit_completed_after_window": sum(
+                            valid_window and (_number(row.get("completed_at_ms")) or 0) >= window_end
+                            for row in all_done) if valid_window else None,
+                        "commit_completed_total": len(all_done), "arrivals": arrivals,
                         "commit_failed": len(failed),
                         "commit_pending": max(0, len(accepted) - len(terminal)),
                         "commit_observation_outcomes": evidence["observation_outcomes"],
                         "commit_completed_per_s": len(done) / duration if duration else None,
                         "longest_no_completion_s": longest_gap,
-                        "search": _request_stats(selected)})
+                        "search": _request_stats(search_rows)})
     commit_values = [float(row["commit_completed_per_s"] or 0) for row in tenants]
     inverse_p95 = [1000 / row["search"]["p95_ms"] if row["search"]["p95_ms"] else 0 for row in tenants]
     return {"scenario": run.get("scenario"), "duration_s": duration,
+            "window_start_ms": window_start, "window_end_ms": window_end,
+            "evidence_complete": not issues and run.get("status") == "completed",
+            "evidence_issues": issues,
             "tenant_count": tenant_count, "tenants": tenants,
             "commit_throughput_jain": jain(commit_values),
             "search_inverse_p95_jain": jain(inverse_p95)}
@@ -247,8 +304,9 @@ def summarize_m3(runs: dict[str, dict[str, Any]], *, quick: bool) -> dict[str, A
         run = runs.get(f"m3-fairness-{count}t")
         if run and _records(run):
             windows.append(_fairness_window(run, count))
-    return {"status": "PARTIAL" if quick and windows else _status(expected=2, observed=len(windows)),
-            "reason": "展示实际 Jain；零完成租户保留，全部为零时为 undefined",
+    complete = sum(window["evidence_complete"] for window in windows)
+    return {"status": "MEASURED" if not quick and complete == 2 else "PARTIAL" if windows else "BLOCKED",
+            "reason": "独立周期发压；仅窗口内完成计算吞吐，排空另列。零完成租户保留；短窗口不证明长期稳态",
             "expected_windows": 2, "observed_windows": len(windows), "windows": windows}
 
 
@@ -812,9 +870,23 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             ], axis_max=1)
             visual += details("查看公平窗口汇总", table(metric.get("windows", []), [("scenario", "场景"), ("tenant_count", "租户"), ("duration_s", "窗口秒"), ("commit_throughput_jain", "Commit Jain"), ("search_inverse_p95_jain", "Search inverse-P95 Jain")]))
             tenant_rows = [{"scenario": window.get("scenario"), **tenant,
-                            "search_p95_ms": tenant.get("search", {}).get("p95_ms")}
+                            "search_p95_ms": tenant.get("search", {}).get("p95_ms"),
+                            "search_count": tenant.get("search", {}).get("completed"),
+                            "search_errors": tenant.get("search", {}).get("errors"),
+                            "search_quality_ok": tenant.get("search", {}).get("quality_ok"),
+                            "search_mean_ms": tenant.get("search", {}).get("mean_ms")}
                            for window in metric.get("windows", []) for tenant in window.get("tenants", [])]
-            visual += details("查看逐租户完成数与延迟", table(tenant_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("commit_submitted", "提交"), ("commit_accepted", "受理"), ("commit_completed", "完成"), ("commit_failed", "失败"), ("commit_pending", "Pending"), ("longest_no_completion_s", "最长无服务秒"), ("search_p95_ms", "Search P95 ms")]))
+            visual += bars("各租户窗口内 Commit 完成数", [
+                (f"{row['scenario']} / 租户 {row['tenant_index']}", row.get("commit_completed")) for row in tenant_rows])
+            visual += bars("各租户 Search P95 / ms", [
+                (f"{row['scenario']} / 租户 {row['tenant_index']}", row.get("search_p95_ms")) for row in tenant_rows])
+            visual += '<p>Commit 吞吐 = 窗口内完成数 ÷ 窗口秒数；Search 使用 1/P95（越大越快）。两者分别计算 J=(Σx)²/(n×Σx²)，n 包含零完成租户。J 接近 1 只表示均匀，不表示吞吐高、延迟低或长期稳态已得到证明。</p>'
+            visual += details("查看逐租户完成数与延迟", table(tenant_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("commit_submitted", "窗口内提交"), ("commit_accepted", "全程受理"), ("commit_completed", "窗口内完成"), ("commit_completed_after_window", "停压后完成"), ("commit_failed", "全程失败"), ("commit_pending", "最终未完成"), ("longest_no_completion_s", "窗口内最长无完成秒"), ("search_p95_ms", "Search P95 ms")]))
+            visual += details("查看 Search 错误与召回质量", table(tenant_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("search_count", "请求数"), ("search_errors", "错误数"), ("search_quality_ok", "质量通过数"), ("search_mean_ms", "平均 ms"), ("search_p95_ms", "P95 ms")]))
+            arrival_rows = [{"scenario": row["scenario"], "tenant_index": row["tenant_index"], "task": task, **values}
+                            for row in tenant_rows for task, values in row.get("arrivals", {}).items()]
+            visual += details("查看计划到达与实际发压", table(arrival_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("task", "路径"), ("planned", "计划启动"), ("started_in_window", "窗口内启动"), ("missing_starts", "未启动"), ("duplicate_starts", "重复"), ("start_lag_p95_ms", "发压延迟 P95 ms")]))
+            visual += details("查看证据完整性", table(metric.get("windows", []), [("scenario", "场景"), ("evidence_complete", "完整"), ("evidence_issues", "缺口")]))
         elif code == "M4":
             visual = bars("有非终态证据的 Search P95 / ms", [
                 ("无 Commit 基线", (metric.get("baseline") or {}).get("p95_ms"))] + [
