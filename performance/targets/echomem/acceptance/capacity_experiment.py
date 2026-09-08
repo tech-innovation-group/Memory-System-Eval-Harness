@@ -9,6 +9,7 @@ import threading
 import time
 
 from performance.targets.echomem.acceptance.capacity_load import measure
+from performance.targets.echomem.acceptance.provenance import platform_snapshot
 from performance.targets.echomem.acceptance.capacity_seed import CapacityActor, prepare_actors, provision_actors
 from performance.targets.echomem.probes._client import EchoMemHTTP
 from performance.targets.echomem.acceptance.capacity_statistics import evaluate_level
@@ -78,7 +79,8 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
               "recovery_timeout_s": recovery_timeout_s, "request_timeout_s": request_timeout_s,
               "fixed_tenants": fixed_tenants if topology == "within-tenant" else None,
               "memory_scale": memory_scale, "warmup_s": warmup_s, "duration_s": duration_s,
-              "per_user_search_rps": q, "manifest": manifest or {}, "seed": {}, "levels": [],
+              "per_user_search_rps": q, "manifest": {**(manifest or {}),
+                  "platform_provenance": platform_snapshot()}, "seed": {}, "levels": [],
               "boundary": {"status": "UNMEASURED", "highest_pass": None, "first_fail": None},
               "max_hot_users": None, "dau": None}
     _write(output / "report.json", report)

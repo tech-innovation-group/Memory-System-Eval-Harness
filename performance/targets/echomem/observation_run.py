@@ -6,7 +6,6 @@ import argparse
 import csv
 import json
 import os
-import subprocess
 import threading
 import time
 from datetime import datetime, timezone
@@ -20,6 +19,7 @@ from performance.targets.echomem.acceptance.observation import (
     write_observation_report,
 )
 from performance.targets.echomem.acceptance.readiness import check_readiness
+from performance.targets.echomem.acceptance.provenance import platform_snapshot
 from performance.targets.echomem.acceptance.preflight import run_preflight
 from performance.targets.echomem.main import _resolve_profile, load_profiles
 from performance.targets.echomem.orchestrator.probes import run_configured_probes
@@ -44,13 +44,7 @@ def _metrics(value: str) -> list[str]:
 
 
 def _git_commit() -> str | None:
-    try:
-        return subprocess.run(
-            ["git", "rev-parse", "HEAD"], capture_output=True, text=True,
-            check=True, timeout=5,
-        ).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return None
+    return platform_snapshot()["git_commit"]
 
 
 def _public_profile(profile: dict[str, Any]) -> dict[str, Any]:
@@ -230,9 +224,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     output.mkdir(parents=True, exist_ok=True)
     lock = acquire_output_lock(output)
     started_at = _now()
+    provenance = platform_snapshot()
     (output / "execution-manifest.json").write_text(json.dumps({
         "schema_version": 1, "started_at": started_at, "finished_at": None,
-        "git_commit": _git_commit(), "selected_metrics": selected,
+        "git_commit": provenance["git_commit"], "platform_provenance": provenance, "selected_metrics": selected,
         "sampling_mode": "quick-non-complete" if args.quick else "full",
         "soak_enabled": False, "execution_status": "PARTIAL",
         "real_http_required": True, "real_llm_required": True,
@@ -378,10 +373,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             suite, profile, m1_reports, quick=args.quick,
             selected_metrics=selected,
         )
+        result["platform_provenance"] = provenance
         (output / "summary.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         manifest = {
             "schema_version": 1, "started_at": started_at, "finished_at": _now(),
-            "git_commit": _git_commit(), "selected_metrics": selected,
+            "git_commit": provenance["git_commit"], "platform_provenance": provenance, "selected_metrics": selected,
             "sampling_mode": result["sampling_mode"], "soak_enabled": False,
             "real_http_required": True, "real_llm_required": True,
             "real_embedding_required": True,

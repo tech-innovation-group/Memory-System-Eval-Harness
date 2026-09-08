@@ -1,5 +1,6 @@
 """Render a standalone M1 evidence report without inferring an unmeasured maximum."""
 from __future__ import annotations
+from performance.targets.echomem.acceptance.provenance import render_platform_provenance
 
 import argparse
 from collections import Counter
@@ -252,6 +253,7 @@ header{{border-bottom:2px solid #1b7869;padding-bottom:20px}}section{{padding:12
 @media(max-width:700px){{main{{padding:16px}}.grid{{grid-template-columns:repeat(2,minmax(0,1fr))}}h1{{font-size:24px}}}}
 </style><main><header><p class="note">M1 · 真实模型 · 黑盒 HTTP · 独立压测端</p><h1>{title}</h1>
 <p class="warn">{conclusion}</p><p>{blocker}</p></header>
+{render_platform_provenance(environment.get('platform_provenance'))}
 <div class="grid"><div class="metric">最大热用户数<strong>{fmt(maximum)}</strong></div>
 <div class="metric">三轮零错误档<strong>{fmt(zero_error_level)}</strong></div>
 <div class="metric">DAU<strong>{_dau_label(dau)}</strong></div>

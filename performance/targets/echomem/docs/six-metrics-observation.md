@@ -80,6 +80,9 @@ baseline/均匀洪泛/单租户洪泛；M5 的三个独立 kill-9 样本；M6 �
 
 ## 单项与 quick
 
+报告改进、独立 M3 与快速执行编排的逐项状态见
+[改进跟踪清单](report-improvement-tracking.md)。清单中的待办不代表已通过实测。
+
 用 `--metrics` 选择单项：
 
 ```bash

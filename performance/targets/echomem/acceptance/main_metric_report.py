@@ -9,6 +9,7 @@ from pathlib import Path
 
 from performance.targets.echomem.acceptance.capacity_observation_report import render_observation
 from performance.targets.echomem.acceptance.route_path_report import render_route_paths
+from performance.targets.echomem.acceptance.provenance import render_platform_provenance
 from performance.targets.echomem.acceptance.reliability_evidence import observability_counts, recovery_counts
 from performance.targets.echomem.acceptance.load_evidence import count, number, fairness_counts, load_counts, load_conclusions, priority_counts
 from performance.targets.echomem.acceptance.fault_evidence import matrix_counts, public_control_evidence
@@ -564,7 +565,8 @@ def render(report: dict) -> str:
 <p>报告按“指标含义、测试方法、图表数据、结论、模块改进”组织。未设置业务性能合格线；所有失败、超时、拒绝和召回错误均保留在分母。</p>
 {'<p class="notice">多批次汇总：各指标来自分别选定的测试批次，不是六项同时复测。不同批次的配置、基线、请求率和采样方法需分别核对，数值变化不等于EchoMem性能提升。</p>' if report.get('publication', {}).get('separate_fault_matrix') or report.get('publication', {}).get('metric_sources') else ''}
 {''.join('<p><b>' + escape(str(row.get('metrics', ''))) + '：</b>' + escape(str(row.get('description', ''))) + '</p>' for row in report.get('publication', {}).get('metric_sources', []))}
-<p>EchoMem <code>{fmt(env.get('echomem_commit'))}</code>；测试平台 <code>{fmt(env.get('platform_base_commit'))}</code>。</p>
+<p>EchoMem <code>{fmt(env.get('echomem_commit'))}</code>；声明的测试平台基础版本 <code>{fmt(env.get('platform_base_commit'))}</code>（不等于执行版本）。</p>
+{render_platform_provenance(env.get('platform_provenance'))}
 <p class="notice">版本口径：容量详情保留各档 platform_base_pr / platform_base_commit；缺失表示历史快照未记录该字段，不能称所有档位均已重跑本版本。容器4U8G是资源限额，不代表宿主机资源独占。</p></header>
 <div class="stats">{''.join('<div>'+escape(label)+'<b>'+fmt(value)+'</b></div>' for label,value in cards)}</div>
 <section><h2>六项结论总览</h2>{table(['指标','结论等级','具体结论','关键证据','下一步'],[[key,value['level'],value['conclusion'],value['evidence'],value['next']] for key,value in conclusions.items()])}</section>
