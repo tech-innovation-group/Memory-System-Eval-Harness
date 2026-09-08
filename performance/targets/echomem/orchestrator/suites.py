@@ -528,6 +528,7 @@ def six_metric_observation_cases(*, quick: bool = False) -> list[dict]:
         ),
         _case(
             label="m4-flood-uniform", scene="scene_barrier", tenants=4,
+            barrier_prepare_before_commit=True,
             commit_rpm=0.0, commit_barrier=True,
             commit_barrier_count=barrier,
             commit_tenant_distribution="uniform", barrier_at_s=3 if quick else 30,
@@ -535,6 +536,7 @@ def six_metric_observation_cases(*, quick: bool = False) -> list[dict]:
         ),
         _case(
             label="m4-flood-single-tenant", scene="scene_barrier", tenants=4,
+            barrier_prepare_before_commit=True,
             commit_rpm=0.0, commit_barrier=True,
             commit_barrier_count=barrier,
             commit_tenant_distribution="explicit",
@@ -593,6 +595,7 @@ def _apply_barrier_params(params: dict[str, Any], case: dict) -> None:
         params.update(
             {
                 "barrier_count": barrier_count,
+                "barrier_prepare_before_commit": bool(case.get("barrier_prepare_before_commit", False)),
                 "barrier_at_s": float(case.get("barrier_at_s", 0)),
                 "barrier_distribution": str(
                     case.get("commit_tenant_distribution", "uniform")

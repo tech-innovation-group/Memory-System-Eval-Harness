@@ -241,14 +241,8 @@ def task_read(ctx: Ctx) -> None:
 NO_RECALL_QUERIES = ["你好", "谢谢", "计算 2 加 3", "把 hello 翻译成中文"]
 
 
-def task_write(ctx: Ctx) -> None:
-    """一个完整注入事务（场景 B 写路径）。
-
-    对齐 ``loadgen.run_write_transaction``：open -> add×N（末条携带
-    PERFTAIL anchor）-> commit submit -> commit done（poll 到 completed，
-    默认 600s 超时）。四阶段独立计时记录；失败阶段即中止事务；commit
-    提交默认不重试（与 ``--commit-retry-max 0`` 一致）。
-    """
+def prepare_commit_session(ctx: Ctx) -> str | None:
+    """Open a session and add all messages; do not submit Commit yet."""
     messages = int(ctx.params.get("messages_per_session", 10))
     anchor = f"{WRITE_ANCHOR_PREFIX}-{ctx.tenant_idx}-{ctx.next_seq()}"
 
@@ -269,6 +263,14 @@ def task_write(ctx: Ctx) -> None:
         if not add_message(ctx, sid, content).ok:
             return
 
+    return sid
+
+
+def task_write(ctx: Ctx) -> None:
+    """Prepare messages, submit once and observe the original Commit."""
+    sid = prepare_commit_session(ctx)
+    if sid is None:
+        return
     commit_resp = commit_session(ctx, sid)
     if not commit_resp.ok:
         return

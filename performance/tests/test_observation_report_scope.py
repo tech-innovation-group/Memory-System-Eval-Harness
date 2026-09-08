@@ -15,7 +15,7 @@ def test_single_metric_report_has_scoped_title_and_no_unselected_failure_cards(t
     write_observation_report(data, path)
     page = path.read_text()
     assert "<h1>EchoMem 4U8G M3黑盒观测</h1>" in page
-    assert "本报告不包含：M1、M2、M4、M5、M6" in page
+    assert "本报告不包含：M1、M4、M2、M5、M6" in page
     assert "<article><b>M3</b>" in page
     assert "<article><b>M1</b>" not in page
     assert "本次命令未选择该指标" not in page
@@ -41,3 +41,8 @@ def test_full_report_keeps_all_six_metrics(tmp_path):
     assert "本报告不包含" not in page
     for code in METRIC_NAMES:
         assert f"<article><b>{code}</b>" in page
+    ordered = ("M1", "M3", "M4", "M2", "M5", "M6")
+    cards = [page.index(f"<article><b>{code}</b>") for code in ordered]
+    sections = [page.index(f"<section><h2>{code} ") for code in ordered]
+    assert cards == sorted(cards)
+    assert sections == sorted(sections)

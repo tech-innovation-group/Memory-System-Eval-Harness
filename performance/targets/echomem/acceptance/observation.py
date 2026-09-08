@@ -18,6 +18,7 @@ from performance.stats import percentile
 from performance.targets.echomem.acceptance.provenance import render_platform_provenance
 
 STATUSES = ("MEASURED", "PARTIAL", "BLOCKED", "EXECUTION_ERROR")
+METRIC_ORDER = ("M1", "M3", "M4", "M2", "M5", "M6")
 METRIC_NAMES = {
     "M1": "4U8G 单实例热用户和 DAU",
     "M2": "单租户故障隔离",
@@ -461,6 +462,13 @@ def _flood_window(baseline_rows: list[dict[str, Any]], run: dict[str, Any], tena
                and not any(evidence[k] for k in ("duplicate_receipts", "duplicate_observations",
                                                  "orphan_observations", "invalid_intervals", "missing_poll_audit")) else None)
     return {"scenario": run.get("scenario"), "baseline": _request_stats(baseline_rows),
+            "preparation": {
+                "open_requests": sum(r.get("op") == "open" for r in rows),
+                "add_requests": sum(r.get("op") == "add" for r in rows),
+                "aborted_transactions": sum(r.get("op") == "commit_preparation_failed" for r in rows),
+                "stage_http_counts": dict(Counter(f"{r.get('op')}:{r.get('http_status')}"
+                    for r in rows if r.get("op") in {"open", "add"})),
+            },
             "overlap": _request_stats(overlap), "tenants": by_tenant,
             "confirmed_overlap": _request_stats(confirmed),
             "uncertain_overlap_reads": len(overlap) - len(confirmed),
@@ -876,8 +884,9 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
         return f"<h3>{esc(title)}</h3>{body or '<p>暂无数据</p>'}"
 
     selected = set(result.get("selected_metrics", result["metrics"]))
-    included = [code for code in METRIC_NAMES if code in selected]
-    excluded = [code for code in METRIC_NAMES if code not in selected]
+    included = [code for code in METRIC_ORDER if code in selected]
+    excluded = [code for code in METRIC_ORDER if code not in selected]
+    ordered_metrics = {code: result["metrics"][code] for code in METRIC_ORDER if code in result["metrics"]}
     scope = "六项" if not excluded else " / ".join(included) or "未选择指标"
     title = f"EchoMem 4U8G {scope}黑盒观测"
     scope_notice = (f"<p>本报告不包含：{esc('、'.join(excluded))}。这些指标未在本次命令中执行，不代表测试失败，也不说明其他运行的进度。</p>"
@@ -886,10 +895,10 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
         f"<article><b>{code}</b><h2>{esc(METRIC_NAMES[code])}</h2>"
         f"<span class='{metric['status']}'>{metric['status']}</span>"
         f"<p>{esc(METRIC_PURPOSES[code])}</p><small>{esc(metric.get('reason'))}</small></article>"
-        for code, metric in result["metrics"].items() if code in selected
+        for code, metric in ordered_metrics.items() if code in selected
     )
     sections = []
-    for code, metric in result["metrics"].items():
+    for code, metric in ordered_metrics.items():
         if code not in selected:
             continue
         visual = ""
@@ -963,6 +972,12 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                 ("tenant_index", "租户"), ("planned_or_recorded", "样本数"),
                 ("actual_recall_hits", "真实内容命中"), ("quality_ok", "质量有效"),
                 ("errors", "HTTP/传输错误"), ("p95_ms", "P95 ms")]))
+            visual += details("查看洪泛准备阶段", table([
+                {"scenario": w.get("scenario"), **(w.get("preparation") or {})}
+                for w in metric.get("windows", [])], [
+                    ("scenario", "场景"), ("open_requests", "Open 请求"),
+                    ("add_requests", "Add 请求"), ("aborted_transactions", "准备失败事务"),
+                    ("stage_http_counts", "阶段 HTTP 分布")]))
             visual += details("查看 Commit 受理、终态与观察范围", table(metric.get("windows", []), [
                 ("scenario", "场景"), ("commit_planned", "计划事务"), ("commit_planned_or_recorded", "实际提交"),
                 ("commit_accepted_202", "202"), ("commit_rejected", "拒绝"), ("commit_completed", "确认完成"),

@@ -142,6 +142,32 @@ def test_explicit_barrier_rejects_negative_counts():
         barrier_tenant_counts(8, 4, distribution="explicit", explicit=[9, -1, 0, 0])
 
 
+@pytest.mark.parametrize("fail_first", [False, True])
+def test_prepared_barrier_submits_only_after_all_adds(server, monkeypatch, fail_first):
+    _, _, base_url = server
+    scene = load_scene(SCENES_DIR / "scene_barrier.py")
+    if fail_first:
+        namespace = scene.schedule.__globals__
+        original = namespace["prepare_commit_session"]
+        attempts = []
+        def prepare(ctx):
+            attempts.append(1)
+            return None if len(attempts) == 1 else original(ctx)
+        monkeypatch.setitem(namespace, "prepare_commit_session", prepare)
+    profile = _profile(base_url, workers=4, duration_s=3, tenant_count=4,
+                       barrier_count=8, barrier_max_workers=4,
+                       barrier_prepare_before_commit=True,
+                       barrier_distribution="explicit", commit_tenant_counts=[8, 0, 0, 0])
+    result = Engine(profile, scene).run()
+    adds = [r for r in result.records if r.op == "add"]
+    submits = [r for r in result.records if r.op == "commit_submit"]
+    assert len(submits) == (7 if fail_first else 8)
+    assert sum(r.op == "commit_preparation_failed" for r in result.records) == int(fail_first)
+    assert adds and max(r.ts_ms for r in adds) <= min(r.ts_ms - r.stage_ms for r in submits)
+    assert {r.tenant_idx for r in submits} == {0}
+    assert {r.tenant_idx for r in result.records if r.op == "read"} == {0, 1, 2, 3}
+
+
 def test_scene_barrier_floor_to_tenants(server):
     _, _, base_url = server
     scene = load_scene(SCENES_DIR / "scene_barrier.py")
