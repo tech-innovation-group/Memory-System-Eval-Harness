@@ -1,5 +1,11 @@
 from performance.targets.echomem.acceptance.main_metric_samples import comparison, summarize_flood
-from performance.targets.echomem.acceptance.main_metric_report import derive_conclusions, recovery_counts, redacted_report, render
+from performance.targets.echomem.acceptance.main_metric_report import (
+    derive_conclusions,
+    derive_module_recommendations,
+    recovery_counts,
+    redacted_report,
+    render,
+)
 import json
 
 
@@ -122,6 +128,105 @@ def test_each_metric_has_an_explicit_bounded_conclusion():
     assert "不能把最高已测档写成绝对容量上限" in conclusions["M1"]["conclusion"]
     assert conclusions["M3"]["level"] == "公平性证据不完整"
     assert "严格优先仍未证明" in conclusions["M4"]["level"]
+
+
+def test_report_derives_evidence_backed_module_recommendations():
+    report = {"M1": {"levels": [{"hot_users": 8, "search": {"transport_or_http_errors": 3}}]},
+              "M2": {"cases": [{"worst_bystander_p95_change_percent": 25}],
+                     "bystander_http_errors": 0},
+              "M3_M4": {"commit_planned": 32, "accepted_202": 16, "commit_jain": .75,
+                          "search_inverse_p95_jain": .9,
+                          "tenants": [{"commit_completed_in_search_window": 2},
+                                      {"commit_completed_in_search_window": 0}],
+                          "overlap_search": {}, "paired": []},
+              "M5": {"passed_samples": 1, "sample_count": 1,
+                     "missing_messages": 0, "same_archive": True},
+              "M6": {"rows": [{"tenant": "T1", "lane": "commit"}],
+                     "expected_cells": 4, "expected_lanes": ["commit"]}}
+    recommendations = derive_module_recommendations(report)
+    modules = {item["module"] for item in recommendations}
+    assert {"原子引擎 Atomic Engine", "路由与意图模型", "租户公平调度"} <= modules
+    assert all(item["evidence"] and item["change"] and item["verify"]
+               for item in recommendations)
+
+
+def test_html_explains_metrics_and_echo_mem_modules():
+    public = redacted_report({}, {"levels": []})
+    html = render(public)
+    assert "六个指标分别反映什么" in html
+    assert "EchoMem 模块改进优先级" in html
+    assert "原子引擎 Atomic Engine" in html
+    assert "路由与意图模型" in html
+    assert "租户公平调度" in html
+    assert "<th>测试方式</th>" in html
+    assert html.count("<b>测试方式：</b>") == 6
+    for code in range(1, 7):
+        section = html.index(f"<h2>M{code} ·")
+        end = html.index("</section>", section)
+        method = html.index("<b>测试方式：</b>", section)
+        conclusion = html.index('<div class="conclusion"', section)
+        assert section < method < conclusion < end
+
+
+def test_missing_evidence_cannot_generate_confident_module_diagnoses():
+    report = redacted_report({}, {"levels": []})
+    modules = {r["module"]: r for r in derive_module_recommendations(report)}
+    assert "公平性" in modules["租户公平调度"]["judgment"]
+    assert "缺少租户计数" in modules["租户公平调度"]["judgment"]
+    assert "尚不能确认" in modules["租户故障隔离"]["judgment"]
+    assert "未采集" in modules["原子引擎 Atomic Engine"]["judgment"]
+    assert "未采集" in modules["Admission 与容量保护"]["evidence"]
+    assert "尚不能确认" in modules["Commit 持久化与恢复"]["judgment"]
+    assert "尚未全部通过" in modules["可观测性"]["judgment"]
+    conclusion = derive_conclusions(report)["M1"]
+    assert "0.00s" not in conclusion["evidence"]
+    assert "尚未采集" in conclusion["conclusion"]
+    assert "无崩溃/OOM=True" not in conclusion["evidence"]
+
+
+def test_module_advice_uses_actual_equal_tenants_not_cached_jain():
+    joint = summarize_flood(sample(), sample(), [
+        {"identity_index": i, "accepted_202": True, "accepted_at": 102,
+         "completed": True, "terminal_at": 110} for i in range(4)], 4)
+    joint["commit_jain"] = .25
+    report = redacted_report({"metrics": {"M3_M4": joint}}, {"levels": []})
+    module = next(r for r in derive_module_recommendations(report) if r["module"] == "租户公平调度")
+    assert "完成数相等" in module["judgment"]
+    assert "Commit Jain=1.0000" in module["evidence"]
+    assert "没有获得近似等权" not in module["judgment"]
+
+
+def test_failed_recovery_and_incomplete_timeline_are_not_module_passes():
+    report = redacted_report({"metrics": {"M5": {"status": "FAIL"}}}, {"levels": []})
+    report["M6"].update(status="INCONCLUSIVE", snapshot_status="PASS",
+                         expected_cells=16, valid_cells=16, tenant_count=4,
+                         timeline={"status": "INCONCLUSIVE", "snapshot_count": 8})
+    modules = {r["module"]: r for r in derive_module_recommendations(report)}
+    assert "至少一项恢复检查失败" in modules["Commit 持久化与恢复"]["judgment"]
+    assert "末次快照" in modules["可观测性"]["judgment"]
+    assert "不等于每次都覆盖完整" in modules["可观测性"]["judgment"]
+
+
+def test_render_recomputes_cached_conclusions_and_recommendations():
+    report = redacted_report({}, {"levels": []})
+    report["conclusions"]["M1"]["conclusion"] = "STALE-CAPACITY-PASS"
+    report["module_recommendations"][0]["judgment"] = "STALE-MODULE-PASS"
+    html = render(report)
+    assert "STALE-" not in html
+
+
+def test_m1_report_distinguishes_request_errors_from_operational_boundary():
+    report = redacted_report({}, {"levels": [], "max_hot_users": 2,
+                                  "boundary": {"status": "CONFIRMED", "first_fail": 4}})
+    conclusion = derive_conclusions(report)["M1"]
+    assert "硬容量未确定" in conclusion["level"]
+    assert "锁定SLO确认" not in conclusion["next"]
+    report["M1"]["operational_boundary"] = {
+        "hot_users": 32, "evidence": {"status": "BOUNDARY_OBSERVED",
+                                      "reason": "container-oom", "recovery_window_s": 300}}
+    conclusion = derive_conclusions(report)["M1"]
+    assert conclusion["level"] == "已观察到运行边界"
+    assert "container-oom" in conclusion["conclusion"]
 
 
 def test_recovery_matrix_is_reduced_to_public_counts():
