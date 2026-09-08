@@ -27,6 +27,32 @@ def test_pending_completed_audit_survives_csv(server):
     assert row["stage_ms"] > 0 and len(records) == 2
 
 
+@pytest.mark.parametrize("terminal,expected", [("completed", "completed"), ("failed", "failed")])
+def test_real_status_envelope_reaches_terminal_without_timeout(server, monkeypatch, terminal, expected):
+    from performance import ctx as transport
+    _, _, url = server
+    original = transport._do_request
+    calls = 0
+
+    def wrapped(*args, **kwargs):
+        nonlocal calls
+        values = list(original(*args, **kwargs))
+        if "/commits/" in args[2]:
+            calls += 1
+            values[4] = {"status": {"status": "awaiting_engines" if calls == 1 else terminal,
+                                    "stage": "commit", "archive_id": "unit-archive"}}
+        return tuple(values)
+
+    monkeypatch.setattr(transport, "_do_request", wrapped)
+    ctx, _, _ = make_ctx(url)
+    result = poll_commit(ctx, "s", "a", interval_s=.01, timeout_s=1)
+    assert result.status == expected
+    assert result.record.commit_terminal_state == terminal
+    assert result.record.last_nonterminal_at_ms is not None
+    assert result.record.poll_count == 2
+    assert (result.record.completed_at_ms is not None) == (terminal == "completed")
+
+
 @pytest.mark.parametrize("state,outcome,terminal", [
     (MockState(always_pending=True), "timeout", ""),
     (MockState(poll_fail_after=1), "failed", "failed"),

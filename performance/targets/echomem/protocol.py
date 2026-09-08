@@ -22,6 +22,7 @@ import time
 
 from performance.ctx import Ctx, Response, PollResult
 from performance.records import content_hash
+from performance.targets.echomem.probes._client import status_from
 
 ANCHOR_PREFIX = "PERFANCHOR"
 WRITE_ANCHOR_PREFIX = "PERFTAIL"
@@ -184,7 +185,7 @@ def poll_commit(
         audit["poll_count"] += 1
         audit["poll_http_errors"] += status != 200 or bool(error)
         value = body if isinstance(body, dict) else {}
-        state = str(value.get("status") or value.get("stage") or value.get("state") or "").lower()
+        state = status_from(value)
         if status == 200 and not error:
             if state in {"pending", "queued", "running", "processing", "in_progress", "awaiting_engines"}:
                 audit["last_nonterminal_at_ms"] = started_ms
@@ -203,6 +204,7 @@ def poll_commit(
         session_id=session_id,
         archive_id=archive_id,
         on_response=observed,
+        state_of=status_from,
         until=lambda _: audit["commit_terminal_state"] == "completed",
     )
     ended = time.time() * 1000

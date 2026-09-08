@@ -298,6 +298,7 @@ class Ctx:
         timeout_s: float = 600.0,
         until: Callable[[dict[str, Any]], bool] | None = None,
         failed_statuses: tuple[str, ...] = ("failed", "error"),
+        state_of: Callable[[dict[str, Any]], str] | None = None,
         on_response: Callable[[float, int | None, dict[str, Any] | None, str], None] | None = None,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
@@ -372,7 +373,7 @@ class Ctx:
                 self._emit(record)
                 return PollResult(op, "completed", elapsed_ms, polls, body_json, record)
 
-            state = str(
+            state = state_of(body_json or {}) if state_of else str(
                 (body_json or {}).get("status")
                 or (body_json or {}).get("stage")
                 or (body_json or {}).get("state")

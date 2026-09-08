@@ -234,6 +234,15 @@ def _fairness_window(run: dict[str, Any], tenant_count: int) -> dict[str, Any]:
     tenants = []
     for tenant in range(tenant_count):
         selected = [row for row in rows if str(row.get("tenant_idx")) == str(tenant)]
+        for row in selected:
+            if row.get("op") != "commit_done":
+                continue
+            polls = _number(row.get("poll_count"))
+            errors = _number(row.get("poll_http_errors"))
+            if (polls is not None and errors is not None and polls > errors
+                    and not _number(row.get("last_nonterminal_at_ms"))
+                    and not row.get("commit_terminal_state")):
+                issues.append(f"租户 {tenant} 轮询有成功响应但未识别任何状态，需核对协议解析")
         submits = [row for row in selected if row.get("op") == "commit_submit" and inside(request_start(row))]
         evidence = _commit_window_evidence(selected)
         if any(evidence.get(name) for name in ("missing_poll_audit", "invalid_intervals", "invalid_202_receipts",

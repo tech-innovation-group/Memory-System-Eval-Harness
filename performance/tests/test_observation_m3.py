@@ -70,6 +70,20 @@ def test_missing_run_clock_never_claims_full_fairness(tmp_path):
     assert window["tenants"][0]["commit_completed_after_window"] is None
 
 
+def test_successful_polls_without_recognized_state_are_protocol_gap(tmp_path, monkeypatch):
+    from performance.targets.echomem.acceptance import observation
+    run = write_run(tmp_path)
+    rows = observation._records(run)
+    for row in rows:
+        if row["op"] == "commit_done":
+            row.update(status="error", poll_outcome="timeout", commit_terminal_state="",
+                       completed_at_ms="", terminal_at_ms="", last_nonterminal_at_ms="")
+    monkeypatch.setattr(observation, "_records", lambda _: rows)
+    result = _fairness_window(run, 4)
+    assert not result["evidence_complete"]
+    assert any("需核对协议解析" in issue for issue in result["evidence_issues"])
+
+
 def test_load_generator_missing_demand_is_visible(tmp_path):
     run = write_run(tmp_path)
     run["summary"]["measurement_contract"]["arrival"]["write"]["rps"] = 2
