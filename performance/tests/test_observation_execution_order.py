@@ -96,6 +96,7 @@ def test_m6_only_shortens_dependency_load_without_becoming_quick(tmp_path, monke
     assert spec.duration_cap_s == 45
     assert spec.barrier_count_cap == 8
     assert spec.include_seed is True
+    assert spec.commit_poll_timeout_cap_s == 45
     assert captured["scenarios"] == ["m4-baseline", "m4-flood-uniform"]
     assert result["sampling_mode"] == "full"
 

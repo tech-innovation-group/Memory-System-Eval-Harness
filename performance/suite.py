@@ -72,6 +72,7 @@ class QuickSpec:
     duration_cap_s: float = 15.0
     barrier_count_cap: int = 32
     include_seed: bool = False
+    commit_poll_timeout_cap_s: float | None = None
 
 
 def apply_quick(case: dict, quick: QuickSpec) -> dict:
@@ -93,6 +94,11 @@ def apply_quick(case: dict, quick: QuickSpec) -> dict:
             )
     if case.get("quick_commit_rpm") is not None:
         result["commit_rpm"] = case["quick_commit_rpm"]
+    if quick.commit_poll_timeout_cap_s is not None:
+        result["commit_poll_timeout_s"] = min(
+            float(case.get("commit_poll_timeout_s", 180)),
+            quick.commit_poll_timeout_cap_s,
+        )
     result["sessions_per_tenant"] = 1
     return result
 

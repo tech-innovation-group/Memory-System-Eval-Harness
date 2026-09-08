@@ -373,7 +373,12 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
                     scenarios.append(dependency)
         if scenarios:
             quick_spec = (
-                QuickSpec(duration_cap_s=45, barrier_count_cap=8, include_seed=True)
+                QuickSpec(
+                    duration_cap_s=45,
+                    barrier_count_cap=8,
+                    include_seed=True,
+                    commit_poll_timeout_cap_s=45 if m6_only else None,
+                )
                 if args.quick or m6_only else None
             )
             try:
