@@ -47,6 +47,25 @@ def _load_actors(directory: Path, base_url: str) -> tuple[list, dict]:
     return actors, seed
 
 
+def _select_reused_actors(actors: list, *, topology: str, tenants: int, users: int) -> list:
+    """Select an exact coordinate subset from a larger validated seed cache."""
+    by_coordinate = {}
+    for actor in actors:
+        coordinate = (actor.tenant_index, actor.user_index)
+        if coordinate in by_coordinate:
+            raise ValueError(f"Reused seed contains duplicate actor coordinate: {coordinate}")
+        by_coordinate[coordinate] = actor
+    wanted = (
+        [(tenant, 0) for tenant in range(tenants)]
+        if topology == "cross-tenant"
+        else [(tenant, user) for tenant in range(tenants) for user in range(users)]
+    )
+    missing = [coordinate for coordinate in wanted if coordinate not in by_coordinate]
+    if missing:
+        raise ValueError(f"Reused seed is missing required actor coordinates: {missing[:5]}")
+    return [by_coordinate[coordinate] for coordinate in wanted]
+
+
 def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[int],
                     fixed_tenants: int = 4, memory_scale: int = 1,
                     warmup_s: float = 30, duration_s: float = 60, q: float = 1,
@@ -86,6 +105,7 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
     _write(output / "report.json", report)
     actors, reused_seed = (_load_actors(reuse_seed, base_url) if reuse_seed else
                            (provision_actors(base_url, tenants, users, memory_scale=memory_scale), None))
+    reused_actor_count = len(actors) if reused_seed is not None else None
     extension = []
     if len(actors) < tenants * users and reused_seed is not None and topology == "cross-tenant":
         if len({a.tenant_index for a in actors}) != len(actors) or any(a.user_index for a in actors):
@@ -93,6 +113,10 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
         extension = provision_actors(base_url, tenants - len(actors), 1, memory_scale=memory_scale,
                                      tenant_offset=max(a.tenant_index for a in actors) + 1)
         actors.extend(extension)
+    if reused_seed is not None:
+        actors = _select_reused_actors(
+            actors, topology=topology, tenants=tenants, users=users
+        )
     if len(actors) != tenants * users:
         raise ValueError("Seed identities do not match the requested maximum topology")
     if persist_private_identities:
@@ -107,8 +131,16 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
             progress[key] = row
             _write(output / "seed-progress.json", progress)
 
-    seeded = reused_seed if reused_seed is not None else prepare_actors(
-        actors, checkpoint=checkpoint, validation_queries=seed_validation_queries)
+    if reused_seed is not None:
+        seeded = {
+            **reused_seed,
+            "source_actor_count": reused_actor_count,
+            "actor_count": len(actors),
+            "actors": list(reused_seed.get("actors") or [])[:len(actors)],
+        }
+    else:
+        seeded = prepare_actors(
+            actors, checkpoint=checkpoint, validation_queries=seed_validation_queries)
     if extension:
         extension_seed = prepare_actors(extension, checkpoint=checkpoint,
                                         validation_queries=seed_validation_queries)

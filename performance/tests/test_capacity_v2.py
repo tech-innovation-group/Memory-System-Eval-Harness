@@ -3,7 +3,10 @@ import http.client
 import urllib.error
 from types import SimpleNamespace
 
+import pytest
+
 from performance.targets.echomem.acceptance.capacity_load import arrival_plan, query_for
+from performance.targets.echomem.acceptance.capacity_experiment import _select_reused_actors
 from performance.targets.echomem.acceptance.capacity_statistics import (
     evaluate_level,
     qps_baseline,
@@ -25,6 +28,29 @@ from performance.targets.echomem.acceptance.capacity_evidence_merge import merge
 from performance.targets.echomem.probes.docker_inspect import resource_values
 from performance.targets.echomem.acceptance.preflight import config_digest, valid_model_response
 from performance.targets.echomem.probes._client import _transport_error_type
+
+
+def test_reused_seed_selects_exact_cross_tenant_subset_from_larger_cache():
+    actors = [SimpleNamespace(tenant_index=index, user_index=0) for index in range(32)]
+    selected = _select_reused_actors(
+        actors, topology="cross-tenant", tenants=16, users=1
+    )
+    assert [(actor.tenant_index, actor.user_index) for actor in selected] == [
+        (index, 0) for index in range(16)
+    ]
+
+
+def test_reused_seed_requires_complete_nonduplicate_coordinates():
+    with pytest.raises(ValueError, match="duplicate actor coordinate"):
+        _select_reused_actors(
+            [SimpleNamespace(tenant_index=0, user_index=0)] * 2,
+            topology="cross-tenant", tenants=1, users=1,
+        )
+    with pytest.raises(ValueError, match="missing required actor coordinates"):
+        _select_reused_actors(
+            [SimpleNamespace(tenant_index=0, user_index=0)],
+            topology="within-tenant", tenants=1, users=2,
+        )
 
 
 def test_arrival_plan_separates_read_message_and_commit_schedules():
