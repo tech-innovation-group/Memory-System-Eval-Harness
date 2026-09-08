@@ -11,9 +11,20 @@ from performance.targets.echomem.acceptance.observation import (
     jain,
     summarize_m5,
     summarize_m6,
+    write_observation_report,
 )
 from performance.targets.echomem.observation_run import _m1_levels, _validate_m1_resume
 from performance.targets.echomem.probes.tenant_observability import expected_lanes_from_config
+
+
+def test_empty_report_tables_span_their_actual_columns(tmp_path: Path) -> None:
+    path = tmp_path / "report.html"
+    write_observation_report({"metrics": {"M2": {"status": "PARTIAL", "cases": []}},
+                              "status": "PARTIAL", "sampling_mode": "quick"}, path)
+    rendered = path.read_text()
+    assert 'colspan="3"' in rendered
+    assert 'colspan="5"' in rendered
+    assert 'colspan="9"' not in rendered
 
 
 def _run(tmp_path: Path, name: str, rows: list[dict]) -> dict:

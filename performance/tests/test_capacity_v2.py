@@ -158,6 +158,62 @@ def test_search_summary_separates_engine_time_from_unattributed_residual():
     assert abs(summary["unattributed_residual_p95_s"] - .7) < 1e-9
 
 
+def test_search_summary_splits_route_paths_without_hiding_unobserved_rows():
+    rows = [
+        {"sent": True, "success": True, "elapsed_s": .2,
+         "executed_layers": ["rule", "semantic"]},
+        {"sent": True, "success": True, "elapsed_s": 2.1,
+         "executed_layers": ["rule", "semantic", "llm"]},
+        {"sent": True, "success": True, "elapsed_s": .4},
+    ]
+    timings = search_summary(rows)["route_path_timings"]
+    assert timings["fast_path"]["observations"] == 1
+    assert timings["intent_llm"]["observations"] == 1
+    assert timings["intent_llm"]["p50_s"] == 2.1
+    assert timings["unobserved"]["observations"] == 1
+    assert sum(value["fraction_of_sent"] for value in timings.values()) == 1
+
+
+def test_route_path_counts_preserve_failures_without_timing_and_unknown_layers():
+    rows = [
+        {"sent": True, "success": True, "executed_layers": ["rule"], "elapsed_s": .3},
+        {"sent": True, "success": False, "executed_layers": ["llm"], "elapsed_s": None},
+        {"sent": True, "success": False, "executed_layers": ["llm"],
+         "elapsed_s": 4, "http_status": 503, "degraded": True},
+        {"sent": True, "success": False, "executed_layers": ["unknown_llm_layer"], "elapsed_s": 1},
+        {"sent": True, "success": True, "executed_layers": []},
+        {"sent": False, "elapsed_s": 20, "executed_layers": ["rule"]},
+    ]
+    summary = search_summary(rows)
+    paths = summary["route_path_timings"]
+    assert sum(value["observations"] for value in paths.values()) == summary["sent"] == 5
+    assert sum(value["fraction_of_sent"] for value in paths.values()) == 1
+    assert paths["intent_llm"]["observations"] == 2
+    assert paths["intent_llm"]["latency_observations"] == 1
+    assert paths["intent_llm"]["latency_missing_or_invalid"] == 1
+    assert paths["intent_llm"]["errors"] == 2
+    assert paths["intent_llm"]["degraded"] == 1
+    assert paths["intent_llm"]["p95_s"] == 4
+    assert paths["unobserved"]["observations"] == 2
+    assert paths["unobserved"]["latency_missing_or_invalid"] == 1
+
+
+def test_invalid_search_durations_are_counted_without_polluting_percentiles():
+    import json
+
+    rows = [{"sent": True, "success": True, "elapsed_s": duration,
+             "executed_layers": ["rule"], "start_s": index * 10}
+            for index, duration in enumerate([None, float('nan'), float('inf'), -1, True, "oops", .3])]
+    summary = search_summary(rows)
+    assert summary["sent"] == summary["success"] == 7
+    assert summary["latency_missing_or_invalid"] == 6
+    assert summary["p95_s"] == summary["success_p95_s"] == .3
+    assert summary["p95_block_bootstrap_95"] is None
+    assert summary["route_path_timings"]["fast_path"]["observations"] == 7
+    assert summary["route_path_timings"]["fast_path"]["latency_observations"] == 1
+    json.dumps(summary, allow_nan=False)
+
+
 def test_missing_identity_cannot_be_capacity_pass():
     measurement = {"rows": [{"op": "read", "identity_index": 0, "query_type": "recall",
                              "sent": True, "success": True, "elapsed_s": .1, "start_s": n}
@@ -236,7 +292,13 @@ def test_report_escapes_untrusted_evidence_and_does_not_dump_config():
 def test_report_renders_confirmed_repeats_and_conditional_dau():
     search = {"planned": 300, "sent": 300, "success": 300, "mean_s": .2,
               "p95_s": .4, "p99_s": .6, "degraded": 0, "timeout_censored": 0,
-              "quality_rate": 1.0, "atomic_p95_s": .05}
+              "quality_rate": 1.0, "atomic_p95_s": .05,
+              "route_path_timings": {"fast_path": {"observations": 200,
+                  "fraction_of_sent": 2 / 3, "mean_s": .15, "p50_s": .14,
+                  "p95_s": .25, "min_s": .1, "max_s": .3},
+                  "intent_llm": {"observations": 100, "fraction_of_sent": 1 / 3,
+                  "mean_s": 1.8, "p50_s": 1.7, "p95_s": 2.2,
+                  "min_s": 1.2, "max_s": 2.5}}}
     commit = {"accepted_202": 3, "completed": 3, "p95_s": 4.0}
     aggregate = {"status": "PASS", "search": search, "commit": commit,
                  "duration_s": 540, "identity_count": 1, "tenant_count": 1,
@@ -258,6 +320,30 @@ def test_report_renders_confirmed_repeats_and_conditional_dau():
     assert "条件估算 100–300" in html
     assert "三轮边界确认" in html
     assert "Commit 完成" in html
+    assert "Search 路由路径延迟拆解" in html
+    assert "意图 LLM 路径" in html
+
+
+def test_observation_report_renders_route_path_breakdown():
+    search = {"planned": 2, "sent": 2, "success": 2, "errors": 0,
+              "mean_s": 1.1, "p50_s": 1.1, "p95_s": 2.0, "p99_s": 2.0,
+              "timeout_censored": 0, "not_sent": 0, "degraded": 0,
+              "transport_or_http_errors": 0, "http_status_counts": {"200": 2},
+              "atomic_p95_s": .1, "route_path_timings": {
+                  "fast_path": {"observations": 1, "fraction_of_sent": .5,
+                                "mean_s": .2, "p50_s": .2, "p95_s": .2,
+                                "min_s": .2, "max_s": .2},
+                  "intent_llm": {"observations": 1, "fraction_of_sent": .5,
+                                 "mean_s": 2.0, "p50_s": 2.0, "p95_s": 2.0,
+                                 "min_s": 2.0, "max_s": 2.0}}}
+    html = render({"assessment_mode": "observe", "levels": [{
+        "search": search, "commit": {}, "cells": [], "identity_count": 1,
+        "tenant_count": 1, "duration_s": 1, "mixed": False,
+        "load_mode": "search", "sent_search_rps": 2.0,
+        "effective_search_rps": 2.0}]})
+    assert "Search 路由路径延迟拆解" in html
+    assert "快速路径（未调用意图 LLM）" in html
+    assert "意图 LLM 路径" in html
 
 
 def test_redacted_zero_capacity_report_has_no_broken_seed_link():

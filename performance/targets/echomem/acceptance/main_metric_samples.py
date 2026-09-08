@@ -92,6 +92,7 @@ def summarize_flood(baseline: dict, loaded: dict, commits: list[dict], identitie
     commit_rates = [t["commit_rps"] for t in tenants]
     latencies = [t["search"]["p95_s"] for t in tenants]
     return {"status": "MEASURED", "performance_requirements_applied": False,
+            "expected_identity_indices": list(range(identities)), "minimum_flood_commits": 32,
             "commit_planned": len(commits), "accepted_202": len(accepted),
             "completed_including_drain": sum(bool(c.get("completed")) for c in commits),
             "unresolved_after_observation": sum(

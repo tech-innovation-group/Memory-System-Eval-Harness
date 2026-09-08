@@ -5,9 +5,11 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import json
+import math
 import os
 from pathlib import Path
 import threading
+import time
 import uuid
 
 from performance.targets.echomem.acceptance.capacity_experiment import _load_actors, _write
@@ -20,13 +22,15 @@ from performance.targets.echomem.probes.tenant_observability import collect
 def run(*, base_url: str, seed_directory: Path, output: Path, container: str,
         expected_lanes: list[str], repeats: int = 3, duration_s: float = 60,
         q: float = 1, commits_per_tenant: int = 8, commit_timeout_s: float = 180,
-        token_env: str = "ECHOMEM_TEST_CONTROL_TOKEN") -> dict:
+        token_env: str = "ECHOMEM_TEST_CONTROL_TOKEN", max_sampling_gap_s: float = 15) -> dict:
     if output.exists():
         raise FileExistsError("Refuse to overwrite contention-matrix evidence")
     if repeats < 1 or not 15 <= duration_s <= 120 or q <= 0:
         raise ValueError("invalid repeat, duration or Search rate")
     if not 1 <= commits_per_tenant <= 64 or not 10 <= commit_timeout_s <= 600:
         raise ValueError("invalid Commit matrix settings")
+    if not math.isfinite(max_sampling_gap_s) or max_sampling_gap_s <= 0:
+        raise ValueError("max sampling gap must be positive and finite")
     state = inspect_container(container)
     if (not state.get("State", {}).get("Running")
             or state["HostConfig"].get("NanoCpus") != 4_000_000_000
@@ -43,8 +47,11 @@ def run(*, base_url: str, seed_directory: Path, output: Path, container: str,
     tenants = [actor.client.tenant_id for actor in actors]
 
     def snapshot():
-        return collect(base_url=base_url, endpoint="", token=token,
-                       expected_tenants=tenants, expected_lanes=expected_lanes, timeout_s=10)
+        observed_at = time.monotonic()
+        result = collect(base_url=base_url, endpoint="", token=token,
+                         expected_tenants=tenants, expected_lanes=expected_lanes, timeout_s=10)
+        result["observed_at_s"] = observed_at
+        return result
 
     report = {"status": "RUNNING", "expected_samples": repeats, "samples": [],
               "duration_s": duration_s, "search_rps_per_tenant": q,
@@ -74,17 +81,22 @@ def run(*, base_url: str, seed_directory: Path, output: Path, container: str,
         baseline = measure(actors, duration_s=duration_s, q=q, seed=71000 + repeat)
         _write(root / "search-baseline.json", baseline, private=True)
         observations = []
+        monitor_errors = []
         stopped = threading.Event()
 
         def monitor():
-            while not stopped.is_set():
-                observations.append(snapshot())
-                _write(root / "observability-during.json", observations, private=True)
-                stopped.wait(2)
+            try:
+                while not stopped.is_set():
+                    observations.append(snapshot())
+                    _write(root / "observability-during.json", observations, private=True)
+                    stopped.wait(2)
+            except Exception as exc:
+                monitor_errors.append(type(exc).__name__)
 
         report["current"]["phase"] = "commit-flood-and-search"
         _write(output / "report.json", report, private=True)
         thread = threading.Thread(target=monitor, daemon=True)
+        window_start = time.monotonic()
         thread.start()
         try:
             with ThreadPoolExecutor(max_workers=1) as pool:
@@ -95,6 +107,7 @@ def run(*, base_url: str, seed_directory: Path, output: Path, container: str,
         finally:
             stopped.set()
             thread.join()
+        window_end = time.monotonic()
         _write(root / "search-loaded.json", loaded, private=True)
         _write(root / "commits.json", commits_rows, private=True)
         after = snapshot()
@@ -110,6 +123,12 @@ def run(*, base_url: str, seed_directory: Path, output: Path, container: str,
                 if isinstance(row.get("accepted_total"), (int, float))
                 and isinstance(prior.get("accepted_total"), (int, float)) else None)
         after["sample_count"] = len(observations)
+        after["process_observations"] = {
+            "expected_tenants": tenants, "expected_lanes": expected_lanes,
+            "before": before, "during": observations, "after": dict(after),
+            "window_start_s": window_start, "window_end_s": window_end,
+            "max_sampling_gap_s": max_sampling_gap_s, "monitor_errors": monitor_errors,
+        }
         sample = {"repeat": repeat, "M3_M4": summarize_flood(
                       baseline, loaded, commits_rows, 4), "M6": after}
         report["samples"].append(sample)
@@ -135,13 +154,15 @@ def main() -> None:
     parser.add_argument("--search-rps", type=float, default=1)
     parser.add_argument("--commits-per-tenant", type=int, default=8)
     parser.add_argument("--commit-timeout-s", type=float, default=180)
+    parser.add_argument("--max-sampling-gap-s", type=float, default=15,
+                        help="Monitoring coverage limit, not a Search latency SLO")
     args = parser.parse_args()
     result = run(base_url=args.base_url, seed_directory=args.seed_directory,
                  output=args.output, container=args.container,
                  expected_lanes=args.expected_lanes.split(","), repeats=args.repeats,
                  duration_s=args.duration_s, q=args.search_rps,
                  commits_per_tenant=args.commits_per_tenant,
-                 commit_timeout_s=args.commit_timeout_s)
+                 commit_timeout_s=args.commit_timeout_s, max_sampling_gap_s=args.max_sampling_gap_s)
     print(json.dumps({"status": result["status"], "samples": result["measured_samples"]}))
 
 

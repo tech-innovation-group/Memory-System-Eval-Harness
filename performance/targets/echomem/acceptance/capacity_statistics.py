@@ -23,7 +23,7 @@ def wilson(success: int, count: int) -> list[float] | None:
 def block_p95_interval(rows: list[dict], *, seed: int = 42, repeats: int = 300) -> list[float] | None:
     blocks = {}
     for row in rows:
-        if row.get("sent") and row.get("elapsed_s") is not None:
+        if row.get("sent") and _valid_duration(row.get("elapsed_s")):
             blocks.setdefault(int(row.get("start_s", 0) // 10), []).append(row["elapsed_s"])
     if len(blocks) < 5:
         return None
@@ -33,22 +33,27 @@ def block_p95_interval(rows: list[dict], *, seed: int = 42, repeats: int = 300) 
     return [percentile(values, 2.5), percentile(values, 97.5)]
 
 
+def _valid_duration(value) -> bool:
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value) and value >= 0)
+
+
 def search_summary(rows: list[dict]) -> dict:
     sent = [r for r in rows if r.get("sent")]
     successful = [r for r in sent if r.get("success")]
-    latency = [r["elapsed_s"] for r in sent if r.get("elapsed_s") is not None]
+    latency = [r["elapsed_s"] for r in sent if _valid_duration(r.get("elapsed_s"))]
     atomic = [engine.get("duration_seconds") for row in sent for engine in row.get("engine_results", [])
-              if engine.get("engine_id") == "atomic_engine" and engine.get("duration_seconds") is not None]
+              if engine.get("engine_id") == "atomic_engine" and _valid_duration(engine.get("duration_seconds"))]
     engine_values: dict[str, list[float]] = {}
     residual = []
     for row in sent:
         durations = []
         for engine in row.get("engine_results", []):
             duration = engine.get("duration_seconds")
-            if engine.get("engine_id") and duration is not None:
+            if engine.get("engine_id") and _valid_duration(duration):
                 engine_values.setdefault(engine["engine_id"], []).append(duration)
                 durations.append(duration)
-        if row.get("elapsed_s") is not None:
+        if _valid_duration(row.get("elapsed_s")):
             residual.append(max(0, row["elapsed_s"] - sum(durations)))
     engine_timings = {engine: {"observations": len(values),
                                "mean_s": sum(values) / len(values),
@@ -65,6 +70,41 @@ def search_summary(rows: list[dict]) -> dict:
     for _, change in sorted(concurrency):
         outstanding += change
         peak = max(peak, outstanding)
+    route_groups: dict[str, list[dict]] = {
+        "fast_path": [],
+        "intent_llm": [],
+        "unobserved": [],
+    }
+    for row in sent:
+        layers = row.get("executed_layers")
+        if (not isinstance(layers, list) or not layers
+                or any(not isinstance(layer, str) for layer in layers)):
+            route = "unobserved"
+        elif "llm" in layers:
+            route = "intent_llm"
+        elif set(layers) <= {"rule", "semantic"}:
+            route = "fast_path"
+        else:
+            route = "unobserved"
+        route_groups[route].append(row)
+    route_path_timings = {}
+    for route, selected in route_groups.items():
+        values = [row["elapsed_s"] for row in selected if _valid_duration(row.get("elapsed_s"))]
+        route_path_timings[route] = {
+            "observations": len(selected),
+            "latency_observations": len(values),
+            "latency_missing_or_invalid": len(selected) - len(values),
+            "fraction_of_sent": len(selected) / len(sent) if sent else None,
+            "success": sum(bool(row.get("success")) for row in selected),
+            "errors": sum(not row.get("success") for row in selected),
+            "degraded": sum(bool(row.get("degraded")) for row in selected),
+            "transport_or_http_errors": sum(row.get("http_status") != 200 for row in selected),
+            "mean_s": sum(values) / len(values) if values else None,
+            "p50_s": percentile(values, 50),
+            "p95_s": percentile(values, 95),
+            "min_s": min(values) if values else None,
+            "max_s": max(values) if values else None,
+        }
     return {"planned": len(rows), "sent": len(sent), "success": len(successful),
             "not_sent": len(rows) - len(sent), "delivery_rate": len(sent) / len(rows) if rows else None,
             "quality_rate": len(successful) / len(sent) if sent else None,
@@ -82,11 +122,15 @@ def search_summary(rows: list[dict]) -> dict:
             "atomic_fact_hits": sum(bool(r["atomic_fact_hit"]) for r in atomic_fact_rows),
             "peak_inflight_requests": peak if concurrency else None,
             "timeout_censored": sum(bool(r.get("timeout_censored")) for r in sent),
+            "latency_observations": len(latency),
+            "latency_missing_or_invalid": len(sent) - len(latency),
             "mean_s": sum(latency) / len(latency) if latency else None,
             "p50_s": percentile(latency, 50), "p95_s": percentile(latency, 95), "p99_s": percentile(latency, 99),
-            "success_p95_s": percentile([r["elapsed_s"] for r in successful], 95),
+            "success_p95_s": percentile([r["elapsed_s"] for r in successful
+                                         if _valid_duration(r.get("elapsed_s"))], 95),
             "atomic_p95_s": percentile(atomic, 95), "atomic_observations": len(atomic),
             "engine_timings": engine_timings,
+            "route_path_timings": route_path_timings,
             # This is endpoint time minus reported engine durations.  It
             # includes routing, model calls, serialization and unreported
             # work, so it is a diagnostic residual rather than a direct LLM

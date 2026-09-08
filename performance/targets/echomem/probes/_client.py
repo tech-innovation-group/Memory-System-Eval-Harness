@@ -124,6 +124,10 @@ def _server_observability(
         result[target] = str(value) if target.startswith("server_") and target not in {
             "server_queue_depth", "server_active_workers"
         } else value
+    # EchoMem emits this public enum under `error`, not `error_code`.
+    # Do not export arbitrary error messages (which can contain tenant data).
+    if not result.get("reason_code") and payload.get("error") == "TEST_FAULT_INJECTED":
+        result["reason_code"] = "TEST_FAULT_INJECTED"
     return result
 
 

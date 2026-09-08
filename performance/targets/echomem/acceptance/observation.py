@@ -524,7 +524,9 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
     def table(rows: list[dict[str, Any]], columns: list[tuple[str, str]]) -> str:
         head = "".join(f"<th>{esc(label)}</th>" for _, label in columns)
         body = "".join("<tr>" + "".join(f"<td>{esc(row.get(key))}</td>" for key, _ in columns) + "</tr>" for row in rows)
-        return f"<div class='scroll'><table><thead><tr>{head}</tr></thead><tbody>{body or '<tr><td colspan=\"9\">暂无数据</td></tr>'}</tbody></table></div>"
+        if not body:
+            body = f'<tr><td colspan="{len(columns)}">暂无数据</td></tr>'
+        return f"<div class='scroll'><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>"
 
     def bars(title: str, points: list[tuple[str, float | None]]) -> str:
         maximum = max((value for _, value in points if value is not None), default=0) or 1

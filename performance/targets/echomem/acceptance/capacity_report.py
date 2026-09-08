@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 
 from performance.stats import percentile
+from performance.targets.echomem.acceptance.route_path_report import render_route_paths
 
 
 def fmt(value, unit=""):
@@ -97,6 +98,7 @@ def render(report: dict) -> str:
             fmt(sum(times) / len(times) if times else None, " s"), fmt(percentile(times, 95), " s"),
             fmt(actor.get("status")))) + "</tr>")
     level_rows = []
+    route_summaries = []
     for level in snapshots:
         search = level["search"]
         level_rows.append("<tr>" + "".join(f"<td>{fmt(value)}</td>" for value in (
@@ -107,6 +109,7 @@ def render(report: dict) -> str:
             search.get("unattributed_residual_p95_s"), level["effective_search_rps"],
             ("诊断 / 观测SLO=" + level.get("observed_slo_result", "UNKNOWN")) if level.get("diagnostic_only")
             else level.get("status", level.get("level_status")))) + "</tr>")
+        route_summaries.append((f"H={level.get('hot_users', level['identity_count'])} {level['phase']}", search))
     repeat_rows = []
     cell_rows = []
     for level in levels:
@@ -284,6 +287,8 @@ PR421 文档中的 40–60 DAU、16 热租户（hard_cap 20）属于设计估算
 <p>T 是租户数，U 是每租户热用户数，H=T×U。每个热用户计划每秒 1 次 Search；每身份、每类问题单独计算成功率与 P95。
 标有“诊断”的窗口是在健康门槛未通过时收集现象，不能用于确认容量边界，也不能拿它的有效 RPS 折算 DAU。</p>
 <p>“未归属残差”是 Search 端到端耗时减去 Explain 中已报告引擎耗时，包含意图路由、模型调用、序列化及未上报工作，<strong>不能直接当成 LLM 精确耗时</strong>；它用于区分检索引擎本身与外围编排瓶颈。</p>
+{render_route_paths(route_summaries)}
+<p>“意图 LLM 路径”表示 <code>executed_layers</code> 中包含 LLM 层；“快速路径”表示 Explain 已提供且未执行 LLM；缺少 Explain 的样本单列为“路由层未观测”。这里统计的是整条 Search 的端到端耗时，不冒充 LLM 自身精确耗时。是否启用 Thinking 以环境配置摘要为准。</p>
 <h3>短窗口探索（仅用于选边界）</h3><div class="scroll"><table><tr><th>T</th><th>H</th><th>负载</th><th>时长 s</th><th>发出</th><th>有效</th><th>P95 s</th><th>Atomic P95 s</th><th>结论</th></tr>{''.join(exploration_rows) or '<tr><td colspan="9">未附短窗口探索证据。</td></tr>'}</table></div>
 <p>探索窗口只决定确认档位，不参与最终最大值和 DAU 分子。</p>
 <h3>资源趋势（预热 + 诊断窗口）</h3><p>RSS 峰值 {fmt(max(rss) if rss else None, ' MiB')}；CPU 峰值 {fmt(max(cpu) if cpu else None, '%')}，100% 表示占满一核，4核上限约400%。

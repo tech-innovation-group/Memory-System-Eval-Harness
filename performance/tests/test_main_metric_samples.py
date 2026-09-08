@@ -48,7 +48,7 @@ def test_public_report_excludes_credentials_and_private_recovery_identifiers():
     serialized = json.dumps(public) + render(public)
     assert "PRIVATE-" not in serialized
     assert public["M5"]["autonomous_completed"] is True
-    assert public["M5"]["status"] == "PASS"
+    assert public["M5"]["status"] == "INCONCLUSIVE"
     assert public["M6"]["rows"][0]["tenant"] == "T1"
 
 
@@ -58,6 +58,47 @@ def test_empty_initial_report_keeps_missing_metrics_unknown():
     assert "未采集" in html
     assert public["M1"]["max_dau"] is None
     assert public["M5"]["autonomous_completed"] is None
+
+
+def test_comprehensive_report_preserves_route_paths_in_fault_and_flood_windows():
+    baseline, flood = sample(), sample()
+    for row in baseline["rows"]:
+        row["executed_layers"] = ["rule", "semantic"]
+    for row in flood["rows"]:
+        row["executed_layers"] = ["rule", "semantic", "llm"]
+    commits = [{"identity_index": i, "accepted_202": True, "accepted_at": 102,
+                "completed": True, "terminal_at": 110} for i in range(4)]
+    joint = summarize_flood(baseline, flood, commits, 4)
+    pairs = comparison(baseline, flood, 4)
+    public = redacted_report({"metrics": {"M3_M4": joint,
+                            "M2": {"target_index": 0, "pairs": pairs}}}, {"levels": []})
+    assert public["M2"]["pairs"][0]["before"]["route_path_timings"]["fast_path"]["observations"] == 1
+    assert public["M3_M4"]["overlap_search"]["route_path_timings"]["intent_llm"]["observations"] == 4
+    html = render(public)
+    assert html.count("<summary>Search 路由路径延迟拆解</summary>") == 4
+    assert "T1 故障中" in html and "T1 洪泛中" in html and "T1 公平性窗口" in html
+    assert "nearest-rank" in html and "缺失/无效计时" in html
+
+
+def test_route_report_export_omits_private_evidence_and_retains_missing_timing(tmp_path):
+    from performance.targets.echomem.acceptance.route_path_report import publish_route_paths
+
+    measurement = sample()
+    measurement["api_key"] = "PRIVATE-KEY"
+    measurement["rows"][0].update(executed_layers=["llm"], response="PRIVATE-RESPONSE")
+    measurement["rows"][1].update(elapsed_s=None, executed_layers=["llm"])
+    measurement["rows"].append({"op": "commit_submit", "sent": True,
+                                 "api_key": "PRIVATE-COMMIT", "elapsed_s": 90})
+    path = tmp_path / "routes.html"
+    public = publish_route_paths(measurement, path, '<script>unsafe</script>')
+    html = path.read_text()
+    serialized = path.with_suffix('.json').read_text()
+    assert public["sent"] == 4
+    assert public["route_path_timings"]["intent_llm"]["observations"] == 2
+    assert public["route_path_timings"]["intent_llm"]["latency_missing_or_invalid"] == 1
+    assert "PRIVATE-" not in html + serialized
+    assert "<script>" not in html and "&lt;script&gt;" in html
+    assert '<details open>' in html
 
 
 def test_each_metric_has_an_explicit_bounded_conclusion():
@@ -79,7 +120,7 @@ def test_each_metric_has_an_explicit_bounded_conclusion():
     assert set(conclusions) == {"M1", "M2", "M3", "M4", "M5", "M6"}
     assert all(item["conclusion"] and item["evidence"] and item["next"] for item in conclusions.values())
     assert "不能把最高已测档写成绝对容量上限" in conclusions["M1"]["conclusion"]
-    assert conclusions["M3"]["level"] == "观察到租户完成分布不均"
+    assert conclusions["M3"]["level"] == "公平性证据不完整"
     assert "严格优先仍未证明" in conclusions["M4"]["level"]
 
 
@@ -93,6 +134,9 @@ def test_recovery_matrix_is_reduced_to_public_counts():
             "missing_server_message_ids": []})},
         {"name": "idempotency-replay", "status": "PASS", "detail": json.dumps({
             "same_archive": True})},
+        {"name": "pending-before-kill", "status": "PASS"},
+        {"name": "cursor-reconciliation", "status": "PASS"},
+        {"name": "order-reconciliation", "status": "PASS"},
     ]
     public = recovery_counts({"status": "PASS", "samples": [
         {"status": "PASS", "elapsed_s": 2, "checks": detail(8)},

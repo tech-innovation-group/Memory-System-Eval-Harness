@@ -5,6 +5,7 @@ from __future__ import annotations
 from html import escape
 
 from performance.targets.echomem.acceptance.capacity_confirmation import estimate_dau
+from performance.targets.echomem.acceptance.route_path_report import render_route_paths
 
 
 def _fmt(value):
@@ -49,6 +50,7 @@ def render_observation(report: dict) -> str:
     total_sent = sum(l["search"]["sent"] for l in levels)
     total_errors = sum(l["search"]["errors"] for l in levels)
     summary_rows, detail_rows, class_rows, commit_rows, dau_rows, issue_rows = [], [], [], [], [], []
+    route_summaries = []
     p95_points, rps_points = [], []
     for level in levels:
         h = level.get("hot_users", level.get("identity_count"))
@@ -101,6 +103,7 @@ def render_observation(report: dict) -> str:
                                str(search.get("http_status_counts", {}))])
         issue_rows.append([h, name, "原子检索 / 编排耗时", search.get("atomic_p95_s"),
             f"Atomic P95(s)；端到端减已上报引擎耗时的残差 P95={_fmt(search.get('unattributed_residual_p95_s'))}s"])
+        route_summaries.append((f"H={h} {name}", search))
     repeat_rows = [[r.get("hot_users"), r.get("repeat"), "混合" if r.get("mixed") else "纯召回",
                    r["search"]["sent"], r["search"]["success"], r["search"]["p95_s"],
                    r.get("commit", {}).get("completed")] for r in repeats]
@@ -156,6 +159,8 @@ def render_observation(report: dict) -> str:
 <section><h2>DAU 条件换算</h2>{_table(['H','Search/人/天','Commit/人/天','峰均比','Search折算','Commit折算','两者较小值'],dau_rows)}
 <p>表内采用参考画像：50 Search/人/天、40–60 Commit/人/天、峰均比 3。DAU=有效吞吐×86400÷每日次数÷峰均比。Commit 速率不超过每热用户 300 秒一次的稳态供给，避免短窗口首尾任务使结果虚高。以上是各已测点的流量等价值，尚未验证对应的全天行为、用户驻留和其他读写组合，不能称最大 DAU。</p></section>
 <section><h2>模块观测</h2>{_table(['H','负载','模块','观测值','证据'],issue_rows)}<p>RSS 峰值 {_fmt(rss / 1048576 if rss is not None else None)} MiB；CPU 峰值 {_fmt(resource.get('cpu_peak_percent_one_core_100'))}%（100%=一核），采样 {_fmt(resource.get('samples'))} 次。容器限制不等于宿主资源独占。残差包含路由、模型调用和未上报环节，不能直接命名为模型耗时。</p></section>
+<section>{render_route_paths(route_summaries)}
+<p>意图 LLM 与快速路径根据响应 Explain 的 <code>executed_layers</code> 拆分；缺失 Explain 的样本保留在“路由层未观测”分母。表内是整条 Search 的端到端耗时，Atomic 检索耗时仍在模块观测和按身份表中单列。</p></section>
 <section><h2>按身份和问题类型</h2>{_table(['H','负载','身份序号','类型','发出','严格有效','事实命中','非空返回','降级','平均 s','P95 s','Atomic P95 s','P95 95%区间','有效率95%区间'],class_rows)}
 <p>no-recall 的非空返回才是误召回观测；仅凭严格有效性未满足或降级，不能断言发生了误召回。缺失字段显示“未采集”。</p></section>
 <details><summary>已有三轮低负载数据</summary>{_table(['H','轮次','负载','发出','严格有效','P95 s','Commit完成'],repeat_rows)}</details>

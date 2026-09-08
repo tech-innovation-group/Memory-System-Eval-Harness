@@ -94,7 +94,7 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
             commit_timeout_s: float = 180, request_timeout_s: float = 10,
             seed: int = 42, load_mode: str | None = None,
             commit_interval_s: float = 30.0,
-            hotspot_multiplier: float = 8.0) -> dict:
+            hotspot_multiplier: float = 8.0, isolate_read_workers: bool = False) -> dict:
     mode = load_mode or ("mixed" if mixed else "search")
     plan = arrival_plan(
         len(actors), duration_s, q, mixed, seed=seed, load_mode=mode,
@@ -110,6 +110,12 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
     dirty = [0] * len(actors)
     widths = {"read": min(512, max(16, len(actors) * 8)), "add": min(32, max(4, len(actors))),
               "commit_submit": min(32, max(4, len(actors)))}
+    if isolate_read_workers:
+        per_identity = max(1, widths.pop("read") // len(actors))
+        widths.update({f"read:{i}": per_identity for i in range(len(actors))})
+
+    def pool_key(op, index):
+        return f"read:{index}" if isolate_read_workers and op == "read" else op
     pools = {name: ThreadPoolExecutor(max_workers=width) for name, width in widths.items()}
     slots = {name: threading.BoundedSemaphore(width) for name, width in widths.items()}
     polls = ThreadPoolExecutor(max_workers=min(512, max(4, len(actors))))
@@ -214,7 +220,7 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
         finally:
             record["end_s"] = time.monotonic() - started
             append(record)
-            slots[op].release()
+            slots[pool_key(op, index)].release()
 
     try:
         for event in plan:
@@ -222,8 +228,9 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
             delay = started + at - time.monotonic()
             if delay > 0:
                 time.sleep(delay)
-            if slots[op].acquire(blocking=False):
-                pools[op].submit(execute, event)
+            key = pool_key(op, index)
+            if slots[key].acquire(blocking=False):
+                pools[key].submit(execute, event)
             else:
                 missed = {"op": op, "identity_index": index, "tenant_index": actors[index].tenant_index,
                         "user_index": actors[index].user_index, "sequence": sequence,
@@ -248,6 +255,7 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
             "started_at_monotonic_s": started,
             "duration_s": duration_s, "elapsed_with_drain_s": time.monotonic() - started,
             "pools": {**widths, "commit_poll": polls._max_workers},
+            "read_worker_isolation": "per_identity" if isolate_read_workers else "shared",
             "per_user_search_rps": q if mode != "commit" else 0,
             "mixed": mode in {"mixed", "hotspot"},
             "load_mode": mode,
