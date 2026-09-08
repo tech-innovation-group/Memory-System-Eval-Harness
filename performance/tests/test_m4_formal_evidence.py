@@ -126,7 +126,7 @@ def test_report_exposes_baseline_counts_quality_and_mean(tmp_path):
     assert "1170.76" in content and ">109<" in content and ">120<" in content
 
 
-@pytest.mark.parametrize("change", ["legacy", "timeout", "rejected", "duplicate", "missing_tenant", "invalid_time", "no_pending", "baseline_empty_recall"])
+@pytest.mark.parametrize("change", ["legacy", "rejected", "duplicate", "missing_tenant", "invalid_time", "no_pending", "baseline_empty_recall"])
 def test_three_files_do_not_prove_formal_m4(tmp_path, change):
     def mutate(name, rows):
         if change == "baseline_empty_recall" and name.endswith("baseline"):
@@ -154,13 +154,39 @@ def test_three_files_do_not_prove_formal_m4(tmp_path, change):
     result = summarize_m4(runs(tmp_path, mutate=mutate), quick=False)
     assert result["status"] == "PARTIAL"
     assert result["evidence_issues"]
-    if change == "timeout":
-        assert result["windows"][0]["commit_failed"] == 0
-        assert result["windows"][0]["commit_pending"] == 4
-        assert result["windows"][0]["drain_time_s"] is None
     if change == "rejected":
         assert result["windows"][0]["commit_completed"] == 0
         assert result["windows"][0]["commit_rejected"] == 4
+
+
+def test_audited_nonterminal_commits_are_measured_outcomes(tmp_path):
+    def mutate(name, rows):
+        if name.endswith("baseline"):
+            return
+        for row in rows:
+            if row["op"] == "commit_done":
+                row.update(status="error", http_status=None, terminal_at_ms=None,
+                           completed_at_ms=None, commit_terminal_state="", poll_outcome="timeout")
+    result = summarize_m4(runs(tmp_path, mutate=mutate), quick=False)
+    assert result["status"] == "MEASURED"
+    assert result["windows"][0]["commit_pending"] == 4
+    assert result["windows"][0]["drain_time_s"] is None
+    assert "accepted_commit_not_terminal_by_cutoff" in result["windows"][0]["observed_conditions"]
+
+
+def test_accounted_service_rejection_is_data_not_missing_load(tmp_path):
+    def mutate(name, rows):
+        if name != "m4-flood-single-tenant":
+            return
+        submit = next(row for row in rows if row["op"] == "commit_submit")
+        key = submit["tenant_idx"], submit["archive_id"]
+        submit.update(status="error", http_status=429, archive_id="", accepted_at_ms=None)
+        rows[:] = [row for row in rows if not (
+            row["op"] == "commit_done" and (row["tenant_idx"], row["archive_id"]) == key)]
+    result = summarize_m4(runs(tmp_path, mutate=mutate), quick=False)
+    assert result["status"] == "MEASURED"
+    assert result["windows"][1]["commit_rejected"] == 1
+    assert "commit_submit_rejected" in result["windows"][1]["observed_conditions"]
 
 
 def test_quick_and_missing_contract_cannot_be_formal(tmp_path):

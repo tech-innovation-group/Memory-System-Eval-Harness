@@ -466,11 +466,15 @@ def _flood_window(baseline_rows: list[dict[str, Any]], run: dict[str, Any], tena
                if accepted_times and len(terminal_times) == len(accepted) == len(intervals)
                and not any(evidence[k] for k in ("duplicate_receipts", "duplicate_observations",
                                                  "orphan_observations", "invalid_intervals", "missing_poll_audit")) else None)
+    open_rows = [r for r in rows if r.get("op") == "open"]
+    aborted_rows = [r for r in rows if r.get("op") == "commit_preparation_failed"]
+    submitted_rows = [r for r in rows if r.get("op") == "commit_submit"]
     return {"scenario": run.get("scenario"), "baseline": _request_stats(baseline_rows),
             "preparation": {
-                "open_requests": sum(r.get("op") == "open" for r in rows),
+                "open_requests": len(open_rows),
                 "add_requests": sum(r.get("op") == "add" for r in rows),
-                "aborted_transactions": sum(r.get("op") == "commit_preparation_failed" for r in rows),
+                "aborted_transactions": len(aborted_rows),
+                "attempted_by_tenant": dict(Counter(str(r.get("tenant_idx")) for r in open_rows)),
                 "stage_http_counts": dict(Counter(f"{r.get('op')}:{r.get('http_status')}"
                     for r in rows if r.get("op") in {"open", "add"})),
             },
@@ -479,9 +483,10 @@ def _flood_window(baseline_rows: list[dict[str, Any]], run: dict[str, Any], tena
             "uncertain_overlap_reads": len(overlap) - len(confirmed),
             "commit_evidence": {k: v for k, v in evidence.items()
                                 if k not in {"accepted", "terminals", "intervals", "confirmed"}},
-            "commit_planned_or_recorded": len([r for r in rows if r.get("op") == "commit_submit"]),
+            "commit_planned_or_recorded": len(submitted_rows),
             "commit_accepted_202": evidence["accepted_receipts"], "unique_accepted_tasks": len(accepted),
             "accepted_by_tenant": dict(Counter(str(row.get("tenant_idx")) for row in accepted)),
+            "submitted_by_tenant": dict(Counter(str(row.get("tenant_idx")) for row in submitted_rows)),
             "commit_rejected": sum(r.get("op") == "commit_submit" and (_number(r.get("http_status")) or 0) >= 400 for r in rows),
             "commit_completed": completed, "commit_failed": failed,
             "commit_pending": max(0, len(accepted) - len(done)),
@@ -532,32 +537,43 @@ def summarize_m4(runs: dict[str, dict[str, Any]], *, quick: bool) -> dict[str, A
         if (contract.get("version") != "echomem-case-v1" or contract.get("tenant_count") != 4
                 or contract.get("query_mode") != "recall" or planned is None):
             gaps.append("effective_workload_contract_missing_or_invalid")
-        if planned is not None and (window["commit_planned_or_recorded"] != planned
-                                    or window["unique_accepted_tasks"] != planned):
-            gaps.append("planned_commit_load_not_fully_accepted")
-        accepted_tenants = set(window["accepted_by_tenant"])
+        preparation = window["preparation"]
+        open_requests = preparation["open_requests"]
+        attempted = open_requests or window["commit_planned_or_recorded"]
+        accounted = window["commit_planned_or_recorded"] + preparation["aborted_transactions"]
+        if planned is not None and (attempted != planned or accounted != planned):
+            gaps.append("planned_commit_attempts_incomplete")
+        attempted_by_tenant = (preparation["attempted_by_tenant"]
+                               or window["submitted_by_tenant"])
+        attempted_tenants = set(attempted_by_tenant)
         if name.endswith("uniform"):
-            counts = list(window["accepted_by_tenant"].values())
-            if accepted_tenants != {"0", "1", "2", "3"} or max(counts, default=0) - min(counts, default=0) > 1:
-                gaps.append("uniform_commit_distribution_not_observed")
-        elif accepted_tenants != {"0"}:
-            gaps.append("single_tenant_commit_distribution_not_observed")
+            counts = list(attempted_by_tenant.values())
+            if attempted_tenants != {"0", "1", "2", "3"} or max(counts, default=0) - min(counts, default=0) > 1:
+                gaps.append("uniform_commit_attempt_distribution_not_observed")
+        elif attempted_tenants != {"0"}:
+            gaps.append("single_tenant_commit_attempt_distribution_not_observed")
         evidence = window["commit_evidence"]
         gaps.extend(k for k in ("duplicate_receipts", "duplicate_observations", "orphan_observations",
                                 "invalid_intervals", "missing_poll_audit", "invalid_202_receipts") if evidence[k])
+        conditions = []
+        if preparation["aborted_transactions"]:
+            conditions.append("preparation_rejected_or_failed")
+        if window["commit_rejected"]:
+            conditions.append("commit_submit_rejected")
         if window["commit_pending"]:
-            gaps.append("commit_terminal_outcomes_unresolved")
+            conditions.append("accepted_commit_not_terminal_by_cutoff")
         for tenant in window["tenants"]:
             stats = tenant["overlap"]
             if (not stats["planned_or_recorded"] or stats["latency_missing_or_invalid"]
                     or stats["quality_missing"] or stats["recall_queries"] != stats["planned_or_recorded"]):
                 gaps.append(f"tenant_{tenant['tenant_index']}_confirmed_overlap_unproven")
         window["evidence_issues"] = gaps
+        window["observed_conditions"] = conditions
         issues.extend(f"{name}:{gap}" for gap in gaps)
     if len(windows) != 2:
         issues.append("flood_windows_missing")
     return {"status": "MEASURED" if observed == 3 and not issues and not quick else "PARTIAL" if observed else "BLOCKED",
-            "reason": "非终态轮询确认的重叠与宽观察窗口分别展示；MEASURED 仅代表配置负载与证据齐全，不代表性能达标或严格内部优先级",
+            "reason": "非终态轮询确认的重叠与宽观察窗口分别展示；服务拒绝和截止未终态是测量结果，不是证据缺口。MEASURED 不代表性能达标或严格内部优先级",
             "evidence_issues": issues, "baseline": baseline, "baseline_tenants": baseline_tenants,
             "expected_windows": 3, "observed_windows": observed, "windows": windows,
             "internal_order_observation": "内部顺序未观测"}
@@ -988,12 +1004,14 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                 for w in metric.get("windows", [])], [
                     ("scenario", "场景"), ("open_requests", "Open 请求"),
                     ("add_requests", "Add 请求"), ("aborted_transactions", "准备失败事务"),
+                    ("attempted_by_tenant", "Open 尝试分布"),
                     ("stage_http_counts", "阶段 HTTP 分布")]))
             visual += details("查看 Commit 受理、终态与观察范围", table(metric.get("windows", []), [
                 ("scenario", "场景"), ("commit_planned", "计划事务"), ("commit_planned_or_recorded", "实际提交"),
                 ("commit_accepted_202", "202"), ("commit_rejected", "拒绝"), ("commit_completed", "确认完成"),
                 ("commit_failed", "确认执行失败"), ("commit_pending", "未确认终态"),
-                ("observed_inflight_peak", "观察在途峰值（非服务排队）"), ("confirmed_intervals", "非终态区间")]))
+                ("observed_inflight_peak", "观察在途峰值（非服务排队）"), ("confirmed_intervals", "非终态区间"),
+                ("observed_conditions", "服务表现/截止状态")]))
             audit_rows = [{"scenario": w.get("scenario"), **(w.get("commit_evidence") or {})}
                           for w in metric.get("windows", [])]
             visual += details("查看轮询与对账证据", table(audit_rows, [("scenario", "场景"),

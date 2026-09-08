@@ -27,6 +27,7 @@ from performance.targets.echomem.orchestrator.probes import run_configured_probe
 from performance.targets.echomem.orchestrator.runner import run_suite
 from performance.targets.echomem.orchestrator.suites import QuickSpec
 from performance.targets.echomem.probes._client import load_tenant_specs
+from performance.targets.echomem.probes.docker_inspect import inspect_container
 from performance.targets.echomem.probes.tenant_observability import expected_lanes_from_config
 from performance.targets.echomem.probes.tenant_observability import collect as collect_tenant_observability
 from performance.util import acquire_output_lock, load_env_file, read_json
@@ -111,6 +112,16 @@ def _collect_observation(profile: dict[str, Any], token: str) -> dict[str, Any]:
         token=token, expected_tenants=list(observation.get("expected_tenants", [])),
         expected_lanes=list(observation.get("expected_lanes", [])), timeout_s=15,
     )
+    container = str(profile.get("resource_container") or "")
+    if container and not (result.get("boot_id") or result.get("process_started_at")):
+        try:
+            state = inspect_container(container).get("State") or {}
+            if state.get("StartedAt"):
+                result["process_started_at"] = state["StartedAt"]
+                result["process_id"] = state.get("Pid")
+                result["process_identity_source"] = "container-state"
+        except Exception as exc:
+            result["process_identity_error"] = type(exc).__name__
     result["observed_at_s"] = time.monotonic()
     return result
 

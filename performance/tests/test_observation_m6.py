@@ -157,6 +157,29 @@ def test_collector_records_local_receipt_time(monkeypatch):
     assert _collect_observation({"base_url": "http://test.invalid"}, "private")["observed_at_s"] == 123
 
 
+def test_collector_uses_container_generation_when_endpoint_has_no_identity(monkeypatch):
+    monkeypatch.setattr("performance.targets.echomem.observation_run.collect_tenant_observability",
+                        lambda **kwargs: {"status": "PASS"})
+    monkeypatch.setattr("performance.targets.echomem.observation_run.inspect_container", lambda name: {
+        "State": {"Pid": 42, "StartedAt": "2026-09-09T00:00:00Z"},
+    })
+    result = _collect_observation({"base_url": "http://test.invalid",
+                                   "resource_container": "dedicated-target"}, "private")
+    assert result["process_id"] == 42
+    assert result["process_started_at"] == "2026-09-09T00:00:00Z"
+    assert result["process_identity_source"] == "container-state"
+
+
+def test_collector_preserves_endpoint_identity(monkeypatch):
+    monkeypatch.setattr("performance.targets.echomem.observation_run.collect_tenant_observability",
+                        lambda **kwargs: {"status": "PASS", "boot_id": "service-generation"})
+    monkeypatch.setattr("performance.targets.echomem.observation_run.inspect_container",
+                        lambda name: pytest.fail("container inspect must not replace service identity"))
+    result = _collect_observation({"base_url": "http://test.invalid",
+                                   "resource_container": "dedicated-target"}, "private")
+    assert result["boot_id"] == "service-generation"
+
+
 def test_html_shows_each_frame_and_restart_limitations(tmp_path):
     suite, profile = full_evidence()
     result = summarize_m6(suite, profile)
