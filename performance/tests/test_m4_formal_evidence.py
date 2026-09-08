@@ -4,6 +4,7 @@ import pytest
 
 from performance.targets.echomem.acceptance.observation import summarize_m4, _commit_window_evidence
 from performance.tests.test_observation_suite import _run
+from performance.targets.echomem.orchestrator.suites import build_case_profile, six_metric_observation_cases
 
 
 def read(tenant, *, at=1600, latency=100, **extra):
@@ -66,6 +67,39 @@ def test_semantic_fact_baseline_does_not_require_marker(tmp_path, found):
                            expected_fact_found=found)
     result = summarize_m4(runs(tmp_path, mutate=mutate), quick=False)
     assert result["status"] == ("MEASURED" if found else "PARTIAL")
+
+
+@pytest.mark.parametrize("commit_rpm", [0, 60])
+def test_read_only_baseline_cannot_inherit_background_writers(commit_rpm):
+    case = next(c for c in six_metric_observation_cases() if c["label"] == "m4-baseline")
+    case["commit_rpm"] = commit_rpm
+    assert case["commit_workers"] > 0 and case["read_only"]
+    profile = build_case_profile(case, base_url="http://unused.invalid", tenant_count=4, auth_headers={})
+    assert profile.load.mix["write"] == 0
+    assert "write" not in profile.load.arrival
+    assert profile.load.workers == case["search_workers"]
+
+
+def test_barrier_background_workers_are_search_only():
+    for case in six_metric_observation_cases():
+        if case["scene"] != "scene_barrier":
+            continue
+        profile = build_case_profile(case, base_url="http://unused.invalid", tenant_count=4, auth_headers={})
+        assert set(profile.load.mix) == {"read"}
+        assert profile.load.workers == case["search_workers"]
+        assert profile.params["barrier_count"] == case["commit_barrier_count"]
+
+
+def test_real_engine_read_only_baseline_emits_no_write_http(server):
+    from performance.engine import Engine, load_scene
+    from performance.targets.echomem.orchestrator.suites import SCENES_DIR
+    _, _, url = server
+    case = next(c for c in six_metric_observation_cases() if c["label"] == "m4-baseline")
+    case.update(duration_s=.3, search_workers=4)
+    profile = build_case_profile(case, base_url=url, tenant_count=4, auth_headers={})
+    result = Engine(profile, load_scene(SCENES_DIR / "scene_capacity.py")).run()
+    assert result.records
+    assert {row.op for row in result.records} == {"read"}
 
 
 @pytest.mark.parametrize("change", ["legacy", "timeout", "rejected", "duplicate", "missing_tenant", "invalid_time", "no_pending", "baseline_empty_recall"])

@@ -70,6 +70,29 @@ def test_capacity_error_keeps_earlier_report_and_marks_interruption(tmp_path, mo
     assert events == ["bounded-suite", "probes"]
 
 
+def test_cli_does_not_replace_published_partial_result(tmp_path, monkeypatch):
+    args, _ = setup_run(tmp_path, monkeypatch)
+    original_evaluate = module.evaluate_observation
+    def evaluate(*a, **k):
+        result = original_evaluate(*a, **k)
+        result["metrics"]["M3"]["retained_evidence"] = [1, 2, 3]
+        return result
+    monkeypatch.setattr(module, "evaluate_observation", evaluate)
+    def capacity(*a):
+        raise RuntimeError("unit capacity failure")
+    monkeypatch.setattr(module, "_run_m1_profiles", capacity)
+    code = module.main(["--profiles", str(args.profiles), "--profile", "4U8G",
+                        "--out-dir", str(args.out_dir), "--metrics", "M1,M3"])
+    assert code == 2
+    summary = json.loads((args.out_dir / "summary.json").read_text())
+    assert summary["metrics"]["M3"]["retained_evidence"] == [1, 2, 3]
+    assert summary["pending_metrics"] == ["M1"]
+    assert "运行中断" in (args.out_dir / "report.html").read_text()
+    manifest = json.loads((args.out_dir / "execution-manifest.json").read_text())
+    assert manifest["execution_status"] == "EXECUTION_ERROR"
+    assert manifest["finished_at"] and manifest["platform_provenance"]["git_commit"] == "unit-test"
+
+
 def test_uncleared_fault_prevents_capacity_without_losing_checkpoint(tmp_path, monkeypatch):
     args, events = setup_run(tmp_path, monkeypatch)
     monkeypatch.setattr(module, "check_readiness", lambda p: {"ok": False})

@@ -31,6 +31,14 @@ from performance.targets.echomem.probes.tenant_observability import collect as c
 from performance.util import acquire_output_lock, load_env_file, read_json
 
 
+class PublishedObservationError(RuntimeError):
+    """A failed phase whose partial evidence has already been published."""
+
+    def __init__(self, message: str, result: dict[str, Any]):
+        super().__init__(message)
+        self.result = result
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -384,7 +392,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 (output / "suite.json").write_text(json.dumps(suite, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
                 (output / "summary.json").write_text(json.dumps(checkpoint, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
                 write_observation_report(checkpoint, output / "report.html")
-                raise
+                manifest_path = output / "execution-manifest.json"
+                failure_manifest = read_json(manifest_path)
+                failure_manifest.update(finished_at=_now(), execution_status="EXECUTION_ERROR",
+                                        error_class=type(exc).__name__, pending_metrics=["M1"])
+                manifest_path.write_text(json.dumps(failure_manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                raise PublishedObservationError(str(exc), checkpoint) from exc
             suite["m1"]["reports"] = [{"topology": report.get("topology"), "status": report.get("status"),
                 "path": str(output / "M1" / str(report.get("topology")) / "report.json")} for report in m1_reports]
             snapshot_observability(stop=True)
@@ -438,6 +451,8 @@ def main(argv: list[str] | None = None) -> int:
     interrupted = False
     try:
         result = run(args)
+    except PublishedObservationError as exc:
+        result = exc.result
     except (ValueError, RuntimeError, OSError, KeyboardInterrupt) as exc:
         interrupted = isinstance(exc, KeyboardInterrupt)
         output = args.out_dir.expanduser().resolve()

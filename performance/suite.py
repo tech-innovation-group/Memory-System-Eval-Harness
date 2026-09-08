@@ -128,6 +128,9 @@ def build_case_profile(
     write_workers = case.get("commit_workers") or 0
     if write_workers <= 0 and commit_rps > 0:
         write_workers = max(1, round(commit_rps))
+    if case.get("read_only") or "write" not in scene.tasks:
+        write_workers = 0
+        commit_rps = 0.0
 
     arrival: dict[str, ArrivalSpec] = {}
     mix: dict[str, int] = {}
