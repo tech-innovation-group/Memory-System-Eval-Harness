@@ -298,6 +298,53 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
                       observation_samples, observation_errors, output), daemon=True)
             sampler.start()
 
+        suite = {"runs": [], "output_root": str(output), "instance_profile": profile["name"],
+                 "resource_evidence": profile["resource_evidence"], "readiness": profile["readiness"]}
+
+        def publish_stage(pending, error=None):
+            if error is not None and sampler is not None:
+                sampler_stop.set()
+                sampler.join(timeout=20)
+            if sampler is not None:
+                observation_monitor["window_end_s"] = time.monotonic()
+            suite["tenant_observability_samples"] = list(observation_samples)
+            suite["tenant_observability_monitor"] = dict(observation_monitor)
+            result = evaluate_observation(suite, profile, m1_reports, quick=args.quick, selected_metrics=selected)
+            result.update(platform_provenance=provenance, checkpoint=error is None, pending_metrics=pending)
+            if "capacity_start_readiness" in suite:
+                result["capacity_start_readiness"] = suite["capacity_start_readiness"]
+            if error is not None:
+                result.update(status="EXECUTION_ERROR", error_class=type(error).__name__)
+                manifest_path = output / "execution-manifest.json"
+                manifest = read_json(manifest_path)
+                manifest.update(execution_status="EXECUTION_ERROR", finished_at=_now(), error_class=type(error).__name__)
+                manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            (output / "suite.json").write_text(json.dumps(suite, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            (output / "summary.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            _combine_csv(suite, output, "records.csv")
+            _combine_csv(suite, output, "metrics_samples.csv")
+            write_observation_report(result, output / "report.html")
+            return result
+
+        if "M1" in selected:
+            publish_stage(selected)
+            try:
+                suite["capacity_start_readiness"] = check_readiness(profile)
+                if not suite["capacity_start_readiness"].get("ok"):
+                    raise RuntimeError("capacity_control_preflight_failed")
+                m1_reports = _run_m1_profiles(profile, args, output)
+                suite["m1"] = {"reports": [{"topology": report.get("topology"), "status": report.get("status"),
+                    "path": str(output / "M1" / str(report.get("topology")) / "report.json")} for report in m1_reports]}
+                if any((level.get("recovery") or {}).get("state") not in {"RECOVERED", "NO_BOUNDARY_OBSERVED"}
+                       for report in m1_reports for level in report.get("levels", [])):
+                    raise RuntimeError("capacity_recovery_unproven_before_next_metric")
+                if not check_readiness(profile).get("ok"):
+                    raise RuntimeError("post_capacity_readiness_failed")
+            except Exception as exc:
+                result = publish_stage(selected, exc)
+                raise PublishedObservationError(str(exc), result) from exc
+            publish_stage([code for code in selected if code != "M1"])
+
         load_metrics = [name for name in selected if name in {"M3", "M4"}]
         scenarios = []
         if "M3" in load_metrics:
@@ -312,17 +359,26 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
                     scenarios.append(dependency)
         if scenarios:
             quick_spec = QuickSpec(duration_cap_s=45, barrier_count_cap=8, include_seed=True) if args.quick else None
-            suite = run_suite(
-                profile, suite_dir=output, quick=quick_spec,
-                profile_name="six-metrics-observation", base_url=profile["base_url"],
-                timeout_s=args.timeout_s, scenarios=scenarios, resume=args.resume,
-            )
+            try:
+                suite = run_suite(
+                    profile, suite_dir=output, quick=quick_spec,
+                    profile_name="six-metrics-observation", base_url=profile["base_url"],
+                    timeout_s=args.timeout_s, scenarios=scenarios, resume=args.resume,
+                )
+            except Exception as exc:
+                result = publish_stage([code for code in selected if code != "M1"], exc)
+                raise PublishedObservationError(str(exc), result) from exc
         else:
             suite = {"runs": [], "output_root": str(output),
                      "instance_profile": profile["name"],
                      "resource_evidence": profile["resource_evidence"],
                      "readiness": profile["readiness"]}
 
+        suite["m1"] = {
+            "reports": [{"topology": report.get("topology"), "status": report.get("status"),
+                "path": str(output / "M1" / str(report.get("topology")) / "report.json")}
+                for report in m1_reports]
+        }
         visibility = (suite.get("seed") or {}).get("visibility", [])
         probe_queries = (suite.get("seed") or {}).get("probe_queries")
         if probe_queries and isinstance(profile.get("fault_isolation"), dict):
@@ -333,10 +389,10 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
                 "queries": {row["tenant_id"]: row["marker"] for row in visibility},
             }
         tenant_config = read_json(Path(profile["tenant_config"]))
-        pending = [code for code in selected if code in {"M1", "M2", "M5", "M6"}]
+        pending = [code for code in selected if code in {"M2", "M5", "M6"}]
         early_report = None
         if scenarios and pending:
-            early_report = evaluate_observation(suite, profile, [], quick=args.quick, selected_metrics=selected)
+            early_report = evaluate_observation(suite, profile, m1_reports, quick=args.quick, selected_metrics=selected)
             early_report.update(platform_provenance=provenance, checkpoint=True, pending_metrics=pending)
             (output / "suite.json").write_text(json.dumps(suite, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             (output / "summary.json").write_text(json.dumps(early_report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -363,14 +419,6 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
         suite = {**suite, **probes}
         if observation.get("enabled"):
             suite["tenant_observability_before"] = observation_before
-        suite["m1"] = {
-            "reports": [
-                {"topology": report.get("topology"),
-                 "status": report.get("status"),
-                 "path": str(output / "M1" / str(report.get("topology")) / "report.json")}
-                for report in m1_reports
-            ]
-        }
         def snapshot_observability(*, stop: bool):
             if sampler is not None:
                 if stop:
@@ -387,43 +435,7 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
             suite["tenant_observability_samples"] = list(observation_samples)
             suite["tenant_observability_monitor"] = {**observation_monitor, "errors": list(observation_errors)}
 
-        snapshot_observability(stop="M1" not in selected)
-        if "M1" in selected:
-            # Publish bounded scenes before the potentially long capacity search.
-            checkpoint = evaluate_observation(suite, profile, [], quick=args.quick, selected_metrics=selected)
-            checkpoint.update(platform_provenance=provenance, checkpoint=True, pending_metrics=["M1"])
-            (output / "suite.json").write_text(json.dumps(suite, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-            (output / "summary.json").write_text(json.dumps(checkpoint, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-            _combine_csv(suite, output, "records.csv")
-            _combine_csv(suite, output, "metrics_samples.csv")
-            write_observation_report(checkpoint, output / "report.html")
-            capacity_readiness = {}
-            try:
-                capacity_readiness = check_readiness(profile)
-                if not capacity_readiness.get("ok"):
-                    checkpoint["capacity_start_readiness"] = capacity_readiness
-                    raise RuntimeError("capacity_control_preflight_failed")
-                m1_reports = _run_m1_profiles(profile, args, output)
-            except Exception as exc:
-                snapshot_observability(stop=True)
-                checkpoint = evaluate_observation(suite, profile, m1_reports, quick=args.quick, selected_metrics=selected)
-                checkpoint.update(status="EXECUTION_ERROR", checkpoint=False,
-                                  pending_metrics=["M1"], platform_provenance=provenance,
-                                  incomplete_reason=type(exc).__name__)
-                if not capacity_readiness.get("ok"):
-                    checkpoint["capacity_start_readiness"] = capacity_readiness
-                (output / "suite.json").write_text(json.dumps(suite, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-                (output / "summary.json").write_text(json.dumps(checkpoint, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-                write_observation_report(checkpoint, output / "report.html")
-                manifest_path = output / "execution-manifest.json"
-                failure_manifest = read_json(manifest_path)
-                failure_manifest.update(finished_at=_now(), execution_status="EXECUTION_ERROR",
-                                        error_class=type(exc).__name__, pending_metrics=["M1"])
-                manifest_path.write_text(json.dumps(failure_manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-                raise PublishedObservationError(str(exc), checkpoint) from exc
-            suite["m1"]["reports"] = [{"topology": report.get("topology"), "status": report.get("status"),
-                "path": str(output / "M1" / str(report.get("topology")) / "report.json")} for report in m1_reports]
-            snapshot_observability(stop=True)
+        snapshot_observability(stop=True)
         (output / "suite.json").write_text(json.dumps(suite, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         _combine_csv(suite, output, "records.csv")
         _combine_csv(suite, output, "metrics_samples.csv")

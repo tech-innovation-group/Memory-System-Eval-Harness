@@ -41,7 +41,7 @@ def test_publish_checkpoint_before_capacity(tmp_path, monkeypatch):
         events.append("capacity")
         data = json.loads((output / "summary.json").read_text())
         assert data["checkpoint"] is True
-        assert data["pending_metrics"] == ["M1"]
+        assert data["pending_metrics"] == ["M1", "M3"]
         assert "阶段性结果，尚未完成" in (output / "report.html").read_text()
         assert (output / "records.csv").is_file()
         assert (output / "metrics_samples.csv").is_file()
@@ -49,7 +49,7 @@ def test_publish_checkpoint_before_capacity(tmp_path, monkeypatch):
 
     monkeypatch.setattr(module, "_run_m1_profiles", capacity)
     result = module.run(args)
-    assert events == ["bounded-suite", "probes", "capacity"]
+    assert events == ["capacity", "bounded-suite", "probes"]
     assert not result.get("checkpoint")
 
 
@@ -93,9 +93,9 @@ def test_capacity_error_keeps_earlier_report_and_marks_interruption(tmp_path, mo
     data = json.loads((args.out_dir / "summary.json").read_text())
     assert data["status"] == "EXECUTION_ERROR"
     assert data["checkpoint"] is False
-    assert data["pending_metrics"] == ["M1"]
+    assert data["pending_metrics"] == ["M1", "M3"]
     assert "运行中断" in (args.out_dir / "report.html").read_text()
-    assert events == ["bounded-suite", "probes"]
+    assert events == []
 
 
 def test_cli_does_not_replace_published_partial_result(tmp_path, monkeypatch):
@@ -114,7 +114,7 @@ def test_cli_does_not_replace_published_partial_result(tmp_path, monkeypatch):
     assert code == 2
     summary = json.loads((args.out_dir / "summary.json").read_text())
     assert summary["metrics"]["M3"]["retained_evidence"] == [1, 2, 3]
-    assert summary["pending_metrics"] == ["M1"]
+    assert summary["pending_metrics"] == ["M1", "M3"]
     assert "运行中断" in (args.out_dir / "report.html").read_text()
     manifest = json.loads((args.out_dir / "execution-manifest.json").read_text())
     assert manifest["execution_status"] == "EXECUTION_ERROR"
@@ -129,7 +129,7 @@ def test_uncleared_fault_prevents_capacity_without_losing_checkpoint(tmp_path, m
         module.run(args)
     data = json.loads((args.out_dir / "summary.json").read_text())
     assert data["capacity_start_readiness"]["ok"] is False
-    assert events == ["bounded-suite", "probes"]
+    assert events == []
 
 
 @pytest.mark.parametrize("existing_report", [False, True])
@@ -160,6 +160,25 @@ def test_existing_results_require_explicit_resume(tmp_path, monkeypatch):
     assert code == 2
     assert events == []
     assert summary.read_text() == '{"retained": true}'
+
+
+@pytest.mark.parametrize("recovered", [False, True])
+def test_capacity_precedes_load_and_survives_later_failure(tmp_path, monkeypatch, recovered):
+    args, events = setup_run(tmp_path, monkeypatch)
+    report = {"topology": "cross-tenant", "status": "MEASURED", "levels_requested": [4],
+              "load_profile": "search", "levels": [{"status": "MEASURED", "hot_users": 4,
+                "recovery": {"state": "RECOVERED" if recovered else "INCONCLUSIVE"}}]}
+    monkeypatch.setattr(module, "_run_m1_profiles", lambda *a: [report])
+    def load(*a, **k):
+        events.append("load")
+        raise RuntimeError("later load failed")
+    monkeypatch.setattr(module, "run_suite", load)
+    with pytest.raises(module.PublishedObservationError):
+        module.run(args)
+    summary = json.loads((args.out_dir / "summary.json").read_text())
+    assert summary["metrics"]["M1"]["levels"][0]["hot_users"] == 4
+    assert summary["status"] == "EXECUTION_ERROR"
+    assert events == (["load"] if recovered else [])
 
 
 def test_failure_report_written_while_lock_owned(tmp_path, monkeypatch):
