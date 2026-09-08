@@ -35,6 +35,30 @@ def test_no_commit_completion_is_not_perfect_fairness():
     assert result["overlap_search"]["sent"] == 0
 
 
+def test_last_poll_gap_is_not_confirmed_backlog_and_errors_stay_in_denominator():
+    loaded = sample()
+    loaded["rows"] += [dict(loaded["rows"][0], start_s=9, end_s=10)]
+    loaded["rows"][0].update(success=False, http_status=503)
+    commits = [{"identity_index": 0, "accepted_202": True, "accepted_at": 102,
+                "last_nonterminal_at": 106, "terminal_at": 110, "completed": True}]
+    result = summarize_flood(sample(), loaded, commits, 4)
+    assert result["overlap_search"]["sent"] == 5
+    assert result["confirmed_overlap_search"]["sent"] == 4
+    assert result["confirmed_overlap_search"]["success"] == 3
+    assert result["overlap_evidence"]["uncertain_search"] == 1
+    assert result["overlap_evidence"]["max_confirmed_inflight"] == 1
+
+
+def test_legacy_or_invalid_nonterminal_time_is_not_inferred_from_terminal():
+    for pending in (None, 101, 111, True, float("nan"), "106"):
+        result = summarize_flood(sample(), sample(), [{
+            "identity_index": 0, "accepted_202": True, "accepted_at": 102,
+            "last_nonterminal_at": pending, "terminal_at": 110, "completed": True}], 4)
+        assert result["overlap_search"]["sent"] == 4
+        assert result["confirmed_overlap_search"]["sent"] == 0
+        assert result["overlap_evidence"]["uncertain_search"] == 4
+
+
 def test_missing_tenant_samples_are_not_zero_latency():
     during = sample()
     during["rows"] = during["rows"][:3]
@@ -194,6 +218,15 @@ def test_module_advice_uses_actual_equal_tenants_not_cached_jain():
     assert "完成数相等" in module["judgment"]
     assert "Commit Jain=1.0000" in module["evidence"]
     assert "没有获得近似等权" not in module["judgment"]
+
+
+def test_lane_rejection_advice_requires_explicit_public_reason_evidence():
+    report = redacted_report({"metrics": {"M3_M4": {
+        "commit_outcomes": {"rejection_reason_counts": {"HTTP_LANE_SATURATED": 15}}}}}, {"levels": []})
+    module = next(r for r in derive_module_recommendations(report) if r["module"] == "Admission 与容量保护")
+    assert "HTTP_LANE_SATURATED拒绝 15 次" in module["evidence"]
+    assert "不能算成已受理任务执行失败" in module["judgment"]
+    assert "不能排除外部依赖间接" in module["judgment"]
 
 
 def test_failed_recovery_and_incomplete_timeline_are_not_module_passes():

@@ -18,6 +18,7 @@ from performance.targets.echomem.acceptance.capacity_experiment import _load_act
 from performance.targets.echomem.acceptance.capacity_load import measure
 from performance.targets.echomem.acceptance.capacity_statistics import evaluate_level, search_summary
 from performance.targets.echomem.acceptance.commit_evidence import STATES, commit_outcomes, receipt
+from performance.targets.echomem.acceptance.load_evidence import number
 from performance.targets.echomem.acceptance.six_metrics import jain
 from performance.targets.echomem.probes import commit_recovery
 from performance.targets.echomem.probes._client import extract_archive, status_from
@@ -98,6 +99,18 @@ def summarize_flood(baseline: dict, loaded: dict, commits: list[dict], identitie
     # over-count slow requests that actually started before the flood.
     overlap = [r for r in loaded["rows"] if r.get("op") == "read" and r.get("sent")
                and any(a <= r["start_s"] <= b for a, b in intervals)]
+    # A later successful nonterminal poll bounds a conservative in-flight
+    # interval. The final polling gap is unknown, not confirmed backlog.
+    confirmed_intervals = []
+    for commit in accepted:
+        begin = number(commit.get("accepted_at"))
+        pending = number(commit.get("last_nonterminal_at"))
+        finish = number(commit.get("terminal_at", commit.get("observed_until")))
+        if begin is not None and pending is not None and finish is not None and begin <= pending <= finish:
+            confirmed_intervals.append((begin - start, pending - start))
+    confirmed = [r for r in overlap
+                 if any(a <= r["start_s"] <= b for a, b in confirmed_intervals)]
+    depths = [sum(a <= r["start_s"] <= b for a, b in confirmed_intervals) for r in confirmed]
     tenants = []
     for i in range(identities):
         completed = sum(c.get("completed", False) and c.get("terminal_at", end + 1) <= end
@@ -119,6 +132,13 @@ def summarize_flood(baseline: dict, loaded: dict, commits: list[dict], identitie
             "commit_jain": jain(commit_rates),
             "search_inverse_p95_jain": jain([1 / p for p in latencies]) if all(latencies) else None,
             "paired": comparison(baseline, loaded, identities), "overlap_search": search_summary(overlap),
+            "overlap_protocol": "nonterminal-poll-v1",
+            "confirmed_overlap_search": search_summary(confirmed),
+            "overlap_evidence": {"accepted_with_nonterminal_poll": len(confirmed_intervals),
+                                 "observed_search": len(overlap), "confirmed_search": len(confirmed),
+                                 "uncertain_search": len(overlap) - len(confirmed),
+                                 "min_confirmed_inflight": min(depths, default=None),
+                                 "max_confirmed_inflight": max(depths, default=None)},
             "strict_server_scheduling_proven": False,
             "scope": "one equal-load window; completion throughput excludes post-window drain"}
 

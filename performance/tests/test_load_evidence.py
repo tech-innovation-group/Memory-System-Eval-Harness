@@ -13,6 +13,7 @@ def window():
 
 
 def joint():
+    overlap = window()
     return {"expected_identity_indices": [0, 1, 2, 3], "search_window_s": 60,
             "tenants": [{"identity_index": i, "commit_completed_in_search_window": 4,
                          "commit_rps": 999, "search": window()} for i in range(4)],
@@ -20,7 +21,8 @@ def joint():
             "commit_planned": 32, "accepted_202": 32,
             "paired": [{"identity_index": i, "before": window(), "during": window(),
                         "p95_degradation_percent": 999} for i in range(4)],
-            "overlap_search": window()}
+            "overlap_protocol": "nonterminal-poll-v1",
+            "overlap_search": overlap, "confirmed_overlap_search": overlap}
 
 
 def test_equal_completions_recomputed_not_labelled_unfair():
@@ -104,6 +106,30 @@ def test_inadequate_flood_or_baseline_is_inconclusive(mutation):
     else:
         data["paired"][3]["identity_index"] = 2
     assert priority_counts(data)["status"] == "INCONCLUSIVE"
+
+
+@pytest.mark.parametrize("mutation", ["legacy", "empty-confirmed", "exceeds-observed", "unknown-protocol"])
+def test_observed_terminal_gap_cannot_prove_backlog(mutation):
+    data = joint()
+    if mutation == "legacy":
+        data.pop("confirmed_overlap_search")
+        data.pop("overlap_protocol")
+    elif mutation == "empty-confirmed":
+        data["confirmed_overlap_search"] = {"sent": 0, "success": 0}
+    elif mutation == "exceeds-observed":
+        data["confirmed_overlap_search"] = dict(window(), sent=41)
+    else:
+        data["overlap_protocol"] = "future-unverified"
+    counts = priority_counts(data)
+    assert counts["status"] == "INCONCLUSIVE"
+    assert counts["observed_sent"] == 40
+
+
+def test_reduction_keeps_confirmed_overlap_for_every_repeat():
+    data = joint()
+    reduced, _ = contention_matrix_counts({"samples": [{"repeat": 1, "M3_M4": data}]})
+    assert load_counts(reduced)["priority_status"] == "MEASURED"
+    assert priority_counts(reduced)["overlap_basis"] == "confirmed_nonterminal"
 
 
 def test_rounds_are_not_pooled_to_hide_missing_evidence():

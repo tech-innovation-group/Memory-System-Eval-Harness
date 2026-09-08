@@ -78,6 +78,9 @@ def contention_matrix_counts(value: dict) -> tuple[dict, dict]:
                            "completed_including_drain": joint.get("completed_including_drain"),
                            "unresolved_after_observation": joint.get("unresolved_after_observation"),
                            "overlap_search": joint.get("overlap_search") or {},
+                           "overlap_protocol": joint.get("overlap_protocol"),
+                           "confirmed_overlap_search": joint.get("confirmed_overlap_search"),
+                           "overlap_evidence": joint.get("overlap_evidence"),
                            "paired": joint.get("paired", [])}
                           for sample, joint in zip(samples, joints)],
         commit_jain_values=[joint.get("commit_jain") for joint in joints],
@@ -256,6 +259,9 @@ def derive_module_recommendations(report: dict) -> list[dict]:
                       for row in levels if row.get("hot_users") == highest]
     errors_complete = bool(highest_errors and all(v is not None for v in highest_errors))
     joints = report.get("M3_M4", {}).get("repeat_summaries") or [report.get("M3_M4", {})]
+    lane_rejections = [count((joint.get("commit_outcomes") or {}).get(
+        "rejection_reason_counts", {}).get("HTTP_LANE_SATURATED")) for joint in joints]
+    known_lane_rejections = sum(value for value in lane_rejections if value is not None)
     atomic = [number(row.get("search", {}).get("atomic_p95_s"))
               for joint in joints for row in joint.get("tenants", [])]
     atomic = [v for v in atomic if v is not None]
@@ -275,8 +281,12 @@ def derive_module_recommendations(report: dict) -> list[dict]:
         {"priority": "P0", "module": "Admission 与容量保护", "metrics": "M1 / M4",
          "evidence": (f"最高记录档 H={_observed(highest)}；该档最多HTTP/传输错误 "
                       f"{_observed(max(highest_errors) if errors_complete else None)}。"
+                      + (f"已记录HTTP_LANE_SATURATED拒绝 {known_lane_rejections} 次。" if known_lane_rejections else "")
                       + conclusions["M4"]["evidence"]),
-         "judgment": "HTTP失败或202未受理不能单独证明Admission正在保护服务；必须区分限流、传输故障和外部依赖。",
+         "judgment": ("回执确认部分Commit在HTTP入口通道饱和时被拒绝，不能算成已受理任务执行失败。"
+                      "该原因码不解释通道为什么被占满，也不能排除外部依赖间接延长占用；应继续核对入口容量和持有时长。"
+                      if known_lane_rejections else
+                      "HTTP失败或202未受理不能单独证明Admission正在保护服务；必须区分限流、传输故障和外部依赖。"),
          "change": "先按reason_code、lane、配额与retry_after定位拒绝来源；只有确认Search与Commit争用配额时，再评估独立预算。",
          "verify": "逐档报告实际发送、202受理、完成与积压恢复；继续升档至真实运行边界，不把首个非零错误档当最大容量。"},
         {"priority": "P0", "module": "租户公平调度", "metrics": "M3 / M4",
@@ -407,13 +417,16 @@ def render(report: dict) -> str:
     degradation = [p["p95_degradation_percent"] for p in bystanders if p.get("p95_degradation_percent") is not None]
     worst = (fault_evidence["worst_bystander_p95_change_percent"] if m2.get("cases")
              else max(degradation, default=None))
-    p95 = joint.get("overlap_search", {}).get("p95_s")
+    representative_priority = priority_counts(joint)
+    p95 = representative_priority["p95_s"]
     cards = [("M1 三轮零错误热用户档", report.get("M1", {}).get("zero_error_max_hot_users")),
              ("M1 最高过载观察档", highest),
              ("M1 条件DAU范围", (f"{min(conservative_dau):.1f}-{max(conservative_dau):.1f}"
                                if conservative_dau else None)),
              ("M2 最差旁观 P95 劣化 %", worst),
-             ("M3 代表轮Commit Jain", fairness.get("commit_jain")), ("M4 积压重叠 Search P95 / s", p95),
+             ("M3 代表轮Commit Jain", fairness.get("commit_jain")),
+             ("M4 确认积压 Search P95 / s" if representative_priority["overlap_basis"] == "confirmed_nonterminal"
+              else "M4 仅观察区间 Search P95 / s", p95),
              ("M5 202 自主恢复", m5.get("autonomous_completed")),
              ("M6 有效四元组单元", f"{m6.get('valid_cells', '未采集')}/{m6['expected_cells']}")]
     capacity_rows = [[r.get("hot_users"), "混合" if r.get("mixed") else "纯召回", r["search"].get("p95_s"),
@@ -450,8 +463,14 @@ def render(report: dict) -> str:
         p["p95_degradation_percent"], p["during_sent"], p["during_http_errors"]]
         for p in priority_counts(joint)["pairs"]]
     commit_outcome_rows = []
+    backlog_depth_rows = []
     for i, repeat in enumerate(joint.get("repeat_summaries") or [joint], 1):
         outcomes = repeat.get("commit_outcomes") or {}
+        backlog = repeat.get("overlap_evidence") or {}
+        backlog_depth_rows.append([repeat.get("repeat", i),
+            backlog.get("accepted_with_nonterminal_poll"), backlog.get("confirmed_search"),
+            backlog.get("uncertain_search"), backlog.get("min_confirmed_inflight"),
+            backlog.get("max_confirmed_inflight")])
         commit_outcome_rows.append([
             repeat.get("repeat", i), outcomes.get("recorded_submissions"),
             outcomes.get("accepted_202"), outcomes.get("http_rejected"),
@@ -528,7 +547,9 @@ def render(report: dict) -> str:
             for phase, label in (("before", "基线"), ("during", "洪泛中")):
                 priority_paths.append((f"轮次 {repeat.get('repeat', 1)} T{pair['identity_index']+1} {label}",
                                        pair.get(phase, {})))
-        priority_paths.append((f"轮次 {repeat.get('repeat', 1)} 积压重叠窗口", repeat.get("overlap_search", {})))
+        priority_paths.append((f"轮次 {repeat.get('repeat', 1)} 观察区间", repeat.get("overlap_search", {})))
+        if repeat.get("confirmed_overlap_search"):
+            priority_paths.append((f"轮次 {repeat.get('repeat', 1)} 非终态确认区间", repeat["confirmed_overlap_search"]))
     return f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>4U8G 六项指标 · 综合实测</title><style>*{{box-sizing:border-box}}body{{margin:0;color:#24323a;background:#f6f8f9;font:15px/1.7 system-ui,"PingFang SC",sans-serif;letter-spacing:0}}main{{max-width:1360px;margin:auto;padding:28px}}h1{{font-size:28px}}h2{{font-size:21px}}h3{{font-size:17px}}header,section{{padding:20px 0;border-bottom:1px solid #ccd8dc}}.muted{{color:#576b74}}.notice{{border-left:4px solid #ad4637;padding:8px 16px;background:#fff1ec}}.conclusion{{border-left:4px solid #2b8175;padding:10px 16px;background:#edf7f4;margin:12px 0}}.conclusion>strong{{display:block;color:#17685e;font-size:17px}}.conclusion p{{margin:5px 0}}.conclusion small{{display:block;color:#40555e;margin-top:5px}}.stats{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin:24px 0}}.stats div{{border-top:3px solid #278575;padding-top:12px}}.stats b{{display:block;font-size:27px}}.scroll{{overflow:auto}}table{{width:100%;border-collapse:collapse;background:white;font-size:13px}}th,td{{padding:10px;border-bottom:1px solid #d7e0e5;text-align:left;vertical-align:top}}th{{background:#e6eef1;white-space:nowrap}}td{{overflow-wrap:anywhere}}code{{overflow-wrap:anywhere}}details{{border-top:1px solid #dbe3e6;margin-top:14px;padding-top:9px}}summary{{cursor:pointer;color:#176b73;font-weight:650}}.chart-grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;margin:18px 0}}.chart-grid>div{{min-width:0;border-top:2px solid #9eb3bc;padding-top:8px}}.chart-wide{{max-width:900px}}.bar{{display:grid;grid-template-columns:145px minmax(0,1fr) 70px;gap:12px;align-items:center;margin:10px 0}}.bar>div,.track{{height:14px;background:#dae3e7;display:block}}.bar i,.track em{{display:block;height:100%;font-style:normal}}.bar b{{text-align:right}}.comparison-chart{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:16px 0}}.compare{{display:grid;grid-template-columns:58px minmax(0,1fr) 62px;gap:5px 8px;align-items:center;background:#fff;padding:10px;border-top:2px solid #9eb3bc}}.compare>b{{grid-column:1/-1}}.compare strong{{text-align:right}}.flow{{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:16px 0}}.flow span{{background:#fff;border-top:3px solid #278575;padding:10px;text-align:center;font-size:13px}}.flow b{{display:block}}a{{color:#16699b}}@media(max-width:900px){{.chart-grid{{grid-template-columns:1fr}}}}@media(max-width:700px){{main{{padding:14px}}.stats,.comparison-chart{{grid-template-columns:1fr}}h1{{font-size:24px}}.bar{{grid-template-columns:110px minmax(0,1fr) 58px;font-size:12px}}.flow{{grid-template-columns:1fr}}}}</style></head><body><main>
 <header><p class="muted">服务器真实 HTTP / 真实模型 / 4 CPU · 8 GiB / PR31 基线 + PR32 测试增强</p><h1>EchoMem 六项指标综合压测报告</h1>
@@ -575,10 +596,15 @@ def render(report: dict) -> str:
 <h3>Commit 受理、拒绝与终态</h3>
 {table(['轮次','已记录提交','受理202','HTTP拒绝','HTTP状态分布','拒绝原因分布','原因未明确','202缺archive','completed','failed/error','未终态','轮询HTTP错误'],commit_outcome_rows)}
 <p>每个Commit只提交一次；拒绝不自动重提，避免隐藏过载。503不自动归因于限流或API key；原因码仅保留已识别公共枚举。状态轮询可在原期限内继续，但全部轮询错误保留。旧数据未记录的字段显示未采集。</p>
+<h3>积压区间的证据强度</h3>
+{table(['轮次','验收采用口径','观察区间Search','非终态确认Search','观察区间P95 s','非终态确认P95 s'],[[r['repeat'],r['priority']['overlap_basis'],r['priority']['observed_sent'],r['priority']['confirmed_sent'],r['priority']['observed_p95_s'],r['priority']['confirmed_p95_s']] for r in load_evidence['rows']])}
+<p>观察区间截止首次看到终态或结束观察；确认区间截止最后一次成功非终态轮询的请求开始时间。只有确认区间内样本用于完整M4证据，最后轮询空档仍保留统计但不当成已确认积压。此证据依赖原任务终态不回退，不代表Search整段执行时间都与Commit重叠，也不证明内部严格调度。</p>
+{table(['轮次','有非终态确认的Commit','确认Search','轮询空档不确定Search','Search开始时最少确认在途','Search开始时最多确认在途'],backlog_depth_rows)}
+<p>在途数是这些Search请求开始时、可由后续非终态轮询确认的任务数下界，不是服务队列深度，也不是全轮瞬时并发峰值。32次累计受理不代表始终有32个Commit同时运行。</p>
 {details('查看逐租户基线与洪泛对比',table(['租户','无Commit P95 s','洪泛窗口P95 s','变化 %','洪泛Search样本','HTTP错误'],priority_rows))}
 {table(['轮次','证据状态','有效配对','预期租户','Commit计划','实际202受理','最低洪泛受理','重叠Search发出','严格有效','HTTP/传输错误','重叠P95 s'],[[r['repeat'],r['priority']['status'],r['priority']['valid_pairs'],r['priority']['expected_tenants'],r['priority']['commit_planned'],r['priority']['accepted_202'],r['priority']['minimum_flood_commits'],r['priority']['sent'],r['priority']['success'],r['priority']['transport_or_http_errors'],r['priority']['p95_s']] for r in load_evidence['rows']])}
 {render_route_paths(priority_paths)}
-<p>真实 Commit 积压重叠 Search：{fmt(joint.get('overlap_search',{}).get('sent'))} 个，P95={fmt(p95)} 秒。全窗口与积压重叠窗口分开，不将没有后台任务的快速样本充作优先级证据；“未见终态”不等于永久丢失，内部严格调度顺序也尚未证明。</p></section>
+<p>代表轮所用区间：{fmt(representative_priority['overlap_basis'])}，Search {fmt(representative_priority['sent'])} 个，P95={fmt(p95)} 秒。全窗口、观察区间与非终态确认区间分别展示；历史仅观察区间的数据不充作完整积压证据。“未见终态”不等于永久丢失，内部严格调度顺序也尚未证明。</p></section>
 <section><h2>M5 · 202 后崩溃恢复</h2><p><b>测试方式：</b>Commit已返回202且commit_status仍为pending时对专用容器执行kill -9；启动后只轮询原任务，不能通过重提Commit掩盖恢复失败。completed后再对history、archive、cursor、消息集合/顺序和幂等键逐项对账。</p>{conclusion_panel('M5')}<div class="flow"><span><b>202</b>任务已受理</span><span><b>pending</b>确认尚未完成</span><span><b>kill -9</b>真实进程崩溃</span><span><b>restart</b>原任务自主恢复</span><span><b>reconcile</b>数据与顺序对账</span></div>{table(['观测项','结果'],[['崩溃前已受理202',m5.get('accepted_202')],['原任务自主completed',m5.get('autonomous_completed')],['源消息数',m5.get('expected_messages')],['未对账消息数',m5.get('missing_messages')],['重试是否同archive',m5.get('same_archive')],['总耗时 s',m5.get('elapsed_s')]])}
 {table(['行为检查','结果'],[[c['name'],c['status']] for c in m5.get('checks',[])])}
 {table(['样本','kill 延迟 s','状态','受理202','自主completed','源消息数','缺失消息','同archive','耗时 s'],recovery_sample_rows) if recovery_sample_rows else ''}

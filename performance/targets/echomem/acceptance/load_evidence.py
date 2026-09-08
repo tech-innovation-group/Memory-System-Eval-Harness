@@ -89,17 +89,24 @@ def priority_counts(joint: dict) -> dict:
                       "before_p95_s": before[4], "during_p95_s": during[4],
                       "during_sent": during[1], "during_http_errors": during[3],
                       "p95_degradation_percent": (during[4] / before[4] - 1) * 100 if valid else None})
-    valid, sent, success, errors, p95 = _search(joint.get("overlap_search", {}))
+    observed = _search(joint.get("overlap_search", {}))
+    confirmed = _search(joint.get("confirmed_overlap_search", {}))
+    has_confirmed = (joint.get("overlap_protocol") == "nonterminal-poll-v1"
+                     and observed[1] is not None and confirmed[1] is not None
+                     and confirmed[1] <= observed[1])
+    valid, sent, success, errors, p95 = confirmed if has_confirmed else observed
     planned, accepted = count(joint.get("commit_planned")), count(joint.get("accepted_202"))
     minimum = count(joint.get("minimum_flood_commits", 32))
     flood = bool(minimum and planned is not None and accepted is not None and planned >= accepted >= minimum)
-    complete = bool(expected and not unexpected and flood and valid
+    complete = bool(expected and not unexpected and flood and valid and has_confirmed
                     and all(p["valid"] and p["baseline_strict_valid"] for p in pairs))
     reasons = []
     if not flood:
         reasons.append("实际202受理未达到锁定洪泛数量，或计数缺失/矛盾")
     if not valid:
         reasons.append("积压重叠Search样本或计时不完整")
+    if not has_confirmed:
+        reasons.append("缺少后续非终态轮询确认的积压区间，或确认样本数与观察样本数矛盾")
     if not expected or unexpected or not all(p["valid"] for p in pairs):
         reasons.append("预期租户配对缺失、重复或计时不完整")
     if any(not p["baseline_strict_valid"] for p in pairs):
@@ -109,6 +116,9 @@ def priority_counts(joint: dict) -> dict:
             "pairs": pairs, "flood_observed": flood, "minimum_flood_commits": minimum,
             "commit_planned": planned, "accepted_202": accepted, "incomplete_reasons": reasons,
             "sent": sent, "success": success, "transport_or_http_errors": errors, "p95_s": p95,
+            "overlap_basis": "confirmed_nonterminal" if has_confirmed else "observation_only",
+            "observed_sent": observed[1], "observed_p95_s": observed[4],
+            "confirmed_sent": confirmed[1], "confirmed_p95_s": confirmed[4],
             "all_overlap_strict_valid": bool(valid and sent == success),
             "strict_server_scheduling_proven": False}
 
@@ -168,6 +178,7 @@ def load_conclusions(evidence: dict) -> dict:
             "evidence": f"轮次 {evidence['observed_repeats']}/{show(evidence['expected_repeats'])}；" + "；".join(
                 f"轮{r['repeat']}：配对 {p['valid_pairs']}/{p['expected_tenants']}，"
                 f"Commit受理 {show(p['accepted_202'])}/{show(p['commit_planned'])}，最低洪泛受理 {show(p['minimum_flood_commits'])}，"
+                f"观察区间样本 {show(p['observed_sent'])}，非终态确认样本 {show(p['confirmed_sent'])}，"
                 f"重叠严格有效 {show(p['success'])}/{show(p['sent'])}，HTTP/传输错误 {show(p['transport_or_http_errors'])}，"
                 f"P95={show(p['p95_s'])}s，逐租户P95变化(%)={','.join(show(pair['p95_degradation_percent']) for pair in p['pairs'])}；"
                 f"不足依据={'、'.join(p['incomplete_reasons']) or '无'}"
