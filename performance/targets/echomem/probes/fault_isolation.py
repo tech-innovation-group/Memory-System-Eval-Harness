@@ -161,7 +161,7 @@ def sample_search(
     workers: int,
     timeout_s: float,
     phase: str,
-    queries: dict[str, str] | None = None,
+    queries: dict[str, str | dict[str, Any]] | None = None,
     duration_s: float = 0,
     rps_per_tenant: float = 2,
     target_tenant: str = "",
@@ -173,13 +173,18 @@ def sample_search(
         if scheduled > time.monotonic():
             time.sleep(max(0, scheduled - time.monotonic()))
         started = time.monotonic()
-        query = (queries or {}).get(tenant_id, f"PR397 fault isolation sample {index}")
+        sample = (queries or {}).get(tenant_id, f"PR397 fault isolation sample {index}")
+        query = sample["query"] if isinstance(sample, dict) else sample
         response = clients[tenant_id].search(
             sessions[tenant_id],
             query,
             timeout_s=timeout_s,
         )
-        quality = recall_quality(response.payload, query)
+        if isinstance(sample, dict):
+            from performance.targets.echomem.acceptance.semantic_corpus import assess_retrieval
+            quality = assess_retrieval(response.payload, sample)
+        else:
+            quality = recall_quality(response.payload, query)
         return {
             "tenant": tenant_id,
             "status_code": response.status_code,
@@ -188,7 +193,7 @@ def sample_search(
             "start_offset_s": started - phase_started,
             "generator_lag_s": max(0, started - scheduled),
             "error": response.error,
-            "quality_ok": bool(queries and quality["quality_ok"]),
+            "quality_ok": bool(queries and response.status_code == 200 and quality["quality_ok"]),
             "degraded": quality["degraded"], "degraded_reasons": quality["degraded_reasons"],
         }
 

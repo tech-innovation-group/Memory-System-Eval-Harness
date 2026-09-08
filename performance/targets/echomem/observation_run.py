@@ -315,7 +315,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                      "readiness": profile["readiness"]}
 
         visibility = (suite.get("seed") or {}).get("visibility", [])
-        if visibility and isinstance(profile.get("fault_isolation"), dict):
+        probe_queries = (suite.get("seed") or {}).get("probe_queries")
+        if probe_queries and isinstance(profile.get("fault_isolation"), dict):
+            profile["fault_isolation"] = {**profile["fault_isolation"], "queries": probe_queries}
+        elif visibility and isinstance(profile.get("fault_isolation"), dict):
             profile["fault_isolation"] = {
                 **profile["fault_isolation"],
                 "queries": {row["tenant_id"]: row["marker"] for row in visibility},

@@ -488,7 +488,9 @@ def summarize_m4(runs: dict[str, dict[str, Any]], *, quick: bool) -> dict[str, A
         stats = _request_stats(tenant_rows)
         if (not stats["planned_or_recorded"] or stats["latency_missing_or_invalid"]
                 or stats["quality_ok"] != stats["planned_or_recorded"]
-                or any(r.get("query_type") != "recall" or not _truth(r.get("marker_found")) for r in tenant_rows)):
+                or any(r.get("query_type") != "recall" or not _truth(
+                    r.get("expected_fact_found") if r.get("quality_assertion") == "fixed-fact-in-items"
+                    else r.get("marker_found")) for r in tenant_rows)):
             issues.append(f"baseline_tenant_{tenant}_recall_or_timing_unproven")
     if any(r.get("op") == "commit_submit" for r in baseline_rows):
         issues.append("baseline_contains_commit")

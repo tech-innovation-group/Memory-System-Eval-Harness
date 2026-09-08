@@ -57,6 +57,17 @@ def test_formal_complete_requires_audited_load_not_fast_search(tmp_path):
     assert window["evidence_issues"] == []
 
 
+@pytest.mark.parametrize("found", [True, False])
+def test_semantic_fact_baseline_does_not_require_marker(tmp_path, found):
+    def mutate(name, rows):
+        for row in rows:
+            if row["op"] == "read":
+                row.update(marker_found=False, quality_assertion="fixed-fact-in-items",
+                           expected_fact_found=found)
+    result = summarize_m4(runs(tmp_path, mutate=mutate), quick=False)
+    assert result["status"] == ("MEASURED" if found else "PARTIAL")
+
+
 @pytest.mark.parametrize("change", ["legacy", "timeout", "rejected", "duplicate", "missing_tenant", "invalid_time", "no_pending", "baseline_empty_recall"])
 def test_three_files_do_not_prove_formal_m4(tmp_path, change):
     def mutate(name, rows):

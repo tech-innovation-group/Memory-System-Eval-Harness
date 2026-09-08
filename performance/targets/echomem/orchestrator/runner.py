@@ -261,7 +261,7 @@ def _preflight_stage(config: str, *, strict: bool = False) -> dict:
 
 
 def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, seed_messages, *, reuse_seed=None):
-    """M3 uses explicit remembered facts, not a bare marker as a routing gate."""
+    """Observation workloads share remembered facts, not a bare-marker routing gate."""
     import uuid
     from performance.suite import SeedPreparationError
     from performance.targets.echomem.acceptance.capacity_seed import CapacityActor, prepare_actors, validate_cached_actors
@@ -275,7 +275,7 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
     actors = [CapacityActor(index, 0, EchoMemHTTP(base_url, spec.auth_key,
                     tenant_id=spec.tenant_id, user_id=spec.user_id,
                     account_id=spec.account_id, agent_id=spec.agent_id),
-                build_corpus(f"formal-m3-{run_tag}-{index}")) for index, spec in enumerate(specs)]
+                build_corpus(f"formal-recall-{run_tag}-{index}")) for index, spec in enumerate(specs)]
     if reuse_seed:
         from dataclasses import replace
         from performance.targets.echomem.acceptance.capacity_experiment import _load_actors
@@ -307,6 +307,7 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
                       "identity_mode": "independent", "keys_independent": True,
                       "seed_contract": "fixed-fact-in-items", "seed_evidence": evidence,
                       "seed_source": "validated-cache" if reuse_seed else "fresh",
+                      "probe_queries": {actor.client.tenant_id: actor.corpus["recall_queries"][0] for actor in actors},
                       "corpus_fingerprints": [actor.corpus["fingerprint"] for actor in actors],
                       "corpus_counts_by_tenant_index": counts,
                       "seed_documents_per_tenant": uniform_count("documents"),
@@ -453,8 +454,7 @@ def run_suite(
             config,
             strict=bool(profile.get("six_metrics") or profile.get("six_metrics_observation")),
         ),
-        seed=(semantic_seed if profile.get("six_metrics_observation") and scenarios
-              and all(name.startswith("m3-fairness-") for name in scenarios) else _prepare_seed),
+        seed=(semantic_seed if profile.get("six_metrics_observation") else _prepare_seed),
         evaluate=evaluate_pr421_acceptance,
     )
     if profile.get("resource_evidence"):

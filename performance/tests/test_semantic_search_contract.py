@@ -43,6 +43,37 @@ def test_failed_http_preserves_assertion_and_denominator():
     assert ctx.fields["quality_assertion"] == "fixed-fact-in-items"
 
 
+def test_combined_observation_uses_same_semantic_seed_hook(tmp_path, monkeypatch):
+    from performance.targets.echomem.orchestrator import runner
+    from performance.targets.echomem.acceptance import readiness
+    from performance.targets.echomem.probes import tenant_observability
+    monkeypatch.setattr(readiness, "check_readiness", lambda _: {"ok":True,"resource_evidence":{}})
+    monkeypatch.setattr(tenant_observability, "collect", lambda **kwargs: {})
+    captured = {}
+    def suite(profile, **kwargs):
+        captured.update(kwargs)
+        return {"runs":[]}
+    monkeypatch.setattr(runner, "run_suite_impl", suite)
+    runner.run_suite({"six_metrics_observation":True,"semantic_seed_cache":"/unit/cache"},
+        suite_dir=tmp_path, scenarios=["m3-fairness-4t","m4-baseline","m4-flood-uniform"])
+    assert captured["seed"].func is runner._prepare_semantic_seed
+    assert captured["seed"].keywords == {"reuse_seed":"/unit/cache"}
+
+
+@pytest.mark.parametrize("http,content,expected", [(200,"梧桐会议室",1),(200,"未知",0),(429,"梧桐会议室",0)])
+def test_fault_probe_uses_fact_not_question_as_expected_answer(http, content, expected):
+    from performance.targets.echomem.probes.fault_isolation import sample_search
+    queries = []
+    def search(session, query, **kwargs):
+        queries.append(query)
+        return SimpleNamespace(status_code=http, payload={"items":[{"content":content}]}, error=None)
+    result = sample_search({"unit":SimpleNamespace(search=search)}, {"unit":"unit-session"},
+        count=1, workers=1, timeout_s=1, phase="before", queries={"unit":{
+            "id":"location", "query":"地点在哪？", "query_type":"recall", "aliases":["梧桐会议室"]}})
+    assert queries == ["地点在哪？"]
+    assert result["by_tenant"]["unit"]["quality_ok"] == expected
+
+
 def test_m3_seed_failure_retains_public_diagnostics(monkeypatch):
     from performance.suite import SeedPreparationError
     from performance.targets.echomem.orchestrator import runner
