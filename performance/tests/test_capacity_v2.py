@@ -533,6 +533,24 @@ def test_observation_report_renders_complete_error_breakdown():
     assert "未采集Provider错误码" in html
 
 
+def test_observation_report_derives_per_level_resources_from_raw_samples():
+    search = search_summary([
+        {"sent": True, "success": True, "http_status": 200, "elapsed_s": .1},
+    ])
+    html = render({"assessment_mode": "observe", "levels": [{
+        "search": search, "commit": {}, "cells": [], "identity_count": 1,
+        "tenant_count": 1, "duration_s": 1, "mixed": False,
+        "load_mode": "search", "sent_search_rps": 1.0,
+        "effective_search_rps": 1.0,
+        "resources": [
+            {"cpu_percent_one_core_100": 125.0, "rss_bytes": 512 * 1048576},
+            {"cpu_percent_one_core_100": 250.5, "rss_bytes": 768 * 1048576},
+        ],
+    }]})
+    assert "250.500" in html
+    assert "768.000" in html
+
+
 def test_redacted_zero_capacity_report_has_no_broken_seed_link():
     html = render({"status": "FAIL", "publication": {"redacted": True},
                    "manifest": {}, "seed_summary": {"queries": 0, "strict_valid": 0},

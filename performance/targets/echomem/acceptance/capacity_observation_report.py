@@ -36,6 +36,21 @@ def _counts(value):
     return ", ".join(f"{key}: {count}" for key, count in sorted(value.items()))
 
 
+def _resource_summary(level):
+    summary = level.get("resource_summary") or {}
+    if summary:
+        return summary
+    samples = level.get("resources") or []
+    cpu = [row.get("cpu_percent_one_core_100") for row in samples
+           if row.get("cpu_percent_one_core_100") is not None]
+    rss = [row.get("rss_bytes") for row in samples if row.get("rss_bytes") is not None]
+    return {
+        "samples": len(samples),
+        "cpu_peak_percent_one_core_100": max(cpu, default=None),
+        "rss_peak_bytes": max(rss, default=None),
+    }
+
+
 def _error_row(h, name, search):
     detail = search.get("error_breakdown") or {}
     partition = detail.get("outcome_partition") or {}
@@ -91,7 +106,7 @@ def render_observation(report: dict) -> str:
             "hotspot": "热点租户",
         }.get(level.get("load_mode"), "混合读写" if level.get("mixed") else "纯 Search")
         search, commit = level["search"], level.get("commit", {})
-        limits = level.get("resource_summary", {})
+        limits = _resource_summary(level)
         rss_peak = limits.get("rss_peak_bytes")
         summary_rows.append([h, name, search.get("p95_s"), level.get("sent_search_rps"),
             (search.get("http_status_counts", {}).get("200", 0) / level["duration_s"]),
