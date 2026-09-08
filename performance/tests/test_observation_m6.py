@@ -55,7 +55,8 @@ def test_valid_endpoints_do_not_hide_bad_middle_frame(mutation):
     else:
         frame["rows"][0]["queued"] = {"nan": float("nan"), "bool": True, "negative": -1}[mutation]
     result = summarize_m6(suite, profile)
-    assert result["status"] == "PARTIAL"
+    assert result["status"] == "MEASURED"
+    assert result["service_contract_status"] == "INCONCLUSIVE"
     assert result["endpoint_complete_cells"] == 1
     assert result["complete_cells"] == 0
     assert result["timeline"]["passed_snapshots"] == 4
@@ -68,7 +69,9 @@ def test_middle_counter_drop_is_failure_not_proof_of_reset():
     for frame in [*suite["tenant_observability_samples"], suite["tenant_observability_after_all"]]:
         frame["boot_id"] = "private-a"
     result = summarize_m6(suite, profile)
-    assert result["status"] == "EXECUTION_ERROR"
+    assert result["status"] == "MEASURED"
+    assert result["service_contract_status"] == "FAIL"
+    assert result["restart_transition_identity_gaps"] == []
     assert result["scenarios"]["RESET"] is False
     assert result["timeline"]["counter_regressions"][0]["classification"] == "same_process"
 
@@ -102,7 +105,9 @@ def test_failed_capture_is_retained_and_not_called_zero_activity():
     suite, profile = full_evidence()
     suite["tenant_observability_samples"][1] = {"status": "FAIL", "observed_at_s": 13}
     result = summarize_m6(suite, profile)
-    assert result["status"] == "EXECUTION_ERROR"
+    assert result["status"] == "MEASURED"
+    assert result["service_contract_status"] == "FAIL"
+    assert result["restart_transition_identity_gaps"] == [2]
     assert result["timeline"]["snapshot_count"] == 5
     assert result["timeline"]["snapshots"][2]["missing_cells"] == 1
 

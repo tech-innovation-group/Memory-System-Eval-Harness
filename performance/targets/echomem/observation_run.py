@@ -176,6 +176,7 @@ def _sample_observability(stop, collect, samples, errors, output: Path) -> None:
 
 def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> dict[str, Any]:
     needs_m6_behaviors = "M6" in selected
+    m6_only = set(selected) == {"M6"}
     needs_fault = "M2" in selected or needs_m6_behaviors
     readiness = check_readiness({
         **profile,
@@ -209,7 +210,7 @@ def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> 
     if "M6" in selected and not lanes:
         raise ValueError("No effective scheduler lanes could be derived from preflight_config")
     base_url = str(profile.get("base_url") or "").rstrip("/")
-    phase = 15 if quick else 60
+    phase = 15 if quick or m6_only else 60
     fault = {
         "enabled": "M2" in selected or needs_m6_behaviors,
         "endpoint": base_url + "/api/inspect/test-control/fault",
@@ -222,13 +223,14 @@ def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> 
         "target_rps": 1,
         **(profile.get("fault_isolation") or {}),
         "observation_only": True,
+        "behavior_case_only": m6_only,
     }
     recovery = {
         "enabled": "M5" in selected or needs_m6_behaviors,
         "tenant": tenant_ids[0],
         "container": profile.get("resource_container", ""),
-        "messages": 12, "content_chars": 1000,
-        "samples": 3, "require_accepted_202": True,
+        "messages": 4 if m6_only else 12, "content_chars": 1000,
+        "samples": 1 if m6_only else 3, "require_accepted_202": True,
         "expected_container_id": readiness["resource_evidence"].get("container_id"),
         "expected_image_id": readiness["resource_evidence"].get("image_id"),
         **(profile.get("commit_recovery") or {}),

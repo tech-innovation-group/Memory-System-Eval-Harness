@@ -723,11 +723,32 @@ def summarize_m6(suite: dict[str, Any], profile: dict[str, Any]) -> dict[str, An
             complete_keys.clear()
     if not timeline["contract_valid"]:
         complete_keys.clear()
+    epochs = [process_identity(raw if isinstance(raw, dict) else {}) for raw in raw_samples]
+    identity_gaps = [index for index, epoch in enumerate(epochs) if epoch is None]
+
+    def restart_brackets(index: int) -> bool:
+        before = next((epoch for epoch in reversed(epochs[:index]) if epoch is not None), None)
+        after_epoch = next((epoch for epoch in epochs[index + 1:] if epoch is not None), None)
+        return (snapshots[index]["status"] != "PASS"
+                and before is not None and after_epoch is not None and before != after_epoch)
+
+    bracketed_identity_gaps = [index for index in identity_gaps if restart_brackets(index)]
+    identity_evidence_complete = not identity_gaps or len(bracketed_identity_gaps) == len(identity_gaps)
+    capture_complete = bool(
+        timeline["contract_valid"]
+        and timeline["during_count"] > 0
+        and timeline["sampling_times_valid"]
+        and timeline["gaps_exceeded"] == 0
+        and identity_evidence_complete
+    )
     status = ("BLOCKED" if not timeline["contract_valid"] else
-              "EXECUTION_ERROR" if timeline["status"] == "FAIL" or timeline["monitor_failed"] else
-              "MEASURED" if timeline["status"] == "PASS" and all(scenarios.values()) else "PARTIAL")
+              "MEASURED" if capture_complete else "PARTIAL")
     return {"status": status,
-            "reason": "固定分母逐帧核验；重启按进程身份分段，缺失不补零。观测状态不是服务性能合格线。",
+            "reason": "固定分母逐帧核验；服务返回缺行、非法值、拒绝未计数或重启后清零均作为测量结果，不再误判为测试未执行。重启按进程身份分段，缺失不补零。",
+            "capture_complete": capture_complete,
+            "service_contract_status": timeline["status"],
+            "identity_evidence_complete": identity_evidence_complete,
+            "restart_transition_identity_gaps": bracketed_identity_gaps,
             "expected_tenants": [f"T{i + 1}" for i in range(len(tenants))], "expected_lanes": lanes,
             "expected_cells": expected_cells, "complete_cells": len(complete_keys),
             "endpoint_complete_cells": min(snapshots[0]["valid_cells"], snapshots[-1]["valid_cells"]),
@@ -1037,7 +1058,9 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                  if metric.get("expected_cells") and metric.get("complete_cells") is not None else None),
                 ("NORMAL/QUEUE/REJECT/RESET", 25 * sum(value is True for value in metric.get("scenarios", {}).values())),
             ], axis_max=100)
-            visual += ("<p>全过程采样核验：" + esc(timeline.get("status")) +
+            visual += ("<p>测试平台采样完整：" + esc(metric.get("capture_complete")) +
+                       "；服务四元组合同状态：" + esc(metric.get("service_contract_status")) +
+                       "；全过程采样核验：" + esc(timeline.get("status")) +
                        "；完整快照 " + esc(timeline.get("passed_snapshots")) + "/" + esc(timeline.get("snapshot_count")) +
                        "；含窗口边界最大间隔 " + esc(timeline.get("max_gap_s")) + " 秒。</p>"
                        "<p>末次字段齐全不代表中途齐全。RESET需进程身份变化证据；跨重启不计算累计差值。"

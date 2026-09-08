@@ -396,6 +396,8 @@ def run_configured_probes(
                 for tenant in tenant_ids for fault_type in ("reject", "delay")
                 for repetition in range(1, int(fault_isolation.get("repeats", 3)) + 1)
             ]
+        if observation_mode and fault_isolation.get("behavior_case_only"):
+            cases = cases[:1]
         outcomes = []
         expected_case_count = len(cases)
         if observation_mode and quick:

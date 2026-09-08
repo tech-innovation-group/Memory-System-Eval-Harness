@@ -50,37 +50,57 @@ docker inspect echomem-stress-4u8g \
 profile 中的 `resource_container` 必须是这个专用容器。M5 会执行真实
 `kill -9/start`，M6 也会借助重启观测计数器代际；禁止指向机器人、共享或生产容器。
 
-### 4. 先跑 quick，确认链路
+### 4. 先跑快速诊断版，确认链路
 
 ```bash
-.venv/bin/python -m performance.targets.echomem.observation_run \
-  --profiles .local-stress/six-metrics.profile.json --profile 4U8G \
-  --env-file .local-stress/test.env --quick \
-  --out-dir results/echomem-4u8g-smoke
+performance/targets/echomem/run_six_metrics.sh quick \
+  .local-stress/six-metrics.profile.json \
+  results/echomem-4u8g-smoke .local-stress/test.env
 ```
 
 quick 只验证真实模型、真实 HTTP、租户、故障控制、恢复和报告链路，结果固定为
 `PARTIAL`，不能作为完整六项结论。
 
-### 5. 正式测试与断点续跑
+### 5. 跑正式完整版
 
 ```bash
-.venv/bin/python -m performance.targets.echomem.observation_run \
-  --profiles .local-stress/six-metrics.profile.json --profile 4U8G \
-  --env-file .local-stress/test.env \
-  --out-dir results/echomem-4u8g-formal
+performance/targets/echomem/run_six_metrics.sh full \
+  .local-stress/six-metrics.profile.json \
+  results/echomem-4u8g-formal .local-stress/test.env
+```
 
+| 版本 | 用途 | 是否能作为六项正式数据 |
+|---|---|---|
+| `quick` | 几分钟到数十分钟内检查模型、接口、租户、故障和报告链路 | 否，固定 `PARTIAL` |
+| `full` | M1→M3→M4→M2→M5，M6 全程采样；保留完整矩阵与分母 | 是 |
+| `m6` | M6 专项复测：1 个真实 reject 用例 + 1 次真实崩溃恢复 | 仅作为 M6 正式数据 |
+
+M6 修改后需要快速复测时：
+
+```bash
+performance/targets/echomem/run_six_metrics.sh m6 \
+  .local-stress/six-metrics.profile.json \
+  results/echomem-4u8g-m6 .local-stress/test.env
+```
+
+`m6` 专项仍使用 4 个独立租户、真实模型、真实 HTTP、真实故障控制和真实容器重启；
+只去掉对 M6 结论没有新增证据的 M2 其余 23 个故障组合与 M5 其余 2 个重复样本。
+
+### 6. 断点续跑
+
+```bash
 # 中断后使用完全相同的 profile 和输出目录续跑。
 .venv/bin/python -m performance.targets.echomem.observation_run \
   --profiles .local-stress/six-metrics.profile.json --profile 4U8G \
   --env-file .local-stress/test.env \
   --out-dir results/echomem-4u8g-formal --resume
+
 ```
 
 只测单项时加 `--metrics M1`，可替换为 `M2` 至 `M6`。M6 会自动执行
 NORMAL、QUEUE、REJECT、RESET 所需依赖负载，但不会把依赖数据冒充其他指标完成。
 
-### 6. 看结果
+### 7. 看结果
 
 先打开 `results/echomem-4u8g-formal/report.html`。页面默认展示六项含义、关键图表、
 数据状态和 EchoMem 模块改进建议；逐请求表、资源逐点采样和原始 JSON 默认折叠。

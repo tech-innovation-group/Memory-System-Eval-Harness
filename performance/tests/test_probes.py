@@ -314,3 +314,46 @@ def test_fault_isolation_control_http_injects_target_tenant(tmp_path):
         "duration_s": 300,
         "delay_ms": 1000,
     }
+
+
+def test_m6_behavior_only_runs_one_real_fault_case(monkeypatch, tmp_path):
+    from performance.targets.echomem.orchestrator import probes as module
+
+    tenants = {
+        "tenants": [
+            {"tenant_id": f"t{index}", "auth_key": f"k{index}"}
+            for index in range(1, 5)
+        ]
+    }
+    tenant_path = tmp_path / "tenants.json"
+    tenant_path.write_text(json.dumps(tenants), encoding="utf-8")
+    suite_dir = tmp_path / "suite"
+    suite_dir.mkdir()
+    calls = []
+
+    def fake_probe(params, **kwargs):
+        calls.append({"params": params, "scene": kwargs["scene"]})
+        return {"checks": [{"name": "fault-isolation"}]}, {"status": "PASS"}
+
+    monkeypatch.setattr(module, "run_configured_probe", fake_probe)
+    monkeypatch.setenv("ECHOMEM_TEST_CONTROL_TOKEN", "test-only-token")
+    profile = {
+        "tenant_config": str(tenant_path),
+        "six_metrics_observation": True,
+        "fairness_expectations": {"tenant_ids": ["t1", "t2", "t3", "t4"]},
+        "fault_isolation": {
+            "enabled": True,
+            "behavior_case_only": True,
+            "queries": ["where is the marker"],
+            "token_env": "ECHOMEM_TEST_CONTROL_TOKEN",
+        },
+    }
+    artifacts, _ = run_configured_probes(
+        profile, base_url="http://test.invalid", suite_dir=suite_dir,
+        auth_headers={}, tenant_config=tenants, quick=False,
+    )
+    fault_calls = [call for call in calls if call["scene"] == "fault_isolation.py"]
+    assert len(fault_calls) == 1
+    assert fault_calls[0]["params"]["target_tenant"] == "t1"
+    assert fault_calls[0]["params"]["fault_type"] == "reject"
+    assert artifacts["fault_isolation"]["expected_cases"] == 1

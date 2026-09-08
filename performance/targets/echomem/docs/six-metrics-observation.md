@@ -85,7 +85,7 @@ M4 基线不要求 100% 准确率：必须每租户至少观察到一次真实�
 完整延迟与质量记录；部分未命中、降级及错误继续进入分母。没有真实召回证据的租户单独标出，
 不能用纯空召回或问候语充当记忆召回基线。发现基线包含写入时，必须修复负载后重测，不能直接比较洪泛劣化。
 
-## 单项与 quick
+## 快速诊断版、正式完整版与单项复测
 
 报告改进、独立 M3 与快速执行编排的逐项状态见
 [改进跟踪清单](report-improvement-tracking.md)。清单中的待办不代表已通过实测。
@@ -99,8 +99,10 @@ M4 基线不要求 100% 准确率：必须每租户至少观察到一次真实�
   --out-dir results/m1 --metrics M1
 ```
 
-M6 单项会自动执行 NORMAL、QUEUE、REJECT、RESET 所需依赖负载，但不会把这些
-依赖数据冒充为其他指标的完整执行。quick smoke 使用短窗口和小样本，报告固定标记
+M6 单项会使用 4 个独立租户，执行一个真实 reject 故障用例和一次真实容器崩溃恢复，
+采集 NORMAL、QUEUE、REJECT、RESET 所需证据；不会把依赖数据冒充为 M2/M5 的完整执行。
+完整六项运行仍执行 M2 的 24 个故障用例和 M5 的 3 个恢复样本，测试目标没有缩减。
+quick smoke 使用短窗口和小样本，报告固定标记
 `quick-non-complete` 与 `PARTIAL`，不能与完整采样混用：
 
 ```bash
@@ -110,6 +112,19 @@ M6 单项会自动执行 NORMAL、QUEUE、REJECT、RESET 所需依赖负载，�
 ```
 
 quick 一般需要 10 到 40 分钟，取决于真实模型和 Commit 恢复时间。
+
+推荐直接使用统一脚本：
+
+```bash
+# 快速诊断版
+performance/targets/echomem/run_six_metrics.sh quick PROFILE_JSON OUTPUT_DIR ENV_FILE
+
+# 正式完整版
+performance/targets/echomem/run_six_metrics.sh full PROFILE_JSON OUTPUT_DIR ENV_FILE
+
+# 只复测 M6
+performance/targets/echomem/run_six_metrics.sh m6 PROFILE_JSON OUTPUT_DIR ENV_FILE
+```
 
 ## 续跑、停止与清理
 
