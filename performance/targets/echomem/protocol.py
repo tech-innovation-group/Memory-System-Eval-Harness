@@ -142,11 +142,15 @@ def commit_session(ctx: Ctx, session_id: str) -> Response:
         op="commit_submit",
         session_id=session_id,
     )
-    if resp.ok:
+    if resp.http_status == 202 and archive_id(resp.json):
         ctx.note(
             archive_id=archive_id(resp.json),
             accepted_at_ms=time.time() * 1000,
         )
+    elif resp.ok:
+        resp.status = "error"
+        resp.error_type = "commit_invalid_receipt"
+        ctx.note(status="error", error_type="commit_invalid_receipt")
     return resp
 
 
@@ -159,6 +163,21 @@ def poll_commit(
     interval_s: float = 0.2,
 ) -> PollResult:
     """GET /api/sessions/{sid}/commits/{aid} 轮询到 completed/failed/timeout。"""
+    audit = {"poll_evidence_version": "echomem-poll-v1", "poll_count": 0,
+             "poll_http_errors": 0, "last_nonterminal_at_ms": None,
+             "commit_terminal_state": ""}
+
+    def observed(started_ms, status, body, error):
+        audit["poll_count"] += 1
+        audit["poll_http_errors"] += status != 200 or bool(error)
+        value = body if isinstance(body, dict) else {}
+        state = str(value.get("status") or value.get("stage") or value.get("state") or "").lower()
+        if status == 200 and not error:
+            if state in {"pending", "queued", "running", "processing", "in_progress", "awaiting_engines"}:
+                audit["last_nonterminal_at_ms"] = started_ms
+            elif state in {"completed", "failed", "error"}:
+                audit["commit_terminal_state"] = state
+
     result = ctx.poll(
         f"/api/sessions/{session_id}/commits/{archive_id}",
         op="commit_done",
@@ -170,8 +189,19 @@ def poll_commit(
         ),
         session_id=session_id,
         archive_id=archive_id,
+        on_response=observed,
+        until=lambda _: audit["commit_terminal_state"] == "completed",
     )
-    ctx.note(completed_at_ms=time.time() * 1000)
+    ended = time.time() * 1000
+    if result.record is None:
+        result.record = ctx.record(op="commit_done", stage_ms=result.elapsed_ms,
+                                   status="error", error_type="commit_stopped",
+                                   session_id=session_id, archive_id=archive_id)
+    for key, value in {**audit, "poll_outcome": result.status,
+                       "observation_ended_at_ms": ended,
+                       "terminal_at_ms": ended if audit["commit_terminal_state"] else None,
+                       "completed_at_ms": ended if audit["commit_terminal_state"] == "completed" else None}.items():
+        setattr(result.record, key, value)
     return result
 
 

@@ -16,6 +16,7 @@ import csv
 import json
 import time
 import os
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,7 @@ from performance.targets.echomem.acceptance.evaluate import (
     evaluate_pr421_acceptance,
 )
 from performance.targets.echomem.acceptance.metrics import metric_coverage
+from performance.targets.echomem.acceptance.observation import _commit_window_evidence
 from performance.targets.echomem.acceptance.preflight import run_preflight
 from performance.targets.echomem.acceptance.seed import (
     TenantPreparer,
@@ -83,22 +85,37 @@ def summarize_case_records(records: list[RequestRecord]) -> dict:
 
 def _write_commit_results(case_dir: Path, records: list[RequestRecord]) -> None:
     """commit_results.csv：每条 commit_submit 一行，按 commit_done 对账状态。"""
-    done_by_session = {
-        r.session_id: r
-        for r in records
-        if r.op == "commit_done" and r.session_id
-    }
+    evidence = _commit_window_evidence([r.to_csv_row() for r in records])
+    def key(r):
+        return str(r.tenant_idx), r.session_id, r.archive_id
+
+    observations = {}
+    for r in records:
+        if r.op == "commit_done":
+            observations.setdefault(key(r), []).append(r)
+    receipts = Counter(key(r) for r in records if r.op == "commit_submit"
+                       and r.http_status == 202 and r.session_id and r.archive_id)
     rows: list[dict[str, Any]] = []
     for record in records:
         if record.op != "commit_submit":
             continue
-        done = done_by_session.get(record.session_id)
-        if done is not None and done.status == "ok":
-            status, done_ms = "completed", done.stage_ms
-        elif done is not None:
-            status, done_ms = "failed", done.stage_ms
+        terminal = evidence["terminals"].get(key(record))
+        observed = observations.get(key(record), [])
+        observation = observed[0] if len(observed) == 1 else None
+        if record.http_status is not None and record.http_status >= 400:
+            status = "rejected"
+        elif not (record.http_status == 202 and record.session_id and record.archive_id):
+            status = "unaccepted"
+        elif receipts[key(record)] != 1 or len(observed) > 1:
+            status = "ambiguous"
+        elif terminal is not None:
+            status = "completed" if terminal["status"] == "ok" else "failed"
         else:
-            status, done_ms = "submitted", None
+            status = "unresolved"
+        terminal_ms = terminal.get("completed_at_ms") if terminal else None
+        done_ms = observation.stage_ms if terminal and observation else None
+        accepted_latency = terminal_ms - record.accepted_at_ms if terminal_ms is not None else None
+        total_ms = terminal_ms - (record.ts_ms - record.stage_ms) if terminal_ms is not None else None
         rows.append(
             {
                 "tenant_idx": record.tenant_idx,
@@ -107,7 +124,12 @@ def _write_commit_results(case_dir: Path, records: list[RequestRecord]) -> None:
                 "status": status,
                 "submit_ms": round(record.stage_ms, 3),
                 "done_ms": round(done_ms, 3) if done_ms is not None else "",
-                "end_to_end_s": round(done_ms / 1000.0, 3) if done_ms is not None else "",
+                "end_to_end_s": round(total_ms / 1000.0, 3) if total_ms is not None and total_ms >= 0 else "",
+                "accepted_to_terminal_s": round(accepted_latency / 1000.0, 3) if accepted_latency is not None else "",
+                "observation_status": observation.poll_outcome if observation else "unknown",
+                "poll_count": observation.poll_count if observation else "",
+                "poll_http_errors": observation.poll_http_errors if observation else "",
+                "poll_evidence_version": observation.poll_evidence_version if observation else "",
             }
         )
     with (case_dir / "commit_results.csv").open("w", newline="", encoding="utf-8") as handle:
@@ -116,6 +138,7 @@ def _write_commit_results(case_dir: Path, records: list[RequestRecord]) -> None:
             fieldnames=[
                 "tenant_idx", "session_id", "archive_id", "status",
                 "submit_ms", "done_ms", "end_to_end_s",
+                "accepted_to_terminal_s", "observation_status", "poll_count", "poll_http_errors", "poll_evidence_version",
             ],
         )
         writer.writeheader()
@@ -202,10 +225,15 @@ def run_case(
         # coverage 在通用层写盘 summary.json 之后才算出，必须同步写回，
         # 保证磁盘 summary 与内存一致（--resume / rebuild_report 都以
         # 磁盘 summary.json 为唯一数据源）。
-        (case_dir / "summary.json").write_text(
-            json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+    # Persist the effective, quick-capped workload, not credentials or query pools.
+    contract = {"version": "echomem-case-v1", "tenant_count": len(profile.tenants),
+                "query_mode": profile.params.get("query_mode", "recall")}
+    if case["scene"] == "scene_barrier":
+        contract.update({name: profile.params.get(name) for name in (
+            "barrier_count", "barrier_waves", "barrier_distribution", "commit_tenant_counts")})
+    result["summary"]["measurement_contract"] = contract
+    (case_dir / "summary.json").write_text(
+        json.dumps(result["summary"], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return result
 
 

@@ -133,6 +133,27 @@ curl -fsS -X POST http://127.0.0.1:8010/api/inspect/test-control/fault \
 汇总值均可追溯到 JSON/CSV。字段未采集时保持 `null`；运行器不会删除失败样本、
 隐藏错误或用 0 填补缺失值。
 
+### 正式 M4 的 CSV 证据与完整性
+
+一键观测中的 `m4-baseline`、`m4-flood-uniform`、`m4-flood-single-tenant`
+也需要真实的非终态证据，不能只因三个目录存在就标为 `MEASURED`。
+
+- `commit_submit` 只有 HTTP 202 且包含 archive ID 才建立受理区间。
+  `commit_done` 是一次轮询观察的汇总，不一定代表任务完成。
+- `records.csv` 保存 `poll_evidence_version=echomem-poll-v1`、轮询次数、HTTP/传输异常数、
+  `last_nonterminal_at_ms`、`observation_ended_at_ms` 与明确的 `commit_terminal_state`。
+  只有成功状态查询明确返回 completed/failed/error 才写 `terminal_at_ms`；
+  `completed_at_ms` 仅在 completed 时写入。timeout、404、停止观察均不证明任务执行失败。
+- 按 tenant/session/archive 三元组对账，重复回执、重复观察和孤立终态单列，不能后写覆盖先写。
+  `commit_results.csv` 的 `unresolved` 表示尚未确认终态，`ambiguous` 表示重复证据；
+  `rejected` 是入口拒绝，`failed` 才是明确的任务失败。`observation_status` 另列轮询超时或停止。
+- HTML 同时展示宽观察窗口与非终态确认窗口的 Search 样本、平均延迟、P95、错误和质量。
+  在途峰值是客户端观察值，不等于服务端排队深度，更不能证明内部严格 Search 优先级。
+- 实际生效的 tenant 数、query 模式和 barrier 参数写入 `summary.json.measurement_contract`，
+  quick 缩减后的数量不会冒充原计划。缺清单、缺租户召回基线、计划 Commit 未全部受理、
+  终态不明或确认重叠证据不全时保留数据并标为 `PARTIAL`。不以 P95 或质量数值作为性能准入门槛。
+- 历史 CSV 不补造新字段，旧报告重新汇总可能降为 `PARTIAL`；这是证据不足，不是服务性能退化。
+
 ### M3/M4 洪泛补测的 Commit 证据
 
 #### 突发与固定速率两种负载

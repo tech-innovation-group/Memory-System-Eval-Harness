@@ -37,13 +37,15 @@ METRIC_METHODS = {
     "M1": "按跨租户和租户内两种拓扑逐档增加热用户，分别运行 Search、Commit、混合和热点负载，记录吞吐、延迟、错误、积压、CPU 与内存。",
     "M2": "四个目标租户依次注入 reject 和 delay，分别采集故障前、故障中、恢复后数据，对比三个旁观租户的 Search P95 与错误。",
     "M3": "让 4 租户和 8 租户以相同速率同时 Search 与 Commit，保留零完成租户，用逐租户完成吞吐和 Search P95 倒数计算 Jain 指数。",
-    "M4": "先测无 Commit 的 Search 基线，再分别制造均匀 Commit 洪泛和单租户洪泛，只统计与已受理且未终态 Commit 真正重叠的 Search。",
+    "M4": "先测四租户已预注入记忆的 Search 基线，再分别制造均匀和单租户 Commit 洪泛。按同一 tenant/session/archive 对账受理与轮询；Search 开始时刻落在受理至最后成功非终态轮询之间才计入确认重叠。宽观察窗口另列，未测到的内部调度顺序不作结论。",
     "M5": "Commit 返回 202 且仍未完成时 kill -9 专用容器，重启后只轮询原任务，再对账消息集合、顺序、cursor、archive 和幂等重试。",
     "M6": "负载前、中、后持续读取受保护观测接口，按实际配置逐帧枚举 tenant×lane；空帧、非法值、重复行和采样空档均保留。进程重启按身份分段，计数回退不能单独证明RESET；检查四元组及NORMAL/QUEUE/REJECT/RESET。",
 }
 
 
 def _number(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
     try:
         number = float(value)
     except (TypeError, ValueError):
@@ -76,10 +78,11 @@ def _records(run: dict[str, Any]) -> list[dict[str, str]]:
 
 def _request_stats(rows: list[dict[str, Any]], op: str = "read") -> dict[str, Any]:
     selected = [row for row in rows if row.get("op") == op]
-    latencies = [value for row in selected if (value := _number(row.get("stage_ms"))) is not None]
+    latencies = [value for row in selected if (value := _number(row.get("stage_ms"))) is not None and value >= 0]
     ok = [row for row in selected if row.get("status") == "ok"]
-    quality_observed = [row for row in selected if str(row.get("quality_ok", "")) != ""]
-    quality_ok = [row for row in quality_observed if _truth(row.get("quality_ok"))]
+    quality_observed = [row for row in selected if str(row.get("quality_ok", "")).lower() in {"true", "false"}]
+    quality_ok = [row for row in quality_observed if row.get("status") == "ok"
+                  and _truth(row.get("quality_ok")) and not _truth(row.get("degraded"))]
     return {
         "planned_or_recorded": len(selected),
         "completed": len(selected),
@@ -87,11 +90,16 @@ def _request_stats(rows: list[dict[str, Any]], op: str = "read") -> dict[str, An
         "errors": len(selected) - len(ok),
         "timeouts": sum("timeout" in str(row.get("error_type") or "").lower() for row in selected),
         "p50_ms": percentile(latencies, 50),
+        "mean_ms": sum(latencies) / len(latencies) if latencies else None,
         "p95_ms": percentile(latencies, 95),
         "p99_ms": percentile(latencies, 99),
+        "latency_observations": len(latencies),
+        "latency_missing_or_invalid": len(selected) - len(latencies),
         "quality_observed": len(quality_observed),
+        "quality_missing": len(selected) - len(quality_observed),
+        "recall_queries": sum(row.get("query_type") == "recall" for row in selected),
         "quality_ok": len(quality_ok),
-        "quality_rate": len(quality_ok) / len(quality_observed) if quality_observed else None,
+        "quality_rate": len(quality_ok) / len(selected) if selected else None,
         "empty_recall": sum((_number(row.get("hit_count")) or 0) == 0 for row in selected),
         "http_status": dict(Counter(str(row.get("http_status") or "none") for row in selected)),
         "error_types": dict(Counter(str(row.get("error_type") or "none") for row in selected)),
@@ -202,8 +210,9 @@ def _fairness_window(run: dict[str, Any], tenant_count: int) -> dict[str, Any]:
     for tenant in range(tenant_count):
         selected = [row for row in rows if str(row.get("tenant_idx")) == str(tenant)]
         submits = [row for row in selected if row.get("op") == "commit_submit"]
-        accepted = [row for row in submits if _number(row.get("http_status")) == 202]
-        terminal = [row for row in selected if row.get("op") == "commit_done"]
+        evidence = _commit_window_evidence(selected)
+        accepted = evidence["accepted"]
+        terminal = list(evidence["terminals"].values())
         done = [row for row in terminal if row.get("status") == "ok"]
         failed = [row for row in terminal if row.get("status") != "ok"]
         completion_times = sorted(value for row in done if (value := _number(row.get("completed_at_ms") or row.get("ts_ms"))) is not None)
@@ -219,6 +228,7 @@ def _fairness_window(run: dict[str, Any], tenant_count: int) -> dict[str, Any]:
                         "commit_accepted": len(accepted), "commit_completed": len(done),
                         "commit_failed": len(failed),
                         "commit_pending": max(0, len(accepted) - len(terminal)),
+                        "commit_observation_outcomes": evidence["observation_outcomes"],
                         "commit_completed_per_s": len(done) / duration if duration else None,
                         "longest_no_completion_s": longest_gap,
                         "search": _request_stats(selected)})
@@ -241,32 +251,100 @@ def summarize_m3(runs: dict[str, dict[str, Any]], *, quick: bool) -> dict[str, A
             "expected_windows": 2, "observed_windows": len(windows), "windows": windows}
 
 
+def _commit_window_evidence(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    def key(row):
+        return str(row.get("tenant_idx")), row.get("session_id"), row.get("archive_id")
+
+    submitted = [r for r in rows if r.get("op") == "commit_submit"]
+    receipts = [r for r in submitted if _number(r.get("http_status")) == 202
+                and r.get("session_id") and r.get("archive_id")]
+    groups, observations = {}, {}
+    for row in receipts:
+        groups.setdefault(key(row), []).append(row)
+    for row in rows:
+        if row.get("op") == "commit_done":
+            observations.setdefault(key(row), []).append(row)
+    accepted = [group[0] for group in groups.values() if len(group) == 1]
+    terminals, intervals, confirmed = {}, [], []
+    duplicate_receipts = sum(len(group) for group in groups.values() if len(group) != 1)
+    duplicate_observations = sum(len(group) for k, group in observations.items()
+                                 if k in groups and len(group) != 1)
+    orphan_observations = sum(len(group) for k, group in observations.items() if k not in groups)
+    invalid_intervals = missing_audit = poll_errors = 0
+    observed_end = max((_number(r.get("ts_ms")) for r in rows
+                        if _number(r.get("ts_ms")) is not None), default=None)
+    for row in accepted:
+        k = key(row)
+        candidates = observations.get(k, [])
+        observation = candidates[0] if len(candidates) == 1 else {}
+        start = _number(row.get("accepted_at_ms"))
+        end = _number(observation.get("observation_ended_at_ms"))
+        if end is None:
+            end = _number(observation.get("ts_ms"))
+        if end is None:
+            end = observed_end
+        versioned = observation.get("poll_evidence_version") == "echomem-poll-v1"
+        polls, errors = _number(observation.get("poll_count")), _number(observation.get("poll_http_errors"))
+        audit_valid = (versioned and polls is not None and errors is not None
+                       and polls.is_integer() and errors.is_integer() and 0 <= errors <= polls)
+        missing_audit += not audit_valid
+        if audit_valid:
+            poll_errors += int(errors)
+        terminal_state = str(observation.get("commit_terminal_state") or "")
+        terminal = _number(observation.get("terminal_at_ms")) if (
+            audit_valid and polls > errors and terminal_state in {"completed", "failed", "error"}
+            and _number(observation.get("http_status")) == 200) else None
+        if not versioned and observation.get("status") == "ok":
+            terminal = _number(observation.get("completed_at_ms"))
+        if start is None or start < 0 or end is None or end < start:
+            invalid_intervals += 1
+            continue
+        if terminal is not None and not start <= terminal <= end:
+            invalid_intervals += 1
+            terminal = None
+        if terminal is not None:
+            terminals[k] = {**observation, "completed_at_ms": terminal,
+                            "status": "ok" if terminal_state == "completed" or not versioned else "error"}
+        right = terminal if terminal is not None else end
+        intervals.append((start, right))
+        pending = _number(observation.get("last_nonterminal_at_ms"))
+        if audit_valid and pending is not None and polls > errors:
+            if start <= pending <= right:
+                confirmed.append((start, pending))
+            else:
+                invalid_intervals += 1
+    return {"accepted": accepted, "terminals": terminals, "intervals": intervals,
+            "confirmed": confirmed, "accepted_receipts": len(receipts),
+            "http_202_responses": sum(_number(r.get("http_status")) == 202 for r in submitted),
+            "invalid_202_receipts": sum(_number(r.get("http_status")) == 202 for r in submitted) - len(receipts),
+            "duplicate_receipts": duplicate_receipts, "duplicate_observations": duplicate_observations,
+            "orphan_observations": orphan_observations, "invalid_intervals": invalid_intervals,
+            "missing_poll_audit": missing_audit,
+            "observation_outcomes": dict(Counter(r.get("poll_outcome") if r.get("poll_outcome") in
+                                                ("completed", "failed", "timeout", "stopped") else "unknown"
+                                                for group in observations.values() for r in group)),
+            "poll_http_errors": poll_errors if not missing_audit else None}
+
+
 def _flood_window(baseline_rows: list[dict[str, Any]], run: dict[str, Any], tenant_count: int = 4) -> dict[str, Any]:
     rows = _records(run)
-    accepted = [row for row in rows if row.get("op") == "commit_submit"
-                and _number(row.get("http_status")) == 202 and row.get("archive_id")]
-    done = {(row.get("tenant_idx"), row.get("session_id"), row.get("archive_id")): row
-            for row in rows if row.get("op") == "commit_done"}
-    intervals = []
-    for row in accepted:
-        key = row.get("tenant_idx"), row.get("session_id"), row.get("archive_id")
-        start = _number(row.get("accepted_at_ms"))
-        terminal = _number((done.get(key) or {}).get("completed_at_ms") or (done.get(key) or {}).get("ts_ms"))
-        if start is not None:
-            intervals.append((start, terminal or float("inf")))
-    overlap = []
+    evidence = _commit_window_evidence(rows)
+    accepted, done, intervals = evidence["accepted"], evidence["terminals"], evidence["intervals"]
+    overlap, confirmed = [], []
     for row in rows:
         if row.get("op") != "read":
             continue
         finished = _number(row.get("ts_ms"))
         latency = _number(row.get("stage_ms"))
-        started = finished - latency if finished is not None and latency is not None else None
+        started = finished - latency if finished is not None and latency is not None and latency >= 0 else None
         if started is not None and any(left <= started <= right for left, right in intervals):
             overlap.append(row)
+            if any(left <= started <= right for left, right in evidence["confirmed"]):
+                confirmed.append(row)
     by_tenant = []
     for tenant in range(tenant_count):
         before = _request_stats([row for row in baseline_rows if str(row.get("tenant_idx")) == str(tenant)])
-        during = _request_stats([row for row in overlap if str(row.get("tenant_idx")) == str(tenant)])
+        during = _request_stats([row for row in confirmed if str(row.get("tenant_idx")) == str(tenant)])
         ratio = during["p95_ms"] / before["p95_ms"] if before["p95_ms"] and during["p95_ms"] else None
         by_tenant.append({"tenant_index": tenant, "baseline": before, "overlap": during,
                           "p95_delta_ms": during["p95_ms"] - before["p95_ms"] if before["p95_ms"] is not None and during["p95_ms"] is not None else None,
@@ -275,23 +353,22 @@ def _flood_window(baseline_rows: list[dict[str, Any]], run: dict[str, Any], tena
     failed = sum(row.get("status") != "ok" for row in done.values())
     events = []
     durations = []
+    for start, end in intervals:
+        events.extend(((start, 1), (end, -1)))
     for row in accepted:
-        key = row.get("tenant_idx"), row.get("session_id"), row.get("archive_id")
+        key = str(row.get("tenant_idx")), row.get("session_id"), row.get("archive_id")
         start = _number(row.get("accepted_at_ms"))
-        end = _number((done.get(key) or {}).get("completed_at_ms") or (done.get(key) or {}).get("ts_ms"))
-        if start is not None:
-            events.append((start, 1))
-            if end is not None:
-                events.append((end, -1))
-                durations.append(end - start)
+        end = _number((done.get(key) or {}).get("completed_at_ms"))
+        if start is not None and end is not None and end >= start:
+            durations.append(end - start)
     queued = peak = 0
     commit_timeline = []
-    for event_at, change in sorted(events, key=lambda item: (item[0], item[1])):
+    for event_at, change in sorted(events, key=lambda item: (item[0], -item[1])):
         queued += change
         peak = max(peak, queued)
         commit_timeline.append({"at_ms": event_at, "pending": max(0, queued)})
     search_buckets: dict[int, list[float]] = {}
-    for row in overlap:
+    for row in confirmed:
         at = _number(row.get("ts_ms"))
         latency = _number(row.get("stage_ms"))
         if at is not None and latency is not None:
@@ -302,19 +379,27 @@ def _flood_window(baseline_rows: list[dict[str, Any]], run: dict[str, Any], tena
         for at, values in sorted(search_buckets.items())
     ]
     accepted_times = [left for left, _ in intervals]
-    terminal_times = [right for _, right in intervals if math.isfinite(right)]
+    terminal_times = [_number(row.get("completed_at_ms")) for row in done.values()]
     drain_s = ((max(terminal_times) - max(accepted_times)) / 1000
-               if accepted_times and len(terminal_times) == len(intervals) else None)
+               if accepted_times and len(terminal_times) == len(accepted) == len(intervals)
+               and not any(evidence[k] for k in ("duplicate_receipts", "duplicate_observations",
+                                                 "orphan_observations", "invalid_intervals", "missing_poll_audit")) else None)
     return {"scenario": run.get("scenario"), "baseline": _request_stats(baseline_rows),
             "overlap": _request_stats(overlap), "tenants": by_tenant,
+            "confirmed_overlap": _request_stats(confirmed),
+            "uncertain_overlap_reads": len(overlap) - len(confirmed),
+            "commit_evidence": {k: v for k, v in evidence.items()
+                                if k not in {"accepted", "terminals", "intervals", "confirmed"}},
             "commit_planned_or_recorded": len([r for r in rows if r.get("op") == "commit_submit"]),
-            "commit_accepted_202": len(accepted), "commit_rejected": len([r for r in rows if r.get("op") == "commit_submit"]) - len(accepted),
+            "commit_accepted_202": evidence["accepted_receipts"], "unique_accepted_tasks": len(accepted),
+            "accepted_by_tenant": dict(Counter(str(row.get("tenant_idx")) for row in accepted)),
+            "commit_rejected": sum(r.get("op") == "commit_submit" and (_number(r.get("http_status")) or 0) >= 400 for r in rows),
             "commit_completed": completed, "commit_failed": failed,
             "commit_pending": max(0, len(accepted) - len(done)),
-            "queue_peak": peak, "oldest_task_age_s": max(durations, default=None) / 1000 if durations else None,
+            "observed_inflight_peak": peak, "max_observed_terminal_latency_s": max(durations) / 1000 if durations else None,
             "drain_time_s": drain_s,
             "commit_timeline": commit_timeline, "search_timeline": search_timeline,
-            "overlap_intervals": len(intervals),
+            "overlap_intervals": len(intervals), "confirmed_intervals": len(evidence["confirmed"]),
             "internal_order_observation": "内部顺序未观测"}
 
 
@@ -326,8 +411,60 @@ def summarize_m4(runs: dict[str, dict[str, Any]], *, quick: bool) -> dict[str, A
         if name in runs and _records(runs[name]):
             windows.append(_flood_window(baseline_rows, runs[name]))
     observed = len(windows) + int(bool(baseline_rows))
-    return {"status": "PARTIAL" if quick and observed else _status(expected=3, observed=observed),
-            "reason": "配对轨迹只按 Search 开始时刻落入 accepted_at 至 completed_at 计算 overlap",
+    issues = []
+    baseline = _request_stats(baseline_rows)
+    if baseline_run.get("status") != "completed" or baseline_run.get("runner_timeout"):
+        issues.append("baseline_execution_not_complete")
+    for tenant in range(4):
+        tenant_rows = [r for r in baseline_rows if r.get("op") == "read" and str(r.get("tenant_idx")) == str(tenant)]
+        stats = _request_stats(tenant_rows)
+        if (not stats["planned_or_recorded"] or stats["latency_missing_or_invalid"]
+                or stats["quality_ok"] != stats["planned_or_recorded"]
+                or any(r.get("query_type") != "recall" or not _truth(r.get("marker_found")) for r in tenant_rows)):
+            issues.append(f"baseline_tenant_{tenant}_recall_or_timing_unproven")
+    if any(r.get("op") == "commit_submit" for r in baseline_rows):
+        issues.append("baseline_contains_commit")
+    for window in windows:
+        name = window["scenario"]
+        run = runs[name]
+        gaps = []
+        if run.get("status") != "completed" or run.get("runner_timeout"):
+            gaps.append("execution_not_complete")
+        contract = (run.get("summary") or {}).get("measurement_contract") or {}
+        count, waves = _number(contract.get("barrier_count")), _number(contract.get("barrier_waves"))
+        planned = (int(count * waves) if count is not None and waves is not None
+                   and count > 0 and waves > 0 and count.is_integer() and waves.is_integer() else None)
+        window["commit_planned"] = planned
+        if (contract.get("version") != "echomem-case-v1" or contract.get("tenant_count") != 4
+                or contract.get("query_mode") != "recall" or planned is None):
+            gaps.append("effective_workload_contract_missing_or_invalid")
+        if planned is not None and (window["commit_planned_or_recorded"] != planned
+                                    or window["unique_accepted_tasks"] != planned):
+            gaps.append("planned_commit_load_not_fully_accepted")
+        accepted_tenants = set(window["accepted_by_tenant"])
+        if name.endswith("uniform"):
+            counts = list(window["accepted_by_tenant"].values())
+            if accepted_tenants != {"0", "1", "2", "3"} or max(counts, default=0) - min(counts, default=0) > 1:
+                gaps.append("uniform_commit_distribution_not_observed")
+        elif accepted_tenants != {"0"}:
+            gaps.append("single_tenant_commit_distribution_not_observed")
+        evidence = window["commit_evidence"]
+        gaps.extend(k for k in ("duplicate_receipts", "duplicate_observations", "orphan_observations",
+                                "invalid_intervals", "missing_poll_audit", "invalid_202_receipts") if evidence[k])
+        if window["commit_pending"]:
+            gaps.append("commit_terminal_outcomes_unresolved")
+        for tenant in window["tenants"]:
+            stats = tenant["overlap"]
+            if (not stats["planned_or_recorded"] or stats["latency_missing_or_invalid"]
+                    or stats["quality_missing"] or stats["recall_queries"] != stats["planned_or_recorded"]):
+                gaps.append(f"tenant_{tenant['tenant_index']}_confirmed_overlap_unproven")
+        window["evidence_issues"] = gaps
+        issues.extend(f"{name}:{gap}" for gap in gaps)
+    if len(windows) != 2:
+        issues.append("flood_windows_missing")
+    return {"status": "MEASURED" if observed == 3 and not issues and not quick else "PARTIAL" if observed else "BLOCKED",
+            "reason": "非终态轮询确认的重叠与宽观察窗口分别展示；MEASURED 仅代表配置负载与证据齐全，不代表性能达标或严格内部优先级",
+            "evidence_issues": issues, "baseline": baseline,
             "expected_windows": 3, "observed_windows": observed, "windows": windows,
             "internal_order_observation": "内部顺序未观测"}
 
@@ -678,11 +815,31 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                            for window in metric.get("windows", []) for tenant in window.get("tenants", [])]
             visual += details("查看逐租户完成数与延迟", table(tenant_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("commit_submitted", "提交"), ("commit_accepted", "受理"), ("commit_completed", "完成"), ("commit_failed", "失败"), ("commit_pending", "Pending"), ("longest_no_completion_s", "最长无服务秒"), ("search_p95_ms", "Search P95 ms")]))
         elif code == "M4":
-            visual = bars("Commit 积压重叠窗口 Search P95 / ms", [
-                (str(window.get("scenario")), (window.get("overlap") or {}).get("p95_ms"))
+            visual = bars("有非终态证据的 Search P95 / ms", [
+                ("无 Commit 基线", (metric.get("baseline") or {}).get("p95_ms"))] + [
+                (str(window.get("scenario")), (window.get("confirmed_overlap") or {}).get("p95_ms"))
                 for window in metric.get("windows", [])
             ])
-            visual += details("查看 Commit 受理、完成与积压", table(metric.get("windows", []), [("scenario", "场景"), ("commit_planned_or_recorded", "Commit 计划/记录"), ("commit_accepted_202", "202"), ("commit_rejected", "拒绝"), ("commit_completed", "完成"), ("commit_pending", "Pending"), ("overlap_intervals", "Overlap 区间")]))
+            visual += "<p>宽观察窗口不等于任务始终未完成；最后一次成功 pending/running 轮询之前才有确认重叠证据。下表错误和质量失败保留在分母，不以延迟或质量阈值判性能失败。未确认终态不等于任务执行失败。</p>"
+            overlap_rows = [{"scenario": w.get("scenario"), "scope": scope, **(w.get(key) or {})}
+                            for w in metric.get("windows", []) for scope, key in (
+                                ("宽观察窗口", "overlap"), ("非终态确认窗口", "confirmed_overlap"))]
+            visual += table(overlap_rows, [("scenario", "场景"), ("scope", "窗口"),
+                ("planned_or_recorded", "Search 样本"), ("mean_ms", "平均 ms"), ("p95_ms", "P95 ms"),
+                ("errors", "错误"), ("quality_ok", "质量有效"), ("quality_missing", "质量未观测")])
+            visual += details("查看 Commit 受理、终态与观察范围", table(metric.get("windows", []), [
+                ("scenario", "场景"), ("commit_planned", "计划事务"), ("commit_planned_or_recorded", "实际提交"),
+                ("commit_accepted_202", "202"), ("commit_rejected", "拒绝"), ("commit_completed", "确认完成"),
+                ("commit_failed", "确认执行失败"), ("commit_pending", "未确认终态"),
+                ("observed_inflight_peak", "观察在途峰值（非服务排队）"), ("confirmed_intervals", "非终态区间")]))
+            audit_rows = [{"scenario": w.get("scenario"), **(w.get("commit_evidence") or {})}
+                          for w in metric.get("windows", [])]
+            visual += details("查看轮询与对账证据", table(audit_rows, [("scenario", "场景"),
+                ("observation_outcomes", "轮询结果"), ("poll_http_errors", "轮询 HTTP/传输异常"),
+                ("missing_poll_audit", "缺轮询审计"), ("duplicate_receipts", "重复受理记录"),
+                ("duplicate_observations", "重复终态观察"), ("orphan_observations", "无对应受理的观察"),
+                ("invalid_intervals", "非法时间区间")]))
+            visual += details("查看尚缺证据", "<pre>" + esc(json.dumps(metric.get("evidence_issues", []), ensure_ascii=False, indent=2)) + "</pre>")
             tenant_rows = [{"scenario": window.get("scenario"), **tenant,
                             "baseline_p95_ms": tenant.get("baseline", {}).get("p95_ms"),
                             "overlap_p95_ms": tenant.get("overlap", {}).get("p95_ms")}

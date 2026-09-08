@@ -290,6 +290,7 @@ class Ctx:
         timeout_s: float = 600.0,
         until: Callable[[dict[str, Any]], bool] | None = None,
         failed_statuses: tuple[str, ...] = ("failed", "error"),
+        on_response: Callable[[float, int | None, dict[str, Any] | None, str], None] | None = None,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
         extra: str | None = None,
@@ -316,6 +317,7 @@ class Ctx:
                 return PollResult(op, "timeout", elapsed_ms, polls, None, record)
 
             polls += 1
+            request_started_ms = time.time() * 1000
             try:
                 status, error_type, http_status, body_text, body_json, reason = _do_request(
                     self._base_url,
@@ -330,6 +332,9 @@ class Ctx:
                 status, error_type, http_status, body_text, body_json, reason = (
                     "error", exc.error_type, None, "", None, "",
                 )
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            if on_response is not None:
+                on_response(request_started_ms, http_status, body_json, error_type)
             if http_status is not None and 400 <= http_status < 500 \
                     and http_status not in (408, 409, 425, 429):
                 record = self._make_record(
@@ -358,9 +363,9 @@ class Ctx:
                 return PollResult(op, "completed", elapsed_ms, polls, body_json, record)
 
             state = str(
-                body_json.get("status")
-                or body_json.get("stage")
-                or body_json.get("state")
+                (body_json or {}).get("status")
+                or (body_json or {}).get("stage")
+                or (body_json or {}).get("state")
                 or ""
             ).lower()
             if state in failed_statuses:

@@ -26,6 +26,9 @@ class MockState:
         fail_open: bool = False,
         fail_add: bool = False,
         fail_commit: bool = False,
+        commit_status: int = 202,
+        commit_missing_archive: bool = False,
+        poll_http_status: int = 200,
     ):
         self.search_empty = search_empty
         self.search_degraded = search_degraded
@@ -36,6 +39,9 @@ class MockState:
         self.fail_open = fail_open
         self.fail_add = fail_add
         self.fail_commit = fail_commit
+        self.commit_status = commit_status
+        self.commit_missing_archive = commit_missing_archive
+        self.poll_http_status = poll_http_status
         self.metrics_text: str | None = None
         self.sessions = itertools.count(1)
         self.messages = itertools.count(1)
@@ -85,6 +91,8 @@ def _make_handler(state: MockState):
                 return self._send(404, {"error": "not found"})
             match = re.fullmatch(r"/api/sessions/([^/]+)/commits/([^/]+)", path)
             if match:
+                if state.poll_http_status != 200:
+                    return self._send(state.poll_http_status, {"error": "poll unavailable"})
                 key = (match.group(1), match.group(2))
                 state.poll_counts[key] = state.poll_counts.get(key, 0) + 1
                 if state.poll_fail_after and state.poll_counts[key] > state.poll_fail_after:
@@ -114,7 +122,8 @@ def _make_handler(state: MockState):
             if re.fullmatch(r"/api/sessions/([^/]+)/commit", path):
                 if state.fail_commit:
                     return self._send(500, {"error": "commit boom"})
-                return self._send(200, {"archive_id": f"a{next(state.archives)}"})
+                return self._send(state.commit_status, {} if state.commit_missing_archive else
+                                  {"archive_id": f"a{next(state.archives)}"})
             if path == "/api/retrieval/search":
                 query = body.get("query", "")
                 state.search_queries.append(query)

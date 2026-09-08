@@ -1,0 +1,125 @@
+"""Evidence completeness, not latency thresholds or live performance claims."""
+
+import pytest
+
+from performance.targets.echomem.acceptance.observation import summarize_m4, _commit_window_evidence
+from performance.tests.test_observation_suite import _run
+
+
+def read(tenant, *, at=1600, latency=100, **extra):
+    return {"op": "read", "tenant_idx": tenant, "status": "ok", "http_status": 200,
+            "stage_ms": latency, "ts_ms": at, "quality_ok": True, "query_type": "recall",
+            "marker_found": True, **extra}
+
+
+def task(tenant, aid="a"):
+    return [
+        {"op": "commit_submit", "tenant_idx": tenant, "session_id": "s", "archive_id": aid,
+         "http_status": 202, "status": "ok", "accepted_at_ms": 1000, "ts_ms": 1000},
+        {"op": "commit_done", "tenant_idx": tenant, "session_id": "s", "archive_id": aid,
+         "http_status": 200, "status": "ok", "ts_ms": 2000, "completed_at_ms": 2000,
+         "terminal_at_ms": 2000, "observation_ended_at_ms": 2000,
+         "last_nonterminal_at_ms": 1800, "poll_count": 3, "poll_http_errors": 0,
+         "poll_evidence_version": "echomem-poll-v1", "commit_terminal_state": "completed",
+         "poll_outcome": "completed"},
+    ]
+
+
+def runs(tmp_path, *, mutate=None):
+    result = {}
+    for name in ("m4-baseline", "m4-flood-uniform", "m4-flood-single-tenant"):
+        rows = [read(i, at=500 if name.endswith("baseline") else 1600) for i in range(4)]
+        if not name.endswith("baseline"):
+            for i in range(4):
+                rows.extend(task(i if name.endswith("uniform") else 0, str(i)))
+        if mutate:
+            mutate(name, rows)
+        run = _run(tmp_path, name, rows)
+        run.update(status="completed", runner_timeout=False, summary={"measurement_contract": {
+            "version": "echomem-case-v1", "tenant_count": 4, "query_mode": "recall",
+            "barrier_count": 4, "barrier_waves": 1}})
+        result[name] = run
+    return result
+
+
+def test_formal_complete_requires_audited_load_not_fast_search(tmp_path):
+    def slow_failed_search(name, rows):
+        if name.endswith("uniform"):
+            rows[0].update(status="error", quality_ok=False, error_type="timeout", stage_ms=9000, ts_ms=10500)
+    result = summarize_m4(runs(tmp_path, mutate=slow_failed_search), quick=False)
+    assert result["status"] == "MEASURED"
+    window = result["windows"][0]
+    assert window["confirmed_overlap"]["errors"] == 1
+    assert window["confirmed_overlap"]["quality_rate"] == .75
+    assert window["confirmed_overlap"]["p95_ms"] == 9000
+    assert window["commit_completed"] == 4
+    assert window["commit_failed"] == window["commit_pending"] == 0
+    assert window["evidence_issues"] == []
+
+
+@pytest.mark.parametrize("change", ["legacy", "timeout", "rejected", "duplicate", "missing_tenant", "invalid_time", "no_pending", "baseline_empty_recall"])
+def test_three_files_do_not_prove_formal_m4(tmp_path, change):
+    def mutate(name, rows):
+        if change == "baseline_empty_recall" and name.endswith("baseline"):
+            rows[0]["marker_found"] = False
+        if name.endswith("baseline"):
+            return
+        for row in rows:
+            if row["op"] == "commit_done":
+                if change == "legacy":
+                    row.pop("poll_evidence_version")
+                if change == "no_pending":
+                    row.pop("last_nonterminal_at_ms")
+                if change == "timeout":
+                    row.update(status="error", http_status=None, terminal_at_ms=None, completed_at_ms=None,
+                               commit_terminal_state="", poll_outcome="timeout")
+            if row["op"] == "commit_submit":
+                if change == "rejected":
+                    row.update(http_status=503, archive_id="", accepted_at_ms=None)
+                if change == "invalid_time":
+                    row["accepted_at_ms"] = -1
+        if change == "duplicate":
+            rows.append(dict(rows[-1]))
+        if change == "missing_tenant":
+            rows[:] = [r for r in rows if not (r["op"] == "read" and r["tenant_idx"] == 3)]
+    result = summarize_m4(runs(tmp_path, mutate=mutate), quick=False)
+    assert result["status"] == "PARTIAL"
+    assert result["evidence_issues"]
+    if change == "timeout":
+        assert result["windows"][0]["commit_failed"] == 0
+        assert result["windows"][0]["commit_pending"] == 4
+        assert result["windows"][0]["drain_time_s"] is None
+    if change == "rejected":
+        assert result["windows"][0]["commit_completed"] == 0
+        assert result["windows"][0]["commit_rejected"] == 4
+
+
+def test_quick_and_missing_contract_cannot_be_formal(tmp_path):
+    data = runs(tmp_path)
+    assert summarize_m4(data, quick=True)["status"] == "PARTIAL"
+    data["m4-flood-uniform"]["summary"] = {}
+    assert summarize_m4(data, quick=False)["status"] == "PARTIAL"
+
+
+def test_all_key_components_duplicates_and_orphans_are_reconciled():
+    rows = task(0, "a") + task(0, "b") + task(1, "a")
+    evidence = _commit_window_evidence(rows)
+    assert len(evidence["terminals"]) == 3
+    rows.append(dict(rows[0]))
+    rows.append({**rows[1], "archive_id": "orphan"})
+    evidence = _commit_window_evidence(rows)
+    assert len(evidence["terminals"]) == 2
+    assert evidence["duplicate_receipts"] == 2
+    assert evidence["orphan_observations"] == 1
+
+
+def test_observed_window_is_not_confirmed_until_terminal_poll(tmp_path):
+    def late_search(name, rows):
+        if not name.endswith("baseline"):
+            rows.append(read(0, at=2050))  # starts 1950, after last pending at 1800
+            rows.append(read(0, at=9000))  # outside observation, never infinite
+    result = summarize_m4(runs(tmp_path, mutate=late_search), quick=False)
+    window = result["windows"][0]
+    assert window["overlap"]["planned_or_recorded"] == 5
+    assert window["confirmed_overlap"]["planned_or_recorded"] == 4
+    assert window["uncertain_overlap_reads"] == 1

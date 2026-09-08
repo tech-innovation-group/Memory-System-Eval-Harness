@@ -30,6 +30,14 @@ class RequestRecord:
     archive_id: str = ""
     accepted_at_ms: float | None = None
     completed_at_ms: float | None = None
+    terminal_at_ms: float | None = None
+    last_nonterminal_at_ms: float | None = None
+    observation_ended_at_ms: float | None = None
+    commit_terminal_state: str = ""
+    poll_evidence_version: str = ""
+    poll_outcome: str = ""
+    poll_count: int | None = None
+    poll_http_errors: int | None = None
     extra: str = ""  # e.g. "burst"
     # -- write retry instrumentation (commit_submit) ---------------------
     retry_count: int = 0
@@ -79,6 +87,14 @@ CSV_FIELDS: list[str] = [
     "archive_id",
     "accepted_at_ms",
     "completed_at_ms",
+    "terminal_at_ms",
+    "last_nonterminal_at_ms",
+    "observation_ended_at_ms",
+    "commit_terminal_state",
+    "poll_evidence_version",
+    "poll_outcome",
+    "poll_count",
+    "poll_http_errors",
     "extra",
     "retry_count",
     "retried",

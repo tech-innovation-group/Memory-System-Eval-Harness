@@ -136,6 +136,9 @@ def test_run_case(server, tmp_path):
     assert run["repetition"] == 1
     assert run["policy"] == "server-observe"
     assert run["runner_timeout"] is False
+    contract = run["summary"]["measurement_contract"]
+    assert contract == {"version": "echomem-case-v1", "tenant_count": 1, "query_mode": "recall"}
+    assert json.loads((case_dir / "summary.json").read_text())["measurement_contract"] == contract
     for name in ("summary.json", "records.csv", "commit_results.csv", "search_results.csv"):
         assert (case_dir / name).is_file(), name
     summary = json.loads((case_dir / "summary.json").read_text(encoding="utf-8"))

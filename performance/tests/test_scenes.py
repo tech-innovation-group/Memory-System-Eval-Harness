@@ -123,7 +123,9 @@ def test_scene_b_write_transaction(server):
     assert "commit_done" in ops
     completed = [r for r in result.records if r.op == "commit_done"]
     assert completed
-    assert all(r.status == "ok" for r in completed)
+    assert any(r.commit_terminal_state == "completed" for r in completed)
+    assert all(r.status == "ok" or (r.poll_outcome == "stopped" and r.terminal_at_ms is None)
+               for r in completed)
     # anchor messages carry the PERFTAIL token and content hashes are recorded
     adds = [r for r in result.records if r.op == "add"]
     assert any(r.content_hash for r in adds)
@@ -154,7 +156,9 @@ def test_scene_b_commit_poll_failure(mock_server):
     done = [r for r in result.records if r.op == "commit_done"]
     assert done
     assert all(r.status == "error" for r in done)
-    assert all(r.error_type == "commit_failed" for r in done)
+    assert any(r.commit_terminal_state == "failed" for r in done)
+    assert all(r.error_type == "commit_failed" or
+               (r.error_type == "commit_stopped" and r.terminal_at_ms is None) for r in done)
 
 
 # -- scene C: mixed -----------------------------------------------------
