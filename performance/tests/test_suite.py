@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 import threading
+import time
+
+import pytest
 
 from performance.profile import LoadSpec, Profile, TargetSpec
 from performance.records import RequestRecord
@@ -300,6 +303,19 @@ def test_resume_skips_only_parseable_summary(tmp_path):
 # -- case timeout: stop engine + real completion persistence -------------
 
 
+class _StubbornEngine:
+    """run() 阻塞且 stop() 无法中断（模拟不可回收的顽固 worker）。"""
+
+    def __init__(self, profile, scene):
+        pass
+
+    def run(self):
+        time.sleep(60)
+
+    def stop(self):
+        pass
+
+
 class _BlockingEngine:
     """run() 阻塞直到 stop() 被调用；记录 stop 调用（验证超时回收）。"""
 
@@ -339,6 +355,32 @@ def test_run_case_timeout_stops_engine_and_persists_timeout(tmp_path, monkeypatc
     assert summary["runner_timeout"] is True
     # 超时产物不视为已完成的 run，resume 不得跳过。
     assert suite_mod._load_completed_run(case, case_dir, timeout_s=0.1) is None
+
+
+def test_run_case_stubborn_worker_aborts_suite(tmp_path, monkeypatch):
+    """确认窗口到期 worker 仍存活：先持久化 TIMEOUT 产物，再中止套件。"""
+    import performance.suite as suite_mod
+
+    scene = _write_scene(tmp_path)
+    case = {"label": "generic-case", "scene": "scene_generic"}
+    case_dir = tmp_path / "out"
+    monkeypatch.setattr(suite_mod, "Engine", _StubbornEngine)
+    monkeypatch.setattr(suite_mod, "_STOP_CONFIRM_S", 0.2)
+
+    with pytest.raises(RuntimeError, match="拒绝推进"):
+        run_case(
+            case,
+            _profile(),
+            scene_path=scene,
+            case_dir=case_dir,
+            timeout_s=0.05,
+        )
+
+    # 中止前产物已持久化：resume 将该 case 视为未完成并重跑。
+    summary = json.loads((case_dir / "summary.json").read_text(encoding="utf-8"))
+    assert summary["status"] == "TIMEOUT"
+    assert summary["runner_timeout"] is True
+    assert suite_mod._load_completed_run(case, case_dir, timeout_s=0.05) is None
 
 
 def test_resume_reruns_timed_out_case(tmp_path):

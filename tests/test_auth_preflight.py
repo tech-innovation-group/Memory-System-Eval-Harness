@@ -5,7 +5,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from performance.ctx import Ctx
+from performance.ctx import Ctx, ConnectionRegistry
 from performance.targets.echomem.probes.auth_preflight import key_fingerprint, run
 
 
@@ -26,6 +26,7 @@ def _probe_ctx(base_url: str, **params):
         choose_fn=lambda items: None,
         phases=[],
         checks=checks,
+        registry=ConnectionRegistry(),
     )
     return ctx, checks
 

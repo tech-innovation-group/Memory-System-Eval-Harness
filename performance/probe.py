@@ -39,7 +39,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from performance.ctx import Ctx, PROBE_STATUSES, ProbeCheck
+from performance.ctx import ConnectionRegistry, Ctx, PROBE_STATUSES, ProbeCheck
 from performance.dispatch import dispatch
 from performance.profile import Profile
 from performance.records import RequestRecord
@@ -137,6 +137,7 @@ class ProbeRunner:
         records: list[RequestRecord] = []
         seq = itertools.count()
         data_cursor = 0
+        connections = ConnectionRegistry()
 
         def choose(items: list[Any]) -> Any:
             nonlocal data_cursor
@@ -162,6 +163,7 @@ class ProbeRunner:
             phases=[],
             checks=checks,
             tenant_count=len(self.profile.tenants) or 1,
+            registry=connections,
         )
         try:
             self.probe.run(ctx)
@@ -173,6 +175,9 @@ class ProbeRunner:
                     reason=f"{type(exc).__name__}: {exc}",
                 )
             )
+        finally:
+            # 探针与 Engine 同等对待：结束后关闭并注销本次运行的全部连接。
+            connections.close_all()
         return ProbeResult(
             checks=checks, records=records,
             started_at=started_at, finished_at=time.perf_counter(),

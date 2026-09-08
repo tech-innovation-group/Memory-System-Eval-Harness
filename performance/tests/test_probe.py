@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from performance.ctx import Ctx, ProbeCheck
+from performance.ctx import ConnectionRegistry, Ctx, ProbeCheck
 from performance.probe import (
     ProbeError,
     ProbeRunner,
@@ -69,6 +69,7 @@ def test_check_requires_probe_ctx():
         read_timeout_s=5, params={}, duration_s=1, stop=threading.Event(),
         record_fn=lambda r: None, seq_fn=lambda: 0,
         choose_fn=lambda items: None, phases=[],
+        registry=ConnectionRegistry(),
     )
     with pytest.raises(RuntimeError):
         ctx.check("x", status="PASS")
@@ -81,6 +82,7 @@ def test_check_rejects_unknown_status():
         read_timeout_s=5, params={}, duration_s=1, stop=threading.Event(),
         record_fn=lambda r: None, seq_fn=lambda: 0,
         choose_fn=lambda items: None, phases=[], checks=checks,
+        registry=ConnectionRegistry(),
     )
     with pytest.raises(ValueError):
         ctx.check("x", status="MAYBE")

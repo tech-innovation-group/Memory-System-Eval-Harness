@@ -11,7 +11,7 @@ from pathlib import Path
 from performance.targets.echomem.acceptance.scheduler import (
     evaluate as evaluate_scheduler_acceptance,
 )
-from performance.ctx import Ctx
+from performance.ctx import Ctx, ConnectionRegistry
 from performance.targets.echomem.probes._client import extract_message
 from performance.targets.echomem.probes._client import EchoMemHTTP
 from performance.targets.echomem.probes.blackbox_contract import (
@@ -50,6 +50,7 @@ def _probe_ctx(base_url: str, **params):
         choose_fn=lambda items: None,
         phases=[],
         checks=checks,
+        registry=ConnectionRegistry(),
     )
     return ctx, checks
 

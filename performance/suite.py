@@ -38,8 +38,9 @@ from performance.util import now_iso, run_command, scale_counts_to_cap
 log = logging.getLogger(__name__)
 
 # case 超时后调用 Engine.stop() 后等待 worker 退出的有界时长（秒）。
-# 正常场景 stop 后 gate/worker 立即让路；仍阻塞在请求里的 worker 只能等
-# 请求返回，超此上限则放弃等待（daemon 线程随进程退出）。
+# stop 会关闭活跃连接中断在途请求，worker 正常场景在该窗口内退出；
+# 确认窗口到期仍存活视为不可回收，run_case 持久化 TIMEOUT 产物后抛错
+# 中止套件，绝不在旧 worker 存活时推进下一 case。
 _STOP_CONFIRM_S = 30.0
 
 
@@ -281,9 +282,10 @@ def run_case(
     """执行单个 case：load_scene + Engine.run，写产物并返回 run dict。
 
     Engine 异常记 ``ENV_ERROR``；``timeout_s`` 用守护线程包裹 Engine.run，
-    超时记 ``TIMEOUT``、调用 ``Engine.stop()`` 并有界确认 worker 退出，再
-    返回已收集的（可能为空）records 摘要。summary.json 持久化真实的
-    ``status`` / ``runner_timeout``，供 resume 只复用明确完成的 case。
+    超时记 ``TIMEOUT``、调用 ``Engine.stop()`` 并有界确认 worker 退出。
+    确认窗口（``_STOP_CONFIRM_S``）到期后线程仍存活时，先持久化真实的
+    ``status`` / ``runner_timeout``（供 resume 只复用明确完成的 case），
+    再抛 ``RuntimeError`` 中止套件——绝不在旧 worker 存活时推进下一 case。
     ``summarize`` 缺省为通用 ``summarize_case_records``；
     ``write_evidence`` 在 summary.json/records.csv 之后写 target 专属
     证据文件。
@@ -291,6 +293,7 @@ def run_case(
     scene = load_scene(scene_path)
     runner_timeout = False
     status = "completed"
+    stubborn = False
     records: list[RequestRecord] = []
     try:
         if timeout_s and timeout_s > 0:
@@ -309,8 +312,10 @@ def run_case(
                 engine.stop()
                 thread.join(_STOP_CONFIRM_S)
                 if thread.is_alive():
-                    log.warning(
-                        "case %s 超时后 worker 仍存活（可能阻塞在请求中），放弃等待",
+                    stubborn = True
+                    log.error(
+                        "case %s 超时后 worker 在确认窗口内未退出，"
+                        "持久化 TIMEOUT 产物后中止套件",
                         case["label"],
                     )
             else:
@@ -326,6 +331,10 @@ def run_case(
     write_records(case_dir, records, summary)
     if write_evidence is not None:
         write_evidence(case_dir, records)
+    if stubborn:
+        raise RuntimeError(
+            f"case {case['label']} 超时后 worker 仍存活，拒绝推进下一 case"
+        )
     return {
         "scenario": case["label"],
         "scenario_label": case["label"],

@@ -201,7 +201,7 @@ class EvidenceContractTests(unittest.TestCase):
             path = Path(directory) / "report.html"
             result["checks"][0]["reason"] = "<script>alert(1)</script>"
             write_report(result, path)
-            text = path.read_text()
+            text = path.read_text(encoding="utf-8")
             self.assertNotIn("<script>", text)
             self.assertIn("&lt;script&gt;", text)
 
