@@ -22,7 +22,7 @@ import logging
 import shutil
 import statistics
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from performance.memory_leak import diagnose_runs
@@ -371,6 +371,15 @@ class SeedContext:
     agent_id: str = "default"
     user_id: str = "default"
     account_id: str = "default"
+    query_cases: dict[str, dict] = field(default_factory=dict)
+
+
+class SeedPreparationError(RuntimeError):
+    """A seed failure with deliberately public, credential-free evidence."""
+
+    def __init__(self, message: str, evidence: dict):
+        super().__init__(message)
+        self.public_evidence = evidence
 
 
 def _run_prepare_command(command: str) -> dict:
@@ -566,6 +575,8 @@ def run_suite(
             manifest["seed"] = seed_summary
         except Exception as exc:
             manifest["seed"] = {"status": "ENV_ERROR", "error": str(exc)}
+            if isinstance(exc, SeedPreparationError):
+                manifest["seed"]["evidence"] = exc.public_evidence
             return finish()
     else:
         manifest["seed"] = {"status": "skipped", "reason": "no tenant_config"}
@@ -594,6 +605,9 @@ def run_suite(
             ]
             case_profile.params["tenant_query_pools"] = {
                 str(index): list(ctx.queries) for index, ctx in enumerate(usable)
+            }
+            case_profile.params["tenant_query_cases"] = {
+                str(index): dict(ctx.query_cases) for index, ctx in enumerate(usable)
             }
             case_profile.params["tenant_identities"] = {
                 str(index): {"agent_id": ctx.agent_id, "user_id": ctx.user_id,

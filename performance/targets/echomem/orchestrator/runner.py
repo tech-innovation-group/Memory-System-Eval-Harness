@@ -260,6 +260,38 @@ def _preflight_stage(config: str, *, strict: bool = False) -> dict:
     return {**result, "config": config}
 
 
+def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, seed_messages):
+    """M3 uses explicit remembered facts, not a bare marker as a routing gate."""
+    import uuid
+    from performance.suite import SeedPreparationError
+    from performance.targets.echomem.acceptance.capacity_seed import CapacityActor, prepare_actors
+    from performance.targets.echomem.acceptance.semantic_corpus import build_corpus
+    from performance.targets.echomem.probes._client import EchoMemHTTP
+
+    specs = load_tenant_specs(tenant_config, tenant_count=max_tenants)
+    if len(specs) != max_tenants or len({s.auth_key for s in specs}) != max_tenants:
+        raise RuntimeError("Semantic seed requires all independent tenant credentials")
+    run_tag = uuid.uuid4().hex
+    actors = [CapacityActor(index, 0, EchoMemHTTP(base_url, spec.auth_key,
+                    tenant_id=spec.tenant_id, user_id=spec.user_id,
+                    account_id=spec.account_id, agent_id=spec.agent_id),
+                build_corpus(f"formal-m3-{run_tag}-{index}")) for index, spec in enumerate(specs)]
+    evidence = prepare_actors(actors, timeout_s=180, validation_queries=4)
+    if evidence["healthy_actors"] != max_tenants:
+        raise SeedPreparationError(f"Semantic seed validation failed: healthy={evidence['healthy_actors']}/{max_tenants}", evidence)
+    contexts = [SeedContext(tenant_id=actor.client.tenant_id, auth_key=actor.client.auth_key,
+                    agent_id=actor.client.agent_id, user_id=actor.client.user_id,
+                    account_id=actor.client.account_id,
+                    queries=[q["query"] for q in actor.corpus["recall_queries"]],
+                    query_cases={q["query"]: q for q in actor.corpus["recall_queries"]}) for actor in actors]
+    return contexts, {"status": "completed", "tenant_count": max_tenants,
+                      "identity_mode": "independent", "keys_independent": True,
+                      "seed_contract": "fixed-fact-in-items", "seed_evidence": evidence,
+                      "corpus_fingerprints": [actor.corpus["fingerprint"] for actor in actors],
+                      "seed_documents_per_tenant": 5, "facts_per_tenant": 20,
+                      "query_variants_per_tenant": 40, "validated_queries_per_tenant": 4}
+
+
 def _prepare_seed(
     base_url: str,
     tenant_config: str,
@@ -396,7 +428,8 @@ def run_suite(
             config,
             strict=bool(profile.get("six_metrics") or profile.get("six_metrics_observation")),
         ),
-        seed=_prepare_seed,
+        seed=(_prepare_semantic_seed if profile.get("six_metrics_observation") and scenarios
+              and all(name.startswith("m3-fairness-") for name in scenarios) else _prepare_seed),
         evaluate=evaluate_pr421_acceptance,
     )
     if profile.get("resource_evidence"):

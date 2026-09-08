@@ -94,9 +94,22 @@ def search(ctx: Ctx, query: str, *, top_k: int = 5) -> Response:
         query=query,
     )
     marker = anchor_marker(query)
+    sample = ctx.params.get("tenant_query_cases", {}).get(str(ctx.tenant_idx), {}).get(query)
     query_type = "recall" if marker else "no_recall" if query in NO_RECALL_QUERIES else "unclassified"
+    if sample is not None:
+        query_type = sample["query_type"]
     if not resp.ok:
-        ctx.note(quality_ok=False, query_type=query_type, expected_marker=marker)
+        ctx.note(quality_ok=False, query_type=query_type, expected_marker=marker,
+                 quality_assertion="fixed-fact-in-items" if sample is not None else "")
+        return resp
+    if sample is not None:
+        from performance.targets.echomem.acceptance.semantic_corpus import assess_retrieval
+        check = assess_retrieval(resp.json, sample)
+        ctx.note(quality_ok=check["quality_ok"], query_type=query_type,
+                 hit_count=check["hit_count"], real_recall=check["hit_count"] > 0,
+                 degraded=check["degraded"], expected_fact_found=check["matched_expected_fact"],
+                 quality_assertion="fixed-fact-in-items",
+                 degraded_reasons=json.dumps(check["degraded_reasons"], ensure_ascii=False))
         return resp
     ctx.note(**recall_quality(resp.json, marker, query_type))
     return resp

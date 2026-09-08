@@ -713,6 +713,16 @@ def evaluate_observation(suite: dict[str, Any], profile: dict[str, Any],
             metric["status"] = "PARTIAL"
             metric["reason"] = "quick 仅为非完整采样；" + str(metric.get("reason") or "")
     statuses = [metrics[code]["status"] for code in selected]
+    seed = suite.get("seed") or {}
+    seed_evidence = seed.get("seed_evidence") or seed.get("evidence") or {}
+    setup_evidence = {
+        "seed_status": seed.get("status"), "seed_contract": seed.get("seed_contract"),
+        "healthy_actors": seed_evidence.get("healthy_actors"),
+        "expected_actors": seed_evidence.get("actor_count"),
+        "validated_queries_per_tenant": seed.get("validated_queries_per_tenant"),
+        "bare_marker_gate_failed": str(seed.get("error") or "").startswith("Seed marker not found"),
+        "load_cases_completed": len(runs),
+    }
     overall = ("EXECUTION_ERROR" if "EXECUTION_ERROR" in statuses else
                "BLOCKED" if all(value == "BLOCKED" for value in statuses) else
                "MEASURED" if all(value == "MEASURED" for value in statuses) else "PARTIAL")
@@ -744,6 +754,7 @@ def evaluate_observation(suite: dict[str, Any], profile: dict[str, Any],
             "sampling_mode": "quick-non-complete" if quick else "full",
             "status": overall, "metrics": metrics,
             "selected_metrics": sorted(selected),
+            "setup_evidence": setup_evidence,
             "allowed_statuses": list(STATUSES),
             "issue_categories": issues,
             "raw_suite": "suite.json"}
@@ -752,6 +763,12 @@ def evaluate_observation(suite: dict[str, Any], profile: dict[str, Any],
 def derive_observation_recommendations(result: dict[str, Any]) -> list[dict[str, Any]]:
     """Turn measured symptoms into bounded, module-specific next actions."""
     metrics = result.get("metrics", {})
+    setup = result.get("setup_evidence") or {}
+    if setup.get("seed_status") == "ENV_ERROR" and setup.get("load_cases_completed") == 0:
+        return [{"priority": "P0", "module": "测试准备 / Recall 验证",
+                 "metrics": ", ".join(result.get("selected_metrics") or metrics),
+                 "evidence": "种子验证未通过，尚无负载场景；不能归因于调度、原子引擎吞吐或容量。",
+                 "action": "用固定事实和自然语言问题检查返回记忆正文，分别记录路由、降级、空召回及命中；前置验证通过后再压测。"}]
     m1, m2, m3, m4, m5, m6 = (metrics.get(f"M{i}", {}) for i in range(1, 7))
     m2_changes = [
         float(value) * 100
@@ -807,14 +824,17 @@ def derive_observation_recommendations(result: dict[str, Any]) -> list[dict[str,
 
 def write_observation_report(result: dict[str, Any], path: Path) -> None:
     def esc(value: Any) -> str:
+        if isinstance(value, float):
+            value = f"{value:.6g}"
         return html.escape("-" if value is None else str(value))
 
-    def table(rows: list[dict[str, Any]], columns: list[tuple[str, str]]) -> str:
+    def table(rows: list[dict[str, Any]], columns: list[tuple[str, str]], *, min_width_px: int = 0) -> str:
         head = "".join(f"<th>{esc(label)}</th>" for _, label in columns)
         body = "".join("<tr>" + "".join(f"<td>{esc(row.get(key))}</td>" for key, _ in columns) + "</tr>" for row in rows)
         if not body:
             body = f'<tr><td colspan="{len(columns)}">暂无数据</td></tr>'
-        return f"<div class='scroll'><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>"
+        style = f" style='min-width:{int(min_width_px)}px'" if min_width_px else ""
+        return f"<div class='scroll'><table{style}><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>"
 
     def details(label: str, content: str) -> str:
         return f"<details><summary>{esc(label)}</summary>{content}</details>"
@@ -952,15 +972,22 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             f"{visual}{details('原始汇总与完整分母', '<pre>' + esc(json.dumps(metric, ensure_ascii=False, indent=2)) + '</pre>')}</section>"
         )
     recommendations = derive_observation_recommendations(result)
+    seed_diagnosis = ""
+    if result.get("seed_query_diagnosis"):
+        labels = {"bare-marker": "只查询编号", "personal-recall": "请回忆编号事项", "personal-question": "询问编号具体事项"}
+        diagnosis_rows = [{**row, "query_form": labels.get(row.get("query_form"), row.get("query_form"))}
+                          for row in result["seed_query_diagnosis"]]
+        seed_diagnosis = "<section><h2>种子召回对比诊断</h2><p>这是低并发诊断请求，不是压测 P95 或容量。未进入负载阶段时，下方测试方式仅代表计划。</p>" + table(diagnosis_rows, [("query_form", "查询形式"), ("http_status", "HTTP"), ("elapsed_s", "耗时秒"), ("hit_count", "返回条数"), ("marker_found", "编号命中"), ("quality_ok", "原编号断言通过"), ("degraded", "降级")]) + "</section>"
     recommendation_table = table(recommendations, [
         ("priority", "优先级"), ("module", "EchoMem 模块"),
         ("metrics", "关联指标"), ("evidence", "本次证据"),
         ("action", "改进建议"),
-    ])
+    ], min_width_px=900)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("""<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>EchoMem 4U8G 六项黑盒观测</title><style>
 body{margin:0;color:#18242b;background:#f4f7f8;font:14px/1.6 system-ui;letter-spacing:0}main{max-width:1320px;margin:auto;padding:24px}h1{font-size:28px}h2{font-size:20px}.lead{border-left:4px solid #17746a;padding:10px 14px;background:#fff}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 0}.cards article{background:#fff;border:1px solid #d5dfe3;padding:14px;border-radius:4px}.cards h2{font-size:16px;margin:6px 0}.cards small{display:block;color:#60727a}.MEASURED{color:#08745d}.PARTIAL{color:#946200}.BLOCKED,.EXECUTION_ERROR{color:#b1372e}section{background:#fff;border-top:1px solid #cbd6da;padding:18px;margin-top:12px}.purpose,.method{color:#40565f;font-size:15px}.method{background:#f0f5f6;border-left:3px solid #4d8791;padding:8px 12px}.scroll{overflow:auto}table{width:100%;border-collapse:collapse}th,td{text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid #dde4e7}th{background:#edf2f4;white-space:nowrap}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f1f4f5;padding:12px}details{border-top:1px solid #e0e6e8;margin-top:12px;padding-top:8px}summary{cursor:pointer;color:#176d75;font-weight:650}.bar{display:grid;grid-template-columns:260px minmax(120px,1fr) 90px;gap:10px;align-items:center;margin:7px 0}.bar i{display:block;height:12px;background:#e0e7e9}.bar i b{display:block;height:100%;background:#17746a}.bar i b.worse{background:#c05a45}.bar i b.better{background:#278575}.bar strong{text-align:right}@media(max-width:760px){.cards{grid-template-columns:1fr}main{padding:12px}.bar{grid-template-columns:1fr}.bar strong{text-align:left}}</style></head><body><main>""" +
         f"<h1>EchoMem 4U8G 六项黑盒观测</h1><div class='lead'><b>结论先行：{esc(result['status'])}</b><p>这是观测报告，不是性能准入验收；没有 P95、准确率、Jain、吞吐或劣化比例 PASS/FAIL 门槛。错误、超时、空召回与 pending/failed Commit 均保留在分母。采样模式：{esc(result['sampling_mode'])}。</p></div><div class='cards'>{cards}</div>" +
+        "<section><h2>准备阶段证据</h2><p>没有完成负载场景时不能给出性能结论。裸编号未命中不等于语义事实没有写入；需分别验证实际返回的记忆内容、路由和降级。</p>" + table([result.get("setup_evidence") or {}], [("seed_status", "种子状态"), ("seed_contract", "校验方式"), ("healthy_actors", "验证通过租户"), ("expected_actors", "验证租户总数"), ("validated_queries_per_tenant", "每租户预检问题数"), ("bare_marker_gate_failed", "裸编号前置校验失败"), ("load_cases_completed", "已有负载场景")]) + "</section>" +
         "<section><h2>EchoMem 模块改进建议</h2><p class='purpose'>建议只由本轮可见证据推导；无法从黑盒区分的阶段明确写为需补观测，不把端到端延迟武断归因给原子引擎。</p>" + recommendation_table + details("查看责任边界与技术证据", table(result.get("issue_categories", []), [("category", "类别"), ("note", "观测/下一步"), ("evidence", "证据")])) + "</section>" +
-        render_platform_provenance(result.get("platform_provenance")) +
+        seed_diagnosis + render_platform_provenance(result.get("platform_provenance")) +
         "".join(sections) + "<section><h2>原始产物</h2><p><a href='summary.json'>summary.json</a> · <a href='suite.json'>suite.json</a> · <a href='records.csv'>records.csv</a> · <a href='metrics_samples.csv'>metrics_samples.csv</a> · <a href='execution-manifest.json'>execution-manifest.json</a></p></section></main></body></html>", encoding="utf-8")

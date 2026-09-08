@@ -65,6 +65,8 @@ class RequestRecord:
     arrival_task: str = ""
     arrival_sequence: int | None = None
     planned_at_ms: float | None = None
+    quality_assertion: str = ""
+    expected_fact_found: bool | None = None
 
     def to_csv_row(self) -> dict[str, Any]:
         row: dict[str, Any] = {}
@@ -77,6 +79,7 @@ class RequestRecord:
 
 
 CSV_FIELDS: list[str] = [
+    "quality_assertion", "expected_fact_found",
     "arrival_task", "arrival_sequence", "planned_at_ms",
     "scene",
     "worker_id",
