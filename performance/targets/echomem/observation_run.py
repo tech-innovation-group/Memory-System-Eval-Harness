@@ -337,21 +337,23 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 for report in m1_reports
             ]
         }
-        if sampler is not None:
-            sampler_stop.set()
-            sampler.join(timeout=20)
-            if sampler.is_alive():
-                observation_errors.append("SamplerStopTimeout")
-            observation_monitor["window_end_s"] = time.monotonic()
-        if observation.get("enabled"):
-            after_all = _collect_observation(profile, token)
-            suite["tenant_observability_after_all"] = after_all
-            (output / "tenant-observability-after-all.json").write_text(
-                json.dumps(after_all, ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
-            )
-        suite["tenant_observability_samples"] = list(observation_samples)
-        suite["tenant_observability_monitor"] = observation_monitor
+        def snapshot_observability(*, stop: bool):
+            if sampler is not None:
+                if stop:
+                    sampler_stop.set()
+                    sampler.join(timeout=20)
+                    if sampler.is_alive():
+                        observation_errors.append("SamplerStopTimeout")
+                observation_monitor["window_end_s"] = time.monotonic()
+            if observation.get("enabled"):
+                after_all = _collect_observation(profile, token)
+                suite["tenant_observability_after_all"] = after_all
+                (output / "tenant-observability-after-all.json").write_text(
+                    json.dumps(after_all, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            suite["tenant_observability_samples"] = list(observation_samples)
+            suite["tenant_observability_monitor"] = {**observation_monitor, "errors": list(observation_errors)}
+
+        snapshot_observability(stop="M1" not in selected)
         if "M1" in selected:
             # Publish bounded scenes before the potentially long capacity search.
             checkpoint = evaluate_observation(suite, profile, [], quick=args.quick, selected_metrics=selected)
@@ -361,6 +363,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             _combine_csv(suite, output, "records.csv")
             _combine_csv(suite, output, "metrics_samples.csv")
             write_observation_report(checkpoint, output / "report.html")
+            capacity_readiness = {}
             try:
                 capacity_readiness = check_readiness(profile)
                 if not capacity_readiness.get("ok"):
@@ -368,13 +371,20 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     raise RuntimeError("capacity_control_preflight_failed")
                 m1_reports = _run_m1_profiles(profile, args, output)
             except Exception as exc:
+                snapshot_observability(stop=True)
+                checkpoint = evaluate_observation(suite, profile, m1_reports, quick=args.quick, selected_metrics=selected)
                 checkpoint.update(status="EXECUTION_ERROR", checkpoint=False,
+                                  pending_metrics=["M1"], platform_provenance=provenance,
                                   incomplete_reason=type(exc).__name__)
+                if not capacity_readiness.get("ok"):
+                    checkpoint["capacity_start_readiness"] = capacity_readiness
+                (output / "suite.json").write_text(json.dumps(suite, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
                 (output / "summary.json").write_text(json.dumps(checkpoint, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
                 write_observation_report(checkpoint, output / "report.html")
                 raise
             suite["m1"]["reports"] = [{"topology": report.get("topology"), "status": report.get("status"),
                 "path": str(output / "M1" / str(report.get("topology")) / "report.json")} for report in m1_reports]
+            snapshot_observability(stop=True)
         (output / "suite.json").write_text(json.dumps(suite, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         _combine_csv(suite, output, "records.csv")
         _combine_csv(suite, output, "metrics_samples.csv")

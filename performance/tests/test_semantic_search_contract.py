@@ -83,6 +83,20 @@ def test_no_performance_blame_before_seed_passes():
     assert advice[0]["module"] == "测试准备 / Recall 验证"
 
 
+def test_report_labels_cached_seed_without_claiming_fresh_injection(tmp_path):
+    from performance.targets.echomem.acceptance.observation import evaluate_observation, write_observation_report
+    result = evaluate_observation({"runs": [], "seed": {"status": "completed",
+        "seed_source": "validated-cache", "seed_documents_per_tenant": 5,
+        "facts_per_tenant": 20, "query_variants_per_tenant": 40,
+        "validated_queries_per_tenant": 4}}, {}, [], quick=False, selected_metrics=["M3"])
+    assert result["setup_evidence"]["seed_source"] == "validated-cache"
+    path = tmp_path / "report.html"
+    write_observation_report(result, path)
+    html = path.read_text()
+    assert "复用已有记忆，本次重新验证召回" in html
+    assert "预检抽样通过不代表整个问题池全部通过" in html
+
+
 @pytest.mark.parametrize("healthy", [True, False])
 def test_cached_validation_only_searches_current_returned_facts(healthy):
     from performance.targets.echomem.acceptance.capacity_seed import CapacityActor, validate_cached_actors

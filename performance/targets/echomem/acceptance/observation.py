@@ -717,6 +717,10 @@ def evaluate_observation(suite: dict[str, Any], profile: dict[str, Any],
     seed_evidence = seed.get("seed_evidence") or seed.get("evidence") or {}
     setup_evidence = {
         "seed_status": seed.get("status"), "seed_contract": seed.get("seed_contract"),
+        "seed_source": seed.get("seed_source"),
+        "seed_documents_per_tenant": seed.get("seed_documents_per_tenant"),
+        "facts_per_tenant": seed.get("facts_per_tenant"),
+        "query_variants_per_tenant": seed.get("query_variants_per_tenant"),
         "healthy_actors": seed_evidence.get("healthy_actors"),
         "expected_actors": seed_evidence.get("actor_count"),
         "validated_queries_per_tenant": seed.get("validated_queries_per_tenant"),
@@ -972,6 +976,12 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             f"{visual}{details('原始汇总与完整分母', '<pre>' + esc(json.dumps(metric, ensure_ascii=False, indent=2)) + '</pre>')}</section>"
         )
     recommendations = derive_observation_recommendations(result)
+    setup = result.get("setup_evidence") or {}
+    source_labels = {"validated-cache": "复用已有记忆，本次重新验证召回", "fresh": "本次重新注入记忆"}
+    seed_source = "<section><h2>记忆与问题来源</h2><p>" + esc(source_labels.get(setup.get("seed_source"), "来源未记录，不能推定为本次重新注入")) + "</p>" + table([setup], [
+        ("seed_documents_per_tenant", "每租户注入文本数"), ("facts_per_tenant", "每租户事实数"),
+        ("query_variants_per_tenant", "每租户问题池大小"),
+        ("validated_queries_per_tenant", "每租户本次预检问题数")]) + "<p>预检抽样通过不代表整个问题池全部通过；正式发压中的空召回、错误和降级仍计入失败分母。</p></section>"
     seed_diagnosis = ""
     if result.get("seed_query_diagnosis"):
         labels = {"bare-marker": "只查询编号", "personal-recall": "请回忆编号事项", "personal-question": "询问编号具体事项"}
@@ -993,5 +1003,5 @@ body{margin:0;color:#18242b;background:#f4f7f8;font:14px/1.6 system-ui;letter-sp
         f"<h1>EchoMem 4U8G 六项黑盒观测</h1><div class='lead'><b>结论先行：{esc(result['status'])}</b><p>这是观测报告，不是性能准入验收；没有 P95、准确率、Jain、吞吐或劣化比例 PASS/FAIL 门槛。错误、超时、空召回与 pending/failed Commit 均保留在分母。采样模式：{esc(result['sampling_mode'])}。</p></div><div class='cards'>{cards}</div>" +
         stage_notice + "<section><h2>准备阶段证据</h2><p>没有完成负载场景时不能给出性能结论。裸编号未命中不等于语义事实没有写入；需分别验证实际返回的记忆内容、路由和降级。</p>" + table([result.get("setup_evidence") or {}], [("seed_status", "种子状态"), ("seed_contract", "校验方式"), ("healthy_actors", "验证通过租户"), ("expected_actors", "验证租户总数"), ("validated_queries_per_tenant", "每租户预检问题数"), ("bare_marker_gate_failed", "裸编号前置校验失败"), ("load_cases_completed", "已有负载场景")]) + "</section>" +
         "<section><h2>EchoMem 模块改进建议</h2><p class='purpose'>建议只由本轮可见证据推导；无法从黑盒区分的阶段明确写为需补观测，不把端到端延迟武断归因给原子引擎。</p>" + recommendation_table + details("查看责任边界与技术证据", table(result.get("issue_categories", []), [("category", "类别"), ("note", "观测/下一步"), ("evidence", "证据")])) + "</section>" +
-        seed_diagnosis + render_platform_provenance(result.get("platform_provenance")) +
+        seed_source + seed_diagnosis + render_platform_provenance(result.get("platform_provenance")) +
         "".join(sections) + "<section><h2>原始产物</h2><p><a href='summary.json'>summary.json</a> · <a href='suite.json'>suite.json</a> · <a href='records.csv'>records.csv</a> · <a href='metrics_samples.csv'>metrics_samples.csv</a> · <a href='execution-manifest.json'>execution-manifest.json</a></p></section></main></body></html>", encoding="utf-8")

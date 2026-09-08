@@ -79,3 +79,47 @@ def test_uncleared_fault_prevents_capacity_without_losing_checkpoint(tmp_path, m
     data = json.loads((args.out_dir / "summary.json").read_text())
     assert data["capacity_start_readiness"]["ok"] is False
     assert events == ["bounded-suite", "probes"]
+
+
+@pytest.mark.parametrize("fail_capacity", [False, True])
+def test_observability_stays_live_through_capacity(tmp_path, monkeypatch, fail_capacity):
+    args, _ = setup_run(tmp_path, monkeypatch)
+    profiles = json.loads(args.profiles.read_text())
+    profiles["profiles"][0]["tenant_observability"] = {"enabled": True}
+    args.profiles.write_text(json.dumps(profiles))
+    monkeypatch.setenv("ECHOMEM_TEST_CONTROL_TOKEN", "unit-only")
+    monkeypatch.setattr(module, "_collect_observation", lambda *a: {"status": "PASS"})
+    threads = []
+
+    class Sampler:
+        def __init__(self, target, args, **kwargs):
+            self.stop = args[0]
+            threads.append(self)
+
+        def start(self):
+            pass
+
+        def join(self, **kwargs):
+            assert self.stop.is_set()
+
+        def is_alive(self):
+            return not self.stop.is_set()
+
+    monkeypatch.setattr(module.threading, "Thread", Sampler)
+
+    def capacity(*a):
+        assert len(threads) == 1 and not threads[0].stop.is_set()
+        if fail_capacity:
+            raise RuntimeError("capacity interrupted")
+        return []
+
+    monkeypatch.setattr(module, "_run_m1_profiles", capacity)
+    if fail_capacity:
+        with pytest.raises(RuntimeError, match="capacity interrupted"):
+            module.run(args)
+    else:
+        module.run(args)
+    assert threads[0].stop.is_set()
+    suite = json.loads((args.out_dir / "suite.json").read_text())
+    monitor = suite["tenant_observability_monitor"]
+    assert monitor["window_end_s"] >= monitor["window_start_s"]
