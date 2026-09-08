@@ -117,6 +117,12 @@ def test_html_explains_metrics_and_echo_mem_modules():
     assert "原子引擎 Atomic Engine" in html
     assert "路由与意图模型" in html
     assert "租户公平调度" in html
+    assert "<th>测试方式</th>" in html
+    assert html.count("<b>测试方式：</b>") == 6
+    section = html.index("<h2>M1 · 热用户与 DAU</h2>")
+    method = html.index("<b>测试方式：</b>", section)
+    conclusion = html.index("<div class=\"conclusion\">", section)
+    assert section < method < conclusion
 
 
 def test_recovery_matrix_is_reduced_to_public_counts():

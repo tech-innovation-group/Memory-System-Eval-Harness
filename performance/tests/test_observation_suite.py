@@ -185,6 +185,12 @@ def test_observation_report_is_summary_first_with_hidden_details(tmp_path: Path)
     assert "<details>" in page
     assert "<details open" not in page
     assert all(name in page for name in ("M1", "M2", "M3", "M4", "M5", "M6"))
+    assert page.count("<b>测试方式：</b>") == 6
+    for code in ("M1", "M2", "M3", "M4", "M5", "M6"):
+        section = page.index(f"<h2>{code} ")
+        method = page.index("<b>测试方式：</b>", section)
+        details = page.index("<details>", section)
+        assert section < method < details
 
 
 def test_observation_recommendations_cover_required_modules() -> None:
