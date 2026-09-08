@@ -24,7 +24,7 @@ def test_empty_report_tables_span_their_actual_columns(tmp_path: Path) -> None:
                               "status": "PARTIAL", "sampling_mode": "quick"}, path)
     rendered = path.read_text()
     assert 'colspan="3"' in rendered
-    assert 'colspan="5"' in rendered
+    assert 'colspan="7"' in rendered
     assert 'colspan="9"' not in rendered
 
 

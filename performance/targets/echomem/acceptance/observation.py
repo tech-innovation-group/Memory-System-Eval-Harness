@@ -190,6 +190,11 @@ def summarize_m2(suite: dict[str, Any], profile: dict[str, Any], *, quick: bool)
             "after": detail.get("after"),
             "degradation_by_tenant": detail.get("degradation_by_tenant", {}),
             "fault_recovered": detail.get("fault_recovered"),
+            "fault_disable_acknowledged": detail.get("fault_disable_acknowledged"),
+            "target_http_responding": detail.get("target_http_responding"),
+            "target_after_submitted": detail.get("target_after_submitted"),
+            "target_after_http_success": detail.get("target_after_http_success"),
+            "target_after_quality_success": detail.get("target_after_quality_success"),
             "target_recovery_observed_s": detail.get("target_recovery_observed_s"),
             "raw_probe_verdict": case.get("status"),
         })
@@ -927,7 +932,9 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                 points.append((f"{case.get('fault_type')} · {case.get('target_tenant')} · #{case.get('repetition')}",
                                max(values) if values else None))
             visual = bars("各故障用例最差旁观租户 Search P95 变化 %", points, signed=True)
-            visual += details("查看 24 个故障用例状态", table(metric.get("cases", []), [("target_tenant", "目标租户"), ("fault_type", "故障"), ("repetition", "重复"), ("fault_observed", "实际生效"), ("fault_recovered", "恢复")]))
+            visual += details("查看 24 个故障用例状态", table(metric.get("cases", []), [("target_tenant", "目标租户"), ("fault_type", "故障"), ("repetition", "重复"), ("fault_observed", "实际生效"), ("fault_disable_acknowledged", "关闭指令确认"), ("target_http_responding", "关闭后有成功响应"), ("fault_recovered", "关闭后全部请求质量成功")]))
+            visual += '<p>关闭指令确认、接口有成功响应、所有请求召回质量成功是三种不同证据；最后一项为否不等于故障开关未关闭。未采集字段显示缺失，不据此推定恢复或失败。</p>'
+            visual += details("查看目标租户恢复分母", table(metric.get("cases", []), [("target_tenant", "目标租户"), ("fault_type", "故障"), ("repetition", "重复"), ("target_after_submitted", "关闭后请求"), ("target_after_http_success", "HTTP 成功"), ("target_after_quality_success", "HTTP 与质量均成功"), ("target_recovery_observed_s", "关闭起至首次 HTTP 成功秒")]))
         elif code == "M3":
             visual = bars("公平指数（越接近 1 越均匀）", [
                 (f"{window.get('tenant_count')}租户 Commit Jain", window.get("commit_throughput_jain"))

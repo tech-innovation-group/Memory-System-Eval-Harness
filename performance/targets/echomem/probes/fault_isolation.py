@@ -248,6 +248,29 @@ def _detail(fields: dict[str, Any]) -> str:
     return json.dumps(fields, ensure_ascii=False)
 
 
+def recovery_evidence(after: dict, target_tenant: str, disable: dict) -> dict:
+    target = after.get("by_tenant", {}).get(target_tenant, {})
+    submitted = target.get("submitted", 0)
+    succeeded = target.get("succeeded", 0)
+    rows = target.get("rows", [])
+    http_ok = [r for r in rows if isinstance(r.get("status_code"), int)
+               and 200 <= r["status_code"] < 300]
+    times = [r.get("start_offset_s", 0) + r["elapsed_s"] for r in http_ok
+             if isinstance(r.get("elapsed_s"), (int, float))
+             and math.isfinite(r["elapsed_s"]) and r["elapsed_s"] >= 0]
+    acknowledged = disable.get("status") == PASS
+    return {
+        "fault_disable_acknowledged": acknowledged,
+        "target_http_responding": acknowledged and bool(http_ok),
+        "target_after_submitted": submitted,
+        "target_after_http_success": len(http_ok),
+        "target_after_quality_success": succeeded,
+        "fault_recovered": acknowledged and succeeded == submitted and submitted > 0,
+        "target_recovery_observed_s": (disable.get("elapsed_s", 0) + min(times))
+            if acknowledged and times else None,
+    }
+
+
 def run(ctx: Ctx) -> None:
     params = ctx.params
     try:
@@ -459,16 +482,7 @@ def run(ctx: Ctx) -> None:
             "during": during,
             "after": after,
             "bystanders": bystanders,
-            "fault_recovered": disable.get("status") == PASS and recovered_target,
-            "target_recovery_observed_s": (
-                disable.get("elapsed_s", 0) + min(
-                    (row.get("start_offset_s", 0) + row.get("elapsed_s", 0)
-                     for row in after.get("by_tenant", {}).get(target_tenant, {}).get("rows", [])
-                     if isinstance(row.get("status_code"), int)
-                     and 200 <= row["status_code"] < 300),
-                    default=after.get("elapsed_s"),
-                )
-            ),
+            **recovery_evidence(after, target_tenant, disable),
             "bystander_p95_degradation": bystander_p95_degradation,
             "degradation_by_tenant": degradations,
             "p95_before_by_tenant": {
