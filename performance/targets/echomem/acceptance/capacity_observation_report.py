@@ -29,6 +29,30 @@ def _bars(title, points, unit):
     return f'<div><h3>{escape(title)}</h3>{rows or "尚无数据"}</div>'
 
 
+def _counts(value):
+    if not value:
+        return "无"
+    return ", ".join(f"{key}: {count}" for key, count in sorted(value.items()))
+
+
+def _error_row(h, name, search):
+    detail = search.get("error_breakdown") or {}
+    partition = detail.get("outcome_partition") or {}
+    return [
+        h, name, detail.get("denominator_sent", search.get("sent")),
+        partition.get("strict_success", search.get("success")),
+        detail.get("http_200_quality_failures"), detail.get("http_200_degraded"),
+        detail.get("http_non_200"), detail.get("http_4xx"),
+        detail.get("authentication_or_permission_http"), detail.get("rate_limited_http_429"),
+        detail.get("http_5xx"), detail.get("http_other_non_200"),
+        detail.get("transport_errors"), detail.get("timeout_censored", search.get("timeout_censored")),
+        _counts(detail.get("transport_error_types")),
+        _counts(detail.get("reason_code_counts") or search.get("http_reason_counts")),
+        detail.get("unclassified_failures"),
+        "是" if detail.get("partition_complete") else "旧数据未保留完整分区",
+    ]
+
+
 def render_observation(report: dict) -> str:
     env = report.get("manifest") or report.get("environment") or {}
     levels = []
@@ -50,6 +74,7 @@ def render_observation(report: dict) -> str:
     total_sent = sum(l["search"]["sent"] for l in levels)
     total_errors = sum(l["search"]["errors"] for l in levels)
     summary_rows, detail_rows, class_rows, commit_rows, dau_rows, issue_rows = [], [], [], [], [], []
+    error_rows = []
     route_summaries = []
     p95_points, rps_points = [], []
     for level in levels:
@@ -74,6 +99,7 @@ def render_observation(report: dict) -> str:
             search.get("mean_s"), search.get("p50_s"), search.get("p95_s"), search.get("p99_s"),
             search.get("timeout_censored"), search.get("not_sent"), search.get("degraded"),
             str(search.get("http_status_counts", {}))])
+        error_rows.append(_error_row(h, name, search))
         p95_points.append((f"H={h} {name}", search.get("p95_s")))
         rps_points.append((f"H={h} {name}", level.get("effective_search_rps")))
         for cell in level.get("cells", []):
@@ -98,9 +124,12 @@ def render_observation(report: dict) -> str:
         if search.get("degraded"):
             issue_rows.append([h, name, "路由 / 引擎可用性", search["degraded"],
                                str(search.get("degraded_reason_counts", "旧汇总未保留原因"))])
+        breakdown = search.get("error_breakdown") or {}
         if search.get("transport_or_http_errors"):
             issue_rows.append([h, name, "HTTP / 传输", search["transport_or_http_errors"],
-                               str(search.get("http_status_counts", {}))])
+                f"HTTP非200={breakdown.get('http_non_200', '旧数据未拆分')}；"
+                f"传输={breakdown.get('transport_errors', '旧数据未拆分')}；"
+                f"状态={search.get('http_status_counts', {})}"])
         issue_rows.append([h, name, "原子检索 / 编排耗时", search.get("atomic_p95_s"),
             f"Atomic P95(s)；端到端减已上报引擎耗时的残差 P95={_fmt(search.get('unattributed_residual_p95_s'))}s"])
         route_summaries.append((f"H={h} {name}", search))
@@ -154,6 +183,9 @@ def render_observation(report: dict) -> str:
 {_table(['H','负载','P95 s','发送/s','HTTP 200/s','有效召回/s','HTTP/传输错误','严格有效/已发出','CPU峰值 %','RSS峰值 MiB'],summary_rows)}
 <p class="muted">H=T×U，用户请求率决定在途请求量。严格有效性同时要求 HTTP 正常、满足问题预期、无降级；其错误数不等于传输错误数。短窗口数字不代表全天稳态。</p></section>
 <details><summary>各档完整计数、延迟与 HTTP 状态</summary>{_table(['H','租户 T','负载','时长 s','计划','发出','严格有效','平均 s','P50 s','P95 s','P99 s','超时','未发出','降级','HTTP 状态计数'],detail_rows)}</details>
+<section><h2>Search 错误完整拆分</h2>
+{_table(['H','负载','已发出分母','严格成功','HTTP 200质量失败','其中降级','HTTP非200','4xx','401/403','429','5xx','其他HTTP','传输错误','超时','传输类型','EchoMem reason_code','未分类','分母对账'],error_rows)}
+<p class="muted">每个已发请求只进入“严格成功、HTTP 200 质量失败、HTTP 非 200、传输错误、未分类”之一；分母对账为“是”时五类之和等于已发出数。401/403 只表示当前 HTTP 层鉴权或权限失败，429 表示当前服务响应限流；没有上游 provider 的明确原因码或日志时，不能据此断言是模型 API Key。</p></section>
 <section><h2>Commit 实际执行</h2>{_table(['H','计划提交','受理 202','原期限内completed','其中负载窗口内','追加观察completed','追加观察failed','未受理','原期限内未成功','P95 s','窗口内完成/s','积压峰值'],commit_rows)}
 <p>原期限为每个 Commit 受理后最多 180 秒；追加观察会重新对全部受理任务核对状态，因此 completed 数含原期限内已完成任务，不能相加。排空只表示无未终态任务，不保证全部成功。完成判定来自 commit_status，当前 M1 还没有逐条源消息对账；M5 单独核验持久化与恢复。</p></section>
 <section><h2>DAU 条件换算</h2>{_table(['H','Search/人/天','Commit/人/天','峰均比','Search折算','Commit折算','两者较小值'],dau_rows)}

@@ -183,6 +183,7 @@ def test_html_explains_metrics_and_echo_mem_modules():
     assert "路由与意图模型" in html
     assert "租户公平调度" in html
     assert "<th>测试方式</th>" in html
+    assert "查看 Search 错误完整拆分" in html
     assert html.count("<b>测试方式：</b>") == 6
     for code in range(1, 7):
         section = html.index(f"<h2>M{code} ·")

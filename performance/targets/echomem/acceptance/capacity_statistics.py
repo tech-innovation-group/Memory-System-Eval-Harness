@@ -38,6 +38,91 @@ def _valid_duration(value) -> bool:
             and math.isfinite(value) and value >= 0)
 
 
+def _status_code(row: dict) -> int | None:
+    value = row.get("http_status")
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def error_breakdown(sent: list[dict]) -> dict:
+    """Build a complete, mutually exclusive Search outcome denominator."""
+    status_counts = Counter()
+    reason_counts = Counter()
+    transport_types = Counter()
+    partition = Counter()
+    http_4xx = http_5xx = http_other = 0
+    auth = rate_limited = timeout_censored = 0
+    degraded_200 = quality_failed_200 = 0
+
+    for row in sent:
+        status = _status_code(row)
+        success = bool(row.get("success"))
+        if status is not None:
+            status_counts[str(status)] += 1
+        if row.get("reason_code"):
+            reason_counts[str(row["reason_code"])] += 1
+        if row.get("timeout_censored"):
+            timeout_censored += 1
+
+        if success:
+            partition["strict_success"] += 1
+        elif status == 200:
+            partition["http_200_quality_failure"] += 1
+            quality_failed_200 += 1
+            degraded_200 += bool(row.get("degraded"))
+        elif status is None and (
+            row.get("transport_error_type") or row.get("error") or row.get("timeout_censored")
+        ):
+            partition["transport_error"] += 1
+            kind = str(row.get("transport_error_type") or row.get("error") or
+                       "unknown_transport_error")
+            transport_types[kind] += 1
+        elif status is None:
+            partition["unclassified"] += 1
+        else:
+            partition["http_non_200"] += 1
+
+        if status is not None and status != 200:
+            if 400 <= status < 500:
+                http_4xx += 1
+            elif 500 <= status < 600:
+                http_5xx += 1
+            else:
+                http_other += 1
+            auth += status in {401, 403}
+            rate_limited += status == 429
+
+    transport_errors = partition["transport_error"]
+    http_non_200 = partition["http_non_200"]
+    partition_total = sum(partition.values())
+    return {
+        "denominator_sent": len(sent),
+        "outcome_partition": dict(partition),
+        "partition_total": partition_total,
+        "partition_complete": partition_total == len(sent),
+        "http_status_counts": dict(status_counts),
+        "http_non_200": http_non_200,
+        "http_4xx": http_4xx,
+        "http_5xx": http_5xx,
+        "http_other_non_200": http_other,
+        "authentication_or_permission_http": auth,
+        "rate_limited_http_429": rate_limited,
+        "transport_errors": transport_errors,
+        "transport_error_types": dict(transport_types),
+        "unknown_transport_errors": transport_types.get("unknown_transport_error", 0),
+        "timeout_censored": timeout_censored,
+        "http_200_quality_failures": quality_failed_200,
+        "http_200_degraded": degraded_200,
+        "http_200_non_degraded_quality_failures": quality_failed_200 - degraded_200,
+        "reason_code_counts": dict(reason_counts),
+        "unclassified_failures": partition["unclassified"],
+    }
+
+
 def detect_congestion(measurement: dict, *, window_s: float = 10,
                       minimum_requests: int = 20, rejection_ratio: float = .10) -> dict:
     """Stop on sustained service pressure, not recall quality or generator lag."""
@@ -90,7 +175,7 @@ def search_summary(rows: list[dict]) -> dict:
                                "mean_s": sum(values) / len(values),
                                "p95_s": percentile(values, 95), "max_s": max(values)}
                       for engine, values in sorted(engine_values.items())}
-    codes = Counter(str(row.get("http_status")) for row in sent)
+    failures = error_breakdown(sent)
     reasons = Counter(str(reason) for row in sent for reason in row.get("degraded_reasons", []))
     fact_observed = [row for row in sent if row.get("matched_expected_fact") is not None]
     hit_observed = [row for row in sent if row.get("hit_count") is not None]
@@ -141,9 +226,11 @@ def search_summary(rows: list[dict]) -> dict:
             "quality_rate": len(successful) / len(sent) if sent else None,
             "quality_wilson_95": wilson(len(successful), len(sent)),
             "errors": len(sent) - len(successful), "degraded": sum(bool(r.get("degraded")) for r in sent),
-            "http_status_counts": dict(codes), "degraded_reason_counts": dict(reasons),
-            "http_reason_counts": dict(Counter(r["reason_code"] for r in sent if r.get("reason_code"))),
-            "transport_or_http_errors": sum(row.get("http_status") != 200 for row in sent),
+            "http_status_counts": failures["http_status_counts"],
+            "degraded_reason_counts": dict(reasons),
+            "http_reason_counts": failures["reason_code_counts"],
+            "transport_or_http_errors": failures["http_non_200"] + failures["transport_errors"],
+            "error_breakdown": failures,
             "fact_hit_observations": len(fact_observed),
             "fact_hits": sum(bool(row["matched_expected_fact"]) for row in fact_observed),
             "result_count_observations": len(hit_observed),

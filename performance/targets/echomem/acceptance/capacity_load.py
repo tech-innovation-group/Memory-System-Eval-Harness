@@ -212,11 +212,18 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
             record["http_status"] = result.status_code
             if result.reason_code:
                 record["reason_code"] = result.reason_code
+            if result.status_code is None:
+                error_type = getattr(result, "transport_error_type", "")
+                if not error_type and getattr(result, "error", ""):
+                    error_type = str(result.error).split(":", 1)[0]
+                record["transport_error_type"] = error_type or "unknown_transport_error"
             record["elapsed_s"] = time.monotonic() - begin
             timeout = request_timeout_s if op == "read" else actor.client.timeout_s
             record["timeout_censored"] = result.status_code is None and record["elapsed_s"] >= timeout
         except Exception as exc:
-            record.update(success=False, error=type(exc).__name__, elapsed_s=time.monotonic() - begin)
+            record.update(success=False, error=type(exc).__name__,
+                          transport_error_type=type(exc).__name__,
+                          elapsed_s=time.monotonic() - begin)
         finally:
             record["end_s"] = time.monotonic() - started
             append(record)

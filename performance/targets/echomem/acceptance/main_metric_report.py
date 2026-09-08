@@ -31,6 +31,12 @@ def _observed(value):
     return f"{value:.3f}" if isinstance(value, float) else str(value)
 
 
+def _counts(value):
+    if not value:
+        return "无"
+    return ", ".join(f"{key}: {count}" for key, count in sorted(value.items()))
+
+
 def fault_matrix_counts(value: dict) -> dict:
     if not value.get("cases"):
         return value
@@ -441,6 +447,25 @@ def render(report: dict) -> str:
         r.get("resource_summary", {}).get("cpu_peak_percent_one_core_100"),
         (r.get("resource_summary", {}).get("rss_peak_bytes") or 0) / 1048576
         if r.get("resource_summary", {}).get("rss_peak_bytes") is not None else None] for r in levels]
+    capacity_error_rows = []
+    for row in levels:
+        search = row["search"]
+        detail = search.get("error_breakdown") or {}
+        partition = detail.get("outcome_partition") or {}
+        capacity_error_rows.append([
+            row.get("hot_users"), "混合" if row.get("mixed") else "纯召回",
+            detail.get("denominator_sent", search.get("sent")),
+            partition.get("strict_success", search.get("success")),
+            detail.get("http_200_quality_failures"), detail.get("http_200_degraded"),
+            detail.get("http_non_200"), detail.get("http_4xx"),
+            detail.get("authentication_or_permission_http"), detail.get("rate_limited_http_429"),
+            detail.get("http_5xx"), detail.get("transport_errors"),
+            detail.get("timeout_censored", search.get("timeout_censored")),
+            _counts(detail.get("transport_error_types")),
+            _counts(detail.get("reason_code_counts") or search.get("http_reason_counts")),
+            detail.get("unclassified_failures"),
+            "是" if detail.get("partition_complete") else "旧数据未保留完整分区",
+        ])
     fault_rows = [[f"T{p['identity_index']+1}", p["before"].get("sent"), p["during"].get("sent"),
         p["before"].get("p95_s"), p["during"].get("p95_s"), p.get("p95_degradation_percent"),
         p["during"].get("transport_or_http_errors")] for p in m2.get("pairs", [])]
@@ -586,8 +611,9 @@ def render(report: dict) -> str:
 ['崩溃恢复','专用session写带序号消息，实际消息数见M5逐样本表；Commit返回202且仍pending时kill -9容器。','启动同一容器后轮询原任务，不重新提交；再读取history/archive/cursor并做一次同幂等键重试。','原任务自主completed，全部源消息集合和顺序无缺失，cursor一致，幂等重试指向同archive。'],
 ['租户与观测','四个独立tenant/user/key，不用同一key伪装多租户。','负载前、中、后调用受保护只读观测接口；故障通过受保护test-control端点注入。','每个预期tenant×lane都有queue/wait/exec/reject四元组，字段非负、唯一且负载变化可见。']]))}</section>
 <section><h2>M1 · 热用户与 DAU</h2><p><b>测试方式：</b>每个热用户拥有独立身份和预注入记忆，以1 Search/s开放到达率同时发请求；纯召回与“召回+不召回+Commit”混合流量分别测。混合场景在第30–60秒为每个热用户错峰提交1个非空Commit，因此H4代表计划4个、H8代表计划8个；“峰值在途”按每个已获202任务从受理到终态的真实时间区间计算，不把总提交数冒充服务端并行度。每档记录全部请求、P95/P99、有效吞吐、错误/降级、CPU/RSS及积压恢复。分别展示每档请求完成与召回质量，不设性能合格线；历史零错误档仅作参考。继续升档并在停压后观察恢复，只有服务无法完成请求、崩溃、OOM或积压在明确观察窗口内无法恢复，才记录运行边界。</p>{conclusion_panel('M1')}<div class="chart-grid"><div><h3>P95 / 秒</h3>{curves}</div><div><h3>HTTP/传输错误率 / %</h3>{capacity_error_curves}</div><div><h3>严格有效 Search/s</h3>{capacity_rps_curves}</div></div>{details('查看每档完整计数、Commit 和资源数据',table(['H','负载','Search P95 s','有效 Search/s','HTTP/传输错误','严格有效/发出','Commit提交','Commit 202','Commit完成','Commit未完成/失败','Commit峰值在途','提交跨度 s','Commit P95 s','CPU峰值 %','RSS峰值 MiB'],capacity_rows))}
+{details('查看 Search 错误完整拆分',table(['H','负载','已发出分母','严格成功','HTTP 200质量失败','其中降级','HTTP非200','4xx','401/403','429','5xx','传输错误','超时','传输类型','EchoMem reason_code','未分类','分母对账'],capacity_error_rows))}
 {render_route_paths(capacity_paths)}
-<p>100% CPU 表示一个 CPU 核。最高已测档位不是最大用户量；HTTP 429、超时、召回降级全部保留。最大 DAU 尚未验证，画像换算及每题数据见 <a href="capacity-report.html">容量详细报告</a>。</p></section>
+<p>错误拆分将每个已发请求唯一归入严格成功、HTTP 200质量失败、HTTP非200、传输错误或未分类；分母对账为“是”时类别总和等于已发请求数。401/403不能在缺少provider原因码或日志时直接归因为模型API Key。100% CPU 表示一个 CPU 核。最高已测档位不是最大用户量；最大 DAU 尚未验证，画像换算及每题数据见 <a href="capacity-report.html">容量详细报告</a>。</p></section>
 <section><h2>M2 · 单租户故障隔离</h2><p><b>测试方式：</b>四租户同时执行召回问题；每个目标重新测故障前基线，随后只对该目标注入reject或delay，再撤销并测恢复窗口。前中后使用同一问题/到达随机种子，目标和旁观租户按同速率发Search。reject需明确TEST_FAULT_INJECTED原因码，delay需匹配配置和目标延迟增量；同时核验目标控制回执与故障窗口有效期。劣化=(故障中P95/基线P95−1)×100%，不设置性能通过阈值。旧结果不会补造缺失的原因码与控制回执。</p>{conclusion_panel('M2')}
 {'<p class="notice">本页历史输入未声明每目标独立基线。上面是本轮修正后的脚本方案，不代表旧数据已经按新方案复测。</p>' if m2.get('cases') and m2.get('baseline_scope') != 'per_target' else ''}{fault_chart}
 {table(['租户','基线样本','故障中样本','基线P95 s','故障中P95 s','变化 %','故障中HTTP错误'],fault_rows) if fault_rows else ''}

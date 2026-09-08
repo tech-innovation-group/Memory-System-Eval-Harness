@@ -1,4 +1,6 @@
 import json
+import http.client
+import urllib.error
 from types import SimpleNamespace
 
 from performance.targets.echomem.acceptance.capacity_load import arrival_plan, query_for
@@ -17,6 +19,7 @@ from performance.targets.echomem.acceptance.capacity_confirmation import (
 from performance.targets.echomem.acceptance.capacity_evidence_merge import merge
 from performance.targets.echomem.probes.docker_inspect import resource_values
 from performance.targets.echomem.acceptance.preflight import config_digest, valid_model_response
+from performance.targets.echomem.probes._client import _transport_error_type
 
 
 def test_arrival_plan_separates_read_message_and_commit_schedules():
@@ -54,6 +57,71 @@ def test_failed_and_unissued_requests_are_not_hidden():
     assert summary["planned"] == 3 and summary["sent"] == 2
     assert summary["quality_rate"] == .5 and summary["timeout_censored"] == 1
     assert summary["p95_s"] == 10 and summary["success_p95_s"] == .1
+
+
+def test_search_error_breakdown_preserves_complete_denominator():
+    rows = [
+        {"sent": True, "success": True, "http_status": 200, "elapsed_s": .1},
+        {"sent": True, "success": False, "http_status": 200, "elapsed_s": .2,
+         "degraded": True, "degraded_reasons": ["engine_not_enabled"]},
+        {"sent": True, "success": False, "http_status": 200, "elapsed_s": .2},
+        {"sent": True, "success": False, "http_status": 401, "elapsed_s": .1,
+         "reason_code": "UNAUTHENTICATED"},
+        {"sent": True, "success": False, "http_status": 429, "elapsed_s": .1,
+         "reason_code": "TENANT_RATE_LIMITED"},
+        {"sent": True, "success": False, "http_status": 503, "elapsed_s": .1,
+         "reason_code": "RETRIEVAL_BUSY"},
+        {"sent": True, "success": False, "http_status": None, "elapsed_s": 5,
+         "transport_error_type": "timeout", "timeout_censored": True},
+        {"sent": True, "success": False, "http_status": None, "elapsed_s": .1,
+         "transport_error_type": "connection_reset"},
+        {"sent": True, "success": False, "http_status": None, "elapsed_s": .1},
+        {"sent": False, "success": False, "error": "generator_saturated"},
+    ]
+    summary = search_summary(rows)
+    detail = summary["error_breakdown"]
+    assert detail["denominator_sent"] == 9
+    assert detail["outcome_partition"] == {
+        "strict_success": 1,
+        "http_200_quality_failure": 2,
+        "http_non_200": 3,
+        "transport_error": 2,
+        "unclassified": 1,
+    }
+    assert detail["partition_total"] == 9 and detail["partition_complete"]
+    assert detail["http_status_counts"] == {"200": 3, "401": 1, "429": 1, "503": 1}
+    assert detail["http_4xx"] == 2 and detail["http_5xx"] == 1
+    assert detail["authentication_or_permission_http"] == 1
+    assert detail["rate_limited_http_429"] == 1
+    assert detail["transport_errors"] == 2
+    assert detail["transport_error_types"] == {"timeout": 1, "connection_reset": 1}
+    assert detail["timeout_censored"] == 1
+    assert detail["http_200_quality_failures"] == 2
+    assert detail["http_200_degraded"] == 1
+    assert detail["http_200_non_degraded_quality_failures"] == 1
+    assert detail["reason_code_counts"] == {
+        "UNAUTHENTICATED": 1, "TENANT_RATE_LIMITED": 1, "RETRIEVAL_BUSY": 1}
+    assert detail["unclassified_failures"] == 1
+    assert summary["transport_or_http_errors"] == 5
+
+
+def test_search_error_breakdown_does_not_emit_none_as_http_status():
+    summary = search_summary([{"sent": True, "success": False, "http_status": None,
+                               "error": "URLError", "elapsed_s": .1}])
+    detail = summary["error_breakdown"]
+    assert detail["http_status_counts"] == {}
+    assert detail["transport_error_types"] == {"URLError": 1}
+    assert detail["partition_complete"]
+
+
+def test_transport_exception_categories_are_stable_and_secret_free():
+    assert _transport_error_type(TimeoutError("private endpoint")) == "timeout"
+    assert _transport_error_type(
+        urllib.error.URLError(ConnectionRefusedError("private endpoint"))
+    ) == "connection_refused"
+    assert _transport_error_type(
+        http.client.RemoteDisconnected("private endpoint")
+    ) == "remote_disconnected"
 
 
 def test_observation_mode_records_slow_errors_without_performance_rejection():
@@ -344,6 +412,26 @@ def test_observation_report_renders_route_path_breakdown():
     assert "Search 路由路径延迟拆解" in html
     assert "快速路径（未调用意图 LLM）" in html
     assert "意图 LLM 路径" in html
+
+
+def test_observation_report_renders_complete_error_breakdown():
+    search = search_summary([
+        {"sent": True, "success": True, "http_status": 200, "elapsed_s": .1},
+        {"sent": True, "success": False, "http_status": 429, "elapsed_s": .1,
+         "reason_code": "TENANT_RATE_LIMITED"},
+        {"sent": True, "success": False, "http_status": None, "elapsed_s": 5,
+         "transport_error_type": "timeout", "timeout_censored": True},
+    ])
+    html = render({"assessment_mode": "observe", "levels": [{
+        "search": search, "commit": {}, "cells": [], "identity_count": 1,
+        "tenant_count": 1, "duration_s": 1, "mixed": False,
+        "load_mode": "search", "sent_search_rps": 3.0,
+        "effective_search_rps": 1.0}]})
+    assert "Search 错误完整拆分" in html
+    assert "TENANT_RATE_LIMITED: 1" in html
+    assert "timeout: 1" in html
+    assert "分母对账" in html
+    assert "不能据此断言是模型 API Key" in html
 
 
 def test_redacted_zero_capacity_report_has_no_broken_seed_link():

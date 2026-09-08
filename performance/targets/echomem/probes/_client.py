@@ -9,6 +9,8 @@ from __future__ import annotations
 import http.client
 import json
 import os
+import socket
+import ssl
 import time
 import urllib.error
 import urllib.request
@@ -51,6 +53,7 @@ class HttpResult:
     server_active_workers: int | None = None
     server_terminal_status: str = ""
     reason_code: str = ""
+    transport_error_type: str = ""
 
     @property
     def request_id(self) -> str:
@@ -75,6 +78,32 @@ def _nested_observability(payload: dict[str, Any]) -> dict[str, Any]:
         for key, value in candidate.items():
             merged.setdefault(str(key), value)
     return merged
+
+
+def _transport_error_type(exc: Exception) -> str:
+    """Return a stable, secret-free transport failure category."""
+    reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+    if isinstance(reason, (TimeoutError, socket.timeout)):
+        return "timeout"
+    if isinstance(reason, http.client.RemoteDisconnected):
+        return "remote_disconnected"
+    if isinstance(reason, ConnectionRefusedError):
+        return "connection_refused"
+    if isinstance(reason, ConnectionResetError):
+        return "connection_reset"
+    if isinstance(reason, ConnectionAbortedError):
+        return "connection_aborted"
+    if isinstance(reason, BrokenPipeError):
+        return "broken_pipe"
+    if isinstance(reason, socket.gaierror):
+        return "dns_error"
+    if isinstance(reason, ssl.SSLError):
+        return "tls_error"
+    if isinstance(exc, urllib.error.URLError):
+        return "url_error"
+    if isinstance(reason, OSError):
+        return "os_error"
+    return type(reason).__name__
 
 
 def _server_observability(
@@ -282,7 +311,11 @@ class EchoMemHTTP:
                 **observability,
             )
         except Exception as exc:  # transport errors are environment errors at scenario level
-            return HttpResult(method, path, None, time.monotonic() - started, {}, f"{type(exc).__name__}: {exc}")
+            return HttpResult(
+                method, path, None, time.monotonic() - started, {},
+                f"{type(exc).__name__}: {exc}",
+                transport_error_type=_transport_error_type(exc),
+            )
 
     def request(
         self,
