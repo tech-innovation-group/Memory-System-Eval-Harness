@@ -4,17 +4,22 @@
 不需要服务器，也不要求把容器限制为 4U8G。报告会记录容器实际 CPU、内存和镜像，
 因此不同电脑的容量数据应分别比较。
 
-## 交给 AI 的完整任务
+## 交给任意 AI 助手的完整任务
 
-安装下文的 `echomem-stress` skill 后，把下面一段直接发给 Codex。替换两个绝对路径，
-不要把密钥写进提示词：
+这份手册不依赖 Codex。让 AI 在测试平台仓库中工作，并把下面一段直接发给它；替换两个
+绝对路径，不要把密钥写进提示词：
 
 ```text
-使用 echomem-stress 在本机部署并测试 EchoMem。
-
 EchoMem 仓库：<EchoMem 绝对路径>
 测试平台仓库：<Memory-System-Eval-Harness 绝对路径>
 
+先完整阅读：
+1. <测试平台仓库>/performance/targets/echomem/README.md
+2. <测试平台仓库>/performance/skills/echomem-stress/SKILL.md
+3. <测试平台仓库>/performance/skills/echomem-stress/references/interactive-workflow.md
+
+将这三份文件作为本次 EchoMem 压测的执行规范。即使当前 AI 没有 Skill 安装机制，
+也必须按照其中的 Discover、Configure、Preview、Validate、Execute、Explain 流程执行。
 先核对两个仓库的 branch、commit 和 dirty state，不要静默 fetch、switch、reset。
 使用真实 LLM 和 qwen3.7-text-embedding-flash Embedding，运行完整 M1-M6。
 容量档位为 1、2、4、8、16、32、64、128，创建 128 个独立租户凭据。
@@ -25,25 +30,29 @@ EchoMem 仓库：<EchoMem 绝对路径>
 完成后打开 report.html，逐项解释数据、分母、错误归属和 EchoMem 模块改进建议。
 ```
 
-AI 必须先展示 readiness 和实际命令，再开始会消耗模型额度或重启容器的步骤。若只想先
-验证链路，将“运行完整 M1-M6”改成“运行 quick”；quick 的结果只能标记为 `PARTIAL`。
+AI 必须先展示 readiness 和实际命令，再开始会消耗模型额度或重启容器的步骤。若它不能
+读取文件、执行 Shell、访问 Docker 或持续跟踪长任务，就不能声称已经完成压测。若只想
+先验证链路，将“运行完整 M1-M6”改成“运行 quick”；quick 的结果只能标记为 `PARTIAL`。
 
 > 完整测试会对专用 EchoMem 容器注入租户故障，并在 M5 中执行真实 `kill -9` 和重启。
 > 请勿指向日常开发、共享或生产容器。
 
-## 使用交互式 Skill
+## 可选：加载交互式 Skill
 
-仓库自带 `echomem-stress` skill，可让 Codex 自动检查本机环境、展示测试范围选择、生成
-命令、跟踪进度并打开最终 HTML。首次拉取仓库后安装一次：
+仓库自带的 `performance/skills/echomem-stress/` 是可移植的 `SKILL.md` 目录。支持项目
+Skill、自定义 Agent 指令或上下文文件的 AI，可以按自身产品的方式加载整个目录；不支持
+Skill 的 AI 直接阅读上一节列出的三个文件即可，测试命令和结果完全相同。
+
+Codex 用户可选择安装到个人 Skill 目录：
 
 ```bash
 mkdir -p ~/.codex/skills/echomem-stress
 cp -R performance/skills/echomem-stress/. ~/.codex/skills/echomem-stress/
 ```
 
-重新打开 Codex 任务后，直接说“使用 echomem-stress 检查环境并启动压测”。skill 会先展示
-readiness 摘要；在新机器上默认建议跑 quick，链路通过后再选择 M1-M3、完整 M1-M6、单项、
-续跑或仅重建报告。M4 故障注入、M5 容器重启以及远程/共享资源操作仍会单独请求明确授权。
+其他 AI 不需要执行这段安装命令。无论使用哪种 AI，执行规范都要求先展示 readiness；在
+新机器上先跑 quick，链路通过后再选择 M1-M3、完整 M1-M6、单项、续跑或仅重建报告。
+M4 故障注入、M5 容器重启以及远程/共享资源操作仍需获得操作者明确授权。
 
 ## 测试内容
 
