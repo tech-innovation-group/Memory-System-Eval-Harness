@@ -1,17 +1,17 @@
 # 六项 4U8G 黑盒压测：交付与运行手册
 
-> 历史手册，保留用于解释旧产物。当前 PR32 的无性能门槛一键入口请使用
+> 历史手册，保留用于解释旧产物。PR32 已合入 `performance_refactor`；当前无性能门槛一键入口请使用
 > [六项观测运行手册](six-metrics-observation.md)；不要将下面的独立脚本组合误作当前默认流程。
 
 ## 1. 拉取与安装
 
-当前维护入口为基于 `performance_refactor` 的 PR32，不更新 PR29 或 PR31。请检出包含本手册的 PR32 分支，
-而不是仅检出源仓库 v3；新增的容量观测模块未随 PR31 发布。
+当前维护入口位于 `performance_refactor`。PR29、PR31 和 PR32 仅作为历史评审记录；请直接检出
+`performance_refactor`，不要仅检出源仓库 v3。
 运行不需要任何 `/Users/chx` 或 `/opt/...` 私有脚本。
 运行目录可自选，下面统一用仓库内的 `.local-stress/`。这些目录不要提交 Git。
 
 ```bash
-git clone --branch codex/pr31-six-metric-observation https://github.com/tech-innovation-group/Memory-System-Eval-Harness.git
+git clone --branch performance_refactor https://github.com/tech-innovation-group/Memory-System-Eval-Harness.git
 cd Memory-System-Eval-Harness
 python3 -m venv .venv
 source .venv/bin/activate

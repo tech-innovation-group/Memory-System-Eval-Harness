@@ -1,7 +1,7 @@
 # 六项观测改进与交付边界
 
 本清单对齐用户提供的 `REPORT-IMPROVEMENT-GUIDE.html`，在
-`performance_refactor` 基础上继续维护 PR32。它不是实测结果，也不表示六项已完成。
+相关改进已通过 PR32 合入 `performance_refactor`。本清单不是实测结果，也不表示六项已完成。
 
 ## 已落实的基础
 

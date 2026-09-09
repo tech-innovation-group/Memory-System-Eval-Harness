@@ -7,7 +7,7 @@
 `python -m performance.targets.echomem.observation_run`，详见
 [随代码维护的本机部署与六项运行手册](performance/targets/echomem/README.md)，默认分支另有
 [公开单文件指南](docs/echomem-six-metric-local-guide.md)。文档不绑定
-特定 AI，包含通用 Agent 提示词、可选 `SKILL.md`、PR32/PR449 代码要求、真实模型配置、
+特定 AI，包含通用 Agent 提示词、可选 `SKILL.md`、`performance_refactor`/PR449 代码要求、真实模型配置、
 默认 32 租户及显式扩展到 64/128 的方法、默认/调优两组压测、运行命令和最终报告位置。
 被测 EchoMem 不得停留在默认 `main`：M1-M3 明确使用最新 `develop`，完整 M1-M6 在
 PR449 合入前使用已同步最新 `develop` 的 PR449，并在发压前校验 branch、commit 与非空

@@ -111,12 +111,16 @@ cd ..
 
 git clone https://github.com/tech-innovation-group/Memory-System-Eval-Harness.git
 cd Memory-System-Eval-Harness
-git fetch origin pull/32/head:pr32-six-metrics
-git switch pr32-six-metrics
+git fetch origin performance_refactor
+git switch performance_refactor
+git pull --ff-only origin performance_refactor
 git rev-parse HEAD
 ```
 
-PR 合入后可直接切换合入后的目标分支。测试归档时保留最后一条命令输出的完整 commit。
+六项观测入口已通过
+[PR32](https://github.com/tech-innovation-group/Memory-System-Eval-Harness/pull/32)
+合入 `performance_refactor`；PR32 仅保留为历史评审记录。测试归档时保留最后一条命令
+输出的完整 commit。
 
 ### EchoMem 代码要求与 PR449
 

@@ -4,10 +4,10 @@
 不需要服务器，也不要求把容器限制为 4U8G。报告会记录容器实际 CPU、内存和镜像，
 因此不同电脑的容量数据应分别比较。
 
-> **当前代码位置**：本手册发布在默认主分支 `performance_refactor`，六项观测入口当前
-> 位于 [PR32](https://github.com/tech-innovation-group/Memory-System-Eval-Harness/pull/32)。
-> 必须先按第 1 节检出 PR32，再执行文中的 `observation_run.py` 和
-> `run_six_metrics.sh`；PR32 合入后可直接使用主分支。主分支原有的历史
+> **当前代码位置**：六项观测入口已通过
+> [PR32](https://github.com/tech-innovation-group/Memory-System-Eval-Harness/pull/32)
+> 合入 `performance_refactor`。请直接检出并更新 `performance_refactor`，再执行文中的
+> `observation_run.py` 和 `run_six_metrics.sh`。原有的历史
 > `python -m performance --target echomem --six-metrics` 不是本手册对应的观测入口。
 
 ## 交给任意 AI 助手的完整任务
@@ -116,12 +116,13 @@ cd ..
 
 git clone https://github.com/tech-innovation-group/Memory-System-Eval-Harness.git
 cd Memory-System-Eval-Harness
-git fetch origin pull/32/head:pr32-six-metrics
-git switch pr32-six-metrics
+git fetch origin performance_refactor
+git switch performance_refactor
+git pull --ff-only origin performance_refactor
 git rev-parse HEAD
 ```
 
-PR 合入后可直接切换合入后的目标分支。测试归档时保留最后一条命令输出的完整 commit。
+PR32 仅保留为历史评审记录。测试归档时保留最后一条命令输出的完整 commit。
 
 ### EchoMem 代码要求与 PR449
 
