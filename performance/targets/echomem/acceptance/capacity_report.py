@@ -116,7 +116,7 @@ def render(report: dict) -> str:
             level["duration_s"], search["planned"], search["sent"], search["success"],
             search["mean_s"], search["p95_s"], search["p99_s"], search["degraded"],
             search["timeout_censored"], search.get("atomic_p95_s"),
-            search.get("unattributed_residual_p95_s"), level["effective_search_rps"],
+            level["effective_search_rps"],
             ("诊断 / 观测SLO=" + level.get("observed_slo_result", "UNKNOWN")) if level.get("diagnostic_only")
             else level.get("status", level.get("level_status")))) + "</tr>")
         breakdown = search.get("error_breakdown") or {}
@@ -329,12 +329,12 @@ PR421 文档中的 40–60 DAU、16 热租户（hard_cap 20）属于设计估算
 <section><h2>阶段对照：失败证据完整保留</h2><div class="scroll"><table><tr><th>轮次</th><th>样本契约</th><th>意图 thinking</th><th>已测题</th><th>事实命中</th><th>严格有效</th><th>降级</th><th>invalid_output</th><th>阶段结论</th></tr>{''.join(attempts_html) or '<tr><td colspan="9">本文件只有当前轮次。</td></tr>'}</table></div>
 <p>样本契约 source-ambiguous-v1 包含“之前记录的”等可能指向资源的措辞；explicit-chat-memory-v2 明确指向聊天记忆。
 后者用于纯 memory recall 场景，不能代替面向文档/资源的查询覆盖。模型配置修复前后如重新注入了记忆，不能将全部差异只归因于配置；措辞对照复用同一份已注入记忆。</p></section>
-<section><h2>3. 容量阶梯与诊断窗口</h2><div class="scroll"><table><tr><th>T</th><th>H</th><th>负载</th><th>时长 s</th><th>计划</th><th>发出</th><th>有效</th><th>平均 s</th><th>P95 s</th><th>P99 s</th><th>降级</th><th>超时</th><th>Atomic P95 s</th><th>未归属残差 P95 s</th><th>有效 RPS</th><th>结论</th></tr>{''.join(level_rows) or '<tr><td colspan="16">未开始有效的容量阶梯，不宣称“最多支持 2 人”，也不折算 DAU。</td></tr>'}</table></div>
+<section><h2>3. 容量阶梯与诊断窗口</h2><div class="scroll"><table><tr><th>T</th><th>H</th><th>负载</th><th>时长 s</th><th>计划</th><th>发出</th><th>有效</th><th>平均 s</th><th>P95 s</th><th>P99 s</th><th>降级</th><th>超时</th><th>Atomic P95 s</th><th>有效 RPS</th><th>结论</th></tr>{''.join(level_rows) or '<tr><td colspan="15">未开始有效的容量阶梯，不宣称“最多支持 2 人”，也不折算 DAU。</td></tr>'}</table></div>
 <p>T 是租户数，U 是每租户热用户数，H=T×U。每个热用户计划每秒 1 次 Search；每身份、每类问题单独计算成功率与 P95。
 标有“诊断”的窗口是在健康门槛未通过时收集现象，不能用于确认容量边界，也不能拿它的有效 RPS 折算 DAU。</p>
 <h3>Search 错误完整拆分</h3><div class="scroll"><table><tr><th>H</th><th>窗口</th><th>已发出分母</th><th>严格成功</th><th>HTTP 200质量失败</th><th>其中降级</th><th>HTTP非200</th><th>4xx</th><th>401/403</th><th>429</th><th>5xx</th><th>传输错误</th><th>超时</th><th>传输类型</th><th>EchoMem reason_code</th><th>失败责任域</th><th>Provider错误码</th><th>未分类</th><th>根因归属完整</th><th>分母对账</th></tr>{''.join(error_rows) or '<tr><td colspan="20">尚无请求数据。</td></tr>'}</table></div>
 <p class="note">每个已发请求只进入一个结果类别，分母对账为“是”时类别之和等于已发出数。401/403 仅证明当前 HTTP 层鉴权或权限失败；没有上游 provider 明确原因码或日志时，不能据此断言模型 API Key 异常。</p>
-<p>“未归属残差”是 Search 端到端耗时减去 Explain 中已报告引擎耗时，包含意图路由、模型调用、序列化及未上报工作，<strong>不能直接当成 LLM 精确耗时</strong>；它用于区分检索引擎本身与外围编排瓶颈。</p>
+<p>端到端与引擎耗时分别展示，不做减法。并行或嵌套阶段不能相加再从端到端扣除；路由、模型和编排耗时仅使用对应的真实日志/指标。</p>
 {render_route_paths(route_summaries)}
 <p>“意图 LLM 路径”表示 <code>executed_layers</code> 中包含 LLM 层；“快速路径”表示 Explain 已提供且未执行 LLM；缺少 Explain 的样本单列为“路由层未观测”。这里统计的是整条 Search 的端到端耗时，不冒充 LLM 自身精确耗时。是否启用 Thinking 以环境配置摘要为准。</p>
 <h3>短窗口探索（仅用于选边界）</h3><div class="scroll"><table><tr><th>T</th><th>H</th><th>负载</th><th>时长 s</th><th>发出</th><th>有效</th><th>P95 s</th><th>Atomic P95 s</th><th>结论</th></tr>{''.join(exploration_rows) or '<tr><td colspan="9">未附短窗口探索证据。</td></tr>'}</table></div>

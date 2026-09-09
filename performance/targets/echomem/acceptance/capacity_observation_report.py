@@ -150,8 +150,8 @@ def render_observation(report: dict) -> str:
                 f"HTTP非200={breakdown.get('http_non_200', '旧数据未拆分')}；"
                 f"传输={breakdown.get('transport_errors', '旧数据未拆分')}；"
                 f"状态={search.get('http_status_counts', {})}"])
-        issue_rows.append([h, name, "原子检索 / 编排耗时", search.get("atomic_p95_s"),
-            f"Atomic P95(s)；端到端减已上报引擎耗时的残差 P95={_fmt(search.get('unattributed_residual_p95_s'))}s"])
+        issue_rows.append([h, name, "原子检索耗时", search.get("atomic_p95_s"),
+            "Atomic P95(s) 来自服务上报；其他阶段使用结构化日志/指标，不通过端到端减法估算。"])
         route_summaries.append((f"H={h} {name}", search))
     repeat_rows = [[r.get("hot_users"), r.get("repeat"), "混合" if r.get("mixed") else "纯召回",
                    r["search"]["sent"], r["search"]["success"], r["search"]["p95_s"],

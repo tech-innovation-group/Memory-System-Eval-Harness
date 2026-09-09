@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import json
 
 from performance.targets.echomem.probes import invalid_input
 
@@ -19,4 +20,9 @@ def test_negative_contract_probe_reports_all_cases(monkeypatch, tmp_path):
     )
     invalid_input.run(ctx)
     assert checks[0]["status"] == "PASS"
-    assert "15/15" in checks[0]["reason"]
+    assert "39/39" in checks[0]["reason"]
+    detail = json.loads(checks[0]["detail"])
+    assert detail["expected_cases"] == len(detail["cases"]) == 39
+    assert len({case["case"] for case in detail["cases"]}) == 39
+    assert {"nonobject_json_array", "query_bool", "limit_bool", "timeout_overflow",
+            "open_metadata_pairs", "open_metadata_bool"} <= {case["case"] for case in detail["cases"]}

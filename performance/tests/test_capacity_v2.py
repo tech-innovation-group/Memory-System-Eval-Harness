@@ -314,13 +314,13 @@ def test_exploration_observation_keeps_advancing_with_slow_requests(tmp_path, mo
     assert result["max_hot_users"] is None
 
 
-def test_search_summary_separates_engine_time_from_unattributed_residual():
+def test_search_summary_never_derives_stage_time_by_subtraction():
     rows = [{"sent": True, "success": True, "elapsed_s": 1.0,
              "engine_results": [{"engine_id": "atomic_engine", "duration_seconds": .1},
                                 {"engine_id": "base_engine", "duration_seconds": .2}]}]
     summary = search_summary(rows)
     assert summary["engine_timings"]["atomic_engine"]["p95_s"] == .1
-    assert abs(summary["unattributed_residual_p95_s"] - .7) < 1e-9
+    assert summary["unattributed_residual_p95_s"] is None
 
 
 def test_search_summary_splits_route_paths_without_hiding_unobserved_rows():
@@ -590,7 +590,7 @@ def test_marker_failure_does_not_skip_fixed_semantic_questions():
             return SimpleNamespace(status_code=200, payload={"memories": []})
 
         def request(self, *args, **kwargs):
-            return SimpleNamespace(status_code=200, payload={"result": {
+            return SimpleNamespace(status_code=200, transport_error_type="", payload={"result": {
                 "items": [{"text": " ".join(f["value"] for f in corpus["facts"])}]}})
 
     snapshots = []

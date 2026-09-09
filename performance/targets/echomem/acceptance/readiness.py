@@ -7,9 +7,38 @@ import os
 import subprocess
 import urllib.error
 import urllib.request
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from performance.targets.echomem.probes.docker_inspect import inspect_container
+
+
+def recall_admission_evidence(config: dict, target_environment: list[str]) -> dict:
+    """Inspect declared target inputs; never infer an unobserved version's default."""
+    recall = config.get("recall") or {}
+    recall = recall if isinstance(recall, dict) else {}
+    value = recall.get("max_inflight")
+    source = "config_file" if value is not None else "implicit_default"
+    for entry in target_environment:
+        name, separator, raw = entry.partition("=")
+        if separator and name == "ECHOMEM_RECALL_MAX_INFLIGHT" and raw:
+            value, source = raw, "target_container_environment"
+    if value is None:
+        return {"status": "UNPINNED", "source": source, "declared_max_inflight": None,
+                "runtime_verified": False,
+                "note": "Verify the target version default or retrieval_admission_rejected logs; stage concurrency does not override recall.max_inflight."}
+    try:
+        if isinstance(value, bool) or not isinstance(value, (str, int)):
+            raise ValueError
+        limit = int(value)
+        if limit < 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return {"status": "INVALID", "source": source, "declared_max_inflight": None,
+                "runtime_verified": False}
+    return {"status": "CAP_DISABLED" if limit == 0 else "DECLARED",
+            "source": source, "declared_max_inflight": limit, "runtime_verified": False,
+            "note": "Declared input only; confirm config mount, restart and runtime evidence. No client load was lowered."}
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -32,7 +61,13 @@ def _get(url: str, token: str = "") -> tuple[int | None, dict]:
                 payload = {}
             return response.status, payload if isinstance(payload, dict) else {}
     except urllib.error.HTTPError as exc:
-        return exc.code, {}
+        try:
+            payload = json.loads(exc.read(1024 * 1024))
+        except (OSError, ValueError, UnicodeError):
+            payload = {}
+        finally:
+            exc.close()
+        return exc.code, payload if isinstance(payload, dict) else {}
     except (OSError, ValueError):
         return None, {}
 
@@ -41,6 +76,7 @@ def check_readiness(profile: dict) -> dict:
     """Only inspect Docker and GET APIs. Never export their raw responses."""
     checks = []
     resource = {}
+    inspected = {}
 
     def record(name, ok, owner, action, **observed):
         checks.append({"name": name, "status": "PASS" if ok else "BLOCKED",
@@ -68,6 +104,19 @@ def check_readiness(profile: dict) -> dict:
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
         record("resource-container", False, "deployment", "Cannot inspect the target container; check its name and Docker access.")
 
+    config_path = profile.get("preflight_config")
+    if config_path:
+        try:
+            config = json.loads(Path(config_path).read_text(encoding="utf-8"))
+            if not isinstance(config, dict):
+                raise ValueError("native config required")
+            admission = recall_admission_evidence(config, (inspected.get("Config") or {}).get("Env") or [])
+        except (OSError, ValueError):
+            admission = {"status": "UNAVAILABLE", "runtime_verified": False}
+        checks.append({"name": "recall-entry-limit", "status": "INFO", "advisory": True,
+                       "owner": "EchoMem / deployment", "evidence": admission,
+                       "next_action": "Inspect the independent outer Recall cap before capacity testing; this advisory never reduces offered load."})
+
     base = str(profile.get("base_url") or "").rstrip("/")
     parsed = urlsplit(base)
     valid_url = parsed.scheme in {"http", "https"} and bool(parsed.hostname) and not parsed.username and not parsed.password and not parsed.query and not parsed.fragment
@@ -75,8 +124,17 @@ def check_readiness(profile: dict) -> dict:
     if not valid_url:
         return {"ok": False, "checks": checks, "resource_evidence": resource}
     code, payload = _get(base + "/api/v1/system/ready")
+    raw_checks = payload.get("checks")
+    raw_checks = raw_checks if isinstance(raw_checks, dict) else {}
+    component_checks = {
+        name: value for name, value in raw_checks.items()
+        if name in {"runtime", "filesystem", "engine_registry", "auth", "model", "commit_admission"}
+        and isinstance(value, str)
+        and value in {"ok", "error", "misconfigured", "saturated", "closing", "recovering"}
+    }
     record("ready", code == 200 and bool(payload), "EchoMem / deployment",
-           "Check the target readiness response and service startup.", http_status=code)
+           "Check the target readiness response and service startup.", http_status=code,
+           component_checks=component_checks)
     code, _ = _get(base + "/metrics")
     record("metrics", code == 200, "EchoMem / deployment",
            "Expose the target Prometheus endpoint to this runner.", http_status=code)
@@ -100,5 +158,5 @@ def check_readiness(profile: dict) -> dict:
         record(section, code == 200 and schema_ok and clean, "EchoMem / deployment",
                "Verify protected API availability/token and clear prior test faults; 404 alone does not prove missing implementation.",
                http_status=code, schema_valid=schema_ok, no_active_faults=clean)
-    return {"ok": all(c["status"] == "PASS" for c in checks),
+    return {"ok": all(c["status"] == "PASS" for c in checks if not c.get("advisory")),
             "checks": checks, "resource_evidence": resource}

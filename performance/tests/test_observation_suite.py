@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from pathlib import Path
 
 from performance.targets.echomem.acceptance.capacity_load import arrival_plan
@@ -32,7 +33,10 @@ def test_empty_report_tables_span_their_actual_columns(tmp_path: Path) -> None:
     rendered = path.read_text()
     assert 'colspan="3"' in rendered
     assert 'colspan="7"' in rendered
-    assert 'colspan="9"' not in rendered
+    for table in re.findall(r"<table\b[^>]*>(.*?)</table>", rendered, re.S):
+        empty = re.search(r'<td colspan="(\d+)">暂无数据</td>', table)
+        if empty:
+            assert int(empty.group(1)) == len(re.findall(r"<th\b", table))
 
 
 def test_report_shows_verified_llm_and_embedding_models(tmp_path: Path) -> None:
@@ -325,13 +329,41 @@ def test_api_coverage_accepts_readiness_nested_under_resource_preflight() -> Non
     summary = summarize_api_coverage({
         "runs": [],
         "resource_preflight": {"readiness": {"checks": [
-            {"name": "ready", "status": "PASS"},
+            {"name": "ready", "status": "PASS", "http_status": 200},
         ]}},
     })
     ready = next(row for row in summary["operations"]
                  if row["operation"] == "system_ready")
     assert ready["status"] == "COVERED"
     assert ready["calls"] == 1
+
+
+def test_readiness_ledger_does_not_count_http_errors_as_success():
+    summary = summarize_api_coverage({"readiness": {"checks": [
+        {"name": "ready", "status": "BLOCKED", "http_status": 503},
+        {"name": "ready", "status": "BLOCKED", "http_status": None},
+    ]}})
+    ready = next(row for row in summary["operations"] if row["operation"] == "system_ready")
+    assert ready["calls"] == 1
+    assert ready["ok"] == 0
+    assert ready["errors"] == 1
+
+
+def test_metrics_api_calls_count_frames_not_metric_lines(tmp_path: Path) -> None:
+    path = tmp_path / "metrics_samples.csv"
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["ts", "metric", "labels", "value"])
+        for ts in (1, 2):
+            for metric in ("metric_a", "metric_b", "metric_c"):
+                writer.writerow([ts, metric, "{}", 1])
+    run = {"output_dir": str(tmp_path)}
+    summary = summarize_api_coverage({"runs": [run, run]})
+    row = next(row for row in summary["operations"] if row["operation"] == "metrics")
+    assert row["records"] == 6
+    assert row["calls"] == 2
+    assert row["calls_exact"] is False
+    assert row["errors"] is None
 
 
 def test_timing_summary_does_not_invent_internal_stages(tmp_path: Path) -> None:
@@ -343,6 +375,9 @@ def test_timing_summary_does_not_invent_internal_stages(tmp_path: Path) -> None:
     read = next(row for row in summary["operation_timings"] if row["module"].endswith("/read"))
     assert read["observations"] == 2
     assert read["p95_ms"] == 30
+    absent = next(row for row in summary["operation_timings"] if row["module"].endswith("/add"))
+    assert absent["observations"] == 0
+    assert absent["p95_ms"] is None
     assert "atomic/extraction" in summary["unobservable_modules"]
     assert summary["trace_correlation"]["status"] == "MISSING"
 

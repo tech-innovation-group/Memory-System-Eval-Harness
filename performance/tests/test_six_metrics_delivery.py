@@ -110,6 +110,32 @@ def docker_result():
             "State": {"Running": True}, "Config": {"Env": ["PRIVATE=never-export"]}}
 
 
+def test_readiness_retains_only_safe_failed_components(delivery_profile):
+    local = {**delivery_profile, "fault_isolation": {"enabled": False},
+             "tenant_observability": {"enabled": False}}
+    payload = {"checks": {"engine_registry": "error", "runtime": "ok",
+                          "model": "private-message", "secret": "never-export"}}
+    with patch("performance.targets.echomem.acceptance.readiness.inspect_container", return_value=docker_result()), \
+         patch("performance.targets.echomem.acceptance.readiness._get", side_effect=[(503, payload), (200, {})]):
+        result = check_readiness(local)
+    ready = next(c for c in result["checks"] if c["name"] == "ready")
+    assert not result["ok"]
+    assert ready["component_checks"] == {"engine_registry": "error", "runtime": "ok"}
+    assert "private-message" not in json.dumps(result)
+    assert "never-export" not in json.dumps(result)
+
+
+def test_readiness_reads_error_json():
+    import io
+    import urllib.error
+    from performance.targets.echomem.acceptance.readiness import _get
+    error = urllib.error.HTTPError("http://localhost/ready", 503, "unavailable", {},
+                                 io.BytesIO(b'{"checks":{"engine_registry":"error"}}'))
+    with patch("urllib.request.build_opener") as opener:
+        opener.return_value.open.side_effect = error
+        assert _get("http://localhost/ready") == (503, {"checks": {"engine_registry": "error"}})
+
+
 def test_readiness_allows_unrestricted_local_container(delivery_profile, monkeypatch):
     monkeypatch.setenv("ECHOMEM_TEST_CONTROL_TOKEN", "unit-test-token")
     local = {**delivery_profile, "name": "Local", "require_4u8g": False}

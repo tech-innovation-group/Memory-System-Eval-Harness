@@ -99,11 +99,20 @@ M3 同时包含均匀 Commit 洪泛和单租户洪泛。后者让一个租户承
 本机需要 macOS 或 Linux、Docker Compose、Git、Python 3.11+，以及可用的真实 LLM 和
 Embedding 凭证。禁止使用 mock。EchoMem 被测版本还需包含故障控制和租户观测接口。
 
-获取两个仓库。`ECHOMEM_DIR` 可以换成自己的绝对路径：
+获取两个仓库。`ECHOMEM_DIR` 可以换成自己的绝对路径。EchoMem 必须显式检出
+`develop`；不要依赖 `git clone` 当时的默认分支，因为默认分支可能是 `main`：
 
 ```bash
-git clone https://github.com/tech-innovation-group/EchoMem.git
-export ECHOMEM_DIR="$PWD/EchoMem"
+git clone --branch develop https://github.com/tech-innovation-group/EchoMem.git
+cd EchoMem
+git fetch origin develop
+git switch develop
+git pull --ff-only origin develop
+export ECHOMEM_DIR="$PWD"
+printf 'EchoMem branch=%s commit=%s\n' \
+  "$(git branch --show-current)" "$(git rev-parse HEAD)"
+test "$(git branch --show-current)" = develop
+cd ..
 
 git clone https://github.com/tech-innovation-group/Memory-System-Eval-Harness.git
 cd Memory-System-Eval-Harness
@@ -124,18 +133,25 @@ GET/POST /api/inspect/test-control/fault
 GET      /api/inspect/tenant-observability
 ```
 
-在 PR449 合入前，可在 EchoMem 仓库中显式检出该 PR：
+只运行 M1-M3 时使用上一步锁定的最新 `develop`。运行完整 M1-M6 时，在 PR449 合入
+`develop` 前必须显式检出 PR449，并验证它已同步当前 `origin/develop`：
 
 ```bash
 cd "$ECHOMEM_DIR"
-git fetch origin pull/449/head:pr449-blackbox
+git fetch origin develop pull/449/head:pr449-blackbox
 git switch pr449-blackbox
+git merge-base --is-ancestor origin/develop HEAD || {
+  echo 'BLOCKED: PR449 尚未同步当前 origin/develop，请使用已同步分支后再测完整 M1-M6。'
+  exit 1
+}
+printf 'EchoMem branch=%s commit=%s develop=%s\n' \
+  "$(git branch --show-current)" "$(git rev-parse HEAD)" "$(git rev-parse origin/develop)"
 git rev-parse HEAD
 ```
 
-若要测试“最新 develop + PR449”，必须使用已经把 PR449 独有改动同步到最新 develop 的
-分支；不要让 AI 静默把旧 PR449 历史强行 rebase 或 cherry-pick。无论选择哪个版本，运行
-前都要用上面的两个路径确认接口存在，并把最终 EchoMem commit 写入报告。
+若上面的祖先校验失败，停止测试；不要让 AI 静默把旧 PR449 历史强行 rebase 或
+cherry-pick。PR449 合入后，完整 M1-M6 也直接使用最新 `develop`。无论选择哪个版本，
+都必须把最终 EchoMem branch、commit 和 `origin/develop` commit 写入报告。
 
 ## 2. 本机部署 EchoMem
 
@@ -145,6 +161,19 @@ git rev-parse HEAD
 cd "$ECHOMEM_DIR/deploy/single-node"
 ./manage.sh init
 cp ../../configs/config.example.json ./config.json
+```
+
+这里必须复制仓库根目录的完整 `configs/config.example.json`，不能使用
+`deploy/single-node/config.json.example`；后者允许 `engine.enabled=[]`，只能启动空引擎服务，
+不能完成真实记忆 Commit/Search 压测。启动前执行硬校验：
+
+```bash
+test "$(jq '.engine.enabled | length' config.json)" -gt 0 || {
+  echo 'BLOCKED: engine.enabled 为空，未启用任何真实记忆引擎。'
+  exit 1
+}
+git -C "$ECHOMEM_DIR" branch --show-current
+git -C "$ECHOMEM_DIR" rev-parse HEAD
 ```
 
 编辑当前目录的 `.env` 和 `config.json`：

@@ -45,6 +45,15 @@ def trace_ref(value: object) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16] if text else ""
 
 
+def response_trace_ref(payload: object) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    for value in (payload, payload.get("result"), payload.get("status")):
+        if isinstance(value, dict) and isinstance(value.get("trace_id"), str) and value["trace_id"]:
+            return trace_ref(value["trace_id"])
+    return ""
+
+
 def _number(value: object) -> float | None:
     if isinstance(value, bool):
         return None
@@ -93,7 +102,10 @@ def normalize_log_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
     if event == "http_request_completed":
         method = str(payload.get("method") or "OTHER")
         route = str(payload.get("route") or "unknown")
-        return [_base_event(payload, module=f"http/{method} {route}")]
+        row = _base_event(payload, module=f"http/{method} {route}")
+        code = payload.get("status_code")
+        row["http_status"] = code if isinstance(code, int) and not isinstance(code, bool) and 100 <= code <= 599 else None
+        return [row]
     if event == "memory_extraction_completed":
         engine = str(payload.get("engine_id") or "unknown")
         return [_base_event(payload, module=f"commit/memory_extraction/{engine}")]
@@ -143,13 +155,18 @@ def collect_container_stage_events(
     since: str,
     output: Path,
     timeout_s: float = 60.0,
+    until: str | None = None,
 ) -> dict[str, Any]:
     """Collect a bounded Docker log window and persist normalized events."""
     if not container:
         return {"status": "NOT_CONFIGURED", "reason": "resource_container_missing", "events": []}
     try:
+        command = ["docker", "logs", "--since", since]
+        if until:
+            command.extend(["--until", until])
+        command.append(container)
         completed = subprocess.run(
-            ["docker", "logs", "--since", since, container],
+            command,
             capture_output=True,
             text=True,
             timeout=timeout_s,
@@ -170,7 +187,27 @@ def collect_container_stage_events(
         "event_count": len(rows),
         "trace_count": len({row["trace_ref"] for row in rows if row.get("trace_ref")}),
         "path": str(output),
+        "since": since,
+        "until": until,
     }
+
+
+def summarize_http_calls(events: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Count observed server completion events, not all attempts or business successes."""
+    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for event in events:
+        if event.get("event") == "http_request_completed":
+            groups[str(event.get("module") or "http/unknown")].append(event)
+    rows = []
+    for endpoint, samples in sorted(groups.items()):
+        statuses: dict[str, int] = defaultdict(int)
+        for sample in samples:
+            statuses[str(sample.get("http_status") or "unknown")] += 1
+        rows.append({"endpoint": endpoint, "observed_completions": len(samples),
+                     "status_counts": dict(statuses),
+                     "business_success": None,
+                     "scope": "collected server-log window; may include preparation and health probes; not client attempt count"})
+    return rows
 
 
 def summarize_log_stages(events: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -186,13 +223,13 @@ def summarize_log_stages(events: Iterable[dict[str, Any]]) -> list[dict[str, Any
             "source": "structured_log",
             "observations": len(durations),
             "trace_count": len({row.get("trace_ref") for row in rows if row.get("trace_ref")}),
-            "p50_ms": percentile(durations, 50),
-            "p95_ms": percentile(durations, 95),
-            "p99_ms": percentile(durations, 99),
+            "p50_ms": percentile(durations, 50) if durations else None,
+            "p95_ms": percentile(durations, 95) if durations else None,
+            "p99_ms": percentile(durations, 99) if durations else None,
             "queue_wait_observations": len(waits),
-            "queue_wait_p50_ms": percentile(waits, 50),
-            "queue_wait_p95_ms": percentile(waits, 95),
-            "queue_wait_p99_ms": percentile(waits, 99),
+            "queue_wait_p50_ms": percentile(waits, 50) if waits else None,
+            "queue_wait_p95_ms": percentile(waits, 95) if waits else None,
+            "queue_wait_p99_ms": percentile(waits, 99) if waits else None,
         })
     return result
 
@@ -218,13 +255,26 @@ def _bucket_percentile(buckets: dict[float, float], total: float, q: float) -> f
             fraction = (target - lower_count) / (count - lower_count)
             return lower_bound + (bound - lower_bound) * fraction
         lower_bound, lower_count = bound, count
-    return max(buckets)
+    # The quantile is in the unbounded tail, not at the last finite bucket.
+    return None
+
+
+def _counter_delta(points: list[tuple[float, float]]) -> tuple[float, int]:
+    ordered = sorted(dict(points).items())
+    delta, resets = 0.0, 0
+    for (_, previous), (_, current) in zip(ordered, ordered[1:]):
+        if current < previous:
+            resets += 1
+            delta += current
+        else:
+            delta += current - previous
+    return delta, resets
 
 
 def summarize_prometheus_histograms(paths: Iterable[Path]) -> list[dict[str, Any]]:
     """Calculate run-window histogram deltas from metrics CSV files."""
     aggregate: dict[tuple[str, tuple[tuple[str, str], ...]], dict[str, Any]] = {}
-    for path in paths:
+    for path in dict.fromkeys(paths):
         if not path.is_file():
             continue
         series: dict[tuple[str, str], list[tuple[float, float]]] = defaultdict(list)
@@ -235,19 +285,20 @@ def summarize_prometheus_histograms(paths: Iterable[Path]) -> list[dict[str, Any
                 if base is None:
                     continue
                 try:
-                    series[(metric, str(row.get("labels") or "{}"))].append(
-                        (float(row.get("ts") or 0), float(row.get("value") or 0))
-                    )
+                    ts = float(row.get("ts") or 0)
+                    value = _number(row.get("value"))
+                    if math.isfinite(ts) and value is not None:
+                        series[(metric, str(row.get("labels") or "{}"))].append((ts, value))
                 except (TypeError, ValueError):
                     continue
         for (metric, labels_text), points in series.items():
-            points.sort()
-            delta = max(0.0, points[-1][1] - points[0][1]) if len(points) > 1 else 0.0
+            delta, resets = _counter_delta(points)
             base = next(name for name in PROMETHEUS_HISTOGRAMS if metric.startswith(name + "_"))
             labels = _labels(labels_text)
             le = labels.pop("le", None)
             key = (base, tuple(sorted(labels.items())))
-            target = aggregate.setdefault(key, {"buckets": defaultdict(float), "count": 0.0, "sum": 0.0})
+            target = aggregate.setdefault(key, {"buckets": defaultdict(float), "count": 0.0,
+                                                "sum": 0.0, "counter_resets": 0})
             if metric.endswith("_bucket") and le not in (None, "+Inf"):
                 try:
                     target["buckets"][float(le)] += delta
@@ -255,6 +306,7 @@ def summarize_prometheus_histograms(paths: Iterable[Path]) -> list[dict[str, Any
                     pass
             elif metric.endswith("_count"):
                 target["count"] += delta
+                target["counter_resets"] += resets
             elif metric.endswith("_sum"):
                 target["sum"] += delta
     rows = []
@@ -264,6 +316,9 @@ def summarize_prometheus_histograms(paths: Iterable[Path]) -> list[dict[str, Any
             continue
         labels = dict(label_items)
         suffix = ", ".join(f"{key}={value}" for key, value in label_items)
+        quantiles = {f"p{q}_ms": _bucket_percentile(values["buckets"], count, q / 100)
+                     for q in (50, 95, 99)}
+        missing_quantiles = [name for name, value in quantiles.items() if value is None]
         rows.append({
             "module": metric.removeprefix("echomem_") + (f" [{suffix}]" if suffix else ""),
             "metric": metric,
@@ -271,9 +326,13 @@ def summarize_prometheus_histograms(paths: Iterable[Path]) -> list[dict[str, Any
             "source": "prometheus_histogram_delta",
             "observations": int(count),
             "mean_ms": round(values["sum"] / count * 1000.0, 3),
-            "p50_ms": round((_bucket_percentile(values["buckets"], count, 0.50) or 0.0) * 1000.0, 3),
-            "p95_ms": round((_bucket_percentile(values["buckets"], count, 0.95) or 0.0) * 1000.0, 3),
-            "p99_ms": round((_bucket_percentile(values["buckets"], count, 0.99) or 0.0) * 1000.0, 3),
+            **{name: round(value * 1000.0, 3) if value is not None else None
+               for name, value in quantiles.items()},
+            "quantile_missing": missing_quantiles,
+            "quantile_missing_reason": ("above_highest_finite_bucket" if values["buckets"]
+                                        else "finite_buckets_missing") if missing_quantiles else "",
+            "counter_resets": values["counter_resets"],
+            "count_is_lower_bound": bool(values["counter_resets"]),
         })
     return rows
 

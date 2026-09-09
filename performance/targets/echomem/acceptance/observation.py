@@ -19,6 +19,7 @@ from performance.targets.echomem.acceptance.stage_observability import (
     cross_check,
     read_stage_events,
     summarize_log_stages,
+    summarize_http_calls,
     summarize_prometheus_histograms,
 )
 
@@ -176,23 +177,33 @@ def summarize_api_coverage(suite: dict[str, Any]) -> dict[str, Any]:
         })
     readiness = suite.get("readiness") or (suite.get("resource_preflight") or {}).get("readiness") or {}
     readiness_checks = readiness.get("checks", [])
-    ready_calls = sum(row.get("name") == "ready" for row in readiness_checks)
+    ready_records = [row for row in readiness_checks if row.get("name") == "ready"]
+    ready_calls = sum(row.get("http_status") is not None for row in ready_records)
+    ready_ok = sum(row.get("http_status") == 200 and row.get("status") == "PASS"
+                   for row in ready_records)
     ledger.append({"operation": "system_ready", "method": "GET", "path": "/api/v1/system/ready",
                    "calls": ready_calls, "records": ready_calls, "calls_exact": False,
-                   "ok": ready_calls, "errors": 0,
+                   "ok": ready_ok, "errors": ready_calls - ready_ok,
                    "status": "COVERED" if ready_calls else "NOT_COVERED",
                    "evidence": "suite.json readiness (minimum observed calls)"})
-    metric_calls = 0
-    for run in suite.get("runs", []):
-        path = Path(str(run.get("output_dir") or "")) / "metrics_samples.csv"
+    metric_calls = metric_rows = 0
+    metric_paths = {Path(str(run.get("output_dir") or "")) / "metrics_samples.csv"
+                    for run in suite.get("runs", [])}
+    for path in metric_paths:
         if path.is_file():
             with path.open(encoding="utf-8", newline="") as handle:
-                metric_calls += sum(1 for _ in csv.DictReader(handle))
+                stamps = set()
+                for row in csv.DictReader(handle):
+                    metric_rows += 1
+                    stamp = _number(row.get("ts"))
+                    if stamp is not None:
+                        stamps.add(stamp)
+                metric_calls += len(stamps)
     ledger.append({"operation": "metrics", "method": "GET", "path": "/metrics",
-                   "calls": metric_calls, "records": metric_calls, "calls_exact": True,
-                   "ok": metric_calls, "errors": 0,
+                   "calls": metric_calls, "records": metric_rows, "calls_exact": False,
+                   "ok": metric_calls, "errors": None,
                    "status": "COVERED" if metric_calls else "NOT_COVERED",
-                   "evidence": "metrics_samples.csv"})
+                   "evidence": "metrics_samples.csv distinct frame timestamps; minimum successful scrapes, not metric rows"})
     fault_cases = (suite.get("fault_isolation") or {}).get("cases", [])
     ledger.append({"operation": "fault_control", "method": "GET/POST",
                    "path": "/api/inspect/test-control/fault", "calls": len(fault_cases) * 2,
@@ -210,10 +221,13 @@ def summarize_api_coverage(suite: dict[str, Any]) -> dict[str, Any]:
                    "evidence": "tenant-observability-samples.json"})
     invalid_payload = suite.get("invalid_input") or {}
     invalid_detail = _probe_detail(invalid_payload, "invalid-input")
+    stage_evidence = suite.get("stage_observability") or {}
+    events = stage_evidence.get("events") or read_stage_events(Path(str(stage_evidence.get("path") or "")))
     return {
         "scope": "六项压测运行期全部必需接口；不包含与六项指标无关的 EchoMem 产品 API",
         "covered": sum(row["status"] == "COVERED" for row in ledger),
         "expected": len(ledger), "operations": ledger,
+        "server_observed_endpoints": summarize_http_calls(events),
         "invalid_input": ({"status": next((row.get("status") for row in invalid_payload.get("checks", [])
                                             if row.get("name") == "invalid-input"), "PARTIAL"),
                            **invalid_detail}
@@ -224,15 +238,47 @@ def summarize_api_coverage(suite: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _m1_trace_records(suite: dict[str, Any]) -> tuple[list[dict], list[str]]:
+    rows, missing = [], []
+    seen = set()
+    for reference in (suite.get("m1") or {}).get("reports", []):
+        report_path = Path(str(reference.get("path") or ""))
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            for level in report.get("levels", []):
+                name = str(level.get("measurement_file") or "")
+                if not name or Path(name).name != name:
+                    missing.append(f"{reference.get('topology')}:measurement_file_missing_or_invalid")
+                    continue
+                path = report_path.parent / name
+                if path in seen:
+                    continue
+                seen.add(path)
+                try:
+                    measurement = json.loads(path.read_text(encoding="utf-8"))
+                    samples = measurement.get("rows")
+                    if not isinstance(samples, list):
+                        raise ValueError("measurement rows missing")
+                    rows.extend(row for row in samples if isinstance(row, dict) and row.get("sent") is not False)
+                except (OSError, ValueError, AttributeError):
+                    missing.append(f"{reference.get('topology')}:{name}")
+        except (OSError, ValueError, AttributeError):
+            missing.append(f"{reference.get('topology')}:report_unreadable")
+    return rows, missing
+
+
 def summarize_timing_evidence(suite: dict[str, Any], m1_reports: list[dict[str, Any]]) -> dict[str, Any]:
     rows = [row for run in suite.get("runs", []) for row in _records(run)]
     operation_rows = []
     for operation in ("read", "open", "add", "commit_submit", "commit_done"):
         values = [value for row in rows if row.get("op") == operation
                   and (value := _number(row.get("stage_ms"))) is not None and value >= 0]
-        operation_rows.append({"module": f"HTTP端到端/{operation}", "source": "客户端计时",
-                               "observations": len(values), "p50_ms": percentile(values, 50),
-                               "p95_ms": percentile(values, 95), "p99_ms": percentile(values, 99)})
+        label = "Commit受理至终态" if operation == "commit_done" else "HTTP端到端"
+        operation_rows.append({"module": f"{label}/{operation}", "source": "客户端计时",
+                               "observations": len(values),
+                               "p50_ms": percentile(values, 50) if values else None,
+                               "p95_ms": percentile(values, 95) if values else None,
+                               "p99_ms": percentile(values, 99) if values else None})
     response_rows = []
     for report in m1_reports:
         for level in report.get("levels", []):
@@ -278,12 +324,17 @@ def summarize_timing_evidence(suite: dict[str, Any], m1_reports: list[dict[str, 
     missing = [name for name in expected if not any(
         module == name or module.startswith(name + "/") for module in observed
     )]
+    m1_rows, missing_m1 = _m1_trace_records(suite)
+    correlation = correlate_requests([*rows, *m1_rows], events)
+    correlation["missing_m1_evidence_files"] = missing_m1
+    if missing_m1:
+        correlation["status"] = "PARTIAL"
     return {
         "operation_timings": operation_rows,
         "module_timings": [*response_rows, *log_rows],
         "structured_log_timings": log_rows,
         "prometheus_timings": metric_rows,
-        "trace_correlation": correlate_requests(rows, events),
+        "trace_correlation": correlation,
         "cross_check": cross_check(log_rows, metric_rows),
         "stage_collection": {key: value for key, value in stage_evidence.items() if key != "events"},
         "unobservable_modules": missing,
@@ -1599,6 +1650,12 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             ("records", "汇总记录"), ("ok", "成功"), ("errors", "错误"),
             ("status", "覆盖状态"), ("evidence", "证据"),
         ]) +
+        "<h3>服务端日志实际调用接口</h3><p>只统计采集窗口内完成的 HTTP 请求，可能包含准备阶段和健康探针；"
+        "不等于客户端全部尝试数，也不等于业务成功。没有日志的接口不推定已覆盖。</p>" +
+        table(api_coverage.get("server_observed_endpoints", []), [
+            ("endpoint", "方法与路由"), ("observed_completions", "观察到的完成次数"),
+            ("status_counts", "HTTP 状态码分布"),
+        ]) +
         "<h3>不合法输入与边界处理</h3>" +
         table([api_coverage.get("invalid_input") or {}], [
             ("status", "状态"), ("reason", "说明"),
@@ -1620,7 +1677,8 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             ("requests_with_trace", "带 Trace"),
             ("requests_linked_to_internal_stage", "关联内部阶段"),
             ("requests_missing_trace", "缺 Trace"),
-            ("traced_without_stage_log", "有 Trace 无阶段日志")]) +
+            ("traced_without_stage_log", "有 Trace 无阶段日志"),
+            ("missing_m1_evidence_files", "M1 缺失证据文件")]) +
         table(timing.get("operation_timings", []), [
             ("module", "接口/阶段"), ("source", "来源"), ("observations", "样本"),
             ("p50_ms", "P50 ms"), ("p95_ms", "P95 ms"), ("p99_ms", "P99 ms")]) +
@@ -1635,7 +1693,13 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
         details("Prometheus：运行窗口 Histogram 增量", table(timing.get("prometheus_timings", []), [
             ("module", "指标与标签"), ("observations", "窗口样本"),
             ("mean_ms", "均值 ms"), ("p50_ms", "P50 ms"),
-            ("p95_ms", "P95 ms"), ("p99_ms", "P99 ms")], min_width_px=1050)) +
+            ("p95_ms", "P95 ms"), ("p99_ms", "P99 ms"),
+            ("quantile_missing_reason", "分位数缺失原因"),
+            ("counter_resets", "计数器重置次数"),
+            ("count_is_lower_bound", "样本数仅为下界")], min_width_px=1250) +
+            "<p>分位数缺失不代表 0 ms：没有有限桶，或分位数落在最大有限桶之外时不报告精确值。"
+            "计数器重置后按相邻采样累计可见增量，但重置前未采到的请求无法恢复，样本数仅为下界。"
+            "Histogram 分位数是桶内估算值，不等同于逐请求日志的精确分位数。</p>") +
         details("日志与 Prometheus 交叉校验", table(timing.get("cross_check", []), [
             ("check", "阶段"), ("log_observations", "日志样本"),
             ("prometheus_metric", "Prometheus 指标"),

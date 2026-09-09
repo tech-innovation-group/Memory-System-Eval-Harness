@@ -270,17 +270,24 @@ def _preflight_stage(config: str, *, strict: bool = False) -> dict:
 
 
 def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, seed_messages, *,
-                           reuse_seed=None, dataset_path="", sample_id="conv-30", session_key="session_1"):
+                           reuse_seed=None, dataset_path="", sample_id="conv-30", session_key="session_1",
+                           search_timeout_s=60):
     """Observation workloads share remembered facts, not a bare-marker routing gate."""
     import uuid
     from performance.suite import SeedPreparationError
-    from performance.targets.echomem.acceptance.capacity_seed import CapacityActor, prepare_actors, validate_cached_actors
+    from performance.targets.echomem.acceptance.capacity_seed import (
+        CapacityActor,
+        prepare_actors,
+        validate_cached_actors,
+        validate_search_timeout,
+    )
     from performance.targets.echomem.acceptance.semantic_corpus import (
         DEFAULT_LOCOMO_DATASET,
         build_locomo_session_corpus,
     )
     from performance.targets.echomem.probes._client import EchoMemHTTP
 
+    validate_search_timeout(search_timeout_s)
     specs = load_tenant_specs(tenant_config, tenant_count=max_tenants)
     if len(specs) != max_tenants or len({s.auth_key for s in specs}) != max_tenants:
         raise RuntimeError("Semantic seed requires all independent tenant credentials")
@@ -308,9 +315,9 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
             if len(matches) != 1:
                 raise RuntimeError("Semantic cache must match each configured identity exactly once")
             actors.append(replace(matches[0], tenant_index=len(actors)))
-        evidence = validate_cached_actors(actors, validation_queries=4)
+        evidence = validate_cached_actors(actors, validation_queries=4, search_timeout_s=search_timeout_s)
     else:
-        evidence = prepare_actors(actors, timeout_s=180, validation_queries=4)
+        evidence = prepare_actors(actors, timeout_s=180, validation_queries=4, search_timeout_s=search_timeout_s)
     if evidence["healthy_actors"] != max_tenants:
         raise SeedPreparationError(f"Semantic seed validation failed: healthy={evidence['healthy_actors']}/{max_tenants}", evidence)
     contexts = [SeedContext(tenant_id=actor.client.tenant_id, auth_key=actor.client.auth_key,
@@ -336,7 +343,7 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
                       "seed_documents_per_tenant": uniform_count("documents"),
                       "facts_per_tenant": uniform_count("facts"),
                       "query_variants_per_tenant": uniform_count("queries"),
-                      "validated_queries_per_tenant": 4}
+                      "validated_queries_per_tenant": 4, "seed_search_timeout_s": search_timeout_s}
 
 
 def _prepare_seed(
@@ -468,6 +475,7 @@ def run_suite(
         dataset_path=profile.get("semantic_seed_dataset", ""),
         sample_id=profile.get("semantic_seed_sample", "conv-30"),
         session_key=profile.get("semantic_seed_session", "session_1"),
+        search_timeout_s=profile.get("seed_search_timeout_s", 60),
     )
     result = run_suite_impl(
         profile,

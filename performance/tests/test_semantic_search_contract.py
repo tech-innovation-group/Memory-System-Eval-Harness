@@ -60,6 +60,7 @@ def test_combined_observation_uses_same_semantic_seed_hook(tmp_path, monkeypatch
     assert captured["seed"].keywords == {
         "reuse_seed": "/unit/cache", "dataset_path": "",
         "sample_id": "conv-30", "session_key": "session_1",
+        "search_timeout_s": 60,
     }
 
 
@@ -141,7 +142,7 @@ def test_cached_validation_only_searches_current_returned_facts(healthy):
 
     def request(method, path, body, **kwargs):
         calls.append((method, path))
-        return SimpleNamespace(status_code=200, payload={"items": [
+        return SimpleNamespace(status_code=200, transport_error_type="", payload={"items": [
             {"content": "remembered-place" if healthy else "unrelated"}]})
 
     client = SimpleNamespace(request=request, agent_id="unit-agent")

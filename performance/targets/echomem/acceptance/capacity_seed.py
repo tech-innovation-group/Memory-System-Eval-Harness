@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+import math
 import time
 import uuid
 
@@ -20,7 +21,13 @@ class CapacityActor:
     write_session: str = ""
 
 
-def semantic_checks(actor: CapacityActor, validation_queries: int):
+def validate_search_timeout(search_timeout_s: float) -> None:
+    if isinstance(search_timeout_s, bool) or not isinstance(search_timeout_s, (int, float)) or not math.isfinite(search_timeout_s) or search_timeout_s <= 0:
+        raise ValueError("seed search timeout must be finite and positive")
+
+
+def semantic_checks(actor: CapacityActor, validation_queries: int, *, search_timeout_s: float = 60):
+    validate_search_timeout(search_timeout_s)
     available = actor.corpus["recall_queries"]
     if not 1 <= validation_queries <= len(available):
         raise ValueError("validation_queries must be between 1 and the corpus size")
@@ -30,19 +37,23 @@ def semantic_checks(actor: CapacityActor, validation_queries: int):
         result = actor.client.request("POST", "/api/retrieval/search", {
             "query": sample["query"], "agent_id": actor.client.agent_id, "limit": 10,
             "include_debug": True, "include_explain": True,
-        }, timeout_s=10, operation="search")
+        }, timeout_s=search_timeout_s, operation="search")
         check = assess_retrieval(result.payload, sample)
         yield {**check, "http_status": result.status_code, "elapsed_s": time.monotonic() - begin,
+               "query": sample["query"], "expected_aliases": list(sample["aliases"]),
+               "transport_error_type": result.transport_error_type,
+               "request_timeout_s": search_timeout_s,
                "success": result.status_code == 200 and check["quality_ok"]}
 
 
-def validate_cached_actors(actors: list[CapacityActor], validation_queries: int = 4) -> dict:
+def validate_cached_actors(actors: list[CapacityActor], validation_queries: int = 4, *, search_timeout_s: float = 60) -> dict:
     """Revalidate existing facts through real Search; never submit another Commit."""
+    validate_search_timeout(search_timeout_s)
     def validate(actor):
         row = {"tenant_index": actor.tenant_index, "user_index": actor.user_index,
                "queries": [], "status": "INCONCLUSIVE", "seed_source": "validated-cache"}
         try:
-            for result in semantic_checks(actor, validation_queries):
+            for result in semantic_checks(actor, validation_queries, search_timeout_s=search_timeout_s):
                 row["queries"].append(result)
             row["valid_semantic_queries"] = sum(q["success"] for q in row["queries"])
             row["status"] = "PASS" if row["valid_semantic_queries"] == validation_queries else "FAIL"
@@ -87,7 +98,8 @@ def provision_actors(base_url: str, tenants: int, users: int, *, memory_scale: i
 
 
 def seed_actor(actor: CapacityActor, *, timeout_s: float = 180, checkpoint=None,
-               validation_queries: int = 40) -> dict:
+               validation_queries: int = 40, search_timeout_s: float = 60) -> dict:
+    validate_search_timeout(search_timeout_s)
     client = actor.client
     available = actor.corpus["recall_queries"]
     if not 1 <= validation_queries <= len(available):
@@ -154,7 +166,7 @@ def seed_actor(actor: CapacityActor, *, timeout_s: float = 180, checkpoint=None,
                 row["memory_count"] = len(value)
                 break
         phase = "semantic-validation"
-        for check in semantic_checks(actor, validation_queries):
+        for check in semantic_checks(actor, validation_queries, search_timeout_s=search_timeout_s):
             row["queries"].append(check)
             save()
         row["valid_semantic_queries"] = sum(r["success"] for r in row["queries"])
@@ -169,12 +181,14 @@ def seed_actor(actor: CapacityActor, *, timeout_s: float = 180, checkpoint=None,
 
 
 def prepare_actors(actors: list[CapacityActor], *, timeout_s: float = 180, checkpoint=None,
-                   validation_queries: int = 40) -> dict:
+                   validation_queries: int = 40, search_timeout_s: float = 60) -> dict:
+    validate_search_timeout(search_timeout_s)
     if not actors:
         raise ValueError("At least one capacity identity required")
     with ThreadPoolExecutor(max_workers=min(4, len(actors))) as pool:
         rows = list(pool.map(lambda actor: seed_actor(actor, timeout_s=timeout_s, checkpoint=checkpoint,
-                                                     validation_queries=validation_queries), actors))
+                                                     validation_queries=validation_queries,
+                                                     search_timeout_s=search_timeout_s), actors))
     return {"status": "PASS" if all(row["status"] == "PASS" for row in rows) else "INCONCLUSIVE",
             "actors": rows, "actor_count": len(actors),
             "healthy_actors": sum(row["status"] == "PASS" for row in rows),

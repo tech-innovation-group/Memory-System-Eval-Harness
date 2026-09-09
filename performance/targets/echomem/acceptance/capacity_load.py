@@ -10,6 +10,7 @@ import time
 import uuid
 
 from performance.targets.echomem.acceptance.semantic_corpus import assess_retrieval
+from performance.targets.echomem.acceptance.stage_observability import response_trace_ref
 from performance.targets.echomem.probes._client import extract_archive, status_from
 
 
@@ -91,10 +92,15 @@ def query_for(actor, sequence: int, mixed: bool) -> dict:
 
 
 def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = False,
-            commit_timeout_s: float = 180, request_timeout_s: float = 10,
+            commit_timeout_s: float = 180, request_timeout_s: float = 60,
             seed: int = 42, load_mode: str | None = None,
             commit_interval_s: float = 30.0,
-            hotspot_multiplier: float = 8.0, isolate_read_workers: bool = False) -> dict:
+            hotspot_multiplier: float = 8.0, isolate_read_workers: bool = False,
+            search_workers: int | None = None) -> dict:
+    if search_workers is not None and (isinstance(search_workers, bool) or not isinstance(search_workers, int) or search_workers < 1):
+        raise ValueError("search_workers must be a positive integer")
+    if isolate_read_workers and search_workers is not None and search_workers < len(actors):
+        raise ValueError("isolated read workers require at least one worker per identity")
     mode = load_mode or ("mixed" if mixed else "search")
     plan = arrival_plan(
         len(actors), duration_s, q, mixed, seed=seed, load_mode=mode,
@@ -108,7 +114,7 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
     started = time.monotonic()
     end = started + duration_s
     dirty = [0] * len(actors)
-    widths = {"read": min(512, max(16, len(actors) * 8)), "add": min(32, max(4, len(actors))),
+    widths = {"read": search_workers if search_workers is not None else min(512, max(16, len(actors) * 8)), "add": min(32, max(4, len(actors))),
               "commit_submit": min(32, max(4, len(actors)))}
     if isolate_read_workers:
         per_identity = max(1, widths.pop("read") // len(actors))
@@ -126,6 +132,7 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
 
     def poll(actor, index, sid, archive, accepted_at, deadline):
         count = 0
+        observed_trace = ""
         while True:
             poll_at = time.monotonic()
             if poll_at >= deadline:
@@ -144,17 +151,18 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
             count += 1
             code = result.status_code
             terminal = status_from(result.payload)
+            observed_trace = response_trace_ref(result.payload) or observed_trace
             append({"op": "commit_poll", "identity_index": index,
                     "tenant_index": actor.tenant_index, "user_index": actor.user_index,
                     "start_s": poll_at - started, "end_s": time.monotonic() - started,
-                    "http_status": code, "status": terminal})
+                    "http_status": code, "status": terminal, "trace_ref": observed_trace})
             if terminal in ("completed", "failed", "error") and code == 200:
                 break
             time.sleep(min(1, max(0, deadline - time.monotonic())))
         append({"op": "commit_done", "identity_index": index, "tenant_index": actor.tenant_index,
                 "user_index": actor.user_index, "accepted_at_s": accepted_at - started,
                 "end_s": time.monotonic() - started, "elapsed_s": time.monotonic() - accepted_at,
-                "status": terminal, "http_status": code, "polls": count,
+                "status": terminal, "http_status": code, "polls": count, "trace_ref": observed_trace,
                 "success": terminal == "completed" and time.monotonic() <= deadline})
 
     def execute(event):
@@ -210,6 +218,7 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
                     polls.submit(poll, actor, index, actor.write_session, archive, accepted_at,
                                  accepted_at + commit_timeout_s)
             record["http_status"] = result.status_code
+            record["trace_ref"] = response_trace_ref(result.payload)
             if result.reason_code:
                 record["reason_code"] = result.reason_code
             if result.status_code is None:

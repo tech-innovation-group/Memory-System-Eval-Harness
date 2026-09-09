@@ -2,12 +2,13 @@
 
 import http.client
 import json
+import os
 import shutil
 import socket
 import subprocess
 import time
 import urllib.request
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlparse
 
 
 def inspect_container(name: str) -> dict:
@@ -20,12 +21,26 @@ def inspect_container(name: str) -> dict:
     return _socket_json("/containers/" + quote(name, safe="") + "/json")
 
 
+def _docker_socket_path() -> str:
+    host = os.environ.get("DOCKER_HOST", "")
+    if (not host or os.environ.get("DOCKER_CONTEXT")) and shutil.which("docker"):
+        contexts = json.loads(subprocess.check_output(
+            ["docker", "context", "inspect"], timeout=15, text=True))
+        host = contexts[0].get("Endpoints", {}).get("docker", {}).get("Host", "")
+    if not host:
+        return "/var/run/docker.sock"
+    parsed = urlparse(host)
+    if parsed.scheme != "unix" or parsed.netloc or not parsed.path.startswith("/"):
+        raise ValueError("Resource sampling requires the selected Docker Unix socket")
+    return unquote(parsed.path)
+
+
 def _socket_json(path: str) -> dict:
     connection = http.client.HTTPConnection("localhost", timeout=15)
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.settimeout(15)
     try:
-        sock.connect("/var/run/docker.sock")
+        sock.connect(_docker_socket_path())
         connection.sock = sock
         connection.request("GET", path)
         response = connection.getresponse()
@@ -77,7 +92,7 @@ def restart_container(name: str, ready_url: str, *, timeout_s: float = 180) -> d
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         sock.settimeout(40)
         try:
-            sock.connect("/var/run/docker.sock")
+            sock.connect(_docker_socket_path())
             connection.sock = sock
             connection.request("POST", "/containers/" + quote(name, safe="") + "/restart?t=30")
             response = connection.getresponse()

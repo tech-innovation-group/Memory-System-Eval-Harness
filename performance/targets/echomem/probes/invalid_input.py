@@ -79,6 +79,29 @@ def run(ctx: Ctx) -> None:
         ("tenant_observability_without_token", "GET", "/api/inspect/tenant-observability",
          None, {"Accept": "application/json"}, {401, 403, 404}),
     ]
+    for name, value in (("array", []), ("null", None), ("string", "invalid")):
+        cases.append((f"nonobject_json_{name}", "POST", "/api/retrieval/search",
+                      json.dumps(value).encode(), json_headers, {400, 422}))
+    invalid_fields = [
+        ("query_null", "query", None), ("query_number", "query", 12),
+        ("query_array", "query", []), ("query_object", "query", {}),
+        ("query_bool", "query", True), ("query_empty", "query", ""),
+        ("limit_zero", "limit", 0), ("limit_bool", "limit", True),
+        ("limit_string", "limit", "1"), ("limit_fraction", "limit", 1.5),
+        ("timeout_zero", "timeout_ms", 0), ("timeout_negative", "timeout_ms", -1),
+        ("timeout_bool", "timeout_ms", True), ("timeout_string", "timeout_ms", "1"),
+        ("timeout_overflow", "timeout_ms", 2_147_483_648),
+        ("input_association_string", "input_association", "true"),
+    ]
+    for name, field, value in invalid_fields:
+        body = {"query": "boundary", "agent_id": tenant.agent_id, field: value}
+        cases.append((name, "POST", "/api/retrieval/search",
+                      json.dumps(body).encode(), json_headers, {400, 422}))
+    for name, value in (("array", [1]), ("pairs", [["key", "value"]]),
+                        ("string", "invalid"), ("number", 0), ("bool", False)):
+        body = {"agent_id": tenant.agent_id, "metadata": value}
+        cases.append((f"open_metadata_{name}", "POST", "/api/sessions/open",
+                      json.dumps(body).encode(), json_headers, {400, 422}))
     token = os.getenv(str(params.get("token_env") or "ECHOMEM_TEST_CONTROL_TOKEN"), "")
     if token:
         cases.append(("invalid_fault_type", "POST", "/api/inspect/test-control/fault",

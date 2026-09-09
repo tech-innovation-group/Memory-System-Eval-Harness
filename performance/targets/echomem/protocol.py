@@ -22,7 +22,7 @@ import time
 
 from performance.ctx import Ctx, Response, PollResult
 from performance.records import content_hash
-from performance.targets.echomem.acceptance.stage_observability import trace_ref
+from performance.targets.echomem.acceptance.stage_observability import response_trace_ref
 from performance.targets.echomem.probes._client import status_from
 
 ANCHOR_PREFIX = "PERFANCHOR"
@@ -97,8 +97,7 @@ def search(ctx: Ctx, query: str, *, top_k: int = 5) -> Response:
     )
     marker = anchor_marker(query)
     payload = resp.json if isinstance(resp.json, dict) else {}
-    nested = payload.get("result") if isinstance(payload.get("result"), dict) else {}
-    ctx.note(trace_ref=trace_ref(payload.get("trace_id") or nested.get("trace_id")))
+    ctx.note(trace_ref=response_trace_ref(payload))
     sample = ctx.params.get("tenant_query_cases", {}).get(str(ctx.tenant_idx), {}).get(query)
     query_type = "recall" if marker else "no_recall" if query in NO_RECALL_QUERIES else "unclassified"
     if sample is not None:
@@ -191,10 +190,9 @@ def poll_commit(
         audit["poll_count"] += 1
         audit["poll_http_errors"] += status != 200 or bool(error)
         value = body if isinstance(body, dict) else {}
-        nested = value.get("status") if isinstance(value.get("status"), dict) else {}
-        observed_trace = value.get("trace_id") or nested.get("trace_id")
+        observed_trace = response_trace_ref(value)
         if observed_trace:
-            audit["trace_ref"] = trace_ref(observed_trace)
+            audit["trace_ref"] = observed_trace
         state = status_from(value)
         if status == 200 and not error:
             if state in {"pending", "queued", "running", "processing", "in_progress", "awaiting_engines"}:

@@ -270,16 +270,11 @@ def search_summary(rows: list[dict]) -> dict:
     atomic = [engine.get("duration_seconds") for row in sent for engine in row.get("engine_results", [])
               if engine.get("engine_id") == "atomic_engine" and _valid_duration(engine.get("duration_seconds"))]
     engine_values: dict[str, list[float]] = {}
-    residual = []
     for row in sent:
-        durations = []
         for engine in row.get("engine_results", []):
             duration = engine.get("duration_seconds")
             if engine.get("engine_id") and _valid_duration(duration):
                 engine_values.setdefault(engine["engine_id"], []).append(duration)
-                durations.append(duration)
-        if _valid_duration(row.get("elapsed_s")):
-            residual.append(max(0, row["elapsed_s"] - sum(durations)))
     engine_timings = {engine: {"observations": len(values),
                                "mean_s": sum(values) / len(values),
                                "p95_s": percentile(values, 95), "max_s": max(values)}
@@ -358,11 +353,8 @@ def search_summary(rows: list[dict]) -> dict:
             "atomic_p95_s": percentile(atomic, 95), "atomic_observations": len(atomic),
             "engine_timings": engine_timings,
             "route_path_timings": route_path_timings,
-            # This is endpoint time minus reported engine durations.  It
-            # includes routing, model calls, serialization and unreported
-            # work, so it is a diagnostic residual rather than a direct LLM
-            # timer.
-            "unattributed_residual_p95_s": percentile(residual, 95),
+            # Kept null for old readers; parallel stage times cannot be subtracted.
+            "unattributed_residual_p95_s": None,
             "p95_block_bootstrap_95": block_p95_interval(sent),
             "generator_lag_p95_s": percentile([r.get("generator_lag_s", 0) for r in sent], 95)}
 

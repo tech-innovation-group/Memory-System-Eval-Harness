@@ -17,6 +17,15 @@ Run the repository's real HTTP six-metric suite as a guided product flow. Read
 
 - Use a real EchoMem deployment, real LLM, real Embedding, and independent tenant
   credentials. Do not use mocks or reuse one key as multiple tenants.
+- Do not test an EchoMem checkout left on the repository's default `main`
+  branch. M1-M3 require the current `origin/develop`; a full M1-M6 run requires
+  PR449 to contain the current `origin/develop` until PR449 is merged. Verify
+  this with `git merge-base --is-ancestor origin/develop HEAD`, and stop as
+  `BLOCKED` if it fails.
+- Build `deploy/single-node/config.json` from the checked-out EchoMem version's
+  root `configs/config.example.json`. Stop as `BLOCKED` when
+  `engine.enabled` is empty; the single-node example with no enabled memory
+  engines is not a valid real-memory stress target.
 - Do not count HTTP 200 Search as a successful recall unless the expected fact is
   present. Do not count Commit 202 as completion; poll its terminal state.
 - Keep failed, timed-out, rejected, provider-error, and pending samples in their
@@ -34,7 +43,9 @@ Run the repository's real HTTP six-metric suite as a guided product flow. Read
 
 1. Locate the harness and EchoMem repositories. Prefer paths supplied by the
    user. Show their current branch, commit, dirty state, and whether the harness
-   contains `performance/targets/echomem/observation_run.py`.
+   contains `performance/targets/echomem/observation_run.py`. Fetch branch refs
+   only with authorization, then verify the selected EchoMem revision against
+   `origin/develop`; never infer the revision from the directory name.
 2. Inspect prerequisites and present a compact readiness summary: EchoMem ready,
    Docker/container, profile, tenant count, LLM preflight, Embedding preflight,
    protected test endpoints, output directory, and destructive-test safety.

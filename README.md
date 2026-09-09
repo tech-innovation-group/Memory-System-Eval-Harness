@@ -9,6 +9,9 @@
 [公开单文件指南](docs/echomem-six-metric-local-guide.md)。文档不绑定
 特定 AI，包含通用 Agent 提示词、可选 `SKILL.md`、PR32/PR449 代码要求、真实模型配置、
 默认 32 租户及显式扩展到 64/128 的方法、默认/调优两组压测、运行命令和最终报告位置。
+被测 EchoMem 不得停留在默认 `main`：M1-M3 明确使用最新 `develop`，完整 M1-M6 在
+PR449 合入前使用已同步最新 `develop` 的 PR449，并在发压前校验 branch、commit 与非空
+`engine.enabled`。
 该入口不设置 P95、准确率、Jain、劣化比例或吞吐 PASS/FAIL 门槛；状态仅为
 `MEASURED / PARTIAL / BLOCKED / EXECUTION_ERROR`，默认不运行 soak。旧的
 `python -m performance --target echomem --six-metrics` 保留为历史 SLO

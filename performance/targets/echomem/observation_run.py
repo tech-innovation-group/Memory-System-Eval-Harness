@@ -68,6 +68,7 @@ def _public_profile(profile: dict[str, Any]) -> dict[str, Any]:
         "name", "base_url", "resource_container", "capacity_levels",
         "require_4u8g",
         "m1_tenant_levels", "m1_user_levels", "dau_scenarios",
+        "m1_search_workers", "m1_seed_validation_queries",
         "required_concurrency", "required_embedding_model",
         "require_stage_observability",
         "preflight_config", "tenant_config",
@@ -148,7 +149,8 @@ def _run_m1_profiles(profile: dict[str, Any], args: argparse.Namespace, output: 
         warmup_s = 5 if args.quick else 30
         expected_resume = {"topology": topology, "levels_requested": levels,
             "assessment_mode": "observe", "load_profile": "all", "warmup_s": warmup_s,
-            "duration_s": duration_s, "per_user_search_rps": float(profile.get("m1_search_rps_per_user", 1))}
+            "duration_s": duration_s, "per_user_search_rps": float(profile.get("m1_search_rps_per_user", 1)),
+            "search_workers_requested": int(profile.get("m1_search_workers", 1024))}
         if args.resume and report_path.is_file():
             resumed_report = read_json(report_path)
             _validate_m1_resume(resumed_report, expected_resume)
@@ -158,10 +160,12 @@ def _run_m1_profiles(profile: dict[str, Any], args: argparse.Namespace, output: 
             topology=topology, levels=levels, fixed_tenants=4, warmup_s=warmup_s,
             duration_s=duration_s, q=float(profile.get("m1_search_rps_per_user", 1)),
             target_container=str(profile.get("resource_container") or ""),
-            manifest={"resource_evidence": profile["resource_evidence"]},
+            manifest={"resource_evidence": profile["resource_evidence"],
+                      "seed_validation_queries": int(profile.get("m1_seed_validation_queries", 40))},
             assessment_mode="observe", load_profile="all",
-            seed_validation_queries=4 if args.quick else 40,
-            recovery_timeout_s=30 if args.quick else 300, persist_private_identities=False))
+            seed_validation_queries=(4 if args.quick else int(profile.get("m1_seed_validation_queries", 40))),
+            recovery_timeout_s=30 if args.quick else 300, persist_private_identities=False,
+            search_workers=int(profile.get("m1_search_workers", 1024))))
     return reports
 
 

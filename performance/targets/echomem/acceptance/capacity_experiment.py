@@ -72,8 +72,8 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
                     target_container: str = "", manifest: dict | None = None,
                     assessment_mode: str = "observe", load_profile: str = "search",
                     reuse_seed: Path | None = None, seed_validation_queries: int = 40,
-                    recovery_timeout_s: float = 300, request_timeout_s: float = 10,
-                    persist_private_identities: bool = True) -> dict:
+                    recovery_timeout_s: float = 300, request_timeout_s: float = 60,
+                    persist_private_identities: bool = True, search_workers: int | None = None) -> dict:
     if output.exists():
         raise FileExistsError(f"Refuse to overwrite M1 evidence directory: {output}")
     output.mkdir(parents=True, mode=0o700)
@@ -96,6 +96,7 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
               "topology": topology, "levels_requested": levels,
               "assessment_mode": assessment_mode, "load_profile": load_profile,
               "recovery_timeout_s": recovery_timeout_s, "request_timeout_s": request_timeout_s,
+              "search_workers_requested": search_workers,
               "fixed_tenants": fixed_tenants if topology == "within-tenant" else None,
               "memory_scale": memory_scale, "warmup_s": warmup_s, "duration_s": duration_s,
               "per_user_search_rps": q, "manifest": {**(manifest or {}),
@@ -202,7 +203,7 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
                 _write(output / "report.json", report)
                 warmup = measure(
                     selected, duration_s=warmup_s, q=q,
-                    seed=4200 + level_index, request_timeout_s=request_timeout_s,
+                    seed=4200 + level_index, request_timeout_s=request_timeout_s, search_workers=search_workers,
                     load_mode=mode,
                 )
                 _write(output / f"level-{level}-{label}-warmup.json", warmup)
@@ -211,7 +212,7 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
                 _write(output / "report.json", report)
                 measurement = measure(
                     selected, duration_s=duration_s, q=q,
-                    seed=4300 + level_index, request_timeout_s=request_timeout_s,
+                    seed=4300 + level_index, request_timeout_s=request_timeout_s, search_workers=search_workers,
                     load_mode=mode,
                 )
                 _write(output / f"level-{level}-{label}-measurement.json", measurement)
@@ -313,7 +314,8 @@ def main() -> None:
                         help="server-local previous run containing owner-only identities.private.json")
     parser.add_argument("--seed-validation-queries", type=int, default=40)
     parser.add_argument("--recovery-timeout-s", type=float, default=300)
-    parser.add_argument("--request-timeout-s", type=float, default=10)
+    parser.add_argument("--request-timeout-s", type=float, default=60)
+    parser.add_argument("--search-workers", type=int, help="Explicit client Search worker count; independent of service limits")
     args = parser.parse_args()
     result = run_exploration(base_url=args.base_url, output=args.output, topology=args.topology,
         levels=[int(item) for item in args.levels.split(",")], fixed_tenants=args.fixed_tenants,
@@ -322,7 +324,7 @@ def main() -> None:
         manifest=json.loads(args.manifest_json), assessment_mode=args.assessment_mode,
         load_profile=args.load_profile, reuse_seed=args.reuse_seed,
         seed_validation_queries=args.seed_validation_queries, recovery_timeout_s=args.recovery_timeout_s,
-        request_timeout_s=args.request_timeout_s)
+        request_timeout_s=args.request_timeout_s, search_workers=args.search_workers)
     print(json.dumps({"status": result["status"], "phase": result["phase"],
                       "boundary": result["boundary"], "levels": [{"level": row["level"],
                       "hot_users": row["hot_users"], "status": row["status"]}

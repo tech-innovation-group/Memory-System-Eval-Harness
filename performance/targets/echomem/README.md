@@ -94,11 +94,20 @@ M3 同时包含均匀 Commit 洪泛和单租户洪泛。后者让一个租户承
 本机需要 macOS 或 Linux、Docker Compose、Git、Python 3.11+，以及可用的真实 LLM 和
 Embedding 凭证。禁止使用 mock。EchoMem 被测版本还需包含故障控制和租户观测接口。
 
-获取两个仓库。`ECHOMEM_DIR` 可以换成自己的绝对路径：
+获取两个仓库。`ECHOMEM_DIR` 可以换成自己的绝对路径。EchoMem 必须显式检出
+`develop`；不要依赖 `git clone` 当时的默认分支，因为默认分支可能是 `main`：
 
 ```bash
-git clone https://github.com/tech-innovation-group/EchoMem.git
-export ECHOMEM_DIR="$PWD/EchoMem"
+git clone --branch develop https://github.com/tech-innovation-group/EchoMem.git
+cd EchoMem
+git fetch origin develop
+git switch develop
+git pull --ff-only origin develop
+export ECHOMEM_DIR="$PWD"
+printf 'EchoMem branch=%s commit=%s\n' \
+  "$(git branch --show-current)" "$(git rev-parse HEAD)"
+test "$(git branch --show-current)" = develop
+cd ..
 
 git clone https://github.com/tech-innovation-group/Memory-System-Eval-Harness.git
 cd Memory-System-Eval-Harness
@@ -119,18 +128,25 @@ GET/POST /api/inspect/test-control/fault
 GET      /api/inspect/tenant-observability
 ```
 
-在 PR449 合入前，可在 EchoMem 仓库中显式检出该 PR：
+只运行 M1-M3 时使用上一步锁定的最新 `develop`。运行完整 M1-M6 时，在 PR449 合入
+`develop` 前必须显式检出 PR449，并验证它已同步当前 `origin/develop`：
 
 ```bash
 cd "$ECHOMEM_DIR"
-git fetch origin pull/449/head:pr449-blackbox
+git fetch origin develop pull/449/head:pr449-blackbox
 git switch pr449-blackbox
+git merge-base --is-ancestor origin/develop HEAD || {
+  echo 'BLOCKED: PR449 尚未同步当前 origin/develop，请使用已同步分支后再测完整 M1-M6。'
+  exit 1
+}
+printf 'EchoMem branch=%s commit=%s develop=%s\n' \
+  "$(git branch --show-current)" "$(git rev-parse HEAD)" "$(git rev-parse origin/develop)"
 git rev-parse HEAD
 ```
 
-若要测试“最新 develop + PR449”，必须使用已经把 PR449 独有改动同步到最新 develop 的
-分支；不要让 AI 静默把旧 PR449 历史强行 rebase 或 cherry-pick。无论选择哪个版本，运行
-前都要用上面的两个路径确认接口存在，并把最终 EchoMem commit 写入报告。
+若上面的祖先校验失败，停止测试；不要让 AI 静默把旧 PR449 历史强行 rebase 或
+cherry-pick。PR449 合入后，完整 M1-M6 也直接使用最新 `develop`。无论选择哪个版本，
+都必须把最终 EchoMem branch、commit 和 `origin/develop` commit 写入报告。
 
 ## 2. 本机部署 EchoMem
 
@@ -140,6 +156,19 @@ git rev-parse HEAD
 cd "$ECHOMEM_DIR/deploy/single-node"
 ./manage.sh init
 cp ../../configs/config.example.json ./config.json
+```
+
+这里必须复制仓库根目录的完整 `configs/config.example.json`，不能使用
+`deploy/single-node/config.json.example`；后者允许 `engine.enabled=[]`，只能启动空引擎服务，
+不能完成真实记忆 Commit/Search 压测。启动前执行硬校验：
+
+```bash
+test "$(jq '.engine.enabled | length' config.json)" -gt 0 || {
+  echo 'BLOCKED: engine.enabled 为空，未启用任何真实记忆引擎。'
+  exit 1
+}
+git -C "$ECHOMEM_DIR" branch --show-current
+git -C "$ECHOMEM_DIR" rev-parse HEAD
 ```
 
 编辑当前目录的 `.env` 和 `config.json`：
@@ -275,6 +304,25 @@ Commit executor+gate 为 `5+3=8`，不超过 4 核的 2 倍约束。
 `provider_budget_configured`，确认实际生效值。默认测试平台仍然发送配置的 32 客户端并发，
 不会读取这些服务端值后自动减压。
 
+### 后续扩展到 128 并发时核对什么
+
+128 个租户、128 个热用户和 128 个同时在途 HTTP 请求不是同一个指标。当前首轮仍以
+32 租户为上限；下面是扩展时的核对表，不是已完成的 128 并发测试结论。
+
+| 层级 | 128 并发实验需要核对的内容 |
+| --- | --- |
+| 发压端 | 增加独立凭据和档位，设置 `required_concurrency=128`；核实实际在途峰值、计划/实际到达差和发压机资源，不能只看配置数字 |
+| HTTP / Retrieval | 若目标是让 128 个 Search 同时进入 Retrieval，核对 `admission_permits=128`；当前版本 4:1 约束要求 `http.max_workers` 至少 512。若保留更小值，则必须将拒绝/排队作为实测结果，而不是降低客户端发压 |
+| Recall 各阶段 | 分别核对 `engine`、`intent_llm`、`query_embedding`、`rerank` 的 `max_concurrent`、`queue_capacity`、`max_queued_per_tenant`；阶段有分叉，128 请求不一定只产生 128 次模型调用 |
+| LLM / Embedding 网关 | 核对总池、Recall/episode/worker 份额和 Provider budget。当前 V4 要求 `recall_llm_max_concurrent * 4 <= llm_max_concurrent`；例如 Recall LLM 配 128 时总池至少 512，不能只改单一字段。预算还需覆盖其他消费者之和 |
+| Commit | 分别记录受理队列、每租户配额、executor/gate 实际工作数。128 个未完成 Commit 不等于 128 个执行线程；不能为了数字违反实例 CPU/内存校验，也不能将 202 当成吞吐完成数 |
+| 租户 / 连接 | 核对租户 QPS、单租户 concurrency、客户端连接池、服务进程文件描述符和容器资源；128 租户不要求硬改成 128 个常驻缓存 |
+| 外部模型 | 单独核实真实账号/模型的并发、RPM/TPM、429、超时和重试。扩大 EchoMem 本地队列不会提高供应商限额；不要把 Provider 限流报告为 EchoMem 最大容量 |
+
+配置应通过被测版本启动校验，并保留 `instance_profile_resolved` 和实际资源限制。
+“不让内部配置影响发压”指测试平台不读取这些值来偷偷降低客户端负载，并不代表
+服务端配置对性能没有影响。默认配置和调优配置必须分开报告，不能混用容量边界。
+
 ## 3. 安装测试平台
 
 回到测试平台仓库根目录：
@@ -377,6 +425,28 @@ trace 引用，不保存请求正文或原始 trace id。
 
 `required_embedding_model` 是硬性预检条件。本例只接受真实成功调用
 `qwen3.7-text-embedding-flash`；如果服务实际使用其他 Embedding，正式发压前会直接停止。
+
+`seed_search_timeout_s` 控制 M2/M3 等 observation 场景在记忆准备后的单次召回验证等待时间，
+默认 60 秒。例如配置 `"seed_search_timeout_s": 120` 可保留超过 60 秒的慢响应。
+这不修改正式场景的请求超时、发压强度、服务配置或质量断言，也不覆盖 M1 独立容量扫描。
+必须使用新的结果目录区分不同配置；旧超时仍保留为失败。每条验证记录包含实际延迟、
+等待上限、传输错误类型、合成问题和预期事实。HTTP 200 或更长等待不代表召回质量通过。
+
+M1 独立命令 `python -m performance.targets.echomem.acceptance.capacity_experiment`
+可用 `--search-workers 128` 显式配置客户端 Search 工作线程数。
+不要把线程数当作实际并发；实际在途峰值与每档 `planned/sent/not_sent` 必须一起检查。
+若出现 `generator_saturated`，说明客户端没有发出该请求，不能归因为 EchoMem 拒绝。
+提高客户端工作线程数不改变服务端 worker、模型配额或队列配置，实际数量记录在每档 measurement 的 `pools`。
+
+还必须核对最外层 `recall.max_inflight`，不能只调 `recall.concurrency.*`。
+当前已验证的 EchoMem 版本在未配置该字段时默认 16；`ECHOMEM_RECALL_MAX_INFLIGHT`
+环境变量优先于 JSON。以目标版本源码和实际日志为准，不能假设所有版本默认值相同。
+出现 `RETRIEVAL_BUSY` 时核查 `retrieval_admission_rejected` 中的 `in_flight/max_inflight`。
+例如内部阶段均为 128、外层仍为 16 时，实际同时执行 Recall 仍会被 16 限制。
+调优实验可显式设置 `recall.max_inflight: 128`，并同时核对 HTTP、租户、模型预算及供应商限额；
+不要无条件设置为 0 来关闭保护。此配置通常需要重启生效，须按部署流程授权执行。
+默认配置与调优配置分开保存结果，不能将配置拒绝边界描述为硬件极限。
+
 `required_concurrency: 32` 表示首轮需要观察到至少 32 个同时在途请求，不等同于仅配置了
 32 个用户。需要扩展时，可将两组 M1 档位和该值一起提高到 64、128。测试平台不会读取
 EchoMem 的 `max_concurrency`、队列容量或 worker 数后主动
