@@ -322,6 +322,7 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
         "real_embedding_required": True,
         "credentials_source": "environment variables only",
         "profile": _public_profile(profile),
+        "model_preflight": profile.get("model_preflight"),
     }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     try:
         m1_reports = []
@@ -567,11 +568,14 @@ def main(argv: list[str] | None = None) -> int:
         status = ("PARTIAL" if interrupted else "BLOCKED"
                   if isinstance(exc, (ValueError, RuntimeError)) else "EXECUTION_ERROR")
         blockers = []
+        model_preflight = {}
         if isinstance(exc, RuntimeError):
             try:
                 detail = json.loads(str(exc))
                 blockers = [check for check in detail.get("checks", [])
                             if check.get("status") == "BLOCKED"]
+                if isinstance(detail.get("engines"), list):
+                    model_preflight = detail
             except (TypeError, ValueError):
                 blockers = []
         concise_reason = (
@@ -584,6 +588,7 @@ def main(argv: list[str] | None = None) -> int:
             "performance_thresholds_applied": False,
             "sampling_mode": "quick-non-complete" if args.quick else "full",
             "status": status, "selected_metrics": selected,
+            "model_preflight": model_preflight,
             "allowed_statuses": ["MEASURED", "PARTIAL", "BLOCKED", "EXECUTION_ERROR"],
             "metrics": {
                 code: {"status": status if code in selected else "BLOCKED",
@@ -599,7 +604,7 @@ def main(argv: list[str] | None = None) -> int:
             "git_commit": _git_commit(), "selected_metrics": selected,
             "soak_enabled": False, "execution_status": status,
             "error_class": type(exc).__name__, "error": str(exc),
-            "blockers": blockers,
+            "blockers": blockers, "model_preflight": model_preflight,
         }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         write_observation_report(result, output / "report.html")
     finally:

@@ -31,6 +31,50 @@ def test_empty_report_tables_span_their_actual_columns(tmp_path: Path) -> None:
     assert 'colspan="9"' not in rendered
 
 
+def test_report_shows_verified_llm_and_embedding_models(tmp_path: Path) -> None:
+    path = tmp_path / "report.html"
+    result = {
+        "metrics": {"M1": {"status": "PARTIAL", "reason": "test"}},
+        "selected_metrics": ["M1"], "status": "PARTIAL", "sampling_mode": "full",
+        "model_preflight": {
+            "ok": True, "digest": "config-sha", "engines_checked": 2,
+            "probe_attempts": 1, "engines": [
+                {"id": "atomic", "kind": "llm", "model": "real-llm",
+                 "api_base": "https://llm.example/v1", "status": "ok",
+                 "model_supported": True, "code": 200, "elapsed_s": 0.5, "error": ""},
+                {"id": "embedding", "kind": "embedding", "model": "real-embedding",
+                 "api_base": "https://embedding.example/v1", "status": "ok",
+                 "model_supported": True, "code": 200, "elapsed_s": 0.2, "error": ""},
+            ],
+        },
+    }
+    write_observation_report(result, path)
+    rendered = path.read_text()
+    assert "本次使用的模型" in rendered
+    assert "已使用真实模型" in rendered
+    assert "real-llm" in rendered
+    assert "real-embedding" in rendered
+    assert "config-sha" in rendered
+
+
+def test_report_does_not_claim_real_models_when_preflight_failed(tmp_path: Path) -> None:
+    path = tmp_path / "report.html"
+    result = {
+        "metrics": {"M1": {"status": "BLOCKED", "reason": "preflight"}},
+        "selected_metrics": ["M1"], "status": "BLOCKED", "sampling_mode": "full",
+        "model_preflight": {
+            "ok": False, "engines_checked": 1, "probe_attempts": 1,
+            "engines": [{"id": "atomic", "kind": "llm", "model": "bad-model",
+                         "status": "error", "model_supported": False, "code": 400,
+                         "error": "HTTP 400"}],
+        },
+    }
+    write_observation_report(result, path)
+    rendered = path.read_text()
+    assert "模型预检失败" in rendered
+    assert "已使用真实模型：" not in rendered
+
+
 def _run(tmp_path: Path, name: str, rows: list[dict]) -> dict:
     target = tmp_path / name
     target.mkdir()
