@@ -5,7 +5,9 @@
 
 **EchoMem 4U8G 六项黑盒观测压测**：使用
 `python -m performance.targets.echomem.observation_run`，详见
-[观测型六项运行手册](performance/targets/echomem/docs/six-metrics-observation.md)。
+[单文件本机部署与六项运行手册](performance/targets/echomem/README.md)。该文档包含交给
+AI 的完整提示词、PR32/PR449 代码要求、真实模型配置、128 租户、默认/调优两组压测、
+运行命令和最终报告位置。
 该入口不设置 P95、准确率、Jain、劣化比例或吞吐 PASS/FAIL 门槛；状态仅为
 `MEASURED / PARTIAL / BLOCKED / EXECUTION_ERROR`，默认不运行 soak。旧的
 `python -m performance --target echomem --six-metrics` 保留为历史 SLO

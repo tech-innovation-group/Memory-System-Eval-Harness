@@ -4,6 +4,30 @@
 不需要服务器，也不要求把容器限制为 4U8G。报告会记录容器实际 CPU、内存和镜像，
 因此不同电脑的容量数据应分别比较。
 
+## 交给 AI 的完整任务
+
+安装下文的 `echomem-stress` skill 后，把下面一段直接发给 Codex。替换两个绝对路径，
+不要把密钥写进提示词：
+
+```text
+使用 echomem-stress 在本机部署并测试 EchoMem。
+
+EchoMem 仓库：<EchoMem 绝对路径>
+测试平台仓库：<Memory-System-Eval-Harness 绝对路径>
+
+先核对两个仓库的 branch、commit 和 dirty state，不要静默 fetch、switch、reset。
+使用真实 LLM 和 qwen3.7-text-embedding-flash Embedding，运行完整 M1-M6。
+容量档位为 1、2、4、8、16、32、64、128，创建 128 个独立租户凭据。
+先跑默认配置基线，再跑并发调优配置；两个结果目录和配置指纹必须分开。
+测试平台不得根据 EchoMem 的 worker、queue、provider budget 或 max concurrency 自动降载。
+保留超时、拒绝、Provider 异常、pending、空召回和质量失败的原始分母。
+允许对本次专用容器执行 M4 delay/reject 故障注入和 M5 kill/restart。
+完成后打开 report.html，逐项解释数据、分母、错误归属和 EchoMem 模块改进建议。
+```
+
+AI 必须先展示 readiness 和实际命令，再开始会消耗模型额度或重启容器的步骤。若只想先
+验证链路，将“运行完整 M1-M6”改成“运行 quick”；quick 的结果只能标记为 `PARTIAL`。
+
 > 完整测试会对专用 EchoMem 容器注入租户故障，并在 M5 中执行真实 `kill -9` 和重启。
 > 请勿指向日常开发、共享或生产容器。
 
@@ -68,6 +92,29 @@ git rev-parse HEAD
 
 PR 合入后可直接切换合入后的目标分支。测试归档时保留最后一条命令输出的完整 commit。
 
+### EchoMem 代码要求与 PR449
+
+M1、M2、M3 和 M5 可使用提供标准 Session、Commit、Search、History、Archive 与 Cursor
+接口的 EchoMem 版本。完整 M1-M6 还要求 EchoMem 包含 PR449 的黑盒测试接口：
+
+```text
+GET/POST /api/inspect/test-control/fault
+GET      /api/inspect/tenant-observability
+```
+
+在 PR449 合入前，可在 EchoMem 仓库中显式检出该 PR：
+
+```bash
+cd "$ECHOMEM_DIR"
+git fetch origin pull/449/head:pr449-blackbox
+git switch pr449-blackbox
+git rev-parse HEAD
+```
+
+若要测试“最新 develop + PR449”，必须使用已经把 PR449 独有改动同步到最新 develop 的
+分支；不要让 AI 静默把旧 PR449 历史强行 rebase 或 cherry-pick。无论选择哪个版本，运行
+前都要用上面的两个路径确认接口存在，并把最终 EchoMem commit 写入报告。
+
 ## 2. 本机部署 EchoMem
 
 使用 EchoMem 仓库自带的单节点 Compose，不设置 CPU 或内存上限：
@@ -85,6 +132,25 @@ cp ../../configs/config.example.json ./config.json
 3. 确认 `engine.enabled` 包含本次要测的真实记忆引擎；
 4. LLM 与 Embedding 都必须可用，Search 返回 HTTP 200 不能替代模型预检；
 5. 为压测专用控制面设置随机 token，并启用测试控制。
+
+Embedding 至少确认以下字段；维度必须与被测版本的索引配置一致：
+
+```json
+{
+  "model": {
+    "embedding": {
+      "provider": "openai_compatible",
+      "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "api_key_env": "ECHOMEM_EMBEDDING_API_KEY",
+      "model": "qwen3.7-text-embedding-flash",
+      "dimensions": 1024
+    }
+  }
+}
+```
+
+这里是字段核对示例，不要用这段不完整 JSON 覆盖整个 `config.json`。必须从当前 EchoMem
+代码自己的 `config.example.json` 开始，只修改对应值。真实 key 只写 `.env`。
 
 EchoMem Core 进程需要接收下面两个环境变量：
 
@@ -122,6 +188,76 @@ docker inspect --format '{{.Name}}' "$(docker compose ps -q core)"
 
 输出通常类似 `/echomem-core-1`；profile 使用去掉开头 `/` 后的 `echomem-core-1`。
 
+### 2.1 默认基线与并发调优必须分开
+
+不要只跑一份改过的配置。容量测试至少保留两组：
+
+1. **默认基线**：只替换 endpoint、模型名和 key，保留被测版本所有调度默认值。它回答
+   “用户按默认配置部署后能承受多少”。
+2. **并发调优组**：提高会提前截断请求的本地并发和队列旋钮。它回答“解除保守配置后，
+   当前机器、EchoMem 和 Provider 组合能承受多少”。
+
+当前 4U8G `small` 默认通常包含 `model.max_concurrent=4`、Retrieval admission=8、
+`llm_max_concurrent=4`、`embed_max_concurrent=4`、Recall LLM/Embedding=1/2，以及较小的
+Recall 队列。这些值会在 128 客户端并发前先形成排队，不能把该现象描述成硬件极限。
+
+若团队已经测过 `qwen3.7-text-embedding-flash` 的 8/16/32/64 Provider 并发，可在运行
+备注中引用该证据并跳过重复阶梯；仍需做一次真实鉴权、模型名、返回维度和单条向量检查。
+没有既有证据的机器不得假定 Provider 支持 64 并发。
+
+下面是 4U8G 的**起始调优方向**，不是所有机器通用的最终值：
+
+```json
+{
+  "instance": {"profile": "small"},
+  "scheduling": {
+    "http": {"max_workers": 128},
+    "retrieval": {"admission_permits": 32},
+    "commit": {
+      "executor_workers": 5,
+      "gate_workers": 3,
+      "queue_max": 320,
+      "tenant_quota": 80
+    },
+    "llm_gateway": {
+      "llm_max_concurrent": 6,
+      "recall_llm_max_concurrent": 1,
+      "episode_llm_max_concurrent": 3,
+      "workers_llm_share": 2,
+      "provider_budget_llm": 12,
+      "embed_max_concurrent": 8,
+      "recall_embed_max_concurrent": 16,
+      "episode_embed_max_concurrent": 3,
+      "workers_embed_share": 2,
+      "provider_budget_embed": 29
+    },
+    "tenant": {"qps": 128, "concurrency": 32}
+  },
+  "recall": {
+    "concurrency": {
+      "engine": {"max_concurrent": 32, "queue_capacity": 256, "max_queued_per_tenant": 32},
+      "intent_llm": {"max_concurrent": 8, "queue_capacity": 256, "max_queued_per_tenant": 32},
+      "query_embedding": {"max_concurrent": 16, "queue_capacity": 256, "max_queued_per_tenant": 32},
+      "rerank": {"max_concurrent": 8, "queue_capacity": 256, "max_queued_per_tenant": 32}
+    }
+  }
+}
+```
+
+将这些字段合并进完整 `config.json`，不要覆盖其他引擎配置。`provider_budget_llm` 和
+`provider_budget_embed` 必须分别不小于所有 LLM/Embedding 消费方份额之和。4U8G 下
+`http.max_workers=128` 与 `retrieval.admission_permits=32` 满足 EchoMem 的 4:1 约束；
+Commit executor+gate 为 `5+3=8`，不超过 4 核的 2 倍约束。
+
+不要为了展示“128 热租户”把租户常驻缓存硬改成 128。4U8G 的租户缓存有真实内存预算，
+启动校验拒绝超出预算的配置也属于有效容量证据。128 个独立凭据表示测试平台会产生
+128 租户流量，不代表 128 个租户必须同时常驻；报告要分别展示活动租户、峰值在途请求、
+常驻缓存上限、淘汰以及首个持续积压档。
+
+每次改配置后重启专用 Core，并在日志中保存 `instance_profile_resolved` 和
+`provider_budget_configured`，确认实际生效值。测试平台仍然发送配置的 128 客户端并发，
+不会读取这些服务端值后自动减压。
+
 ## 3. 安装测试平台
 
 回到测试平台仓库根目录：
@@ -140,7 +276,7 @@ M2 必须使用不同租户凭证；重复使用同一个 key 只能测到并发
 ```bash
 .venv/bin/python -m performance.targets.echomem.provision \
   --base-url http://127.0.0.1:8010 \
-  --count 32 \
+  --count 128 \
   --out .local-stress/tenants.json \
   --env-file .local-stress/test.env
 chmod 600 .local-stress/tenants.json .local-stress/test.env
@@ -239,8 +375,28 @@ profile 文件只有一个 profile 时，脚本会自动选择 `Local`，不需�
 ```bash
 performance/targets/echomem/run_six_metrics.sh full \
   .local-stress/six-metrics.profile.json \
-  results/local-six-metrics-full \
+  results/local-six-metrics-default \
   .local-stress/test.env
+```
+
+默认组结束后，将第 2.1 节的调优字段合并进 EchoMem 完整配置、重启 Core，并使用**新的
+结果目录**运行第二组：
+
+```bash
+performance/targets/echomem/run_six_metrics.sh full \
+  .local-stress/six-metrics.profile.json \
+  results/local-six-metrics-tuned \
+  .local-stress/test.env
+```
+
+两组不得共用输出目录。若主要关注前三项，可把 `full` 命令替换为：
+
+```bash
+.venv/bin/python -m performance.targets.echomem.observation_run \
+  --profiles .local-stress/six-metrics.profile.json \
+  --metrics M1,M2,M3 \
+  --env-file .local-stress/test.env \
+  --out-dir results/local-m1-m3-tuned
 ```
 
 执行顺序为 `M1 → M2 → M3 → M4 → M5`，M6 从开始到结束持续采样。默认不运行 soak。
@@ -277,7 +433,14 @@ performance/targets/echomem/run_six_metrics.sh m6 \
 
 ## 8. 查看报告
 
-打开 `results/local-six-metrics-full/report.html`。同目录关键证据：
+最终给人阅读的主结果始终是本次 `OUTPUT_DIR/report.html`。例如默认组和调优组分别为：
+
+```text
+results/local-six-metrics-default/report.html
+results/local-six-metrics-tuned/report.html
+```
+
+不能只交付 HTML；同目录的结构化分母和逐请求证据必须一起保留：
 
 | 文件 | 内容 |
 | --- | --- |

@@ -68,6 +68,16 @@ list of commands:
    and inconclusive evidence. State the responsible module and the exact rerun
    condition for every incomplete metric.
 
+For a capacity or maximum-tenant request, follow the two-run procedure in
+`performance/targets/echomem/README.md`: first preserve the target version's
+default scheduling configuration, then run a separately fingerprinted tuned
+configuration that raises local admission, model, embedding, provider-budget,
+and queue limits. Never merge the two result directories or describe the tuned
+number as the default deployment baseline. If the team already has recorded
+8/16/32/64 provider-concurrency evidence for the exact account, endpoint, and
+model, reuse that evidence and run only the single-call identity/dimension
+preflight; do not spend quota repeating the provider sweep.
+
 For a 128-concurrency objective, pin the profile with:
 
 ```json
