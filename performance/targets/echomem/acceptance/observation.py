@@ -1567,7 +1567,11 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
         )
     recommendations = derive_observation_recommendations(result)
     setup = result.get("setup_evidence") or {}
-    source_labels = {"validated-cache": "复用已有记忆，本次重新验证召回", "fresh": "本次重新注入记忆"}
+    source_labels = {
+        "validated-cache": "复用已有记忆，本次重新验证召回",
+        "fresh": "本次重新注入固定事实记忆",
+        "locomo-single-session": "本次注入一段 LoCoMo 真实会话，并使用证据完全位于该 session 的标准问题验证召回",
+    }
     seed_source = "<section><h2>记忆与问题来源</h2><p>" + esc(source_labels.get(setup.get("seed_source"), "来源未记录，不能推定为本次重新注入")) + "</p>" + table([setup], [
         ("seed_documents_per_tenant", "每租户注入文本数"), ("facts_per_tenant", "每租户事实数"),
         ("query_variants_per_tenant", "每租户问题池大小"),

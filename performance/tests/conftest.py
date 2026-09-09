@@ -50,6 +50,7 @@ class MockState:
         self.search_queries: list[str] = []
         self.search_agent_ids: list[str] = []
         self.semantic_markers: dict[tuple[str, str], str] = {}
+        self.locomo_markers: dict[str, set[str]] = {}
         self.connections = 0
 
 
@@ -124,6 +125,9 @@ def _make_handler(state: MockState):
                 marker = re.search(r"PERFANCHOR-[A-Za-z0-9-]+", content)
                 if subject and marker:
                     state.semantic_markers[(self.headers.get("X-Auth-Key", ""), subject.group(0))] = marker.group(0)
+                locomo = re.search(r"LOCOMO-EVIDENCE-[A-Za-z0-9-]+", content)
+                if locomo:
+                    state.locomo_markers.setdefault(self.headers.get("X-Auth-Key", ""), set()).add(locomo.group(0))
                 return self._send(200, {"message_id": f"m{next(state.messages)}"})
             if re.fullmatch(r"/api/sessions/([^/]+)/commit", path):
                 if state.fail_commit:
@@ -139,6 +143,8 @@ def _make_handler(state: MockState):
                     auth_key = self.headers.get("X-Auth-Key", "")
                     recalled = next((marker for (key, subject), marker in state.semantic_markers.items()
                                      if key == auth_key and subject in query), query)
+                    if auth_key in state.locomo_markers:
+                        recalled = " ".join(sorted(state.locomo_markers[auth_key]))
                     result["items"] = [{"text": f"recalled {recalled}"}]
                     result["explain"] = {"tokens": 1}
                 if state.search_degraded:

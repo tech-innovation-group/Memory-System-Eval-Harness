@@ -207,7 +207,7 @@ python -m performance --target echomem \
 
 | 指标/用例 | 负载与步骤 | 必须生成的数据 |
 |---|---|---|
-| 数据准备 | 每租户短事实 → open → add → Commit → completed → Search 标记命中 | 每租户 marker、可见性、降级原因；不使用 LoCoMo 长对话 |
+| 数据准备 | 每租户注入 `conv-30/session_1` 的 28 条真实对话 → Commit completed → 12 道 session 内证据 QA 验证 | 每租户证据标识、可见性、意图拒绝与降级原因；标识不作为 Search query |
 | M1 capacity-2/4/8/16/32/64 | 每档纯召回+混合各60s，N个活跃身份、N RPS；相邻完成/失败档各三次确认 | 档位、实际身份数、全部请求数、质量率、平均/P50/P95/P99、错误、CPU/RSS、完成边界、DAU假设与保守估算 |
 | M2 fault matrix | 前四租户各做 reject/delay，三轮；每轮 before/during/after | 24 例、目标故障生效证据、每个旁观租户三阶段延迟与错误、最差 p95 劣化、故障撤销证据 |
 | M3 fairness-bounded | 四个同档位租户；120s 同一窗口；每租户 8 个 Commit；Search 并行持续发出 | 每租户 Commit 完成/秒、Search p95、两个 Jain、零完成和错误分母 |

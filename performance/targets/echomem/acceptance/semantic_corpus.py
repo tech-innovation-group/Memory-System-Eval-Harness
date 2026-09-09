@@ -8,6 +8,7 @@ import random
 import re
 import unicodedata
 from datetime import date, timedelta
+from pathlib import Path
 
 TOPICS = ("接口评审", "周末徒步", "年度体检", "项目培训", "设备验收")
 PLACES = ("梧桐会议室", "青禾活动中心", "松涛服务站", "白鹭园区", "星河工作室",
@@ -20,6 +21,90 @@ NO_RECALL = (
     "列举三个质数", "写一句不涉及个人信息的问候", "解释水的化学式", "将大写 ABC 转成小写",
     "写出星期一的英文",
 )
+
+DEFAULT_LOCOMO_DATASET = Path(__file__).resolve().parents[4] / "benchmarks/locomo/data/locomo10.json"
+
+
+def build_locomo_session_corpus(
+    identity: str,
+    *,
+    dataset_path: str | Path = DEFAULT_LOCOMO_DATASET,
+    sample_id: str = "conv-30",
+    session_key: str = "session_1",
+) -> dict:
+    """Build scored Search cases from one real LoCoMo conversation session."""
+    raw = json.loads(Path(dataset_path).read_text(encoding="utf-8"))
+    samples = raw if isinstance(raw, list) else [raw]
+    sample = next((row for row in samples if isinstance(row, dict)
+                   and str(row.get("sample_id")) == sample_id), None)
+    if sample is None:
+        raise ValueError(f"LoCoMo sample not found: {sample_id}")
+    conversation = sample.get("conversation") or {}
+    messages = conversation.get(session_key)
+    if not isinstance(messages, list) or not messages:
+        raise ValueError(f"LoCoMo session not found or empty: {sample_id}/{session_key}")
+
+    session_number = session_key.rsplit("_", 1)[-1]
+    evidence_prefix = f"D{session_number}:"
+    identity_tag = hashlib.sha256(identity.encode()).hexdigest()[:12]
+    date_time = str(conversation.get(f"{session_key}_date_time") or "").strip()
+    evidence_markers: dict[str, str] = {}
+    documents = []
+    for index, message in enumerate(messages):
+        if not isinstance(message, dict):
+            continue
+        dia_id = str(message.get("dia_id") or f"{evidence_prefix}{index + 1}")
+        marker = f"LOCOMO-EVIDENCE-{identity_tag}-{dia_id.replace(':', '-')}"
+        evidence_markers[dia_id] = marker
+        parts = [str(message.get("text") or "").strip()]
+        if message.get("blip_caption"):
+            parts.append(f"Image description: {message['blip_caption']}")
+        if message.get("query"):
+            parts.append(f"Image query: {message['query']}")
+        content = " ".join(part for part in parts if part)
+        if content:
+            speaker = str(message.get("speaker") or message.get("role") or "speaker")
+            time_prefix = f"Conversation time: {date_time}. " if date_time else ""
+            documents.append(f"{time_prefix}{speaker}: {content} Evidence marker: {marker}.")
+
+    facts, queries = [], []
+    for qa_index, qa in enumerate(sample.get("qa") or []):
+        if not isinstance(qa, dict) or str(qa.get("category") or "") == "5":
+            continue
+        evidence = [str(value) for value in qa.get("evidence") or []]
+        if not evidence or not all(value.startswith(evidence_prefix) for value in evidence):
+            continue
+        aliases = [evidence_markers[value] for value in evidence if value in evidence_markers]
+        if len(aliases) != len(evidence):
+            continue
+        question = str(qa.get("question") or "").strip()
+        if not question:
+            continue
+        fact_id = f"{sample_id}-{session_key}-qa{qa_index}"
+        facts.append({"id": fact_id, "answer": str(qa.get("answer") or ""),
+                      "category": str(qa.get("category") or ""), "evidence": evidence})
+        queries.append({"id": fact_id, "fact_id": fact_id, "query": question,
+                        "query_type": "recall", "aliases": aliases,
+                        "match_policy": "all",
+                        "expected_answer": str(qa.get("answer") or ""),
+                        "evidence_ids": evidence})
+    if not documents or not queries:
+        raise ValueError(f"No usable LoCoMo evidence cases: {sample_id}/{session_key}")
+
+    no_recall = [{"id": f"no-recall-{i}", "query": text,
+                  "query_type": "no_recall", "aliases": []}
+                 for i, text in enumerate(NO_RECALL)]
+    result = {"documents": documents, "facts": facts, "recall_queries": queries,
+              "no_recall_queries": no_recall, "memory_scale": 1,
+              "input_characters": sum(map(len, documents)),
+              "query_contract": "locomo-single-session-evidence-v1",
+              "source": {"kind": "locomo-single-session", "sample_id": sample_id,
+                         "session_key": session_key, "session_messages": len(documents),
+                         "eligible_questions": len(queries)}}
+    result["fingerprint"] = hashlib.sha256(
+        json.dumps(result, sort_keys=True, ensure_ascii=False).encode()
+    ).hexdigest()
+    return result
 
 
 def build_corpus(identity: str, *, seed: int = 42, memory_scale: int = 1) -> dict:
@@ -91,11 +176,16 @@ def assess_retrieval(payload, sample: dict) -> dict:
     items = items if valid else []
     degraded = bool(body.get("degraded_reasons")) or body.get("status") in {"degraded", "failed", "error"}
     text = _normalized(_text(items))
-    matched = any(_normalized(alias) in text for alias in sample.get("aliases", []) if alias)
+    aliases = [_normalized(alias) for alias in sample.get("aliases", []) if alias]
+    alias_matches = [alias in text for alias in aliases]
+    matched = (all(alias_matches) if sample.get("match_policy") == "all"
+               else any(alias_matches))
     atomic_items = [item for item in items if isinstance(item, dict) and item.get("engine_id") == "atomic_engine"]
     origin_observed = valid and all(isinstance(item, dict) and item.get("engine_id") for item in items)
     atomic_text = _normalized(_text(atomic_items))
-    atomic_matched = any(_normalized(alias) in atomic_text for alias in sample.get("aliases", []) if alias)
+    atomic_matches = [alias in atomic_text for alias in aliases]
+    atomic_matched = (all(atomic_matches) if sample.get("match_policy") == "all"
+                      else any(atomic_matches))
     expected = not items if sample["query_type"] == "no_recall" else matched
     explain = body.get("explain") or {}
     if not isinstance(explain, dict):
@@ -117,6 +207,9 @@ def assess_retrieval(payload, sample: dict) -> dict:
             "search_executed": not intent_rejected,
             "query_type": sample["query_type"], "query_id": sample["id"],
             "fact_id": sample.get("fact_id"), "assertion": "fixed-fact-in-items",
+            "match_policy": sample.get("match_policy", "any"),
+            "expected_evidence_count": len(aliases),
+            "matched_evidence_count": sum(alias_matches),
             "degraded_reasons": body.get("degraded_reasons") or [],
             "executed_layers": explain.get("executed_layers", []),
             "final_verdicts": explain.get("final_verdicts", {}),

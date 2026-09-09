@@ -57,7 +57,10 @@ def test_combined_observation_uses_same_semantic_seed_hook(tmp_path, monkeypatch
     runner.run_suite({"six_metrics_observation":True,"semantic_seed_cache":"/unit/cache"},
         suite_dir=tmp_path, scenarios=["m2-fairness-4t","m3-baseline","m3-flood-uniform"])
     assert captured["seed"].func is runner._prepare_semantic_seed
-    assert captured["seed"].keywords == {"reuse_seed":"/unit/cache"}
+    assert captured["seed"].keywords == {
+        "reuse_seed": "/unit/cache", "dataset_path": "",
+        "sample_id": "conv-30", "session_key": "session_1",
+    }
 
 
 @pytest.mark.parametrize("http,content,expected", [(200,"梧桐会议室",1),(200,"未知",0),(429,"梧桐会议室",0)])
@@ -98,8 +101,11 @@ def test_m3_seed_carries_ground_truth_separately_from_query(monkeypatch):
     monkeypatch.setattr(capacity_seed, "prepare_actors", lambda *a, **k:
                         {"status": "PASS", "healthy_actors": 1, "actor_count": 1})
     contexts, summary = runner._prepare_semantic_seed("http://unused.invalid", "unused", 1, 1, 1)
-    assert len(contexts[0].query_cases) == len(contexts[0].queries) == 40
+    assert len(contexts[0].query_cases) == len(contexts[0].queries) == 12
     assert summary["validated_queries_per_tenant"] == 4
+    assert summary["seed_source"] == "locomo-single-session"
+    assert summary["corpus_source"]["sample_id"] == "conv-30"
+    assert summary["corpus_source"]["session_key"] == "session_1"
     for query, sample in contexts[0].query_cases.items():
         assert sample["aliases"]
         assert all(alias not in query for alias in sample["aliases"])
@@ -151,13 +157,13 @@ def test_cached_validation_only_searches_current_returned_facts(healthy):
 def test_m3_cache_requires_exact_identity_and_reports_actual_corpus(monkeypatch, identity_matches):
     from performance.targets.echomem.orchestrator import runner
     from performance.targets.echomem.acceptance import capacity_seed, capacity_experiment
-    from performance.targets.echomem.acceptance.semantic_corpus import build_corpus
+    from performance.targets.echomem.acceptance.semantic_corpus import build_locomo_session_corpus
     spec = SimpleNamespace(tenant_id="unit-tenant", auth_key="unit-secret", user_id="unit-user",
                            account_id="unit-account", agent_id="unit-agent")
     client = SimpleNamespace(**vars(spec))
     if not identity_matches:
         client.agent_id = "different-agent"
-    corpus = build_corpus("unit-cache")
+    corpus = build_locomo_session_corpus("unit-cache")
     corpus["documents"] = corpus["documents"][:2]
     actor = capacity_seed.CapacityActor(7, 0, client, corpus)
     monkeypatch.setattr(runner, "load_tenant_specs", lambda *a, **k: [spec])

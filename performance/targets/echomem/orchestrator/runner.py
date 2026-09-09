@@ -269,26 +269,38 @@ def _preflight_stage(config: str, *, strict: bool = False) -> dict:
     return {**result, "config": config}
 
 
-def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, seed_messages, *, reuse_seed=None):
+def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, seed_messages, *,
+                           reuse_seed=None, dataset_path="", sample_id="conv-30", session_key="session_1"):
     """Observation workloads share remembered facts, not a bare-marker routing gate."""
     import uuid
     from performance.suite import SeedPreparationError
     from performance.targets.echomem.acceptance.capacity_seed import CapacityActor, prepare_actors, validate_cached_actors
-    from performance.targets.echomem.acceptance.semantic_corpus import build_corpus
+    from performance.targets.echomem.acceptance.semantic_corpus import (
+        DEFAULT_LOCOMO_DATASET,
+        build_locomo_session_corpus,
+    )
     from performance.targets.echomem.probes._client import EchoMemHTTP
 
     specs = load_tenant_specs(tenant_config, tenant_count=max_tenants)
     if len(specs) != max_tenants or len({s.auth_key for s in specs}) != max_tenants:
         raise RuntimeError("Semantic seed requires all independent tenant credentials")
     run_tag = uuid.uuid4().hex
+    source_path = Path(dataset_path) if dataset_path else DEFAULT_LOCOMO_DATASET
     actors = [CapacityActor(index, 0, EchoMemHTTP(base_url, spec.auth_key,
                     tenant_id=spec.tenant_id, user_id=spec.user_id,
                     account_id=spec.account_id, agent_id=spec.agent_id),
-                build_corpus(f"formal-recall-{run_tag}-{index}")) for index, spec in enumerate(specs)]
+                build_locomo_session_corpus(f"formal-recall-{run_tag}-{index}",
+                    dataset_path=source_path, sample_id=sample_id, session_key=session_key))
+              for index, spec in enumerate(specs)]
     if reuse_seed:
         from dataclasses import replace
         from performance.targets.echomem.acceptance.capacity_experiment import _load_actors
         cached, _ = _load_actors(Path(reuse_seed), base_url)
+        incompatible = [a for a in cached if a.corpus.get("query_contract") != "locomo-single-session-evidence-v1"
+                        or (a.corpus.get("source") or {}).get("sample_id") != sample_id
+                        or (a.corpus.get("source") or {}).get("session_key") != session_key]
+        if incompatible:
+            raise RuntimeError("Semantic cache is not the configured LoCoMo single-session corpus")
         actors = []
         for spec in specs:
             matches = [a for a in cached if all(getattr(a.client, field) == getattr(spec, field)
@@ -315,7 +327,9 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
     return contexts, {"status": "completed", "tenant_count": max_tenants,
                       "identity_mode": "independent", "keys_independent": True,
                       "seed_contract": "fixed-fact-in-items", "seed_evidence": evidence,
-                      "seed_source": "validated-cache" if reuse_seed else "fresh",
+                      "seed_source": "validated-cache" if reuse_seed else "locomo-single-session",
+                      "corpus_source": {"dataset": source_path.name, "sample_id": sample_id,
+                                        "session_key": session_key},
                       "probe_queries": {actor.client.tenant_id: actor.corpus["recall_queries"][0] for actor in actors},
                       "corpus_fingerprints": [actor.corpus["fingerprint"] for actor in actors],
                       "corpus_counts_by_tenant_index": counts,
@@ -448,7 +462,13 @@ def run_suite(
         return select_cases(name, scenarios)
 
     from functools import partial
-    semantic_seed = partial(_prepare_semantic_seed, reuse_seed=profile.get("semantic_seed_cache"))
+    semantic_seed = partial(
+        _prepare_semantic_seed,
+        reuse_seed=profile.get("semantic_seed_cache"),
+        dataset_path=profile.get("semantic_seed_dataset", ""),
+        sample_id=profile.get("semantic_seed_sample", "conv-30"),
+        session_key=profile.get("semantic_seed_session", "session_1"),
+    )
     result = run_suite_impl(
         profile,
         suite_dir=suite_dir,
