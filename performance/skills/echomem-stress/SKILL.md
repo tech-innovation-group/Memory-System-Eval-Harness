@@ -25,6 +25,10 @@ Run the repository's real HTTP six-metric suite as a guided product flow. Read
   test-control token. Refer to environment variable names only.
 - Record the exact EchoMem and harness commits, config fingerprint, model names,
   container identity, and actual resource limits in every run.
+- Treat model availability preflight and workload model usage as separate facts.
+  `mock=false`, HTTP 200, or a configured model name is never call evidence. A
+  report may claim workload model usage only when bounded service-stage logs or
+  Provider metrics contain real samples; otherwise mark it unverified.
 
 ## Interactive flow
 
