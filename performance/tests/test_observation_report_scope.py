@@ -86,3 +86,32 @@ def test_m1_report_keeps_failure_domains_and_provider_evidence(tmp_path):
     assert "retrieval_inflight_full" in page
     assert "atomic_engine" in page
     assert "Provider 证据未采集时" in page
+
+
+def test_m2_report_explains_fault_injection_and_worst_bystander(tmp_path):
+    data = result(["M2"])
+    data["metrics"]["M2"]["cases"] = [{
+        "target_tenant": "target-a", "fault_type": "reject", "repetition": 1,
+        "target_recovery_observed_s": 0.5,
+        "degradation_by_tenant": {"bystander-b": 0.25},
+        "before": {"by_tenant": {
+            "target-a": {"submitted": 1, "quality_ok": 0},
+            "bystander-b": {"submitted": 10, "quality_ok": 8, "p95_s": 1.0},
+        }},
+        "during": {"by_tenant": {
+            "target-a": {"submitted": 1, "quality_ok": 0},
+            "bystander-b": {"submitted": 10, "quality_ok": 7, "p95_s": 1.25},
+        }},
+        "after": {"by_tenant": {
+            "target-a": {"submitted": 1, "quality_ok": 1},
+            "bystander-b": {"submitted": 10, "quality_ok": 9, "p95_s": 1.05},
+        }},
+    }]
+    path = tmp_path / "report.html"
+    write_observation_report(data, path)
+    page = path.read_text()
+    assert "故障注入" in page
+    assert "目标租户 × 故障类型 × 重复次数" in page
+    assert "最差旁观租户" in page
+    assert "bystander-b" in page
+    assert "25" in page

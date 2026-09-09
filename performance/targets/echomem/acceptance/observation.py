@@ -996,12 +996,90 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             visual += details("查看 CPU、内存逐点采样", table(resource_rows, [("topology", "拓扑"), ("hot_users", "热用户"), ("load_mode", "负载"), ("at_epoch_s", "时间"), ("cpu_percent_one_core_100", "CPU% (100%=1核)"), ("rss_bytes", "RSS bytes"), ("phase", "阶段")]))
         elif code == "M2":
             points = []
+            worst_rows = []
+            all_degradations = []
+            worst_by_fault: dict[str, list[float]] = {}
+            recovery_seconds = []
+            phase_totals = {
+                phase: {"phase": phase, "submitted": 0, "strict_success": 0}
+                for phase in ("before", "during", "after")
+            }
             for case in metric.get("cases", []):
                 values = [_number(value) for value in (case.get("degradation_by_tenant") or {}).values()]
                 values = [value * 100 for value in values if value is not None]
+                all_degradations.extend(values)
+                if values:
+                    worst_by_fault.setdefault(str(case.get("fault_type") or "unknown"), []).append(max(values))
+                    worst_tenant, worst_ratio = max(
+                        (case.get("degradation_by_tenant") or {}).items(),
+                        key=lambda item: _number(item[1]) if _number(item[1]) is not None else -math.inf,
+                    )
+                    before_tenant = ((case.get("before") or {}).get("by_tenant") or {}).get(worst_tenant) or {}
+                    during_tenant = ((case.get("during") or {}).get("by_tenant") or {}).get(worst_tenant) or {}
+                    worst_rows.append({
+                        "target_tenant": case.get("target_tenant"),
+                        "fault_type": case.get("fault_type"),
+                        "repetition": case.get("repetition"),
+                        "worst_bystander": worst_tenant,
+                        "before_p95_s": before_tenant.get("p95_s"),
+                        "during_p95_s": during_tenant.get("p95_s"),
+                        "change_pct": _number(worst_ratio) * 100 if _number(worst_ratio) is not None else None,
+                    })
+                recovery = _number(case.get("target_recovery_observed_s"))
+                if recovery is not None:
+                    recovery_seconds.append(recovery)
+                for phase in phase_totals:
+                    by_tenant = (case.get(phase) or {}).get("by_tenant") or {}
+                    for tenant_id, tenant in by_tenant.items():
+                        if tenant_id == case.get("target_tenant") or not isinstance(tenant, dict):
+                            continue
+                        phase_totals[phase]["submitted"] += int(tenant.get("submitted") or 0)
+                        phase_totals[phase]["strict_success"] += int(tenant.get("quality_ok") or 0)
                 points.append((f"{case.get('fault_type')} · {case.get('target_tenant')} · #{case.get('repetition')}",
                                max(values) if values else None))
-            visual = bars("各故障用例最差旁观租户 Search P95 变化 %", points, signed=True)
+            for totals in phase_totals.values():
+                submitted = totals["submitted"]
+                totals["strict_failures"] = submitted - totals["strict_success"]
+                totals["strict_success_rate_pct"] = (
+                    totals["strict_success"] / submitted * 100 if submitted else None
+                )
+            all_degradations.sort()
+            median = (all_degradations[len(all_degradations) // 2]
+                      if all_degradations else None)
+            case_count = len(metric.get("cases", []))
+            interpretation = (
+                "<div class='explain'><h3>这组 M2 数据怎么读</h3><ol>"
+                "<li><b>故障注入：</b>测试平台携带受保护 token 调用 EchoMem 的故障控制接口，只对目标 tenant 开启 reject 或 delay；每个租户使用独立请求池。每轮执行正常基线、故障中和关闭故障后的恢复采样。</li>"
+                f"<li><b>分母：</b>{esc(case_count)} 个用例 = 目标租户 × 故障类型 × 重复次数；"
+                f"每个用例同时观察其他租户，共形成 {esc(len(all_degradations))} 组 before/during P95 配对。</li>"
+                "<li><b>公式：</b>P95 变化 = (故障中 P95 / 故障前 P95 - 1) × 100%。正数表示旁观租户变慢，负数只表示本轮更快，通常属于波动，不能解释成隔离能力超过 100%。</li>"
+                "<li><b>柱子：</b>每根柱只画该用例所有旁观租户中的最差变化；它不是目标故障租户自己的延迟，也不是三个旁观租户的平均值。</li>"
+                "<li><b>延迟与质量：</b>P95 覆盖本轮已返回的 Search 请求；HTTP 与召回质量严格成功另算。延迟、失败和空召回必须一起看。</li></ol>"
+                f"<p><b>本次观测：</b>{esc(len(all_degradations))} 组旁观租户配对的平均变化为 "
+                f"{esc(round(sum(all_degradations) / len(all_degradations), 3) if all_degradations else None)}%，"
+                f"中位数约 {esc(round(median, 3) if median is not None else None)}%，范围 "
+                f"{esc(round(min(all_degradations), 3) if all_degradations else None)}% 至 "
+                f"{esc(round(max(all_degradations), 3) if all_degradations else None)}%。"
+                f"目标租户关闭故障后首次 HTTP 成功平均为 "
+                f"{esc(round(sum(recovery_seconds) / len(recovery_seconds), 3) if recovery_seconds else None)} 秒，范围 "
+                f"{esc(round(min(recovery_seconds), 3) if recovery_seconds else None)} 至 "
+                f"{esc(round(max(recovery_seconds), 3) if recovery_seconds else None)} 秒。</p>"
+                "<p><b>解释边界：</b>劣化百分比较小并不自动代表隔离良好。若严格成功率偏低，说明大量请求已在 HTTP、召回质量或降级路径上失败；必须把下面的成功/失败分母与 P95 一起判断。</p></div>"
+            )
+            visual = interpretation
+            visual += table(list(phase_totals.values()), [
+                ("phase", "阶段"), ("submitted", "旁观租户请求"),
+                ("strict_success", "HTTP+质量严格成功"),
+                ("strict_failures", "严格失败"),
+                ("strict_success_rate_pct", "严格成功率 %"),
+            ])
+            visual += bars("各故障用例最差旁观租户 Search P95 变化 %", points, signed=True)
+            visual += details("查看每根柱子的旁观租户与 P95 原值", table(worst_rows, [
+                ("target_tenant", "故障目标租户"), ("fault_type", "故障"),
+                ("repetition", "轮次"), ("worst_bystander", "最差旁观租户"),
+                ("before_p95_s", "故障前 P95 秒"),
+                ("during_p95_s", "故障中 P95 秒"), ("change_pct", "变化 %"),
+            ], min_width_px=1000))
             visual += details("查看 24 个故障用例状态", table(metric.get("cases", []), [("target_tenant", "目标租户"), ("fault_type", "故障"), ("repetition", "重复"), ("fault_observed", "实际生效"), ("fault_disable_acknowledged", "关闭指令确认"), ("target_http_responding", "关闭后有成功响应"), ("fault_recovered", "关闭后全部请求质量成功")]))
             visual += '<p>关闭指令确认、接口有成功响应、所有请求召回质量成功是三种不同证据；最后一项为否不等于故障开关未关闭。未采集字段显示缺失，不据此推定恢复或失败。</p>'
             visual += details("查看目标租户恢复分母", table(metric.get("cases", []), [("target_tenant", "目标租户"), ("fault_type", "故障"), ("repetition", "重复"), ("target_after_submitted", "关闭后请求"), ("target_after_http_success", "HTTP 成功"), ("target_after_quality_success", "HTTP 与质量均成功"), ("target_recovery_observed_s", "关闭起至首次 HTTP 成功秒")]))
