@@ -22,6 +22,9 @@ from performance.targets.echomem.acceptance.observation import (
 from performance.targets.echomem.acceptance.readiness import check_readiness
 from performance.targets.echomem.acceptance.provenance import platform_snapshot
 from performance.targets.echomem.acceptance.preflight import run_preflight
+from performance.targets.echomem.acceptance.stage_observability import (
+    collect_container_stage_events,
+)
 from performance.targets.echomem.main import _resolve_profile, load_profiles
 from performance.targets.echomem.orchestrator.probes import run_configured_probes
 from performance.targets.echomem.orchestrator.runner import run_suite
@@ -66,6 +69,7 @@ def _public_profile(profile: dict[str, Any]) -> dict[str, Any]:
         "require_4u8g",
         "m1_tenant_levels", "m1_user_levels", "dau_scenarios",
         "required_concurrency", "required_embedding_model",
+        "require_stage_observability",
         "preflight_config", "tenant_config",
     }
     return {key: profile.get(key) for key in allowed if profile.get(key) not in (None, "")}
@@ -179,6 +183,22 @@ def _sample_observability(stop, collect, samples, errors, output: Path) -> None:
         errors.append(type(exc).__name__)
 
 
+def _validate_stage_observability_config(
+    profile: dict[str, Any], selected: list[str]
+) -> None:
+    if not profile.get("require_stage_observability") or not set(selected) & {"M1", "M2", "M3"}:
+        return
+    document = read_json(Path(profile["preflight_config"]))
+    runtime = document.get("runtime") if isinstance(document.get("runtime"), dict) else {}
+    logging = document.get("logging") if isinstance(document.get("logging"), dict) else {}
+    if str(runtime.get("log_level") or "").upper() != "DEBUG":
+        raise ValueError("M1-M3 stage observability requires runtime.log_level=DEBUG")
+    if str(logging.get("format") or "").lower() != "json":
+        raise ValueError("M1-M3 stage observability requires logging.format=json")
+    if not profile.get("resource_container"):
+        raise ValueError("M1-M3 stage observability requires resource_container for bounded Docker log collection")
+
+
 def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> dict[str, Any]:
     needs_m6_behaviors = "M6" in selected
     m6_only = set(selected) == {"M6"}
@@ -193,6 +213,7 @@ def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> 
         raise RuntimeError(json.dumps(readiness, ensure_ascii=False))
     if not profile.get("preflight_config"):
         raise ValueError("preflight_config is required for real LLM and embedding verification")
+    _validate_stage_observability_config(profile, selected)
     model_preflight = run_preflight(
         profile["preflight_config"], required_kinds=("llm", "embedding")
     )
@@ -350,6 +371,15 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
         suite = {"runs": [], "output_root": str(output), "instance_profile": profile["name"],
                  "resource_evidence": profile["resource_evidence"], "readiness": profile["readiness"]}
 
+        def refresh_stage_observability() -> None:
+            evidence = collect_container_stage_events(
+                str(profile.get("resource_container") or ""),
+                since=started_at,
+                output=output / "structured-stage-events.jsonl",
+            )
+            evidence.pop("events", None)
+            suite["stage_observability"] = evidence
+
         def publish_stage(pending, error=None):
             if error is not None and sampler is not None:
                 sampler_stop.set()
@@ -358,6 +388,7 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
                 observation_monitor["window_end_s"] = time.monotonic()
             suite["tenant_observability_samples"] = list(observation_samples)
             suite["tenant_observability_monitor"] = dict(observation_monitor)
+            refresh_stage_observability()
             result = evaluate_observation(suite, profile, m1_reports, quick=args.quick, selected_metrics=selected)
             result.update(platform_provenance=provenance, checkpoint=error is None, pending_metrics=pending)
             if "capacity_start_readiness" in suite:
@@ -494,6 +525,7 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
             suite["tenant_observability_monitor"] = {**observation_monitor, "errors": list(observation_errors)}
 
         snapshot_observability(stop=True)
+        refresh_stage_observability()
         (output / "suite.json").write_text(json.dumps(suite, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         _combine_csv(suite, output, "records.csv")
         _combine_csv(suite, output, "metrics_samples.csv")

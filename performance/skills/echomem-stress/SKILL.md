@@ -108,6 +108,16 @@ The final report must also expose three cross-metric audits:
 - endpoint and service-returned module timing distributions. Never infer internal
   router, recall, scheduler, or engine timings by subtracting unrelated clocks.
 
+For M1-M3, require EchoMem DEBUG JSON logging and a concrete
+`resource_container`. Collect whitelisted `recall_stage_completed`,
+`recall_engine_completed`, `dashscope_rerank_operation`,
+`memory_extraction_completed`, and `atomic_pipeline_completed` events for the
+bounded run window. Correlate response traces using hashed trace references and
+report observations, P50/P95/P99, and queue-wait percentiles per stage. Independently
+summarize the seven supported Prometheus histograms from window deltas and show
+log/metric coverage side by side. A stage is unobservable only when neither source
+contains a real sample; never derive stage time by subtracting end-to-end values.
+
 ## Commands
 
 Run from the harness repository root with a profile and a secret env file that
