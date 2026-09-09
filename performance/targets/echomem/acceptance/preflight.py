@@ -113,6 +113,9 @@ def parse_engine_configs(path: str | Path) -> list[dict[str, Any]]:
 
     def is_active(candidate_id: str) -> bool:
         if candidate_id.lower().startswith("recall.model.intent_llm"):
+            layers = (raw.get("recall") or {}).get("intent_recognition_layers") if isinstance(raw, dict) else None
+            if isinstance(layers, list):
+                return "llm" in layers
             return intent_backend in {"", "llm", "model", "openai_compatible"}
         return True
 
@@ -134,10 +137,12 @@ def parse_engine_configs(path: str | Path) -> list[dict[str, Any]]:
         if provider in {"fake", "mock"}:
             continue
         explicit_kind = str(entry.get("kind") or "").lower()
-        kind = explicit_kind if explicit_kind in {"llm", "embedding"} else ("embedding" if any(
+        kind = explicit_kind if explicit_kind in {"llm", "embedding", "rerank"} else ("embedding" if any(
             token in candidate_id.lower()
             for token in ("embedding", "vector", "query_embedding")
         ) else "llm")
+        if not explicit_kind and "rerank" in candidate_id.lower():
+            kind = "rerank"
         engine_id = str(entry.get("id") or candidate_id)
         api_key_env = str(entry.get("api_key_env") or "")
         api_base = str(entry["api_base"]).rstrip("/")
@@ -196,6 +201,11 @@ def probe_endpoint(engine: dict[str, Any], *, timeout_s: float = 20.0) -> dict[s
     if engine["kind"] == "embedding":
         path = "/embeddings"
         body: dict[str, Any] = {"model": engine["model"], "input": "ping"}
+    elif engine["kind"] == "rerank":
+        path = "/reranks"
+        body = {"model": engine["model"], "query": "meeting location",
+                "documents": ["The meeting is in room Cedar."],
+                "instruct": "Find documents relevant to the query."}
     else:
         path = "/chat/completions"
         body = {**engine.get("extra_params", {}), **{
@@ -265,6 +275,12 @@ def probe_endpoint(engine: dict[str, Any], *, timeout_s: float = 20.0) -> dict[s
 def valid_model_response(kind: str, payload: Any, *, require_content: bool = False) -> bool:
     if not isinstance(payload, dict) or payload.get("error"):
         return False
+    if kind == "rerank":
+        results = payload.get("results")
+        return isinstance(results, list) and bool(results) and all(
+            isinstance(row, dict) and row.get("index") == 0
+            and type(row.get("relevance_score")) in (int, float)
+            and math.isfinite(row["relevance_score"]) for row in results)
     if kind == "embedding":
         data = payload.get("data")
         if not isinstance(data, list) or not data or not isinstance(data[0], dict):

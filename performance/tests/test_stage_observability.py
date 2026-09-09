@@ -88,3 +88,11 @@ def test_read_stage_events_skips_invalid_rows(tmp_path: Path) -> None:
     path = tmp_path / "stages.jsonl"
     path.write_text('{"module":"recall/rule","duration_ms":1}\ninvalid\n')
     assert read_stage_events(path) == [{"module": "recall/rule", "duration_ms": 1}]
+
+
+def test_prometheus_only_stage_is_observable(tmp_path: Path) -> None:
+    from performance.targets.echomem.acceptance.observation import summarize_timing_evidence
+    _write_metrics(tmp_path / "metrics_samples.csv")
+    summary = summarize_timing_evidence({"runs": [{"output_dir": str(tmp_path)}]}, [])
+    assert "recall/query_embedding" not in summary["unobservable_modules"]
+    assert "atomic/extraction" in summary["unobservable_modules"]

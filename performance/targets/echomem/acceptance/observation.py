@@ -263,6 +263,18 @@ def summarize_timing_evidence(suite: dict[str, Any], m1_reports: list[dict[str, 
         "atomic/cursor_advance",
     ]
     observed = {str(row.get("module")) for row in log_rows if row.get("observations")}
+    for row in metric_rows:
+        if not row.get("observations"):
+            continue
+        metric = row.get("metric")
+        if metric == "echomem_memrouter_stage_duration_seconds":
+            stage = (row.get("labels") or {}).get("stage")
+            if stage:
+                observed.add(f"recall/{stage}")
+        elif metric == "echomem_recall_duration_seconds":
+            observed.add("recall/recall_total")
+        elif metric == "echomem_router_embedding_duration_seconds":
+            observed.add("recall/query_embedding")
     missing = [name for name in expected if not any(
         module == name or module.startswith(name + "/") for module in observed
     )]
@@ -277,9 +289,9 @@ def summarize_timing_evidence(suite: dict[str, Any], m1_reports: list[dict[str, 
         "unobservable_modules": missing,
         "missing_stage_reasons": [
             {"module": name, "reason": (
-                "结构化日志采集失败或未配置容器"
+                "结构化日志采集失败或未配置容器，且没有对应阶段的真实耗时指标样本"
                 if stage_evidence.get("status") not in {"COLLECTED", "PARTIAL"}
-                else "本轮负载没有产生该阶段的真实日志样本"
+                else "本轮未采到该阶段的真实日志或对应耗时指标样本；需检查是否触发该阶段及采样覆盖"
             )}
             for name in missing
         ],
