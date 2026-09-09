@@ -135,10 +135,12 @@ class EvidenceContractTests(unittest.TestCase):
                 detail = json.loads(next(c["detail"] for c in checks if c["name"] == "commit-recovery"))
                 self.assertEqual(detail["autonomous_recovery_observed"], final == "completed")
 
-    def test_seed_verifies_marker_once_not_whole_assistant_sentence(self):
+    def test_seed_visibility_uses_natural_question_not_random_marker(self):
         from performance.targets.echomem.orchestrator.runner import _prepare_seed
         marker = "PERFANCHOR-0-0-0-abcdef1234"
-        queries = [marker, f"已记录该事项，编号{marker}"]
+        query = "你还记得我之前记录的第一批事项吗？请告诉我它的编号。"
+        queries = [query]
+        query_cases = {query: {"id": "seed-0", "query": query, "query_type": "recall", "aliases": [marker]}}
         calls = []
 
         def search(session, query, timeout_s):
@@ -148,17 +150,18 @@ class EvidenceContractTests(unittest.TestCase):
                 "degraded_reasons": ["engine_not_enabled:resource_engine"]}})
 
         client = SimpleNamespace(search=search, agent_id="agent", user_id="user", account_id="account")
-        context = SimpleNamespace(tenant_id="tenant", auth_key="unit-test-credential", queries=queries, client=client)
+        context = SimpleNamespace(tenant_id="tenant", auth_key="unit-test-credential", queries=queries,
+                                  query_cases=query_cases, client=client)
         with patch("performance.targets.echomem.orchestrator.runner.load_tenant_specs", return_value=[]), \
              patch("performance.targets.echomem.orchestrator.runner.TenantPreparer") as preparer:
             preparer.return_value.prepare.return_value = [context]
             preparer.return_value.keys_independent.return_value = True
             preparer.return_value.identity_mode.return_value = "independent"
             _, summary = _prepare_seed("http://not-contacted.invalid", "tenants.json", 1, 1, 1)
-        self.assertEqual(calls, [marker])
+        self.assertEqual(calls, [query])
+        self.assertNotIn(marker, calls[0])
         self.assertTrue(summary["visibility"][0]["visible"])
         self.assertFalse(summary["visibility"][0]["quality_ok"])
-        self.assertEqual(anchor_marker(queries[1]), marker)
 
     def test_http_200_wrong_memory_does_not_pass(self):
         self.assertFalse(recall_quality({"result": {"items": [{"text": "other tenant"}]}}, "PERFANCHOR-A")["quality_ok"])

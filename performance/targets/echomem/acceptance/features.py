@@ -631,11 +631,11 @@ def evaluate_features(summary: dict[str, Any]) -> dict[str, Any]:
         if anchor_fail > 0:
             features["search_quality"] = _verdict(
                 "FAIL",
-                f"{anchor_fail}/{total} 次锚词查询未召回（hit_count<1），疑似短路/假通过",
+                f"{anchor_fail}/{total} 次预期事实未召回（hit_count<1），疑似路由拒绝、短路或假通过",
             )
         else:
             features["search_quality"] = _verdict(
-                "PASS", f"{total} 次 read 质量断言通过（锚词全部召回）"
+                "PASS", f"{total} 次 read 质量断言通过（预期事实全部召回）"
             )
     features["search_quality"]["measurements"] = quality
 

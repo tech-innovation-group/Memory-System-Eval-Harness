@@ -38,3 +38,13 @@ def test_no_recall_requires_valid_empty_items():
     assert assess_retrieval({"items": []}, sample)["quality_ok"]
     assert not assess_retrieval({}, sample)["quality_ok"]
     assert not assess_retrieval({"items": [{"content": "unrelated"}]}, sample)["quality_ok"]
+
+
+def test_intent_rejection_is_not_reported_as_retrieval_miss():
+    sample = build_corpus("unit-a")["recall_queries"][0]
+    result = assess_retrieval({"items": [], "explain": {
+        "outcome": "no_recall", "final_verdicts": {"intent": "reject"}}}, sample)
+    assert result["intent_rejected"] is True
+    assert result["search_executed"] is False
+    assert result["matched_expected_fact"] is False
+    assert result["quality_ok"] is False

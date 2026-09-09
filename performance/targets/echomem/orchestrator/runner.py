@@ -44,7 +44,7 @@ from performance.targets.echomem.orchestrator.suites import (
     build_case_profile,
     select_cases,
 )
-from performance.targets.echomem.protocol import anchor_marker, is_anchor_query, recall_quality
+from performance.targets.echomem.protocol import is_anchor_query
 
 SCENES_DIR = Path(__file__).resolve().parent.parent / "scenes"
 
@@ -340,27 +340,30 @@ def _prepare_seed(
     )
     if not preparer.keys_independent() or len(contexts) != max_tenants:
         raise RuntimeError("All requested tenants must have distinct, nonempty credentials")
+    from performance.targets.echomem.acceptance.semantic_corpus import assess_retrieval
+
     visibility = []
     for ctx in contexts:
-        markers = list(dict.fromkeys(anchor_marker(q) for q in ctx.queries if anchor_marker(q)))
-        if not markers:
-            raise RuntimeError(f"Seed did not generate recall markers: tenant={ctx.tenant_id}")
-        for query in markers:
+        query_cases = dict(getattr(ctx, "query_cases", {}) or {})
+        if not query_cases:
+            raise RuntimeError(f"Seed did not generate semantic recall cases: tenant={ctx.tenant_id}")
+        for query, sample in query_cases.items():
             deadline = time.monotonic() + 60
             while True:
                 response = ctx.client.search("", query, timeout_s=10)
-                quality = recall_quality(response.payload, query)
+                quality = assess_retrieval(response.payload, sample)
                 # Visibility is a setup prerequisite; degradation remains a
                 # measured quality failure rather than hiding all load evidence.
-                if response.status_code == 200 and quality["marker_found"]:
-                    visibility.append({"tenant_id": ctx.tenant_id, "marker": query, "visible": True,
+                if response.status_code == 200 and quality["matched_expected_fact"]:
+                    visibility.append({"tenant_id": ctx.tenant_id, "query_id": sample["id"], "visible": True,
                                        "quality_ok": quality["quality_ok"], "degraded": quality["degraded"],
+                                       "intent_rejected": quality["intent_rejected"],
                                        "degraded_reasons": quality["degraded_reasons"]})
                     break
                 if time.monotonic() >= deadline:
-                    raise RuntimeError(f"Seed marker not found: tenant={ctx.tenant_id} marker={query}; "
+                    raise RuntimeError(f"Seed fact not found: tenant={ctx.tenant_id} query_id={sample['id']}; "
                                        f"http_status={response.status_code}, hits={quality['hit_count']}, "
-                                       f"degraded={quality['degraded']}")
+                                       f"intent_rejected={quality['intent_rejected']}, degraded={quality['degraded']}")
                 time.sleep(1)
     return [
         SeedContext(
@@ -370,6 +373,7 @@ def _prepare_seed(
             agent_id=ctx.client.agent_id,
             user_id=ctx.client.user_id,
             account_id=ctx.client.account_id,
+            query_cases=dict(ctx.query_cases),
         )
         for ctx in contexts
     ], {

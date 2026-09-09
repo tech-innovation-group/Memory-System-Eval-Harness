@@ -139,8 +139,10 @@ def seed_actor(actor: CapacityActor, *, timeout_s: float = 180, checkpoint=None,
         # A synthetic identifier can route differently from personal-memory
         # questions. Keep it diagnostic; only the fixed semantic facts gate M1.
         phase = "marker-diagnostic"
-        marker_sample = {"id": "seed-marker", "query": marker, "query_type": "recall", "aliases": [marker]}
-        result = client.search("", marker, timeout_s=10)
+        marker_question = "你还记得这份个人工作记录的编号是什么吗？"
+        marker_sample = {"id": "seed-marker", "query": marker_question,
+                         "query_type": "recall", "aliases": [marker]}
+        result = client.search("", marker_question, timeout_s=10)
         check = assess_retrieval(result.payload, marker_sample)
         row["marker_visible"] = result.status_code == 200 and check["quality_ok"]
         row["marker_check"] = check

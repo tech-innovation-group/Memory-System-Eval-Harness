@@ -113,6 +113,8 @@ def search(ctx: Ctx, query: str, *, top_k: int = 5) -> Response:
         ctx.note(quality_ok=check["quality_ok"], query_type=query_type,
                  hit_count=check["hit_count"], real_recall=check["hit_count"] > 0,
                  degraded=check["degraded"], expected_fact_found=check["matched_expected_fact"],
+                 intent_rejected=check["intent_rejected"],
+                 search_executed=check["search_executed"],
                  quality_assertion="fixed-fact-in-items",
                  degraded_reasons=json.dumps(check["degraded_reasons"], ensure_ascii=False))
         return resp
@@ -238,8 +240,10 @@ def task_read(ctx: Ctx) -> None:
     pool = pool or ctx.params.get("queries") or DEFAULT_QUERIES
     mode = ctx.params.get("query_mode", "recall")
     if mode in {"recall", "mixed"}:
+        cases = ctx.params.get("tenant_query_cases", {}).get(str(ctx.tenant_idx), {})
+        semantic_recall = [q for q in pool if (cases.get(q) or {}).get("query_type") == "recall"]
         anchors = [q for q in pool if is_anchor_query(q)]
-        pool = anchors or pool
+        pool = semantic_recall or anchors or pool
     if mode == "mixed":
         pool = list(pool) * len(NO_RECALL_QUERIES) + NO_RECALL_QUERIES * len(pool)
     query = ctx.choose(pool)

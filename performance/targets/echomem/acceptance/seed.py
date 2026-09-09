@@ -10,8 +10,9 @@ Two identity modes:
 
 Seed data is injected with bounded tenant-level concurrency and is NOT part of
 the measured load; it only guarantees the retrieval index has real content.
-Each seeded message carries a unique anchor token that later serves as a
-searchable query and as a write-read consistency probe.
+Each seeded message carries a unique anchor token used only as hidden expected
+evidence.  Search itself uses a natural-language memory question so an intent
+router is measured with production-like input instead of a synthetic token.
 """
 
 from __future__ import annotations
@@ -172,6 +173,7 @@ class TenantContext:
     auth_key: str
     client: EchoMemHTTP
     queries: list[str] = field(default_factory=list)
+    query_cases: dict[str, dict[str, Any]] = field(default_factory=dict)
     seed_sessions: int = 0
     seed_messages: int = 0
     seed_elapsed_s: float = 0.0
@@ -183,6 +185,7 @@ class TenantContext:
             "user_id": self.user_id,
             "auth_key_configured": bool(self.auth_key),
             "queries": len(self.queries),
+            "query_cases": len(self.query_cases),
             "seed_sessions": self.seed_sessions,
             "seed_messages": self.seed_messages,
             "seed_elapsed_s": round(self.seed_elapsed_s, 3),
@@ -295,7 +298,8 @@ def seed_tenant(
     data goes through the same extraction path as production writes.
     """
     queries: list[str] = []
-    anchor_queries: list[str] = []
+    recall_queries: list[str] = []
+    query_cases: dict[str, dict[str, Any]] = {}
     seed_messages = 0
     started = time.perf_counter()
     run_tag = uuid.uuid4().hex[:12]
@@ -307,9 +311,20 @@ def seed_tenant(
             marker = f"{old_anchor}-{run_tag}"
             user_msg = user_msg.replace(old_anchor, marker)
             assistant_msg = assistant_msg.replace(old_anchor, marker)
+            subject = f"第{session_idx + 1}批第{msg_idx + 1}条事项"
+            user_msg = f"{subject}：{user_msg}"
+            assistant_msg = f"关于{subject}，{assistant_msg}"
             messages.append(("user", user_msg))
             messages.append(("assistant", assistant_msg))
-            anchor_queries.append(marker)
+            question = f"你还记得我之前记录的{subject}吗？请告诉我它的编号。"
+            recall_queries.append(question)
+            query_cases[question] = {
+                "id": f"seed-{idx}-{session_idx}-{msg_idx}",
+                "query": question,
+                "query_type": "recall",
+                "aliases": [marker],
+                "expected_marker": marker,
+            }
         texts = _seed_session_flow(
             client,
             idx,
@@ -319,9 +334,13 @@ def seed_tenant(
             poll_interval_s,
         )
         seed_messages += len(texts)
-        queries.extend(_query_fragments(texts))
-    # Anchor queries first so targeted lookups are always available.
-    queries = anchor_queries + queries
+        queries.extend(
+            fragment for fragment in _query_fragments(texts)
+            if ANCHOR_PREFIX not in fragment and WRITE_ANCHOR_PREFIX not in fragment
+        )
+    # Natural-language recall questions lead the pool.  Message fragments stay
+    # available for non-contract diagnostics but never replace the scored set.
+    queries = recall_queries + queries
     elapsed = time.perf_counter() - started
     logger.info(
         "seeded tenant idx=%d sessions=%d messages=%d elapsed=%.1fs queries=%d",
@@ -334,6 +353,7 @@ def seed_tenant(
         auth_key=client.auth_key,
         client=client,
         queries=queries,
+        query_cases=query_cases,
         seed_sessions=sessions,
         seed_messages=seed_messages,
         seed_elapsed_s=elapsed,

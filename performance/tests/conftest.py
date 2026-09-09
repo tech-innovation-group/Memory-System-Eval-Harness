@@ -49,6 +49,7 @@ class MockState:
         self.poll_counts: dict[tuple[str, str], int] = {}
         self.search_queries: list[str] = []
         self.search_agent_ids: list[str] = []
+        self.semantic_markers: dict[tuple[str, str], str] = {}
         self.connections = 0
 
 
@@ -118,6 +119,11 @@ def _make_handler(state: MockState):
             if re.fullmatch(r"/api/sessions/([^/]+)/messages", path):
                 if state.fail_add:
                     return self._send(500, {"error": "add boom"})
+                content = str(body.get("content") or "")
+                subject = re.search(r"第\d+批第\d+条事项", content)
+                marker = re.search(r"PERFANCHOR-[A-Za-z0-9-]+", content)
+                if subject and marker:
+                    state.semantic_markers[(self.headers.get("X-Auth-Key", ""), subject.group(0))] = marker.group(0)
                 return self._send(200, {"message_id": f"m{next(state.messages)}"})
             if re.fullmatch(r"/api/sessions/([^/]+)/commit", path):
                 if state.fail_commit:
@@ -130,7 +136,10 @@ def _make_handler(state: MockState):
                 state.search_agent_ids.append(str(body.get("agent_id", "")))
                 result: dict = {}
                 if not state.search_empty:
-                    result["items"] = [{"text": f"recalled {query}"}]
+                    auth_key = self.headers.get("X-Auth-Key", "")
+                    recalled = next((marker for (key, subject), marker in state.semantic_markers.items()
+                                     if key == auth_key and subject in query), query)
+                    result["items"] = [{"text": f"recalled {recalled}"}]
                     result["explain"] = {"tokens": 1}
                 if state.search_degraded:
                     result["status"] = "degraded"

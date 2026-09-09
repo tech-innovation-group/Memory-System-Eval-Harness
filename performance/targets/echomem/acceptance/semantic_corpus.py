@@ -100,11 +100,21 @@ def assess_retrieval(payload, sample: dict) -> dict:
     explain = body.get("explain") or {}
     if not isinstance(explain, dict):
         explain = {}
+    routing_evidence = _normalized(json.dumps({
+        "outcome": explain.get("outcome"),
+        "final_verdicts": explain.get("final_verdicts"),
+        "degraded_reasons": body.get("degraded_reasons"),
+    }, ensure_ascii=False, sort_keys=True))
+    intent_rejected = sample["query_type"] == "recall" and any(token in routing_evidence for token in (
+        "intentreject", "intent_reject", "norecall", "no_recall", "skiprecall", "skip_recall",
+    ))
     return {"quality_ok": valid and not degraded and expected, "degraded": degraded,
             "result_structure_valid": valid, "engine_origin_observed": origin_observed,
             "atomic_fact_hit": atomic_matched if origin_observed else None,
             "atomic_item_count": len(atomic_items) if origin_observed else None,
             "matched_expected_fact": matched, "hit_count": len(items),
+            "intent_rejected": intent_rejected,
+            "search_executed": not intent_rejected,
             "query_type": sample["query_type"], "query_id": sample["id"],
             "fact_id": sample.get("fact_id"), "assertion": "fixed-fact-in-items",
             "degraded_reasons": body.get("degraded_reasons") or [],

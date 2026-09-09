@@ -292,22 +292,19 @@ def test_seed_tenant_against_mock(server):
     assert context.client is client
     assert context.seed_sessions == 2
     assert context.seed_messages == 8
-    expected_prefixes = [
-        "PERFANCHOR-0-0-0",
-        "PERFANCHOR-0-0-1",
-        "PERFANCHOR-0-1-0",
-        "PERFANCHOR-0-1-1",
-    ]
-    assert all(query.startswith(prefix + "-") for query, prefix in zip(context.queries[:4], expected_prefixes))
-    assert len({query.rsplit("-", 1)[1] for query in context.queries[:4]}) == 1
-    assert len(context.queries) == 12  # 4 anchor queries + 8 fragments
+    assert all("PERFANCHOR" not in query for query in context.queries)
+    assert context.queries[:4] == list(context.query_cases)
+    assert len(context.query_cases) == 4
+    assert all(case["aliases"][0].startswith("PERFANCHOR-0-") for case in context.query_cases.values())
+    assert len(context.queries) == 8  # 4 natural recall questions + 4 marker-free user fragments
 
     info = context.to_dict()
     assert info["idx"] == 0
     assert info["tenant_id"] == "t1"
     assert info["user_id"] == "u1"
     assert info["auth_key_configured"] is True
-    assert info["queries"] == 12
+    assert info["queries"] == 8
+    assert info["query_cases"] == 4
     assert info["seed_sessions"] == 2
     assert info["seed_messages"] == 8
     assert info["seed_elapsed_s"] >= 0.0

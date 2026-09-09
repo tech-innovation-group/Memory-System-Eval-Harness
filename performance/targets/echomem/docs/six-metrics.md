@@ -62,10 +62,12 @@ python -m performance.targets.echomem.provision \
 ## 数据准备与 Search 用例
 
 每个租户使用独立凭据，写入一段带唯一编号的事实，经过
-open -> add -> commit -> completed -> Search marker 命中后才开始计时。
+open -> add -> commit -> completed -> 自然语言 Search 命中预期事实后才开始计时。
 例如："周四下午三点评审接口设计，编号 PERFANCHOR-0-0-0-本次随机标记"。
 每次运行使用新的随机编号，防止旧记忆误命中。
-只核验 Search 返回 `items` 内的标记，debug 中回显 query 不算命中。
+实际问题采用“你还记得第 1 批接口评审事项吗？请告诉我它的编号”一类自然语言，
+不会把 `PERFANCHOR-*` 随机标识直接作为 query。随机标识只用于核验 Search 返回
+`items` 是否来自本轮预埋记忆，debug 中的回显不算命中。
 每个租户只使用自己的 query 池与 agent/user 身份。
 准备阶段的 marker 可见性与服务健康分开记录：若已经命中但服务返回 degraded，
 允许继续采集故障数据，但该请求的质量仍判失败，降级原因写入逐请求 CSV。
@@ -73,10 +75,11 @@ open -> add -> commit -> completed -> Search marker 命中后才开始计时。
 
 | 样本组 | 输入 | 统计 |
 |---|---|---|
-| recall | 已注入事实的唯一标记检索 | HTTP 错误、降级数、平均/P50/P95/P99 延迟、标记命中率 |
+| recall | 对已注入事实进行自然语言提问；随机标识只作隐藏答案证据 | 意图拒绝、是否执行检索、HTTP 错误、降级数、平均/P50/P95/P99 延迟、预期事实命中率 |
 | mixed | recall + 你好/谢谢/基础运算/翻译 | 按 recall/no_recall 分组延迟、召回命中率、无召回样本误召回率 |
 
-标记命中率是检索正确性，不等于 LoCoMo QA/Judge 准确率。
+预期事实命中率是检索正确性，不等于 LoCoMo QA/Judge 准确率。意图层拒绝必须单列，
+不能把“检索根本没有执行”写成“检索执行后未命中”。
 未命中、超时和模型降级全部保留在分母，错误响应不能从延迟列表中消失。
 通用问题是否应召回依赖业务定义；当前 no_recall 列表是明确的测试假设。
 Search 延迟必须再按响应 Explain 的 `executed_layers` 拆成“未调用意图 LLM”、
