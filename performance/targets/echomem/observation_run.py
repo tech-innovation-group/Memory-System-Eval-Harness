@@ -41,6 +41,9 @@ class PublishedObservationError(RuntimeError):
         self.result = result
 
 
+DEFAULT_M1_LEVELS = [1, 2, 4, 8, 16, 32]
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -131,8 +134,8 @@ def _collect_observation(profile: dict[str, Any], token: str) -> dict[str, Any]:
 def _run_m1_profiles(profile: dict[str, Any], args: argparse.Namespace, output: Path) -> list[dict]:
     reports = []
     levels_by_topology = {
-        "cross-tenant": _m1_levels(profile, "m1_tenant_levels", [1, 2] if args.quick else [1, 2, 4, 8, 16, 32, 64, 128]),
-        "within-tenant": _m1_levels(profile, "m1_user_levels", [1, 2] if args.quick else [1, 2, 4, 8, 16, 32, 64, 128]),
+        "cross-tenant": _m1_levels(profile, "m1_tenant_levels", [1, 2] if args.quick else DEFAULT_M1_LEVELS),
+        "within-tenant": _m1_levels(profile, "m1_user_levels", [1, 2] if args.quick else DEFAULT_M1_LEVELS),
     }
     for topology, levels in levels_by_topology.items():
         target = output / "M1" / topology
@@ -208,8 +211,8 @@ def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> 
     required_concurrency = int(profile.get("required_concurrency") or 0)
     if "M1" in selected and not quick and required_concurrency > 0:
         configured_levels = [
-            *_m1_levels(profile, "m1_tenant_levels", [1, 2, 4, 8, 16, 32, 64, 128]),
-            *_m1_levels(profile, "m1_user_levels", [1, 2, 4, 8, 16, 32, 64, 128]),
+            *_m1_levels(profile, "m1_tenant_levels", DEFAULT_M1_LEVELS),
+            *_m1_levels(profile, "m1_user_levels", DEFAULT_M1_LEVELS),
         ]
         if max(configured_levels, default=0) < required_concurrency:
             raise ValueError(

@@ -57,8 +57,8 @@ Output:        <absolute path>
 Also display the distinction between configured actors and measured overlap:
 
 ```text
-Hot-user levels:       1,2,4,8,16,32,64,128
-Required concurrency:  128 simultaneous in-flight requests
+Hot-user levels:       1,2,4,8,16,32
+Required concurrency:  32 simultaneous in-flight requests
 EchoMem limits:         observed and reported; not used to cap client load
 Heterogeneous tenants: Search weights 8:4:2:1 / Commit weights 1:2:4:8
 ```
@@ -124,9 +124,9 @@ An API/provider error is a failure type, not proof of EchoMem capacity. Convert
 the measured peak throughput into read-heavy, balanced, and write-heavy DAU
 estimates; label these as model-based conversions rather than measured users.
 
-For a 128 target, distinguish these measurements:
+For the default 32-tenant target, distinguish these measurements:
 
-- configured active tenants or hot users at the 128 level;
+- configured active tenants or hot users at the 32 level;
 - actual peak simultaneous in-flight HTTP requests;
 - the last level whose backlog drains after load stops;
 - the first level with persistent blocking, timeout, rejection, crash, OOM, or
@@ -135,6 +135,8 @@ For a 128 target, distinguish these measurements:
 Do not read EchoMem `max_concurrency`, queue capacity, or worker count and reduce
 the generator target. Capture those settings in the report as explanatory
 evidence. A service-side rejection or queue limit is a measured boundary result.
+Users may append 64 and 128 levels after the first pass without changing the test
+logic.
 
 ### M2: Equal-tier fairness
 

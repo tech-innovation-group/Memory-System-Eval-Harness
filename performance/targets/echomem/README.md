@@ -22,7 +22,8 @@ EchoMem 仓库：<EchoMem 绝对路径>
 也必须按照其中的 Discover、Configure、Preview、Validate、Execute、Explain 流程执行。
 先核对两个仓库的 branch、commit 和 dirty state，不要静默 fetch、switch、reset。
 使用真实 LLM 和 qwen3.7-text-embedding-flash Embedding，运行完整 M1-M6。
-容量档位为 1、2、4、8、16、32、64、128，创建 128 个独立租户凭据。
+默认容量档位为 1、2、4、8、16、32，创建 32 个独立租户凭据。需要继续寻找更高
+边界时，由使用者在 profile 中追加 64、128 等档位并补足独立租户凭据。
 先跑默认配置基线，再跑并发调优配置；两个结果目录和配置指纹必须分开。
 测试平台不得根据 EchoMem 的 worker、queue、provider budget 或 max concurrency 自动降载。
 保留超时、拒绝、Provider 异常、pending、空召回和质量失败的原始分母。
@@ -208,7 +209,7 @@ docker inspect --format '{{.Name}}' "$(docker compose ps -q core)"
 
 当前 4U8G `small` 默认通常包含 `model.max_concurrent=4`、Retrieval admission=8、
 `llm_max_concurrent=4`、`embed_max_concurrent=4`、Recall LLM/Embedding=1/2，以及较小的
-Recall 队列。这些值会在 128 客户端并发前先形成排队，不能把该现象描述成硬件极限。
+Recall 队列。这些值可能在默认 32 客户端并发前先形成排队，不能把该现象描述成硬件极限。
 
 若团队已经测过 `qwen3.7-text-embedding-flash` 的 8/16/32/64 Provider 并发，可在运行
 备注中引用该证据并跳过重复阶梯；仍需做一次真实鉴权、模型名、返回维度和单条向量检查。
@@ -258,13 +259,13 @@ Recall 队列。这些值会在 128 客户端并发前先形成排队，不能�
 `http.max_workers=128` 与 `retrieval.admission_permits=32` 满足 EchoMem 的 4:1 约束；
 Commit executor+gate 为 `5+3=8`，不超过 4 核的 2 倍约束。
 
-不要为了展示“128 热租户”把租户常驻缓存硬改成 128。4U8G 的租户缓存有真实内存预算，
-启动校验拒绝超出预算的配置也属于有效容量证据。128 个独立凭据表示测试平台会产生
-128 租户流量，不代表 128 个租户必须同时常驻；报告要分别展示活动租户、峰值在途请求、
+不要为了展示“32 热租户”把租户常驻缓存硬改成 32。4U8G 的租户缓存有真实内存预算，
+启动校验拒绝超出预算的配置也属于有效容量证据。32 个独立凭据表示测试平台会产生
+最多 32 租户流量，不代表 32 个租户必须同时常驻；报告要分别展示活动租户、峰值在途请求、
 常驻缓存上限、淘汰以及首个持续积压档。
 
 每次改配置后重启专用 Core，并在日志中保存 `instance_profile_resolved` 和
-`provider_budget_configured`，确认实际生效值。测试平台仍然发送配置的 128 客户端并发，
+`provider_budget_configured`，确认实际生效值。默认测试平台仍然发送配置的 32 客户端并发，
 不会读取这些服务端值后自动减压。
 
 ## 3. 安装测试平台
@@ -285,7 +286,7 @@ M2 必须使用不同租户凭证；重复使用同一个 key 只能测到并发
 ```bash
 .venv/bin/python -m performance.targets.echomem.provision \
   --base-url http://127.0.0.1:8010 \
-  --count 128 \
+  --count 32 \
   --out .local-stress/tenants.json \
   --env-file .local-stress/test.env
 chmod 600 .local-stress/tenants.json .local-stress/test.env
@@ -318,9 +319,9 @@ ECHOMEM_EMBEDDING_API_KEY=<真实 Embedding key>
       "require_4u8g": false,
       "tenant_config": "/absolute/path/to/Memory-System-Eval-Harness/.local-stress/tenants.json",
       "preflight_config": "/absolute/path/to/EchoMem/deploy/single-node/config.json",
-      "m1_tenant_levels": [1, 2, 4, 8, 16, 32, 64, 128],
-      "m1_user_levels": [1, 2, 4, 8, 16, 32, 64, 128],
-      "required_concurrency": 128,
+      "m1_tenant_levels": [1, 2, 4, 8, 16, 32],
+      "m1_user_levels": [1, 2, 4, 8, 16, 32],
+      "required_concurrency": 32,
       "required_embedding_model": "qwen3.7-text-embedding-flash",
       "m1_duration_s": 300,
       "m1_search_rps_per_user": 1,
@@ -355,9 +356,24 @@ ECHOMEM_EMBEDDING_API_KEY=<真实 Embedding key>
 
 `required_embedding_model` 是硬性预检条件。本例只接受真实成功调用
 `qwen3.7-text-embedding-flash`；如果服务实际使用其他 Embedding，正式发压前会直接停止。
-`required_concurrency: 128` 表示需要观察到至少 128 个同时在途请求，不等同于仅配置了
-128 个用户。测试平台不会读取 EchoMem 的 `max_concurrency`、队列容量或 worker 数后主动
+`required_concurrency: 32` 表示首轮需要观察到至少 32 个同时在途请求，不等同于仅配置了
+32 个用户。需要扩展时，可将两组 M1 档位和该值一起提高到 64、128。测试平台不会读取
+EchoMem 的 `max_concurrency`、队列容量或 worker 数后主动
 降低负载；这些服务端限制会原样写入报告，用来解释排队、拒绝或容量边界。
+
+首轮得到 32 租户数据后，如需继续寻找 64/128 的边界，使用者再显式扩展：
+
+```bash
+.venv/bin/python -m performance.targets.echomem.provision \
+  --base-url http://127.0.0.1:8010 \
+  --count 128 \
+  --out .local-stress/tenants.json \
+  --env-file .local-stress/test.env
+```
+
+并把 `m1_tenant_levels`、`m1_user_levels` 追加到目标档位，同时将
+`required_concurrency` 改为 64 或 128。只改档位而没有补足独立租户凭据时，正式运行应
+直接失败；这能避免把重复 key 误报成多租户容量。
 
 M3 除等负载场景外还会运行异构租户场景：四个独立租户的 Search 权重为 `8:4:2:1`，
 Commit 权重为 `1:2:4:8`。报告逐租户展示计划速率、实际请求数、Search P95/错误/召回质量

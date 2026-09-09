@@ -78,20 +78,22 @@ number as the default deployment baseline. If the team already has recorded
 model, reuse that evidence and run only the single-call identity/dimension
 preflight; do not spend quota repeating the provider sweep.
 
-For a 128-concurrency objective, pin the profile with:
+The default first-pass capacity ceiling is 32 tenants and 32 observed in-flight
+requests. Pin the profile with:
 
 ```json
 {
-  "m1_tenant_levels": [1, 2, 4, 8, 16, 32, 64, 128],
-  "m1_user_levels": [1, 2, 4, 8, 16, 32, 64, 128],
-  "required_concurrency": 128,
+  "m1_tenant_levels": [1, 2, 4, 8, 16, 32],
+  "m1_user_levels": [1, 2, 4, 8, 16, 32],
+  "required_concurrency": 32,
   "required_embedding_model": "qwen3.7-text-embedding-flash"
 }
 ```
 
-Explain that 128 configured hot users and 128 observed simultaneous in-flight
-requests are different facts. Report both. Record EchoMem concurrency and queue
-settings for diagnosis, but never use them to lower the offered client load.
+Explain that 32 configured hot users and 32 observed simultaneous in-flight
+requests are different facts. Report both. Users can append 64 and 128 levels
+later. Record EchoMem concurrency and queue settings for diagnosis, but never
+use them to lower the offered client load.
 
 M3 must contain both equal-load fairness/priority evidence and a heterogeneous
 tenant case. The default heterogeneous case applies Search weights `[8,4,2,1]`
