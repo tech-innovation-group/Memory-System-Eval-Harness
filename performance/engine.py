@@ -16,7 +16,7 @@ import random
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable
 
@@ -277,8 +277,18 @@ class Engine:
         for task_name, arrival in self.profile.load.arrival.items():
             if arrival.model != "none":
                 if arrival.scope == "per_tenant":
+                    weights = arrival.tenant_weights
+                    if weights is not None and len(weights) != len(self._tenants()):
+                        raise SceneError(
+                            f"per_tenant arrival for {task_name} has {len(weights)} weights "
+                            f"for {len(self._tenants())} tenants"
+                        )
                     for tenant_idx in range(len(self._tenants())):
-                        gates[(task_name, tenant_idx)] = RateGate(arrival, task_name)
+                        effective = (
+                            replace(arrival, rps=arrival.rps * weights[tenant_idx])
+                            if weights is not None else arrival
+                        )
+                        gates[(task_name, tenant_idx)] = RateGate(effective, task_name)
                 else:
                     gates[(task_name, None)] = RateGate(arrival, task_name)
         return gates

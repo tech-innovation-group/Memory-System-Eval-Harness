@@ -131,48 +131,79 @@ def summarize_api_coverage(suite: dict[str, Any]) -> dict[str, Any]:
     """Build a call ledger without inventing unobserved requests."""
     rows = [row for run in suite.get("runs", []) for row in _records(run)]
     operations = {
-        "search": [row for row in rows if row.get("op") == "read"],
-        "session_open": [row for row in rows if row.get("op") == "open"],
-        "message_add": [row for row in rows if row.get("op") == "add"],
-        "commit_submit": [row for row in rows if row.get("op") == "commit_submit"],
-        "commit_status": [row for row in rows if row.get("op") == "commit_done"],
+        "search": ("POST", "/api/retrieval/search", [row for row in rows if row.get("op") == "read"]),
+        "session_open": ("POST", "/api/sessions/open", [row for row in rows if row.get("op") == "open"]),
+        "message_add": ("POST", "/api/sessions/{session}/messages", [row for row in rows if row.get("op") == "add"]),
+        "commit_submit": ("POST", "/api/sessions/{session}/commit", [row for row in rows if row.get("op") == "commit_submit"]),
+        "commit_status": ("GET", "/api/sessions/{session}/commits/{archive}", [row for row in rows if row.get("op") == "commit_done"]),
     }
     ledger = []
-    for name, selected in operations.items():
+    for name, (method, path, selected) in operations.items():
         calls = (sum(int(_number(row.get("poll_count")) or 0) for row in selected)
                  if name == "commit_status" else len(selected))
         ledger.append({
-            "operation": name, "calls": calls, "records": len(selected),
+            "operation": name, "method": method, "path": path,
+            "calls": calls, "records": len(selected), "calls_exact": True,
             "ok": sum(row.get("status") == "ok" for row in selected),
             "errors": sum(row.get("status") != "ok" for row in selected),
             "status": "COVERED" if calls else "NOT_COVERED", "evidence": "records.csv",
         })
     contract = suite.get("blackbox_contract_probe") or {}
     contract_checks = contract.get("checks", [])
-    for operation in ("history", "archives", "commit_memories", "commit_cursor", "metrics"):
+    contract_paths = {
+        "history": ("GET", "/api/sessions/{session}/history"),
+        "archives": ("GET", "/api/sessions/{session}/archives"),
+        "commit_memories": ("GET", "/api/sessions/{session}/commits/{archive}/memories"),
+        "commit_cursor": ("GET", "/fs/read?uri=echo://.../commit_cursor.json"),
+    }
+    for operation, (method, path) in contract_paths.items():
         matches = [row for row in contract_checks if row.get("name") == operation]
         ledger.append({
-            "operation": operation, "calls": len(matches), "records": len(matches),
+            "operation": operation, "method": method, "path": path,
+            "calls": len(matches), "records": len(matches), "calls_exact": True,
             "ok": sum(row.get("status") == "PASS" for row in matches),
             "errors": sum(row.get("status") == "FAIL" for row in matches),
             "status": "COVERED" if matches else "NOT_COVERED",
             "evidence": "blackbox-contract-probe.json",
         })
+    readiness = suite.get("readiness") or (suite.get("resource_preflight") or {}).get("readiness") or {}
+    readiness_checks = readiness.get("checks", [])
+    ready_calls = sum(row.get("name") == "ready" for row in readiness_checks)
+    ledger.append({"operation": "system_ready", "method": "GET", "path": "/api/v1/system/ready",
+                   "calls": ready_calls, "records": ready_calls, "calls_exact": False,
+                   "ok": ready_calls, "errors": 0,
+                   "status": "COVERED" if ready_calls else "NOT_COVERED",
+                   "evidence": "suite.json readiness (minimum observed calls)"})
+    metric_calls = 0
+    for run in suite.get("runs", []):
+        path = Path(str(run.get("output_dir") or "")) / "metrics_samples.csv"
+        if path.is_file():
+            with path.open(encoding="utf-8", newline="") as handle:
+                metric_calls += sum(1 for _ in csv.DictReader(handle))
+    ledger.append({"operation": "metrics", "method": "GET", "path": "/metrics",
+                   "calls": metric_calls, "records": metric_calls, "calls_exact": True,
+                   "ok": metric_calls, "errors": 0,
+                   "status": "COVERED" if metric_calls else "NOT_COVERED",
+                   "evidence": "metrics_samples.csv"})
     fault_cases = (suite.get("fault_isolation") or {}).get("cases", [])
-    ledger.append({"operation": "fault_control", "calls": len(fault_cases) * 2,
+    ledger.append({"operation": "fault_control", "method": "GET/POST",
+                   "path": "/api/inspect/test-control/fault", "calls": len(fault_cases) * 2,
                    "records": len(fault_cases), "ok": sum(bool(row.get("checks")) for row in fault_cases),
-                   "errors": 0, "status": "COVERED" if fault_cases else "NOT_COVERED",
+                   "errors": 0, "calls_exact": False,
+                   "status": "COVERED" if fault_cases else "NOT_COVERED",
                    "evidence": "fault-isolation-*.json"})
     samples = suite.get("tenant_observability_samples") or []
-    ledger.append({"operation": "tenant_observability", "calls": len(samples),
+    ledger.append({"operation": "tenant_observability", "method": "GET",
+                   "path": "/api/inspect/tenant-observability", "calls": len(samples),
                    "records": len(samples), "ok": sum(bool(row.get("rows")) for row in samples),
                    "errors": sum(not bool(row.get("rows")) for row in samples),
+                   "calls_exact": True,
                    "status": "COVERED" if samples else "NOT_COVERED",
                    "evidence": "tenant-observability-samples.json"})
     invalid_payload = suite.get("invalid_input") or {}
     invalid_detail = _probe_detail(invalid_payload, "invalid-input")
     return {
-        "scope": "六项压测关键接口，不等于 EchoMem OpenAPI 全接口覆盖",
+        "scope": "六项压测运行期全部必需接口；不包含与六项指标无关的 EchoMem 产品 API",
         "covered": sum(row["status"] == "COVERED" for row in ledger),
         "expected": len(ledger), "operations": ledger,
         "invalid_input": ({"status": next((row.get("status") for row in invalid_payload.get("checks", [])
@@ -211,6 +242,52 @@ def summarize_timing_evidence(suite: dict[str, Any], m1_reports: list[dict[str, 
     }
 
 
+def summarize_concurrency_configuration(profile: dict[str, Any]) -> dict[str, Any]:
+    """Record service concurrency knobs without using them to reduce client load."""
+    target = int(profile.get("required_concurrency") or 0)
+    path = Path(str(profile.get("preflight_config") or ""))
+    relevant = {
+        "max_concurrency", "queue_capacity", "max_queued_per_tenant",
+        "queue_max", "max_inflight", "max_in_flight", "max_pending",
+        "worker_count", "workers",
+    }
+    rows: list[dict[str, Any]] = []
+    if path.is_file():
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            document = None
+
+        def visit(value: Any, parts: tuple[str, ...] = ()) -> None:
+            if isinstance(value, dict):
+                for key, child in value.items():
+                    current = (*parts, str(key))
+                    if key in relevant and isinstance(child, (int, float)) and not isinstance(child, bool):
+                        rows.append({
+                            "config_path": ".".join(current),
+                            "value": child,
+                            "below_requested_concurrency": bool(target and child < target),
+                        })
+                    visit(child, current)
+            elif isinstance(value, list):
+                for index, child in enumerate(value):
+                    visit(child, (*parts, str(index)))
+
+        visit(document)
+    return {
+        "required_client_concurrency": target or None,
+        "client_load_auto_capped_by_service_config": False,
+        "service_limits_are_test_outcomes": True,
+        "config_source": str(path) if path else "",
+        "observed_service_limits": rows,
+        "limits_below_target": sum(row["below_requested_concurrency"] for row in rows),
+        "note": (
+            "测试平台不会读取 EchoMem 并发/队列上限后自动降载；这些值属于被测系统。"
+            "若 128 级客户端负载触发拒绝或排队，应作为容量结果保留，而不是改小分母。"
+        ),
+    }
+
+
 def summarize_m1(reports: list[dict[str, Any]], profile: dict[str, Any]) -> dict[str, Any]:
     levels = [
         {**level, "topology": report.get("topology")}
@@ -222,6 +299,9 @@ def summarize_m1(reports: list[dict[str, Any]], profile: dict[str, Any]) -> dict
         if report.get("operational_boundary")
     ]
     highest = max((int(level.get("hot_users") or 0) for level in measured), default=None)
+    required_concurrency = int(profile.get("required_concurrency") or 0)
+    peak_inflight = max((int((level.get("search") or {}).get("peak_inflight_requests") or 0)
+                         for level in levels), default=0)
     requested = sum(len(report.get("levels_requested", [])) * len(
         ("search", "commit", "mixed", "hotspot")
         if report.get("load_profile") == "all" else (report.get("load_profile"),)
@@ -245,12 +325,19 @@ def summarize_m1(reports: list[dict[str, Any]], profile: dict[str, Any]) -> dict
                           "commit_equivalent_dau": commit_dau,
                           "traffic_equivalent_dau": min(candidates) if candidates else None,
                           "is_measured_maximum": False})
+    status = _status(expected=requested, observed=len(measured), blocked=not reports)
+    if status == "MEASURED" and required_concurrency and peak_inflight < required_concurrency:
+        status = "PARTIAL"
     return {
-        "status": _status(expected=requested, observed=len(measured),
-                          blocked=not reports),
+        "status": status,
         "reason": "容量与 DAU 仅作观测和情景换算，不使用性能门槛",
         "resource_evidence": profile.get("resource_evidence"),
         "highest_measured_hot_users": highest,
+        "required_concurrency": required_concurrency or None,
+        "peak_inflight_requests": peak_inflight,
+        "concurrency_target_observed": (
+            peak_inflight >= required_concurrency if required_concurrency else None
+        ),
         "first_operational_anomaly": boundary[0] if boundary else None,
         "unmeasured_ranges": [r.get("levels_requested", []) for r in reports if len(r.get("levels", [])) < len(r.get("levels_requested", []))],
         "levels": levels,
@@ -582,6 +669,67 @@ def _flood_window(baseline_rows: list[dict[str, Any]], run: dict[str, Any], tena
             "internal_order_observation": "内部顺序未观测"}
 
 
+def _heterogeneous_tenant_window(run: dict[str, Any]) -> dict[str, Any]:
+    rows = _records(run)
+    contract = (run.get("summary") or {}).get("measurement_contract") or {}
+    arrival = contract.get("arrival") or {}
+    read_spec = arrival.get("read") or {}
+    write_spec = arrival.get("write") or {}
+    read_weights = list(read_spec.get("tenant_weights") or [])
+    write_weights = list(write_spec.get("tenant_weights") or [])
+    tenant_count = int(contract.get("tenant_count") or 0)
+    tenants = []
+    for tenant in range(tenant_count):
+        tenant_rows = [row for row in rows if str(row.get("tenant_idx")) == str(tenant)]
+        reads = [row for row in tenant_rows if row.get("op") == "read"]
+        arrivals = {
+            task: [row for row in tenant_rows if row.get("op") == "arrival"
+                   and row.get("arrival_task") == task]
+            for task in ("read", "write")
+        }
+        completed = sum(row.get("op") == "commit_done" and row.get("status") == "ok"
+                        for row in tenant_rows)
+        tenants.append({
+            "tenant_index": tenant,
+            "search_weight": read_weights[tenant] if tenant < len(read_weights) else None,
+            "commit_weight": write_weights[tenant] if tenant < len(write_weights) else None,
+            "planned_search_rps": (
+                float(read_spec.get("rps") or 0) * read_weights[tenant]
+                if tenant < len(read_weights) else None
+            ),
+            "planned_commit_rpm": (
+                float(write_spec.get("rps") or 0) * 60 * write_weights[tenant]
+                if tenant < len(write_weights) else None
+            ),
+            "search_arrivals": len(arrivals["read"]),
+            "commit_arrivals": len(arrivals["write"]),
+            "search": _request_stats(reads),
+            "commit_completed": completed,
+        })
+    issues = []
+    if run.get("status") != "completed" or run.get("runner_timeout"):
+        issues.append("execution_not_complete")
+    if not contract.get("heterogeneous_tenant_load") or tenant_count != 4:
+        issues.append("heterogeneous_workload_contract_missing")
+    if len(read_weights) != tenant_count or len(set(read_weights)) < 2:
+        issues.append("search_tenant_weights_missing_or_uniform")
+    if len(write_weights) != tenant_count or len(set(write_weights)) < 2:
+        issues.append("commit_tenant_weights_missing_or_uniform")
+    for tenant in tenants:
+        if not tenant["search_arrivals"]:
+            issues.append(f"tenant_{tenant['tenant_index']}_search_not_started")
+        if not tenant["commit_arrivals"]:
+            issues.append(f"tenant_{tenant['tenant_index']}_commit_not_started")
+    return {
+        "scenario": str(run.get("scenario") or "m3-heterogeneous-tenants"),
+        "status": "MEASURED" if tenants and not issues else "PARTIAL" if rows else "BLOCKED",
+        "evidence_issues": issues,
+        "search_weights": read_weights,
+        "commit_weights": write_weights,
+        "tenants": tenants,
+    }
+
+
 def summarize_m3(runs: dict[str, dict[str, Any]], *, quick: bool) -> dict[str, Any]:
     baseline_run = runs.get("m3-baseline") or runs.get("m4-baseline") or {}
     baseline_rows = _records(baseline_run)
@@ -591,7 +739,12 @@ def summarize_m3(runs: dict[str, dict[str, Any]], *, quick: bool) -> dict[str, A
         run = runs.get(canonical) or runs.get(legacy)
         if run and _records(run):
             windows.append(_flood_window(baseline_rows, run))
-    observed = len(windows) + int(bool(baseline_rows))
+    heterogeneous = _heterogeneous_tenant_window(
+        runs.get("m3-heterogeneous-tenants") or {}
+    )
+    observed = len(windows) + int(bool(baseline_rows)) + int(
+        heterogeneous["status"] != "BLOCKED"
+    )
     issues = []
     baseline = _request_stats(baseline_rows)
     if baseline_run.get("status") != "completed" or baseline_run.get("runner_timeout"):
@@ -659,10 +812,17 @@ def summarize_m3(runs: dict[str, dict[str, Any]], *, quick: bool) -> dict[str, A
         issues.extend(f"{name}:{gap}" for gap in gaps)
     if len(windows) != 2:
         issues.append("flood_windows_missing")
-    return {"status": "MEASURED" if observed == 3 and not issues and not quick else "PARTIAL" if observed else "BLOCKED",
+    issues.extend(
+        f"m3-heterogeneous-tenants:{issue}"
+        for issue in heterogeneous.get("evidence_issues", [])
+    )
+    if heterogeneous["status"] == "BLOCKED":
+        issues.append("heterogeneous_tenant_window_missing")
+    return {"status": "MEASURED" if observed == 4 and not issues and not quick else "PARTIAL" if observed else "BLOCKED",
             "reason": "非终态轮询确认的重叠与宽观察窗口分别展示；服务拒绝和截止未终态是测量结果，不是证据缺口。MEASURED 不代表性能达标或严格内部优先级",
             "evidence_issues": issues, "baseline": baseline, "baseline_tenants": baseline_tenants,
-            "expected_windows": 3, "observed_windows": observed, "windows": windows,
+            "expected_windows": 4, "observed_windows": observed, "windows": windows,
+            "heterogeneous_tenants": heterogeneous,
             "internal_order_observation": "内部顺序未观测"}
 
 
@@ -923,9 +1083,10 @@ def evaluate_observation(suite: dict[str, Any], profile: dict[str, Any],
             "setup_evidence": setup_evidence,
             "allowed_statuses": list(STATUSES),
             "issue_categories": issues,
-            "api_coverage": summarize_api_coverage(suite),
-            "timing_evidence": summarize_timing_evidence(suite, m1_reports or []),
-            "raw_suite": "suite.json"}
+        "api_coverage": summarize_api_coverage(suite),
+        "timing_evidence": summarize_timing_evidence(suite, m1_reports or []),
+        "concurrency_configuration": summarize_concurrency_configuration(profile),
+        "raw_suite": "suite.json"}
 
 
 def derive_observation_recommendations(result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1038,7 +1199,13 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             continue
         visual = ""
         if code == "M1":
-            visual = bars("已测负载曲线：Search P95 ms", [
+            visual = (
+                f"<p><b>客户端并发目标：</b>{esc(metric.get('required_concurrency'))}；"
+                f"<b>实测 Search 在途峰值：</b>{esc(metric.get('peak_inflight_requests'))}；"
+                f"<b>是否真正达到目标：</b>{esc(metric.get('concurrency_target_observed'))}。"
+                "热用户数和同时在途请求不是同一个概念，报告分别保留。</p>"
+            )
+            visual += bars("已测负载曲线：Search P95 ms", [
                 (f"{level.get('topology')} H={level.get('hot_users')} {level.get('load_mode')}",
                  (level.get("search") or {}).get("p95_s") * 1000
                  if (level.get("search") or {}).get("p95_s") is not None else None)
@@ -1248,6 +1415,21 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                             "overlap_p95_ms": tenant.get("overlap", {}).get("p95_ms")}
                            for window in metric.get("windows", []) for tenant in window.get("tenants", [])]
             visual += details("查看逐租户基线与洪泛对比", table(tenant_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("baseline_p95_ms", "Baseline P95"), ("overlap_p95_ms", "Overlap P95"), ("p95_delta_ms", "差值"), ("p95_ratio", "比值")]))
+            heterogeneous = metric.get("heterogeneous_tenants") or {}
+            heterogeneous_rows = [{**row,
+                "search_count": (row.get("search") or {}).get("planned_or_recorded"),
+                "search_p95_ms": (row.get("search") or {}).get("p95_ms"),
+                "search_errors": (row.get("search") or {}).get("errors"),
+                "search_quality_ok": (row.get("search") or {}).get("quality_ok")}
+                for row in heterogeneous.get("tenants", [])]
+            visual += details("查看不同租户不同强度的 Commit/Search", table(heterogeneous_rows, [
+                ("tenant_index", "租户"), ("search_weight", "Search 权重"),
+                ("planned_search_rps", "计划 Search RPS"), ("search_arrivals", "Search 到达"),
+                ("search_count", "Search 请求"), ("search_p95_ms", "Search P95 ms"),
+                ("search_errors", "Search 错误"), ("search_quality_ok", "召回质量通过"),
+                ("commit_weight", "Commit 权重"), ("planned_commit_rpm", "计划 Commit RPM"),
+                ("commit_arrivals", "Commit 到达"), ("commit_completed", "Commit 完成")
+            ], min_width_px=1200))
         elif code == "M5":
             visual = bars("完整恢复样本 / %", [("完成 / 期望",
                 100 * metric["complete_samples"] / metric["expected_samples"]
@@ -1308,13 +1490,22 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
         f"{esc(api_coverage.get('covered'))}/{esc(api_coverage.get('expected'))} 项；"
         "调用次数为原始记录或探针次数，未调用明确显示 NOT_COVERED。</p>" +
         table(api_coverage.get("operations", []), [
-            ("operation", "接口能力"), ("calls", "HTTP调用/轮询次数"),
+            ("operation", "接口能力"), ("method", "方法"), ("path", "路径"),
+            ("calls", "HTTP调用/轮询次数"), ("calls_exact", "精确计数"),
             ("records", "汇总记录"), ("ok", "成功"), ("errors", "错误"),
             ("status", "覆盖状态"), ("evidence", "证据"),
         ]) +
         "<h3>不合法输入与边界处理</h3>" +
         table([api_coverage.get("invalid_input") or {}], [
-            ("status", "状态"), ("reason", "说明")]) + "</section>"
+            ("status", "状态"), ("reason", "说明"),
+            ("passed_cases", "通过"), ("expected_cases", "总数")]) +
+        details("查看每个非法输入用例", table(
+            (api_coverage.get("invalid_input") or {}).get("cases", []), [
+                ("case", "用例"), ("method", "方法"), ("path", "路径"),
+                ("expected_status", "期望状态"), ("http_status", "实际状态"),
+                ("contract_ok", "合同符合"),
+                ("accepted_invalid_input", "错误输入被接受")
+            ], min_width_px=1000)) + "</section>"
     )
     timing = result.get("timing_evidence") or {}
     timing_section = (
@@ -1327,6 +1518,18 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             ("p50_s", "P50 秒"), ("p95_s", "P95 秒"), ("p99_s", "P99 秒")], min_width_px=900)) +
         "<p><b>当前无法独立观测：</b>" + esc("、".join(timing.get("unobservable_modules", []))) + "。</p></section>"
     )
+    concurrency = result.get("concurrency_configuration") or {}
+    concurrency_section = (
+        "<section><h2>128 并发与 EchoMem 配置隔离</h2>"
+        f"<p>{esc(concurrency.get('note'))}</p>"
+        f"<p>客户端目标并发：<b>{esc(concurrency.get('required_client_concurrency'))}</b>；"
+        f"测试平台按服务配置自动降载：<b>{esc(concurrency.get('client_load_auto_capped_by_service_config'))}</b>；"
+        f"低于目标的服务端上限：<b>{esc(concurrency.get('limits_below_target'))}</b> 项。</p>" +
+        table(concurrency.get("observed_service_limits", []), [
+            ("config_path", "EchoMem 配置路径"), ("value", "当前值"),
+            ("below_requested_concurrency", "低于客户端目标")
+        ]) + "</section>"
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     stage_notice = ""
     if result.get("pending_metrics"):
@@ -1337,5 +1540,5 @@ body{margin:0;color:#18242b;background:#f4f7f8;font:14px/1.6 system-ui;letter-sp
         f"<h1>{esc(title)}</h1><div class='lead'><b>本次所选指标结论：{esc(result['status'])}</b><p>这是观测报告，不是性能准入验收；没有 P95、准确率、Jain、吞吐或劣化比例 PASS/FAIL 门槛。错误、超时、空召回与 pending/failed Commit 均保留在分母。采样模式：{esc(result['sampling_mode'])}。</p>{scope_notice}</div><div class='cards'>{cards}</div>" +
         stage_notice + "<section><h2>准备阶段证据</h2><p>没有完成负载场景时不能给出性能结论。裸编号未命中不等于语义事实没有写入；需分别验证实际返回的记忆内容、路由和降级。</p>" + table([result.get("setup_evidence") or {}], [("seed_status", "种子状态"), ("seed_contract", "校验方式"), ("healthy_actors", "验证通过租户"), ("expected_actors", "验证租户总数"), ("validated_queries_per_tenant", "每租户预检问题数"), ("bare_marker_gate_failed", "裸编号前置校验失败"), ("load_cases_completed", "已有负载场景")]) + "</section>" +
         "<section><h2>EchoMem 模块改进建议</h2><p class='purpose'>建议只由本轮可见证据推导；无法从黑盒区分的阶段明确写为需补观测，不把端到端延迟武断归因给原子引擎。</p>" + recommendation_table + details("查看责任边界与技术证据", table(result.get("issue_categories", []), [("category", "类别"), ("note", "观测/下一步"), ("evidence", "证据")])) + "</section>" +
-        api_section + timing_section + seed_source + seed_diagnosis + render_platform_provenance(result.get("platform_provenance")) +
+        api_section + timing_section + concurrency_section + seed_source + seed_diagnosis + render_platform_provenance(result.get("platform_provenance")) +
         "".join(sections) + "<section><h2>原始产物</h2><p><a href='summary.json'>summary.json</a> · <a href='suite.json'>suite.json</a> · <a href='records.csv'>records.csv</a> · <a href='metrics_samples.csv'>metrics_samples.csv</a> · <a href='execution-manifest.json'>execution-manifest.json</a></p></section></main></body></html>", encoding="utf-8")

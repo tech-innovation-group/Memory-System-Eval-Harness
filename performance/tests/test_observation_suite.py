@@ -11,6 +11,7 @@ from performance.targets.echomem.acceptance.observation import (
     evaluate_observation,
     jain,
     summarize_api_coverage,
+    summarize_concurrency_configuration,
     summarize_m5,
     summarize_m6,
     summarize_timing_evidence,
@@ -229,6 +230,19 @@ def test_api_coverage_keeps_uncalled_contracts_visible(tmp_path: Path) -> None:
     assert summary["invalid_input"]["status"] == "NOT_COVERED"
 
 
+def test_api_coverage_accepts_readiness_nested_under_resource_preflight() -> None:
+    summary = summarize_api_coverage({
+        "runs": [],
+        "resource_preflight": {"readiness": {"checks": [
+            {"name": "ready", "status": "PASS"},
+        ]}},
+    })
+    ready = next(row for row in summary["operations"]
+                 if row["operation"] == "system_ready")
+    assert ready["status"] == "COVERED"
+    assert ready["calls"] == 1
+
+
 def test_timing_summary_does_not_invent_internal_stages(tmp_path: Path) -> None:
     run = _run(tmp_path, "timings", [
         {"op": "read", "status": "ok", "stage_ms": 10},
@@ -239,3 +253,19 @@ def test_timing_summary_does_not_invent_internal_stages(tmp_path: Path) -> None:
     assert read["observations"] == 2
     assert read["p95_ms"] == 30
     assert "atomic engine" in summary["unobservable_modules"]
+
+
+def test_service_concurrency_limits_are_recorded_without_capping_client(tmp_path: Path) -> None:
+    config = tmp_path / "config.json"
+    config.write_text(json.dumps({
+        "scheduler": {"concurrency": {
+            "search": {"max_concurrency": 16, "queue_capacity": 32},
+            "commit": {"max_concurrency": 4, "queue_capacity": 256},
+        }}
+    }))
+    result = summarize_concurrency_configuration({
+        "preflight_config": str(config), "required_concurrency": 128,
+    })
+    assert result["client_load_auto_capped_by_service_config"] is False
+    assert result["required_client_concurrency"] == 128
+    assert result["limits_below_target"] == 3

@@ -8,7 +8,7 @@ def test_negative_contract_probe_reports_all_cases(monkeypatch, tmp_path):
         SimpleNamespace(auth_key="secret", tenant_id="tenant-a", agent_id="agent-a")
     ])
     def call(*args, **kwargs):
-        return {"http_status": 401 if "X-Auth-Key" not in kwargs["headers"] else 400,
+        return {"http_status": 401 if kwargs["headers"].get("X-Auth-Key") in (None, "invalid-stress-key") else 400,
                 "elapsed_s": 0.01}
     monkeypatch.setattr(invalid_input, "_call", call)
     checks = []
@@ -19,4 +19,4 @@ def test_negative_contract_probe_reports_all_cases(monkeypatch, tmp_path):
     )
     invalid_input.run(ctx)
     assert checks[0]["status"] == "PASS"
-    assert "5/5" in checks[0]["reason"]
+    assert "15/15" in checks[0]["reason"]

@@ -233,7 +233,16 @@ def run_case(
                          "measurement_start_s": case["measurement_start_s"],
                          "measurement_end_s": case["measurement_end_s"],
                          "arrival": {name: {"scope": spec.scope, "rps": spec.rps,
-                                            "start_s": spec.start_s, "end_s": spec.end_s}
+                                            "start_s": spec.start_s, "end_s": spec.end_s,
+                                            "tenant_weights": list(spec.tenant_weights)
+                                            if spec.tenant_weights else None}
+                                     for name, spec in profile.load.arrival.items()}})
+    elif any(spec.tenant_weights for spec in profile.load.arrival.values()):
+        contract.update({"heterogeneous_tenant_load": True,
+                         "arrival": {name: {"scope": spec.scope, "rps": spec.rps,
+                                            "start_s": spec.start_s, "end_s": spec.end_s,
+                                            "tenant_weights": list(spec.tenant_weights)
+                                            if spec.tenant_weights else None}
                                      for name, spec in profile.load.arrival.items()}})
     if case["scene"] == "scene_barrier":
         contract.update({name: profile.params.get(name) for name in (
@@ -459,7 +468,7 @@ def run_suite(
     )
     if profile.get("resource_evidence"):
         result["resource_evidence"] = profile["resource_evidence"]
-    if profile.get("six_metrics"):
+    if profile.get("six_metrics") or profile.get("six_metrics_observation"):
         result["readiness"] = readiness
     if observation_before is not None:
         result["tenant_observability_before"] = observation_before

@@ -28,17 +28,38 @@ def task(tenant, aid="a"):
 
 def runs(tmp_path, *, mutate=None):
     result = {}
-    for name in ("m4-baseline", "m4-flood-uniform", "m4-flood-single-tenant"):
+    for name in ("m4-baseline", "m4-flood-uniform", "m4-flood-single-tenant",
+                 "m3-heterogeneous-tenants"):
         rows = [read(i, at=500 if name.endswith("baseline") else 1600) for i in range(4)]
-        if not name.endswith("baseline"):
+        if name == "m3-heterogeneous-tenants":
+            for i in range(4):
+                rows.extend([
+                    {"op": "arrival", "arrival_task": "read", "tenant_idx": i,
+                     "status": "ok", "ts_ms": 1200},
+                    {"op": "arrival", "arrival_task": "write", "tenant_idx": i,
+                     "status": "ok", "ts_ms": 1300},
+                ])
+                rows.extend(task(i, f"heterogeneous-{i}"))
+        elif not name.endswith("baseline"):
             for i in range(4):
                 rows.extend(task(i if name.endswith("uniform") else 0, str(i)))
         if mutate:
             mutate(name, rows)
         run = _run(tmp_path, name, rows)
-        run.update(status="completed", runner_timeout=False, summary={"measurement_contract": {
+        contract = {
             "version": "echomem-case-v1", "tenant_count": 4, "query_mode": "recall",
-            "barrier_count": 4, "barrier_waves": 1}})
+            "barrier_count": 4, "barrier_waves": 1,
+        }
+        if name == "m3-heterogeneous-tenants":
+            contract.update({
+                "heterogeneous_tenant_load": True,
+                "arrival": {
+                    "read": {"rps": 1, "tenant_weights": [8, 4, 2, 1]},
+                    "write": {"rps": 1 / 30, "tenant_weights": [1, 2, 4, 8]},
+                },
+            })
+        run.update(status="completed", runner_timeout=False,
+                   summary={"measurement_contract": contract})
         result[name] = run
     return result
 

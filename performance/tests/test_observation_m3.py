@@ -126,3 +126,14 @@ def test_formal_m3_is_periodic_not_barrier():
         assert p.load.arrival["write"].start_s == 30
         assert p.load.arrival["write"].end_s == 300
         assert p.load.arrival["read"].rps == 1
+
+
+def test_heterogeneous_tenant_case_has_opposite_search_and_commit_weights():
+    case = next(row for row in six_metric_observation_cases()
+                if row["label"] == "m3-heterogeneous-tenants")
+    profile = build_case_profile(
+        case, base_url="http://unused.invalid", tenant_count=4, auth_headers={}
+    )
+    assert profile.load.arrival["read"].scope == "per_tenant"
+    assert profile.load.arrival["read"].tenant_weights == (8, 4, 2, 1)
+    assert profile.load.arrival["write"].tenant_weights == (1, 2, 4, 8)

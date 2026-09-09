@@ -21,6 +21,11 @@ Begin with facts, not a long questionnaire. Inspect the machine and show:
 Use these states: `READY`, `NEEDS_SETUP`, `BLOCKED`, and `DANGEROUS_TARGET`.
 Never echo secret values while checking them.
 
+When the profile pins `required_embedding_model`, compare the successful
+Embedding preflight model name exactly. For the current formal profile the value
+is `qwen3.7-text-embedding-flash`; a working request to a different model is not
+an acceptable substitute.
+
 If setup is missing, direct the user to the single local guide:
 `performance/targets/echomem/README.md`. Do not invent a second deployment path.
 
@@ -47,6 +52,15 @@ Tenants:       32 independent credentials
 Resources:     observed Docker limits, or host-default
 Destructive:   none | tenant fault | container kill/restart
 Output:        <absolute path>
+```
+
+Also display the distinction between configured actors and measured overlap:
+
+```text
+Hot-user levels:       1,2,4,8,16,32,64,128
+Required concurrency:  128 simultaneous in-flight requests
+EchoMem limits:         observed and reported; not used to cap client load
+Heterogeneous tenants: Search weights 8:4:2:1 / Commit weights 1:2:4:8
 ```
 
 M4 and M5 must target a dedicated test deployment. Remote login, shared compute,
@@ -110,6 +124,18 @@ An API/provider error is a failure type, not proof of EchoMem capacity. Convert
 the measured peak throughput into read-heavy, balanced, and write-heavy DAU
 estimates; label these as model-based conversions rather than measured users.
 
+For a 128 target, distinguish these measurements:
+
+- configured active tenants or hot users at the 128 level;
+- actual peak simultaneous in-flight HTTP requests;
+- the last level whose backlog drains after load stops;
+- the first level with persistent blocking, timeout, rejection, crash, OOM, or
+  non-draining backlog.
+
+Do not read EchoMem `max_concurrency`, queue capacity, or worker count and reduce
+the generator target. Capture those settings in the report as explanatory
+evidence. A service-side rejection or queue limit is a measured boundary result.
+
 ### M2: Equal-tier fairness
 
 Run 4 and 8 independently authenticated tenants with equal offered Search and
@@ -132,6 +158,13 @@ Count only Search samples whose timestamps overlap confirmed unfinished Commits.
 Report baseline and overlap-window Search P95/P99, degradation ratio, errors,
 recall quality, and Commit planned/202/rejected/completed/non-terminal counts.
 This scenario measures cross-operation priority; it does not replace M2 fairness.
+
+Run an additional `m3-heterogeneous-tenants` case with four independent tenants.
+Apply Search weights `8:4:2:1` and Commit weights `1:2:4:8`, then report each
+tenant's configured weight, planned rate, actual arrivals, Search P95/errors and
+recall quality, and Commit completions. This verifies that one run can model a
+read-heavy tenant, two intermediate tenants, and a write-heavy tenant instead of
+assuming all tenants have identical request costs and rates.
 
 ### M4: One-tenant fault isolation
 
@@ -228,3 +261,18 @@ tested, the measured denominator, charts/data, status, failure types, and concre
 improvements grouped by EchoMem modules: external providers, Search/Recall,
 routing/admission, Commit/recovery, memory engine, tenant isolation/control,
 observability, and harness/deployment.
+
+Add these report-wide audits after the six metric sections:
+
+1. **Invalid-input matrix**: exercise missing/invalid auth, malformed JSON,
+   missing/invalid Search fields, invalid session operations, unknown Commit
+   status/memory/history/archive/cursor targets, invalid filesystem URI, and
+   protected endpoints without a token. Show every case and status; do not report
+   only the successful subset.
+2. **API call ledger**: list every six-metric runtime endpoint with HTTP method,
+   path, exact or minimum observed call count, and coverage state. Product APIs
+   unrelated to M1-M6 are outside this ledger and must be labeled as such.
+3. **Module timing evidence**: chart HTTP endpoint P50/P95/P99 and any explicit
+   timing fields returned by EchoMem. Mark router, recall, admission, Commit, and
+   atomic-engine stages as unobservable when the service does not expose them;
+   never manufacture stage timing through subtraction.

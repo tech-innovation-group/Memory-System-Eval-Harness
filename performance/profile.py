@@ -12,6 +12,7 @@ variables at load time.
 
 from __future__ import annotations
 
+import math
 import os
 import re
 from dataclasses import dataclass, field
@@ -39,6 +40,7 @@ class ArrivalSpec:
     scope: str = "global"  # global | per_tenant; rps applies to this scope
     start_s: float = 0.0
     end_s: float | None = None
+    tenant_weights: tuple[float, ...] | None = None
 
 
 @dataclass
@@ -188,6 +190,9 @@ def _parse_arrival(raw: Any) -> dict[str, ArrivalSpec]:
         start_s = _non_negative_float(spec.get("start_s"), 0.0, "load.arrival.start_s")
         end_s = (_non_negative_float(spec["end_s"], 0, "load.arrival.end_s")
                  if spec.get("end_s") is not None else None)
+        tenant_weights = _parse_tenant_weights(
+            spec.get("tenant_weights"), f"load.arrival['{task_name}'].tenant_weights"
+        )
         if end_s is not None and end_s <= start_s:
             raise ProfileError("load.arrival.end_s must be greater than start_s")
         if model != "none" and rps <= 0:
@@ -197,9 +202,26 @@ def _parse_arrival(raw: Any) -> dict[str, ArrivalSpec]:
         if model == "none" and (scope != "global" or start_s or end_s is not None):
             raise ProfileError("load.arrival scope/start_s require an arrival model")
         result[task_name] = ArrivalSpec(
-            model=model, rps=rps, ramp_s=ramp_s, scope=scope, start_s=start_s, end_s=end_s,
+            model=model, rps=rps, ramp_s=ramp_s, scope=scope, start_s=start_s,
+            end_s=end_s, tenant_weights=tenant_weights,
         )
     return result
+
+
+def _parse_tenant_weights(raw: Any, field_name: str) -> tuple[float, ...] | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not raw:
+        raise ProfileError(f"{field_name} must be a non-empty list")
+    values: list[float] = []
+    for value in raw:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ProfileError(f"{field_name} values must be positive finite numbers")
+        parsed = float(value)
+        if not math.isfinite(parsed) or parsed <= 0:
+            raise ProfileError(f"{field_name} values must be positive finite numbers")
+        values.append(parsed)
+    return tuple(values)
 
 
 def _parse_tenants(raw: Any) -> list[TenantSpec]:

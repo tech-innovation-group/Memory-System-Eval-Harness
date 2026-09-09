@@ -62,6 +62,7 @@ def _public_profile(profile: dict[str, Any]) -> dict[str, Any]:
         "name", "base_url", "resource_container", "capacity_levels",
         "require_4u8g",
         "m1_tenant_levels", "m1_user_levels", "dau_scenarios",
+        "required_concurrency", "required_embedding_model",
         "preflight_config", "tenant_config",
     }
     return {key: profile.get(key) for key in allowed if profile.get(key) not in (None, "")}
@@ -130,8 +131,8 @@ def _collect_observation(profile: dict[str, Any], token: str) -> dict[str, Any]:
 def _run_m1_profiles(profile: dict[str, Any], args: argparse.Namespace, output: Path) -> list[dict]:
     reports = []
     levels_by_topology = {
-        "cross-tenant": _m1_levels(profile, "m1_tenant_levels", [1, 2] if args.quick else [1, 2, 4, 8, 16, 32]),
-        "within-tenant": _m1_levels(profile, "m1_user_levels", [1, 2] if args.quick else [1, 2, 4, 8]),
+        "cross-tenant": _m1_levels(profile, "m1_tenant_levels", [1, 2] if args.quick else [1, 2, 4, 8, 16, 32, 64, 128]),
+        "within-tenant": _m1_levels(profile, "m1_user_levels", [1, 2] if args.quick else [1, 2, 4, 8, 16, 32, 64, 128]),
     }
     for topology, levels in levels_by_topology.items():
         target = output / "M1" / topology
@@ -194,6 +195,27 @@ def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> 
     )
     if not model_preflight.get("ok"):
         raise RuntimeError(json.dumps(model_preflight, ensure_ascii=False))
+    required_embedding = str(profile.get("required_embedding_model") or "").strip()
+    observed_embeddings = {
+        str(engine.get("model") or "") for engine in model_preflight.get("engines", [])
+        if engine.get("kind") == "embedding" and engine.get("status") == "ok"
+    }
+    if required_embedding and required_embedding not in observed_embeddings:
+        raise ValueError(
+            f"required embedding model {required_embedding!r} was not verified; "
+            f"observed {sorted(observed_embeddings)!r}"
+        )
+    required_concurrency = int(profile.get("required_concurrency") or 0)
+    if "M1" in selected and not quick and required_concurrency > 0:
+        configured_levels = [
+            *_m1_levels(profile, "m1_tenant_levels", [1, 2, 4, 8, 16, 32, 64, 128]),
+            *_m1_levels(profile, "m1_user_levels", [1, 2, 4, 8, 16, 32, 64, 128]),
+        ]
+        if max(configured_levels, default=0) < required_concurrency:
+            raise ValueError(
+                f"M1 levels stop below required_concurrency={required_concurrency}; "
+                "increase m1_tenant_levels or m1_user_levels"
+            )
     tenant_document = read_json(Path(profile["tenant_config"]))
     configured_tenants = tenant_document.get("tenants", [])
     for tenant in configured_tenants:
@@ -374,7 +396,8 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
         if "M2" in load_metrics:
             scenarios.extend(("m2-fairness-4t", "m2-fairness-8t"))
         if "M3" in load_metrics:
-            scenarios.extend(("m3-baseline", "m3-flood-uniform", "m3-flood-single-tenant"))
+            scenarios.extend(("m3-baseline", "m3-flood-uniform", "m3-flood-single-tenant",
+                              "m3-heterogeneous-tenants"))
         if "M4" in selected and "m3-baseline" not in scenarios:
             scenarios.append("m3-baseline")
         if "M6" in selected:

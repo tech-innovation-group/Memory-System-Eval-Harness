@@ -90,6 +90,18 @@ def test_engine_assigns_distinct_gates_to_tenants(monkeypatch):
     assert by_tenant[0].isdisjoint(by_tenant[1])
 
 
+def test_per_tenant_weights_change_effective_rates():
+    p = profile(scope="per_tenant", tenant_weights=[4, 1])
+    gates = Engine(p, scene())._build_gates()
+    assert gates[("read", 0)].arrival.rps == 4
+    assert gates[("read", 1)].arrival.rps == 1
+
+
+def test_per_tenant_weights_must_match_tenant_count():
+    with pytest.raises(SceneError, match="weights"):
+        Engine(profile(scope="per_tenant", tenant_weights=[1]), scene())._build_gates()
+
+
 def test_engine_global_gate_shared_by_tenants(monkeypatch):
     engine = Engine(profile(), scene())
     gates = []

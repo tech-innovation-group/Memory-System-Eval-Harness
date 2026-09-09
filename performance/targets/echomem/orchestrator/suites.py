@@ -489,7 +489,7 @@ def six_metric_cases(capacity_levels: list[int] | None = None) -> list[dict]:
 
 
 def six_metric_observation_cases(*, quick: bool = False) -> list[dict]:
-    """Observation-only M2/M3 matrix.
+    """Observation-only M2/M3 matrix, including heterogeneous tenant load.
 
     M1 is executed by the T x U capacity runner and M4/M5/M6 are probes. The
     cases here therefore contain only the paired Search/Commit windows needed
@@ -543,6 +543,16 @@ def six_metric_observation_cases(*, quick: bool = False) -> list[dict]:
             commit_tenant_counts=[barrier, 0, 0, 0],
             barrier_at_s=3 if quick else 30,
             blackbox_search_priority=True, **common,
+        ),
+        _case(
+            label="m3-heterogeneous-tenants", scene="scene_c_mixed", tenants=4,
+            commit_rpm=20.0 if quick else 2.0, commit_barrier=False,
+            arrival_scope="per_tenant", commit_start_s=3 if quick else 30,
+            arrival_end_s=duration, search_tenant_weights=[8, 4, 2, 1],
+            commit_tenant_weights=[1, 2, 4, 8],
+            heterogeneous_tenant_load=True,
+            **{**common, "search_rps": 1.0,
+               "duration_s": duration + (30 if quick else 180)},
         ),
     ]
 

@@ -145,13 +145,17 @@ def build_case_profile(
         if search_rps > 0:
             arrival["read"] = ArrivalSpec(model="fixed_rps", rps=search_rps,
                 scope=case.get("arrival_scope", "global"), start_s=float(case.get("search_start_s", 0)),
-                end_s=case.get("arrival_end_s"))
+                end_s=case.get("arrival_end_s"),
+                tenant_weights=tuple(float(v) for v in case["search_tenant_weights"])
+                if case.get("search_tenant_weights") else None)
     if "write" in scene.tasks:
         mix["write"] = max(1, write_workers) if write_workers > 0 else 0
         if commit_rps > 0:
             arrival["write"] = ArrivalSpec(model="fixed_rps", rps=commit_rps,
                 scope=case.get("arrival_scope", "global"), start_s=float(case.get("commit_start_s", 0)),
-                end_s=case.get("arrival_end_s"))
+                end_s=case.get("arrival_end_s"),
+                tenant_weights=tuple(float(v) for v in case["commit_tenant_weights"])
+                if case.get("commit_tenant_weights") else None)
 
     params: dict[str, Any] = {
         "top_k": int(case.get("top_k", 5)),

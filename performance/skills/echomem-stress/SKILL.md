@@ -47,6 +47,55 @@ Run the repository's real HTTP six-metric suite as a guided product flow. Read
    and `report.html`. Open the HTML report and summarize every selected metric's
    status, denominator, primary number, and responsible module.
 
+## Product conversation
+
+Guide the engineer through these states instead of presenting an undifferentiated
+list of commands:
+
+1. **Discover**: inspect local repositories, EchoMem readiness, Docker access,
+   profile, tenant credentials, provider configuration, and protected endpoints.
+2. **Configure**: confirm the exact LLM and Embedding names, metric scope,
+   concurrency target, tenant count, duration, output directory, and whether the
+   run may perform fault injection or restart a dedicated container.
+3. **Preview**: show the exact target commits, selected metrics, real model names,
+   load levels, destructive actions, and command. Stop on a model-name mismatch.
+4. **Validate**: run provider and memory seed/recall preflights. A successful HTTP
+   response without the expected fact is a failed recall preflight.
+5. **Execute**: stream stage-level progress and maintain the original denominator.
+   Do not shorten or auto-cap client load from EchoMem's internal queue or worker
+   configuration; those limits are part of the measured result.
+6. **Explain**: open the HTML report and distinguish measured, partial, blocked,
+   and inconclusive evidence. State the responsible module and the exact rerun
+   condition for every incomplete metric.
+
+For a 128-concurrency objective, pin the profile with:
+
+```json
+{
+  "m1_tenant_levels": [1, 2, 4, 8, 16, 32, 64, 128],
+  "m1_user_levels": [1, 2, 4, 8, 16, 32, 64, 128],
+  "required_concurrency": 128,
+  "required_embedding_model": "qwen3.7-text-embedding-flash"
+}
+```
+
+Explain that 128 configured hot users and 128 observed simultaneous in-flight
+requests are different facts. Report both. Record EchoMem concurrency and queue
+settings for diagnosis, but never use them to lower the offered client load.
+
+M3 must contain both equal-load fairness/priority evidence and a heterogeneous
+tenant case. The default heterogeneous case applies Search weights `[8,4,2,1]`
+and Commit weights `[1,2,4,8]` to four independent tenants, proving that tenants
+can receive different Search and Commit intensities in one real run.
+
+The final report must also expose three cross-metric audits:
+
+- invalid-input coverage with every case and observed HTTP status;
+- a required API ledger with method, path, exact/minimum call count, and missing
+  endpoints kept visible;
+- endpoint and service-returned module timing distributions. Never infer internal
+  router, recall, scheduler, or engine timings by subtracting unrelated clocks.
+
 ## Commands
 
 Run from the harness repository root with a profile and a secret env file that

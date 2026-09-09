@@ -173,8 +173,10 @@ ECHOMEM_EMBEDDING_API_KEY=<真实 Embedding key>
       "require_4u8g": false,
       "tenant_config": "/absolute/path/to/Memory-System-Eval-Harness/.local-stress/tenants.json",
       "preflight_config": "/absolute/path/to/EchoMem/deploy/single-node/config.json",
-      "m1_tenant_levels": [1, 2, 4, 8, 16, 32],
-      "m1_user_levels": [1, 2, 4, 8],
+      "m1_tenant_levels": [1, 2, 4, 8, 16, 32, 64, 128],
+      "m1_user_levels": [1, 2, 4, 8, 16, 32, 64, 128],
+      "required_concurrency": 128,
+      "required_embedding_model": "qwen3.7-text-embedding-flash",
       "m1_duration_s": 300,
       "m1_search_rps_per_user": 1,
       "dau_scenarios": [
@@ -205,6 +207,16 @@ ECHOMEM_EMBEDDING_API_KEY=<真实 Embedding key>
 `require_4u8g: false` 表示不检查固定 4U8G cgroup；Docker 未设置上限时 CPU 和内存字段
 可能显示为 `0`，含义是使用宿主机默认资源。为保证数据可比较，报告还会保存容器 ID、
 镜像 ID 和 Docker 资源配置。
+
+`required_embedding_model` 是硬性预检条件。本例只接受真实成功调用
+`qwen3.7-text-embedding-flash`；如果服务实际使用其他 Embedding，正式发压前会直接停止。
+`required_concurrency: 128` 表示需要观察到至少 128 个同时在途请求，不等同于仅配置了
+128 个用户。测试平台不会读取 EchoMem 的 `max_concurrency`、队列容量或 worker 数后主动
+降低负载；这些服务端限制会原样写入报告，用来解释排队、拒绝或容量边界。
+
+M3 除等负载场景外还会运行异构租户场景：四个独立租户的 Search 权重为 `8:4:2:1`，
+Commit 权重为 `1:2:4:8`。报告逐租户展示计划速率、实际请求数、Search P95/错误/召回质量
+与 Commit 完成量，用于验证读多写少、读写均衡、写多读少租户能在同一轮被真实压测。
 
 ## 6. 先运行快速链路检查
 
