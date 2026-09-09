@@ -1,4 +1,4 @@
-"""Run the EchoMem 4U8G M1-M6 observation suite and publish one report."""
+"""Run the EchoMem M1-M6 observation suite and publish one report."""
 
 from __future__ import annotations
 
@@ -60,6 +60,7 @@ def _git_commit() -> str | None:
 def _public_profile(profile: dict[str, Any]) -> dict[str, Any]:
     allowed = {
         "name", "base_url", "resource_container", "capacity_levels",
+        "require_4u8g",
         "m1_tenant_levels", "m1_user_levels", "dau_scenarios",
         "preflight_config", "tenant_config",
     }
@@ -265,9 +266,14 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
     if args.env_file:
         os.environ.update(load_env_file(args.env_file.expanduser().resolve()))
     profiles = load_profiles(args.profiles)
-    matches = [item for item in profiles if str(item.get("name")) == args.profile]
+    profile_name = args.profile
+    if profile_name is None:
+        if len(profiles) != 1:
+            raise ValueError("--profile is required when the profile file contains more than one profile")
+        profile_name = str(profiles[0].get("name") or "")
+    matches = [item for item in profiles if str(item.get("name")) == profile_name]
     if len(matches) != 1:
-        raise ValueError(f"profile {args.profile!r} was not found exactly once")
+        raise ValueError(f"profile {profile_name!r} was not found exactly once")
     selected = _metrics(args.metrics)
     m6_only = set(selected) == {"M6"}
     profile = _configure(
@@ -494,7 +500,7 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profiles", required=True, type=Path)
-    parser.add_argument("--profile", default="4U8G")
+    parser.add_argument("--profile", help="profile name; optional when the file contains exactly one profile")
     parser.add_argument("--out-dir", required=True, type=Path)
     parser.add_argument("--metrics", default="M1,M2,M3,M4,M5,M6")
     parser.add_argument("--env-file", type=Path)
@@ -544,6 +550,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         result = {
             "schema_version": 1, "assessment": "observation-only",
+            "instance_profile": args.profile or "local",
             "performance_thresholds_applied": False,
             "sampling_mode": "quick-non-complete" if args.quick else "full",
             "status": status, "selected_metrics": selected,

@@ -20,7 +20,7 @@ from performance.targets.echomem.acceptance.provenance import render_platform_pr
 STATUSES = ("MEASURED", "PARTIAL", "BLOCKED", "EXECUTION_ERROR")
 METRIC_ORDER = ("M1", "M3", "M4", "M2", "M5", "M6")
 METRIC_NAMES = {
-    "M1": "4U8G 单实例热用户和 DAU",
+    "M1": "单实例热用户和 DAU",
     "M2": "单租户故障隔离",
     "M3": "多租户公平性",
     "M4": "Commit 洪泛下 Search 性能",
@@ -28,7 +28,7 @@ METRIC_NAMES = {
     "M6": "每层每租户四元组",
 }
 METRIC_PURPOSES = {
-    "M1": "回答一个 4U8G 实例实际承载多少热用户，以及不同业务画像下的流量等价 DAU。",
+    "M1": "回答当前单实例实际承载多少热用户，以及不同业务画像下的流量等价 DAU。",
     "M2": "观察一个租户失败或变慢时，其他租户的 Search 尾延迟和错误是否被拖累。",
     "M3": "检查同档位租户是否获得接近等权的 Commit 吞吐和 Search 响应机会。",
     "M4": "检查 Commit 洪泛期间，交互式 Search 的延迟、质量和可用性是否仍受保护。",
@@ -823,9 +823,10 @@ def evaluate_observation(suite: dict[str, Any], profile: dict[str, Any],
         {"category": "可观测性", "evidence": metrics["M6"].get("scenarios"),
          "note": "缺字段、重复键、非法值和重启分段见 M6"},
         {"category": "测试平台/部署", "evidence": profile.get("resource_evidence"),
-         "note": "4U8G cgroup、发送池和原始产物完整性"},
+         "note": "实际容器资源、发送池和原始产物完整性"},
     ]
     return {"schema_version": 1, "assessment": "observation-only",
+            "instance_profile": suite.get("instance_profile") or profile.get("name") or "local",
             "performance_thresholds_applied": False,
             "sampling_mode": "quick-non-complete" if quick else "full",
             "status": overall, "metrics": metrics,
@@ -930,7 +931,8 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
     excluded = [code for code in METRIC_ORDER if code not in selected]
     ordered_metrics = {code: result["metrics"][code] for code in METRIC_ORDER if code in result["metrics"]}
     scope = "六项" if not excluded else " / ".join(included) or "未选择指标"
-    title = f"EchoMem 4U8G {scope}黑盒观测"
+    profile_label = result.get("instance_profile") or "local"
+    title = f"EchoMem {profile_label} {scope}黑盒观测"
     scope_notice = (f"<p>本报告不包含：{esc('、'.join(excluded))}。这些指标未在本次命令中执行，不代表测试失败，也不说明其他运行的进度。</p>"
                     if excluded else "")
     cards = "".join(

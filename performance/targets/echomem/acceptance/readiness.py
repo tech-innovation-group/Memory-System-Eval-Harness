@@ -47,6 +47,7 @@ def check_readiness(profile: dict) -> dict:
                        "owner": owner, "next_action": action, **observed})
 
     container = str(profile.get("resource_container") or "")
+    require_4u8g = profile.get("require_4u8g", True) is not False
     try:
         inspected = inspect_container(container)
         limits = inspected["HostConfig"]
@@ -56,11 +57,16 @@ def check_readiness(profile: dict) -> dict:
         resource = {"container": container, "container_id": inspected.get("Id"),
                     "image_id": inspected.get("Image"), "cpus": cpus,
                     "memory_bytes": limits.get("Memory"),
-                    "running": inspected.get("State", {}).get("Running") is True}
-        record("4U8G-container", cpus == 4 and resource["memory_bytes"] == 8 * 1024**3 and resource["running"],
-               "deployment", "Start the dedicated target with --cpus=4 --memory=8g; verify Docker access.", **resource)
+                    "running": inspected.get("State", {}).get("Running") is True,
+                    "resource_policy": "fixed-4u8g" if require_4u8g else "host-default"}
+        resource_ok = resource["running"]
+        action = "Start the dedicated target container and verify Docker access."
+        if require_4u8g:
+            resource_ok = resource_ok and cpus == 4 and resource["memory_bytes"] == 8 * 1024**3
+            action = "Start the dedicated target with --cpus=4 --memory=8g; verify Docker access."
+        record("resource-container", resource_ok, "deployment", action, **resource)
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
-        record("4U8G-container", False, "deployment", "Cannot inspect the target container; check its name and Docker access.")
+        record("resource-container", False, "deployment", "Cannot inspect the target container; check its name and Docker access.")
 
     base = str(profile.get("base_url") or "").rstrip("/")
     parsed = urlsplit(base)

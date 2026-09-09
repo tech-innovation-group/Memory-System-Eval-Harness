@@ -4,6 +4,7 @@ from performance.targets.echomem.acceptance.observation import METRIC_NAMES, wri
 
 def result(selected):
     return {"selected_metrics": selected, "status": "MEASURED", "sampling_mode": "full",
+            "instance_profile": "4U8G",
             "metrics": {code: {"status": "MEASURED" if code in selected else "BLOCKED",
                                "reason": "measured" if code in selected else "本次命令未选择该指标"}
                         for code in METRIC_NAMES}}
@@ -46,6 +47,14 @@ def test_full_report_keeps_all_six_metrics(tmp_path):
     sections = [page.index(f"<section><h2>{code} ") for code in ordered]
     assert cards == sorted(cards)
     assert sections == sorted(sections)
+
+
+def test_report_uses_local_profile_name(tmp_path):
+    data = result(["M1"])
+    data["instance_profile"] = "Local"
+    path = tmp_path / "report.html"
+    write_observation_report(data, path)
+    assert "<h1>EchoMem Local M1黑盒观测</h1>" in path.read_text()
 
 
 def test_m1_report_keeps_failure_domains_and_provider_evidence(tmp_path):

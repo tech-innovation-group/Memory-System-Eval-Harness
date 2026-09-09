@@ -23,9 +23,11 @@ fi
 command=(
   .venv/bin/python -m performance.targets.echomem.observation_run
   --profiles "$profile_json"
-  --profile 4U8G
   --out-dir "$output_dir"
 )
+if [[ -n "${ECHOMEM_STRESS_PROFILE:-}" ]]; then
+  command+=(--profile "$ECHOMEM_STRESS_PROFILE")
+fi
 if [[ -n "$env_file" ]]; then
   command+=(--env-file "$env_file")
 fi
