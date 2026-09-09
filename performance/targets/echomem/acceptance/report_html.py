@@ -624,7 +624,7 @@ h1{{margin:0;font-size:25px;line-height:1.15}}h2{{font-size:18px;margin:0 0 12px
 details{{border-top:1px solid var(--line);padding:11px 0}}details:first-of-type{{border-top:0}}summary{{cursor:pointer;font-weight:700}}.detail-intro{{margin-top:10px;color:var(--muted)}}.metric-grid{{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}}.metric-grid>div{{border:1px solid var(--line);padding:10px;border-radius:6px}}.metric-grid span,.metric-grid small{{display:block;color:var(--muted)}}.metric-grid b{{display:block;font-size:16px;margin:3px 0}}.links{{line-height:2}}a{{color:#286aa6}}code{{background:#eef2f4;padding:2px 5px;border-radius:4px;font-size:12px}}
 .footer{{margin-top:14px;color:var(--muted);font-size:12px}}@media(max-width:900px){{.hero{{display:block}}.hero-meta{{text-align:left;margin-top:10px}}.kpis{{grid-template-columns:repeat(2,1fr)}}.metric-grid{{grid-template-columns:repeat(2,1fr)}}.review-grid{{grid-template-columns:1fr}}}}
 </style></head><body><main class='page'>
-<header class='top'>{icon}<div><h1>EchoMem 多租户压测数据报告</h1><small>真实 HTTP / 真实模型 · 生成于 {esc(datetime.now().astimezone().isoformat())}</small></div></header>
+<header class='top'>{icon}<div><h1>EchoMem 多租户压测数据报告</h1><small>真实 HTTP / 模型调用状态以预检与运行期证据为准 · 生成于 {esc(datetime.now().astimezone().isoformat())}</small></div></header>
 <section class='hero {status_class}'><div><div class='label'>套件总判定</div><strong>{esc(overall)}</strong><div>{esc(evidence_note)}</div></div>
 <div class='hero-meta'>目标 <code>{esc(manifest.get('base_url'))}</code><br>{len(runs)} 次运行 · {len(groups)} 组策略/场景</div></section>
 <div class='kpis'>

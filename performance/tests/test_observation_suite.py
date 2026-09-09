@@ -51,11 +51,15 @@ def test_report_shows_verified_llm_and_embedding_models(tmp_path: Path) -> None:
                  "model_supported": True, "code": 200, "elapsed_s": 0.2, "error": ""},
             ],
         },
+        "timing_evidence": {"module_timings": [
+            {"module": "recall/query_embedding", "observations": 12},
+            {"module": "commit/memory_extraction", "observations": 4},
+        ]},
     }
     write_observation_report(result, path)
     rendered = path.read_text()
     assert "本次使用的模型" in rendered
-    assert "已使用真实模型" in rendered
+    assert "真实模型预检通过，且压测期间观察到模型相关阶段调用" in rendered
     assert "real-llm" in rendered
     assert "real-embedding" in rendered
     assert "config-sha" in rendered
@@ -76,7 +80,25 @@ def test_report_does_not_claim_real_models_when_preflight_failed(tmp_path: Path)
     write_observation_report(result, path)
     rendered = path.read_text()
     assert "模型预检失败" in rendered
-    assert "已使用真实模型：" not in rendered
+    assert "压测期间观察到模型相关阶段调用" not in rendered
+
+
+def test_report_marks_preflight_only_as_insufficient_workload_evidence(tmp_path: Path) -> None:
+    path = tmp_path / "report.html"
+    result = {
+        "metrics": {"M1": {"status": "PARTIAL", "reason": "test"}},
+        "selected_metrics": ["M1"], "status": "PARTIAL", "sampling_mode": "full",
+        "model_preflight": {
+            "ok": True, "engines_checked": 2, "engines": [
+                {"kind": "llm", "status": "ok", "model_supported": True},
+                {"kind": "embedding", "status": "ok", "model_supported": True},
+            ],
+        },
+    }
+    write_observation_report(result, path)
+    rendered = path.read_text()
+    assert "没有压测期间模型调用证据" in rendered
+    assert "不能宣称负载使用了模型" in rendered
 
 
 def _run(tmp_path: Path, name: str, rows: list[dict]) -> dict:

@@ -336,6 +336,7 @@ def main(argv: list[str] | None = None) -> int:
                 "probe_artifacts": probe_artifacts,
                 "six_metric_status": six["status"] if args.six_metrics else None,
                 "memory_leak": suite.get("memory_leak"),
+                "model_preflight": suite.get("preflight") or {},
                 **probe_artifacts,
                 "command": command_result,
                 "objectives": objective_statuses({
@@ -385,6 +386,13 @@ def main(argv: list[str] | None = None) -> int:
         "objectives": OBJECTIVES,
         "instance_profiles": completed_profile_records,
         "multi_spec_completed_count": completed_profile_count,
+        "real_model_preflight_complete": bool(output_profiles) and all(
+            bool((profile.get("model_preflight") or {}).get("ok"))
+            for profile in output_profiles
+        ),
+        "real_model_evidence_required": bool(args.six_metrics) or any(
+            bool(profile.get("preflight_config")) for profile in output_profiles
+        ),
     }
     (args.out_dir / "objective-suite.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
@@ -393,4 +401,6 @@ def main(argv: list[str] | None = None) -> int:
     print(args.out_dir / "objective-suite.html")
     if args.six_metrics and any(p.get("six_metric_status") != PASS for p in output_profiles):
         return 1 if any(p.get("six_metric_status") == "FAIL" for p in output_profiles) else 2
+    if result["real_model_evidence_required"] and not result["real_model_preflight_complete"]:
+        return 2
     return 0 if output_profiles else 2

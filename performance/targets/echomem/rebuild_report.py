@@ -131,6 +131,12 @@ def main(argv: list[str] | None = None) -> int:
         suite_dir = results_dir / name
         partial_dir = results_dir / "_partial" / name
         partial_dir.mkdir(parents=True, exist_ok=True)
+        existing_suite_path = suite_dir / "suite.json"
+        try:
+            existing_suite = json.loads(existing_suite_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            existing_suite = {}
+        model_preflight = existing_suite.get("preflight") or {}
 
         runs: list[dict[str, Any]] = []
         for case in catalog:
@@ -165,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
             "client_admission_enabled": False,
             "probe_artifacts": {},
             "runs": runs,
+            "preflight": model_preflight,
         }
         manifest["acceptance"] = evaluate_pr421_acceptance(manifest)
         _finalize_suite(manifest, partial_dir)
@@ -183,6 +190,7 @@ def main(argv: list[str] | None = None) -> int:
             "profile_execution_status": profile_execution_status,
             "completed_runs": completed_runs,
             "submitted_runs": submitted_runs,
+            "model_preflight": model_preflight,
             "objectives": objective_statuses({
                 **suite,
                 "profile_name": name,
@@ -205,6 +213,7 @@ def main(argv: list[str] | None = None) -> int:
                 "submitted_runs": submitted_runs,
             }],
             "multi_spec_completed_count": 1 if completed_runs > 0 else 0,
+            "real_model_preflight_complete": bool(model_preflight.get("ok")),
         }
         (out_root / "objective-suite.json").write_text(
             json.dumps(result, ensure_ascii=False, indent=2) + "\n",

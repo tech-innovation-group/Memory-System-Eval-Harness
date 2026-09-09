@@ -1252,9 +1252,20 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
         if row.get("status") == "ok" and row.get("model_supported") is True
     }
     models_verified = bool(model_preflight.get("ok")) and {"llm", "embedding"}.issubset(verified_kinds)
-    if models_verified:
-        model_verdict = "已使用真实模型：LLM 与 Embedding 均完成真实请求预检"
+    timing_evidence = result.get("timing_evidence") or {}
+    model_stage_modules = sorted({
+        str(row.get("module") or "")
+        for row in timing_evidence.get("module_timings", [])
+        if row.get("observations") and any(marker in str(row.get("module") or "") for marker in (
+            "recall/llm", "query_embedding", "provider/", "memory_extraction"
+        ))
+    })
+    if models_verified and model_stage_modules:
+        model_verdict = "真实模型预检通过，且压测期间观察到模型相关阶段调用"
         model_class = "MEASURED"
+    elif models_verified:
+        model_verdict = "真实模型预检通过，但没有压测期间模型调用证据，不能宣称负载使用了模型"
+        model_class = "PARTIAL"
     elif model_rows:
         model_verdict = "模型预检失败：不能声称本次使用了可用的真实模型"
         model_class = "BLOCKED"
@@ -1272,7 +1283,8 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
         f"<p class='{model_class}'><b>{esc(model_verdict)}</b></p>"
         f"<p>配置指纹：<code>{esc(model_preflight.get('digest'))}</code>；"
         f"预检尝试：{esc(model_preflight.get('probe_attempts'))}；"
-        f"检查引擎数：{esc(model_preflight.get('engines_checked'))}。API Key 不写入报告。</p>" +
+        f"检查引擎数：{esc(model_preflight.get('engines_checked'))}；"
+        f"负载期模型阶段：{esc('、'.join(model_stage_modules) or '未观测')}。API Key 不写入报告。</p>" +
         model_table + "</section>"
     )
     cards = "".join(
