@@ -178,7 +178,7 @@ def _sample_observability(stop, collect, samples, errors, output: Path) -> None:
 def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> dict[str, Any]:
     needs_m6_behaviors = "M6" in selected
     m6_only = set(selected) == {"M6"}
-    needs_fault = "M2" in selected or needs_m6_behaviors
+    needs_fault = "M4" in selected or needs_m6_behaviors
     readiness = check_readiness({
         **profile,
         "fault_isolation": {**(profile.get("fault_isolation") or {}), "enabled": needs_fault},
@@ -203,7 +203,7 @@ def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> 
         if not env_name or not os.environ.get(env_name, ""):
             raise ValueError("Every observation tenant requires a non-empty auth_key_env")
     specs = load_tenant_specs(profile["tenant_config"])
-    required = 8 if "M3" in selected else 4
+    required = 8 if "M2" in selected else 4
     if len(specs) < required or len({spec.auth_key for spec in specs[:required]}) != required:
         raise ValueError(f"{required} independently authenticated tenants are required")
     tenant_ids = [spec.tenant_id for spec in specs[:required]]
@@ -213,7 +213,7 @@ def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> 
     base_url = str(profile.get("base_url") or "").rstrip("/")
     phase = 15 if quick or m6_only else 60
     fault = {
-        "enabled": "M2" in selected or needs_m6_behaviors,
+        "enabled": "M4" in selected or needs_m6_behaviors,
         "endpoint": base_url + "/api/inspect/test-control/fault",
         "token_env": "ECHOMEM_TEST_CONTROL_TOKEN",
         "samples": 10 if quick else 100,
@@ -249,7 +249,9 @@ def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> 
         "seed_messages": 1,
         "allow_partial_tenants": False,
         "metrics_enabled": True,
-        "fault_isolation": fault if ("M2" in selected or needs_m6_behaviors) else {"enabled": False},
+        "invalid_input": {"enabled": True, "token_env": "ECHOMEM_TEST_CONTROL_TOKEN",
+                          **(profile.get("invalid_input") or {})},
+        "fault_isolation": fault if ("M4" in selected or needs_m6_behaviors) else {"enabled": False},
         "tenant_observability": {
             **(profile.get("tenant_observability") or {}),
             "enabled": "M6" in selected,
@@ -285,7 +287,9 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
     started_at = _now()
     provenance = platform_snapshot()
     (output / "execution-manifest.json").write_text(json.dumps({
-        "schema_version": 1, "started_at": started_at, "finished_at": None,
+        "schema_version": 2,
+        "metric_numbering": "capacity-fairness-priority-isolation-recovery-observability-v2",
+        "started_at": started_at, "finished_at": None,
         "git_commit": provenance["git_commit"], "platform_provenance": provenance, "selected_metrics": selected,
         "sampling_mode": "quick-non-complete" if args.quick else "full",
         "soak_enabled": False, "execution_status": "PARTIAL",
@@ -365,16 +369,16 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
                 raise PublishedObservationError(str(exc), result) from exc
             publish_stage([code for code in selected if code != "M1"])
 
-        load_metrics = [name for name in selected if name in {"M3", "M4"}]
+        load_metrics = [name for name in selected if name in {"M2", "M3"}]
         scenarios = []
+        if "M2" in load_metrics:
+            scenarios.extend(("m2-fairness-4t", "m2-fairness-8t"))
         if "M3" in load_metrics:
-            scenarios.extend(("m3-fairness-4t", "m3-fairness-8t"))
-        if "M4" in load_metrics:
-            scenarios.extend(("m4-baseline", "m4-flood-uniform", "m4-flood-single-tenant"))
-        if "M2" in selected and "m4-baseline" not in scenarios:
-            scenarios.append("m4-baseline")
+            scenarios.extend(("m3-baseline", "m3-flood-uniform", "m3-flood-single-tenant"))
+        if "M4" in selected and "m3-baseline" not in scenarios:
+            scenarios.append("m3-baseline")
         if "M6" in selected:
-            for dependency in ("m4-baseline", "m4-flood-uniform"):
+            for dependency in ("m3-baseline", "m3-flood-uniform"):
                 if dependency not in scenarios:
                     scenarios.append(dependency)
         if scenarios:
@@ -417,7 +421,7 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
                 "queries": {row["tenant_id"]: row["marker"] for row in visibility},
             }
         tenant_config = read_json(Path(profile["tenant_config"]))
-        pending = [code for code in selected if code in {"M2", "M5", "M6"}]
+        pending = [code for code in selected if code in {"M4", "M5", "M6"}]
         early_report = None
         if scenarios and pending:
             early_report = evaluate_observation(suite, profile, m1_reports, quick=args.quick, selected_metrics=selected)

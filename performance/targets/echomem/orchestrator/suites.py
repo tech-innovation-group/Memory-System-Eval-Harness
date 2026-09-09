@@ -489,9 +489,9 @@ def six_metric_cases(capacity_levels: list[int] | None = None) -> list[dict]:
 
 
 def six_metric_observation_cases(*, quick: bool = False) -> list[dict]:
-    """Observation-only M3/M4 matrix.
+    """Observation-only M2/M3 matrix.
 
-    M1 is executed by the T x U capacity runner and M2/M5/M6 are probes. The
+    M1 is executed by the T x U capacity runner and M4/M5/M6 are probes. The
     cases here therefore contain only the paired Search/Commit windows needed
     for fairness and flood observations. No case encodes a performance gate.
     """
@@ -507,7 +507,7 @@ def six_metric_observation_cases(*, quick: bool = False) -> list[dict]:
     }
     return [
         _case(
-            label="m3-fairness-4t", scene="scene_c_mixed", tenants=4,
+            label="m2-fairness-4t", scene="scene_c_mixed", tenants=4,
             commit_rpm=20.0 if quick else 2.0, commit_barrier=False,
             arrival_scope="per_tenant", commit_start_s=3 if quick else 30,
             arrival_end_s=duration, measurement_start_s=3 if quick else 30,
@@ -515,7 +515,7 @@ def six_metric_observation_cases(*, quick: bool = False) -> list[dict]:
             **{**common, "search_rps": 1.0, "duration_s": duration + (30 if quick else 180)},
         ),
         _case(
-            label="m3-fairness-8t", scene="scene_c_mixed", tenants=8,
+            label="m2-fairness-8t", scene="scene_c_mixed", tenants=8,
             commit_rpm=20.0 if quick else 2.0, commit_barrier=False,
             arrival_scope="per_tenant", commit_start_s=3 if quick else 30,
             arrival_end_s=duration, measurement_start_s=3 if quick else 30,
@@ -523,11 +523,11 @@ def six_metric_observation_cases(*, quick: bool = False) -> list[dict]:
             **{**common, "search_rps": 1.0, "duration_s": duration + (30 if quick else 180)},
         ),
         _case(
-            label="m4-baseline", scene="scene_capacity", tenants=4,
+            label="m3-baseline", scene="scene_capacity", tenants=4,
             commit_rpm=0.0, read_only=True, **common,
         ),
         _case(
-            label="m4-flood-uniform", scene="scene_barrier", tenants=4,
+            label="m3-flood-uniform", scene="scene_barrier", tenants=4,
             barrier_prepare_before_commit=True,
             commit_rpm=0.0, commit_barrier=True,
             commit_barrier_count=barrier,
@@ -535,7 +535,7 @@ def six_metric_observation_cases(*, quick: bool = False) -> list[dict]:
             blackbox_search_priority=True, **common,
         ),
         _case(
-            label="m4-flood-single-tenant", scene="scene_barrier", tenants=4,
+            label="m3-flood-single-tenant", scene="scene_barrier", tenants=4,
             barrier_prepare_before_commit=True,
             commit_rpm=0.0, commit_barrier=True,
             commit_barrier_count=barrier,

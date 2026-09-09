@@ -2,7 +2,7 @@
 
 import csv
 
-from performance.targets.echomem.acceptance.observation import _fairness_window, summarize_m3
+from performance.targets.echomem.acceptance.observation import _fairness_window, summarize_m2
 from performance.targets.echomem.orchestrator.suites import build_case_profile, six_metric_observation_cases
 
 
@@ -109,10 +109,10 @@ def test_load_generator_missing_demand_is_visible(tmp_path):
 
 def test_full_and_quick_status_and_historical_contract(tmp_path):
     runs = {run["scenario"]: run for run in (write_run(tmp_path, 4), write_run(tmp_path, 8))}
-    assert summarize_m3(runs, quick=False)["status"] == "MEASURED"
-    assert summarize_m3(runs, quick=True)["status"] == "PARTIAL"
+    assert summarize_m2(runs, quick=False)["status"] == "MEASURED"
+    assert summarize_m2(runs, quick=True)["status"] == "PARTIAL"
     runs["m3-fairness-4t"]["summary"]["measurement_contract"].pop("fairness_mode")
-    assert summarize_m3(runs, quick=False)["status"] == "PARTIAL"
+    assert summarize_m2(runs, quick=False)["status"] == "PARTIAL"
 
 
 def test_formal_m3_is_periodic_not_barrier():

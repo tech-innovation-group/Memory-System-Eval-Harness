@@ -244,6 +244,22 @@ def run_configured_probes(
                 break
     redact = {auth_key} if auth_key else set()
 
+    invalid_input = profile.get("invalid_input")
+    if isinstance(invalid_input, dict) and invalid_input.get("enabled", True):
+        output = suite_dir / "invalid-input.json"
+        params = {"tenant_config": str(tenant_path)}
+        for key in ("timeout_s", "auth_header", "token_env"):
+            value = invalid_input.get(key)
+            if value not in (None, ""):
+                params[key] = value
+        payload, execution = run_configured_probe(
+            params, probes_dir=PROBES_DIR, scene="invalid_input.py", output=output,
+            base_url=base_url, timeout_s=min(timeout_s, 120), redact_values=redact,
+        )
+        commands.append(execution)
+        if payload:
+            artifacts["invalid_input"] = {**payload, "path": str(output)}
+
     capability = profile.get("capability_probe")
     if isinstance(capability, dict):
         output = suite_dir / "capability-probe.json"

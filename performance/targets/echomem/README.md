@@ -12,15 +12,27 @@
 | 指标 | 测试动作 | 主要输出 |
 | --- | --- | --- |
 | M1 单实例容量与 DAU | 预注入真实记忆，按租户数和租户内热用户数逐档增加 Search、Commit 与混合负载，直到出现持续阻塞、失败、崩溃或积压不能恢复 | 每档 P95、吞吐、错误类型、质量分母、CPU、内存、最后正常档、首个拥塞档、三种业务画像 DAU 换算 |
-| M2 单租户故障隔离 | 依次给一个租户注入 `delay` 和 `reject`，其余租户持续执行真实记忆 Search | 旁观租户故障前/中/后的 Search P95、错误率和劣化百分比 |
-| M3 多租户公平性 | 4 租户、8 租户使用独立凭证，以同档位请求并发 Search 和独立 Session Commit | 每租户 Commit 吞吐、Search P95、Commit Jain 指数、Search Jain 指数和零完成租户 |
-| M4 Commit 洪泛优先级 | 先测热记忆 Search 基线，再运行均匀洪泛和单租户洪泛；仅统计与未完成 Commit 确认重叠的 Search | 基线/洪泛 Search P95、错误、召回质量、Commit 计划/202/拒绝/完成/未终态数量 |
+| M2 多租户公平性 | 4 租户、8 租户使用独立凭证，以同档位请求并发 Search 和独立 Session Commit | 每租户 Commit 吞吐、Search P95、Commit Jain 指数、Search Jain 指数和零完成租户 |
+| M3 Commit 洪泛优先级 | 先测热记忆 Search 基线，再运行均匀洪泛和单租户洪泛；仅统计与未完成 Commit 确认重叠的 Search | 基线/洪泛 Search P95、错误、召回质量、Commit 计划/202/拒绝/完成/未终态数量 |
+| M4 单租户故障隔离 | 依次给一个租户注入 `delay` 和 `reject`，其余租户持续执行真实记忆 Search | 旁观租户故障前/中/后的 Search P95、错误率和劣化百分比 |
 | M5 202 Commit 崩溃恢复 | Commit 返回 202 且尚未完成时 kill 容器，重启后只轮询原任务并重复提交幂等键 | 恢复终态，以及 history、archive、cursor 的消息集合、顺序、丢失和重复对账 |
 | M6 分层分租户可观测性 | 全程采集受保护观测接口，并覆盖 NORMAL、QUEUE、REJECT、RESET | 每个 `tenant × lane` 的 queued、wait、exec、rejected 四元组，缺失帧、非法值和重启代际 |
 
 测试是**观测型**的，不内置“P95 必须小于多少”之类性能门槛。`MEASURED` 表示规定的
 数据分母已采集完整，不等于性能优秀；失败、超时、HTTP 200 但召回质量失败、Provider
 异常和长期 pending Commit 都会原样进入报告。
+
+每次运行还会生成两组横向证据：关键接口调用账本按 Search、Open、Add、Commit、
+Commit 状态、History、Archive、Cursor、Metrics、故障控制和租户观测分别统计实际
+调用次数与错误；负向契约探针独立检查缺认证、畸形 JSON、缺必填字段、错误字段类型、
+不存在资源及非法故障类型，不把这些请求混入性能分母。接口和模块耗时分开显示：
+客户端仅能证明 HTTP 端到端耗时，EchoMem 响应实际提供的 route/engine 阶段计时另表展示，
+缺失的内部阶段保持“不可观测”，不使用 P95 相减猜测。
+
+M3 同时包含均匀 Commit 洪泛和单租户洪泛。后者让一个租户承担全部 Commit，四个租户
+继续独立 Search，用于观察不同租户负载与耗时是否串扰；它是异构/吵闹邻居场景，不能
+拿来计算 M2 的等权 Jain 公平性。当前 EchoMem 故障控制作用于目标租户全部认证请求，
+若要分别制造“仅 Search 慢”或“仅 Commit 慢”，服务端还需提供按 operation 选择的故障范围。
 
 ## 1. 准备环境
 
@@ -75,7 +87,7 @@ GET/POST /api/inspect/test-control/fault
 GET      /api/inspect/tenant-observability
 ```
 
-缺少这些接口时，M2 和 M6 会明确报告 `BLOCKED`，不能用客户端模拟结果替代。
+缺少这些接口时，M4 和 M6 会明确报告 `BLOCKED`，不能用客户端模拟结果替代。
 
 启动并检查：
 
@@ -109,7 +121,7 @@ mkdir -p .local-stress
 
 ## 4. 创建独立测试租户
 
-M3 必须使用不同租户凭证；重复使用同一个 key 只能测到并发，不能证明租户公平。
+M2 必须使用不同租户凭证；重复使用同一个 key 只能测到并发，不能证明租户公平。
 
 ```bash
 .venv/bin/python -m performance.targets.echomem.provision \
@@ -205,7 +217,7 @@ performance/targets/echomem/run_six_metrics.sh full \
   .local-stress/test.env
 ```
 
-执行顺序为 `M1 → M3 → M4 → M2 → M5`，M6 从开始到结束持续采样。默认不运行 soak。
+执行顺序为 `M1 → M2 → M3 → M4 → M5`，M6 从开始到结束持续采样。默认不运行 soak。
 机器速度、模型限流和容量边界不同会影响总时长，M1 的逐档容量测试通常最耗时。
 
 只测一项：
@@ -218,7 +230,7 @@ performance/targets/echomem/run_six_metrics.sh full \
   --out-dir results/local-m1
 ```
 
-`--metrics` 可使用 `M1` 到 `M6`，也可传 `M1,M3,M4`。只测 M6：
+`--metrics` 可使用 `M1` 到 `M6`，也可传 `M1,M2,M3`。只测 M6：
 
 ```bash
 performance/targets/echomem/run_six_metrics.sh m6 \
@@ -281,6 +293,6 @@ cd "$ECHOMEM_DIR/deploy/single-node"
 | `fault_isolation` 或 `tenant_observability` 阻塞 | 核对 EchoMem 接口、启用开关及 Core/runner 两侧 token 是否一致 |
 | 模型预检失败 | 同时检查 LLM 与 Embedding endpoint、模型名、余额、限流和 `api_key_env` |
 | Search 200 但无召回 | 检查种子 Commit、自然语言查询命中和返回正文中的预期事实 |
-| M3 不能证明公平性 | 确认租户凭证各不相同，不能让多个 tenant 复用同一个 key |
+| M2 不能证明公平性 | 确认租户凭证各不相同，不能让多个 tenant 复用同一个 key |
 | M5 未执行重启 | 只有 Commit 已返回 202 且仍未完成时才会 kill；确认目标是专用本机容器 |
 | 容器 CPU/内存显示 0 | 本机模式下表示 Docker 未设 cgroup 上限，测试使用宿主机默认资源 |

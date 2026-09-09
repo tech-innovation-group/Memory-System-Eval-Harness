@@ -10,8 +10,10 @@ from performance.targets.echomem.acceptance.observation import (
     derive_observation_recommendations,
     evaluate_observation,
     jain,
+    summarize_api_coverage,
     summarize_m5,
     summarize_m6,
+    summarize_timing_evidence,
     write_observation_report,
 )
 from performance.targets.echomem.observation_run import _m1_levels, _validate_m1_resume
@@ -96,7 +98,7 @@ def test_overlap_uses_search_start_not_interval_intersection(tmp_path: Path) -> 
     ]
     suite = {"runs": [_run(tmp_path, "m4-baseline", baseline),
                        _run(tmp_path, "m4-flood-uniform", flood)]}
-    result = evaluate_observation(suite, {}, quick=False)["metrics"]["M4"]
+    result = evaluate_observation(suite, {}, quick=False)["metrics"]["M3"]
     assert result["windows"][0]["overlap"]["planned_or_recorded"] == 1
     assert result["windows"][0]["overlap"]["timeouts"] == 1
 
@@ -212,3 +214,28 @@ def test_observation_recommendations_cover_required_modules() -> None:
     modules = {row["module"] for row in recommendations}
     assert {"原子引擎 Atomic Engine", "路由与 Search 编排", "多租户调度"} <= modules
     assert all(row["evidence"] and row["action"] for row in recommendations)
+
+
+def test_api_coverage_keeps_uncalled_contracts_visible(tmp_path: Path) -> None:
+    run = _run(tmp_path, "calls", [
+        {"op": "read", "status": "ok", "stage_ms": 12},
+        {"op": "commit_done", "status": "ok", "stage_ms": 40, "poll_count": 3},
+    ])
+    summary = summarize_api_coverage({"runs": [run]})
+    rows = {row["operation"]: row for row in summary["operations"]}
+    assert rows["search"]["calls"] == 1
+    assert rows["commit_status"]["calls"] == 3
+    assert rows["message_add"]["status"] == "NOT_COVERED"
+    assert summary["invalid_input"]["status"] == "NOT_COVERED"
+
+
+def test_timing_summary_does_not_invent_internal_stages(tmp_path: Path) -> None:
+    run = _run(tmp_path, "timings", [
+        {"op": "read", "status": "ok", "stage_ms": 10},
+        {"op": "read", "status": "ok", "stage_ms": 30},
+    ])
+    summary = summarize_timing_evidence({"runs": [run]}, [])
+    read = next(row for row in summary["operation_timings"] if row["module"].endswith("/read"))
+    assert read["observations"] == 2
+    assert read["p95_ms"] == 30
+    assert "atomic engine" in summary["unobservable_modules"]

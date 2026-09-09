@@ -55,7 +55,7 @@ def test_combined_observation_uses_same_semantic_seed_hook(tmp_path, monkeypatch
         return {"runs":[]}
     monkeypatch.setattr(runner, "run_suite_impl", suite)
     runner.run_suite({"six_metrics_observation":True,"semantic_seed_cache":"/unit/cache"},
-        suite_dir=tmp_path, scenarios=["m3-fairness-4t","m4-baseline","m4-flood-uniform"])
+        suite_dir=tmp_path, scenarios=["m2-fairness-4t","m3-baseline","m3-flood-uniform"])
     assert captured["seed"].func is runner._prepare_semantic_seed
     assert captured["seed"].keywords == {"reuse_seed":"/unit/cache"}
 

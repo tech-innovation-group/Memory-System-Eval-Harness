@@ -56,12 +56,12 @@ def test_publish_checkpoint_before_capacity(tmp_path, monkeypatch):
 @pytest.mark.parametrize("probe_failure", [False, True])
 def test_bounded_data_published_before_long_probes(tmp_path, monkeypatch, probe_failure):
     args, _ = setup_run(tmp_path, monkeypatch)
-    args.metrics = "M3,M2"
+    args.metrics = "M2,M4"
 
     def probes(*a, **k):
         summary = json.loads((args.out_dir / "summary.json").read_text())
         assert summary["checkpoint"] is True
-        assert summary["pending_metrics"] == ["M2"]
+        assert summary["pending_metrics"] == ["M4"]
         assert (args.out_dir / "report.html").is_file()
         assert (args.out_dir / "records.csv").is_file()
         if probe_failure:
@@ -75,7 +75,7 @@ def test_bounded_data_published_before_long_probes(tmp_path, monkeypatch, probe_
         summary = json.loads((args.out_dir / "summary.json").read_text())
         assert summary["status"] == "EXECUTION_ERROR"
         assert summary["checkpoint"] is False
-        assert "M3" in summary["metrics"]
+        assert "M2" in summary["metrics"]
         assert "运行中断" in (args.out_dir / "report.html").read_text()
     else:
         assert not module.run(args).get("checkpoint")
@@ -97,7 +97,7 @@ def test_m6_only_shortens_dependency_load_without_becoming_quick(tmp_path, monke
     assert spec.barrier_count_cap == 8
     assert spec.include_seed is True
     assert spec.commit_poll_timeout_cap_s == 45
-    assert captured["scenarios"] == ["m4-baseline", "m4-flood-uniform"]
+    assert captured["scenarios"] == ["m3-baseline", "m3-flood-uniform"]
     assert result["sampling_mode"] == "full"
 
 

@@ -202,7 +202,7 @@ def test_html_shows_each_frame_and_restart_limitations(tmp_path):
 def test_coverage_and_jain_charts_use_fixed_axes(tmp_path):
     path = tmp_path / "report.html"
     write_observation_report({"status": "PARTIAL", "sampling_mode": "full", "metrics": {
-        "M3": {"status": "PARTIAL", "windows": [{"commit_throughput_jain": .5}]},
+        "M2": {"status": "PARTIAL", "windows": [{"commit_throughput_jain": .5}]},
         "M5": {"status": "PARTIAL", "complete_samples": 1, "expected_samples": 4},
         "M6": {"status": "PARTIAL", "complete_cells": 1, "expected_cells": 16,
                "scenarios": {"QUEUE": True}},

@@ -18,28 +18,28 @@ from performance.stats import percentile
 from performance.targets.echomem.acceptance.provenance import render_platform_provenance
 
 STATUSES = ("MEASURED", "PARTIAL", "BLOCKED", "EXECUTION_ERROR")
-METRIC_ORDER = ("M1", "M3", "M4", "M2", "M5", "M6")
+METRIC_ORDER = ("M1", "M2", "M3", "M4", "M5", "M6")
 METRIC_NAMES = {
     "M1": "单实例热用户和 DAU",
-    "M2": "单租户故障隔离",
-    "M3": "多租户公平性",
-    "M4": "Commit 洪泛下 Search 性能",
+    "M2": "多租户公平性",
+    "M3": "Commit 洪泛下 Search 性能",
+    "M4": "单租户故障隔离",
     "M5": "202 Commit 的 kill-9 恢复",
     "M6": "每层每租户四元组",
 }
 METRIC_PURPOSES = {
     "M1": "回答当前单实例实际承载多少热用户，以及不同业务画像下的流量等价 DAU。",
-    "M2": "观察一个租户失败或变慢时，其他租户的 Search 尾延迟和错误是否被拖累。",
-    "M3": "检查同档位租户是否获得接近等权的 Commit 吞吐和 Search 响应机会。",
-    "M4": "检查 Commit 洪泛期间，交互式 Search 的延迟、质量和可用性是否仍受保护。",
+    "M2": "检查同档位租户是否获得接近等权的 Commit 吞吐和 Search 响应机会。",
+    "M3": "检查 Commit 洪泛期间，交互式 Search 的延迟、质量和可用性是否仍受保护。",
+    "M4": "观察一个租户失败或变慢时，其他租户的 Search 尾延迟和错误是否被拖累。",
     "M5": "验证已返回 202 的 Commit 在 kill-9 后能否自主恢复，并保持消息、顺序和幂等一致。",
     "M6": "验证每个租户、每个处理层都能观测排队、等待、执行和拒绝四类数据。",
 }
 METRIC_METHODS = {
     "M1": "按跨租户和租户内两种拓扑逐档增加热用户，分别运行 Search、Commit、混合和热点负载，记录吞吐、延迟、错误、积压、CPU 与内存。",
-    "M2": "四个目标租户依次注入 reject 和 delay，分别采集故障前、故障中、恢复后数据，对比三个旁观租户的 Search P95 与错误。",
-    "M3": "分别用 4/8 个独立租户，每租户 Search 1 次/秒；预热 30 秒后每租户每 30 秒启动一次 open→add×4→Commit→轮询。第 300 秒停压，最多再观察 180 秒。只统计 [30,300) 秒内的完成吞吐与该窗口发起的 Search 延迟；窗口外排空另列。快速模式使用更短周期，仅验证采集链路。",
-    "M4": "先测四租户已预注入记忆的 Search 基线，再分别制造均匀和单租户 Commit 洪泛。按同一 tenant/session/archive 对账受理与轮询；Search 开始时刻落在受理至最后成功非终态轮询之间才计入确认重叠。宽观察窗口另列，未测到的内部调度顺序不作结论。",
+    "M2": "分别用 4/8 个独立租户，每租户 Search 1 次/秒；预热 30 秒后每租户每 30 秒启动一次 open→add×4→Commit→轮询。第 300 秒停压，最多再观察 180 秒。只统计 [30,300) 秒内的完成吞吐与该窗口发起的 Search 延迟；窗口外排空另列。快速模式使用更短周期，仅验证采集链路。",
+    "M3": "先测四租户已预注入记忆的 Search 基线，再分别制造均匀和单租户 Commit 洪泛。按同一 tenant/session/archive 对账受理与轮询；Search 开始时刻落在受理至最后成功非终态轮询之间才计入确认重叠。宽观察窗口另列，未测到的内部调度顺序不作结论。",
+    "M4": "四个目标租户依次注入 reject 和 delay，分别采集故障前、故障中、恢复后数据，对比三个旁观租户的 Search P95 与错误。",
     "M5": "Commit 返回 202 且仍未完成时 kill -9 专用容器，重启后只轮询原任务，再对账消息集合、顺序、cursor、archive 和幂等重试。",
     "M6": "负载前、中、后持续读取受保护观测接口，按实际配置逐帧枚举 tenant×lane；空帧、非法值、重复行和采样空档均保留。进程重启按身份分段，计数回退不能单独证明RESET；检查四元组及NORMAL/QUEUE/REJECT/RESET。",
 }
@@ -127,6 +127,90 @@ def _status(*, expected: int, observed: int, blocked: bool = False,
     return "PARTIAL" if observed else "BLOCKED"
 
 
+def summarize_api_coverage(suite: dict[str, Any]) -> dict[str, Any]:
+    """Build a call ledger without inventing unobserved requests."""
+    rows = [row for run in suite.get("runs", []) for row in _records(run)]
+    operations = {
+        "search": [row for row in rows if row.get("op") == "read"],
+        "session_open": [row for row in rows if row.get("op") == "open"],
+        "message_add": [row for row in rows if row.get("op") == "add"],
+        "commit_submit": [row for row in rows if row.get("op") == "commit_submit"],
+        "commit_status": [row for row in rows if row.get("op") == "commit_done"],
+    }
+    ledger = []
+    for name, selected in operations.items():
+        calls = (sum(int(_number(row.get("poll_count")) or 0) for row in selected)
+                 if name == "commit_status" else len(selected))
+        ledger.append({
+            "operation": name, "calls": calls, "records": len(selected),
+            "ok": sum(row.get("status") == "ok" for row in selected),
+            "errors": sum(row.get("status") != "ok" for row in selected),
+            "status": "COVERED" if calls else "NOT_COVERED", "evidence": "records.csv",
+        })
+    contract = suite.get("blackbox_contract_probe") or {}
+    contract_checks = contract.get("checks", [])
+    for operation in ("history", "archives", "commit_memories", "commit_cursor", "metrics"):
+        matches = [row for row in contract_checks if row.get("name") == operation]
+        ledger.append({
+            "operation": operation, "calls": len(matches), "records": len(matches),
+            "ok": sum(row.get("status") == "PASS" for row in matches),
+            "errors": sum(row.get("status") == "FAIL" for row in matches),
+            "status": "COVERED" if matches else "NOT_COVERED",
+            "evidence": "blackbox-contract-probe.json",
+        })
+    fault_cases = (suite.get("fault_isolation") or {}).get("cases", [])
+    ledger.append({"operation": "fault_control", "calls": len(fault_cases) * 2,
+                   "records": len(fault_cases), "ok": sum(bool(row.get("checks")) for row in fault_cases),
+                   "errors": 0, "status": "COVERED" if fault_cases else "NOT_COVERED",
+                   "evidence": "fault-isolation-*.json"})
+    samples = suite.get("tenant_observability_samples") or []
+    ledger.append({"operation": "tenant_observability", "calls": len(samples),
+                   "records": len(samples), "ok": sum(bool(row.get("rows")) for row in samples),
+                   "errors": sum(not bool(row.get("rows")) for row in samples),
+                   "status": "COVERED" if samples else "NOT_COVERED",
+                   "evidence": "tenant-observability-samples.json"})
+    invalid_payload = suite.get("invalid_input") or {}
+    invalid_detail = _probe_detail(invalid_payload, "invalid-input")
+    return {
+        "scope": "六项压测关键接口，不等于 EchoMem OpenAPI 全接口覆盖",
+        "covered": sum(row["status"] == "COVERED" for row in ledger),
+        "expected": len(ledger), "operations": ledger,
+        "invalid_input": ({"status": next((row.get("status") for row in invalid_payload.get("checks", [])
+                                            if row.get("name") == "invalid-input"), "PARTIAL"),
+                           **invalid_detail}
+                          if invalid_payload else {
+            "status": "NOT_COVERED",
+            "reason": "本轮没有运行非法 JSON、缺字段、越界参数、错误凭证和不存在资源的负向契约探针",
+        }),
+    }
+
+
+def summarize_timing_evidence(suite: dict[str, Any], m1_reports: list[dict[str, Any]]) -> dict[str, Any]:
+    rows = [row for run in suite.get("runs", []) for row in _records(run)]
+    operation_rows = []
+    for operation in ("read", "open", "add", "commit_submit", "commit_done"):
+        values = [value for row in rows if row.get("op") == operation
+                  and (value := _number(row.get("stage_ms"))) is not None and value >= 0]
+        operation_rows.append({"module": f"HTTP端到端/{operation}", "source": "客户端计时",
+                               "observations": len(values), "p50_ms": percentile(values, 50),
+                               "p95_ms": percentile(values, 95), "p99_ms": percentile(values, 99)})
+    module_rows = []
+    for report in m1_reports:
+        for level in report.get("levels", []):
+            search = level.get("search") or {}
+            prefix = f"M1/{level.get('topology')}/H={level.get('hot_users')}/{level.get('load_mode')}"
+            for engine, values in (search.get("engine_timings") or {}).items():
+                module_rows.append({"module": f"{prefix}/engine:{engine}", "source": "服务响应", **values})
+            for route, values in (search.get("route_path_timings") or {}).items():
+                module_rows.append({"module": f"{prefix}/route:{route}", "source": "服务响应", **values})
+    return {
+        "operation_timings": operation_rows, "module_timings": module_rows,
+        "unobservable_modules": [] if module_rows else [
+            "router/intent", "embedding", "retrieval fanout", "rerank/merge", "atomic engine"],
+        "note": "端到端耗时不能拆分或相减推定内部模块耗时；仅展示 EchoMem 响应实际返回的阶段计时。",
+    }
+
+
 def summarize_m1(reports: list[dict[str, Any]], profile: dict[str, Any]) -> dict[str, Any]:
     levels = [
         {**level, "topology": report.get("topology")}
@@ -176,7 +260,7 @@ def summarize_m1(reports: list[dict[str, Any]], profile: dict[str, Any]) -> dict
     }
 
 
-def summarize_m2(suite: dict[str, Any], profile: dict[str, Any], *, quick: bool) -> dict[str, Any]:
+def summarize_m4(suite: dict[str, Any], profile: dict[str, Any], *, quick: bool) -> dict[str, Any]:
     payload = suite.get("fault_isolation") or {}
     cases = []
     for case in payload.get("cases", []):
@@ -321,10 +405,11 @@ def _fairness_window(run: dict[str, Any], tenant_count: int) -> dict[str, Any]:
             "search_inverse_p95_jain": jain(inverse_p95)}
 
 
-def summarize_m3(runs: dict[str, dict[str, Any]], *, quick: bool) -> dict[str, Any]:
+def summarize_m2(runs: dict[str, dict[str, Any]], *, quick: bool) -> dict[str, Any]:
     windows = []
     for count in (4, 8):
-        run = runs.get(f"m3-fairness-{count}t")
+        run = (runs.get(f"m2-fairness-{count}t")
+               or runs.get(f"m3-fairness-{count}t"))
         if run and _records(run):
             windows.append(_fairness_window(run, count))
     complete = sum(window["evidence_complete"] for window in windows)
@@ -497,13 +582,15 @@ def _flood_window(baseline_rows: list[dict[str, Any]], run: dict[str, Any], tena
             "internal_order_observation": "内部顺序未观测"}
 
 
-def summarize_m4(runs: dict[str, dict[str, Any]], *, quick: bool) -> dict[str, Any]:
-    baseline_run = runs.get("m4-baseline") or {}
+def summarize_m3(runs: dict[str, dict[str, Any]], *, quick: bool) -> dict[str, Any]:
+    baseline_run = runs.get("m3-baseline") or runs.get("m4-baseline") or {}
     baseline_rows = _records(baseline_run)
     windows = []
-    for name in ("m4-flood-uniform", "m4-flood-single-tenant"):
-        if name in runs and _records(runs[name]):
-            windows.append(_flood_window(baseline_rows, runs[name]))
+    for canonical, legacy in (("m3-flood-uniform", "m4-flood-uniform"),
+                              ("m3-flood-single-tenant", "m4-flood-single-tenant")):
+        run = runs.get(canonical) or runs.get(legacy)
+        if run and _records(run):
+            windows.append(_flood_window(baseline_rows, run))
     observed = len(windows) + int(bool(baseline_rows))
     issues = []
     baseline = _request_stats(baseline_rows)
@@ -770,9 +857,9 @@ def evaluate_observation(suite: dict[str, Any], profile: dict[str, Any],
     runs = {str(run.get("scenario")): run for run in suite.get("runs", [])}
     metrics = {
         "M1": summarize_m1(m1_reports or [], profile),
-        "M2": summarize_m2(suite, profile, quick=quick),
+        "M2": summarize_m2(runs, quick=quick),
         "M3": summarize_m3(runs, quick=quick),
-        "M4": summarize_m4(runs, quick=quick),
+        "M4": summarize_m4(suite, profile, quick=quick),
         "M5": summarize_m5(suite, quick=quick),
         "M6": summarize_m6(suite, profile),
     }
@@ -807,25 +894,27 @@ def evaluate_observation(suite: dict[str, Any], profile: dict[str, Any],
          "note": "真实 LLM/embedding 预检结果"},
         {"category": "Search/Recall", "evidence": {
             "m1_windows": metrics["M1"].get("measured_windows"),
-            "m4_windows": metrics["M4"].get("observed_windows")},
-         "note": "错误、超时、空召回和质量分母见 M1/M4"},
+            "m3_windows": metrics["M3"].get("observed_windows")},
+         "note": "错误、超时、空召回和质量分母见 M1/M3"},
         {"category": "Admission/调度", "evidence": {
-            "m3": metrics["M3"]["status"], "m4": metrics["M4"]["status"]},
+            "m2": metrics["M2"]["status"], "m3": metrics["M3"]["status"]},
          "note": "客户端发送优先级不作为服务端出队顺序证据"},
         {"category": "Commit 恢复", "evidence": metrics["M5"].get("state_coverage"),
          "note": metrics["M5"].get("reason")},
         {"category": "原子引擎", "evidence": None,
          "note": "仅在 EchoMem HTTP/debug 或观测接口实际返回时归因"},
         {"category": "租户隔离", "evidence": {
-            "expected": metrics["M2"].get("expected_cases"),
-            "observed": metrics["M2"].get("observed_cases")},
+            "expected": metrics["M4"].get("expected_cases"),
+            "observed": metrics["M4"].get("observed_cases")},
          "note": "故障是否生效与旁观租户数据分开记录"},
         {"category": "可观测性", "evidence": metrics["M6"].get("scenarios"),
          "note": "缺字段、重复键、非法值和重启分段见 M6"},
         {"category": "测试平台/部署", "evidence": profile.get("resource_evidence"),
          "note": "实际容器资源、发送池和原始产物完整性"},
     ]
-    return {"schema_version": 1, "assessment": "observation-only",
+    return {"schema_version": 2,
+            "metric_numbering": "capacity-fairness-priority-isolation-recovery-observability-v2",
+            "assessment": "observation-only",
             "instance_profile": suite.get("instance_profile") or profile.get("name") or "local",
             "performance_thresholds_applied": False,
             "sampling_mode": "quick-non-complete" if quick else "full",
@@ -834,6 +923,8 @@ def evaluate_observation(suite: dict[str, Any], profile: dict[str, Any],
             "setup_evidence": setup_evidence,
             "allowed_statuses": list(STATUSES),
             "issue_categories": issues,
+            "api_coverage": summarize_api_coverage(suite),
+            "timing_evidence": summarize_timing_evidence(suite, m1_reports or []),
             "raw_suite": "suite.json"}
 
 
@@ -847,44 +938,44 @@ def derive_observation_recommendations(result: dict[str, Any]) -> list[dict[str,
                  "evidence": "种子验证未通过，尚无负载场景；不能归因于调度、原子引擎吞吐或容量。",
                  "action": "用固定事实和自然语言问题检查返回记忆正文，分别记录路由、降级、空召回及命中；前置验证通过后再压测。"}]
     m1, m2, m3, m4, m5, m6 = (metrics.get(f"M{i}", {}) for i in range(1, 7))
-    m2_changes = [
+    m4_changes = [
         float(value) * 100
-        for case in m2.get("cases", [])
+        for case in m4.get("cases", [])
         for value in (case.get("degradation_by_tenant") or {}).values()
         if _number(value) is not None
     ]
-    m3_jain = [
-        value for window in m3.get("windows", [])
+    m2_jain = [
+        value for window in m2.get("windows", [])
         for value in (window.get("commit_throughput_jain"),
                       window.get("search_inverse_p95_jain"))
         if value is not None
     ]
-    m4_ratios = [
+    m3_ratios = [
         tenant.get("p95_ratio")
-        for window in m4.get("windows", [])
+        for window in m3.get("windows", [])
         for tenant in window.get("tenants", [])
         if tenant.get("p95_ratio") is not None
     ]
     levels = m1.get("levels", [])
     highest = max((int(level.get("hot_users") or 0) for level in levels), default=None)
     recommendations = [
-        {"priority": "P0", "module": "Admission 与容量保护", "metrics": "M1 / M4",
+        {"priority": "P0", "module": "Admission 与容量保护", "metrics": "M1 / M3",
          "evidence": (f"最高已测热用户档 H={highest}；首个运行异常="
                       f"{m1.get('first_operational_anomaly') or '尚未观测'}。"),
          "action": "区分 Search 与 Commit 配额，拒绝时返回 tenant、lane、reason_code 和 retry_after；继续升档直到取得真实边界。"},
-        {"priority": "P0", "module": "多租户调度", "metrics": "M3 / M4",
-         "evidence": (f"已测 Jain 最低={min(m3_jain) if m3_jain else None}；"
-                      f"Commit 洪泛下 Search P95 最大倍率={max(m4_ratios) if m4_ratios else None}。"),
+        {"priority": "P0", "module": "多租户调度", "metrics": "M2 / M3",
+         "evidence": (f"已测 Jain 最低={min(m2_jain) if m2_jain else None}；"
+                      f"Commit 洪泛下 Search P95 最大倍率={max(m3_ratios) if m3_ratios else None}。"),
          "action": "Commit 按租户轮询或 DRR，并限制单租户在途数；Search 使用独立 lane、worker 和 admission 预算。"},
-        {"priority": "P0", "module": "路由与 Search 编排", "metrics": "M1 / M4",
-         "evidence": f"M4 已取得 {m4.get('observed_windows', 0)}/{m4.get('expected_windows', 0)} 个配对窗口。",
+        {"priority": "P0", "module": "路由与 Search 编排", "metrics": "M1 / M3",
+         "evidence": f"M3 已取得 {m3.get('observed_windows', 0)}/{m3.get('expected_windows', 0)} 个配对窗口。",
          "action": "为 intent/router、embedding、fanout、merge 分别记录排队和执行耗时，并为确定性记忆查询提供有质量校验的快速路径。"},
-        {"priority": "P1", "module": "原子引擎 Atomic Engine", "metrics": "M1 / M4 / M6",
+        {"priority": "P1", "module": "原子引擎 Atomic Engine", "metrics": "M1 / M3 / M6",
          "evidence": "当前黑盒报告尚不能把端到端尾延迟单独归因到索引读取、向量检索或候选合并。",
          "action": "暴露 embedding、索引读取、候选合并的阶段耗时和队列；避免 Commit 建索引持有 Search 所需的全局锁。"},
-        {"priority": "P1", "module": "租户故障隔离", "metrics": "M2",
-         "evidence": (f"完整故障用例 {m2.get('complete_cases', 0)}/{m2.get('expected_cases', 0)}；"
-                      f"旁观租户最差 P95 变化={max(m2_changes) if m2_changes else None}%。"),
+        {"priority": "P1", "module": "租户故障隔离", "metrics": "M4",
+         "evidence": (f"完整故障用例 {m4.get('complete_cases', 0)}/{m4.get('expected_cases', 0)}；"
+                      f"旁观租户最差 P95 变化={max(m4_changes) if m4_changes else None}%。"),
          "action": "按租户隔离并发、重试和 provider 连接预算；慢依赖等待不能长期占用全局 Search permit。"},
         {"priority": "P1", "module": "Commit 持久化与恢复", "metrics": "M5",
          "evidence": f"完整恢复样本 {m5.get('complete_samples', 0)}/{m5.get('expected_samples', 0)}。",
@@ -994,7 +1085,7 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                               "load_mode": level.get("load_mode"), **sample}
                              for level in metric.get("levels", []) for sample in level.get("resources", [])]
             visual += details("查看 CPU、内存逐点采样", table(resource_rows, [("topology", "拓扑"), ("hot_users", "热用户"), ("load_mode", "负载"), ("at_epoch_s", "时间"), ("cpu_percent_one_core_100", "CPU% (100%=1核)"), ("rss_bytes", "RSS bytes"), ("phase", "阶段")]))
-        elif code == "M2":
+        elif code == "M4":
             points = []
             worst_rows = []
             all_degradations = []
@@ -1048,7 +1139,7 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                       if all_degradations else None)
             case_count = len(metric.get("cases", []))
             interpretation = (
-                "<div class='explain'><h3>这组 M2 数据怎么读</h3><ol>"
+                "<div class='explain'><h3>这组 M4 数据怎么读</h3><ol>"
                 "<li><b>故障注入：</b>测试平台携带受保护 token 调用 EchoMem 的故障控制接口，只对目标 tenant 开启 reject 或 delay；每个租户使用独立请求池。每轮执行正常基线、故障中和关闭故障后的恢复采样。</li>"
                 f"<li><b>分母：</b>{esc(case_count)} 个用例 = 目标租户 × 故障类型 × 重复次数；"
                 f"每个用例同时观察其他租户，共形成 {esc(len(all_degradations))} 组 before/during P95 配对。</li>"
@@ -1083,7 +1174,7 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             visual += details("查看 24 个故障用例状态", table(metric.get("cases", []), [("target_tenant", "目标租户"), ("fault_type", "故障"), ("repetition", "重复"), ("fault_observed", "实际生效"), ("fault_disable_acknowledged", "关闭指令确认"), ("target_http_responding", "关闭后有成功响应"), ("fault_recovered", "关闭后全部请求质量成功")]))
             visual += '<p>关闭指令确认、接口有成功响应、所有请求召回质量成功是三种不同证据；最后一项为否不等于故障开关未关闭。未采集字段显示缺失，不据此推定恢复或失败。</p>'
             visual += details("查看目标租户恢复分母", table(metric.get("cases", []), [("target_tenant", "目标租户"), ("fault_type", "故障"), ("repetition", "重复"), ("target_after_submitted", "关闭后请求"), ("target_after_http_success", "HTTP 成功"), ("target_after_quality_success", "HTTP 与质量均成功"), ("target_recovery_observed_s", "关闭起至首次 HTTP 成功秒")]))
-        elif code == "M3":
+        elif code == "M2":
             visual = bars("公平指数（越接近 1 越均匀）", [
                 (f"{window.get('tenant_count')}租户 Commit Jain", window.get("commit_throughput_jain"))
                 for window in metric.get("windows", [])
@@ -1112,7 +1203,7 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                             for row in tenant_rows for task, values in row.get("arrivals", {}).items()]
             visual += details("查看计划到达与实际发压", table(arrival_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("task", "路径"), ("planned", "计划启动"), ("started_in_window", "窗口内启动"), ("missing_starts", "未启动"), ("duplicate_starts", "重复"), ("start_lag_p95_ms", "发压延迟 P95 ms")]))
             visual += details("查看证据完整性", table(metric.get("windows", []), [("scenario", "场景"), ("evidence_complete", "完整"), ("evidence_issues", "缺口")]))
-        elif code == "M4":
+        elif code == "M3":
             visual = bars("有非终态证据的 Search P95 / ms", [
                 ("无 Commit 基线", (metric.get("baseline") or {}).get("p95_ms"))] + [
                 (str(window.get("scenario")), (window.get("confirmed_overlap") or {}).get("p95_ms"))
@@ -1210,6 +1301,32 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
         ("metrics", "关联指标"), ("evidence", "本次证据"),
         ("action", "改进建议"),
     ], min_width_px=900)
+    api_coverage = result.get("api_coverage") or {}
+    api_section = (
+        "<section><h2>关键接口调用账本与边界输入</h2>"
+        f"<p>{esc(api_coverage.get('scope'))}。已覆盖 "
+        f"{esc(api_coverage.get('covered'))}/{esc(api_coverage.get('expected'))} 项；"
+        "调用次数为原始记录或探针次数，未调用明确显示 NOT_COVERED。</p>" +
+        table(api_coverage.get("operations", []), [
+            ("operation", "接口能力"), ("calls", "HTTP调用/轮询次数"),
+            ("records", "汇总记录"), ("ok", "成功"), ("errors", "错误"),
+            ("status", "覆盖状态"), ("evidence", "证据"),
+        ]) +
+        "<h3>不合法输入与边界处理</h3>" +
+        table([api_coverage.get("invalid_input") or {}], [
+            ("status", "状态"), ("reason", "说明")]) + "</section>"
+    )
+    timing = result.get("timing_evidence") or {}
+    timing_section = (
+        "<section><h2>接口与模块耗时</h2><p>" + esc(timing.get("note")) + "</p>" +
+        table(timing.get("operation_timings", []), [
+            ("module", "接口/阶段"), ("source", "来源"), ("observations", "样本"),
+            ("p50_ms", "P50 ms"), ("p95_ms", "P95 ms"), ("p99_ms", "P99 ms")]) +
+        details("查看 EchoMem 返回的内部阶段计时", table(timing.get("module_timings", []), [
+            ("module", "模块路径"), ("source", "来源"), ("observations", "样本"),
+            ("p50_s", "P50 秒"), ("p95_s", "P95 秒"), ("p99_s", "P99 秒")], min_width_px=900)) +
+        "<p><b>当前无法独立观测：</b>" + esc("、".join(timing.get("unobservable_modules", []))) + "。</p></section>"
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     stage_notice = ""
     if result.get("pending_metrics"):
@@ -1220,5 +1337,5 @@ body{margin:0;color:#18242b;background:#f4f7f8;font:14px/1.6 system-ui;letter-sp
         f"<h1>{esc(title)}</h1><div class='lead'><b>本次所选指标结论：{esc(result['status'])}</b><p>这是观测报告，不是性能准入验收；没有 P95、准确率、Jain、吞吐或劣化比例 PASS/FAIL 门槛。错误、超时、空召回与 pending/failed Commit 均保留在分母。采样模式：{esc(result['sampling_mode'])}。</p>{scope_notice}</div><div class='cards'>{cards}</div>" +
         stage_notice + "<section><h2>准备阶段证据</h2><p>没有完成负载场景时不能给出性能结论。裸编号未命中不等于语义事实没有写入；需分别验证实际返回的记忆内容、路由和降级。</p>" + table([result.get("setup_evidence") or {}], [("seed_status", "种子状态"), ("seed_contract", "校验方式"), ("healthy_actors", "验证通过租户"), ("expected_actors", "验证租户总数"), ("validated_queries_per_tenant", "每租户预检问题数"), ("bare_marker_gate_failed", "裸编号前置校验失败"), ("load_cases_completed", "已有负载场景")]) + "</section>" +
         "<section><h2>EchoMem 模块改进建议</h2><p class='purpose'>建议只由本轮可见证据推导；无法从黑盒区分的阶段明确写为需补观测，不把端到端延迟武断归因给原子引擎。</p>" + recommendation_table + details("查看责任边界与技术证据", table(result.get("issue_categories", []), [("category", "类别"), ("note", "观测/下一步"), ("evidence", "证据")])) + "</section>" +
-        seed_source + seed_diagnosis + render_platform_provenance(result.get("platform_provenance")) +
+        api_section + timing_section + seed_source + seed_diagnosis + render_platform_provenance(result.get("platform_provenance")) +
         "".join(sections) + "<section><h2>原始产物</h2><p><a href='summary.json'>summary.json</a> · <a href='suite.json'>suite.json</a> · <a href='records.csv'>records.csv</a> · <a href='metrics_samples.csv'>metrics_samples.csv</a> · <a href='execution-manifest.json'>execution-manifest.json</a></p></section></main></body></html>", encoding="utf-8")

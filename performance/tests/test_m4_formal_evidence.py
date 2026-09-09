@@ -2,7 +2,7 @@
 
 import pytest
 
-from performance.targets.echomem.acceptance.observation import summarize_m4, _commit_window_evidence
+from performance.targets.echomem.acceptance.observation import summarize_m3, _commit_window_evidence
 from performance.tests.test_observation_suite import _run
 from performance.targets.echomem.orchestrator.suites import build_case_profile, six_metric_observation_cases
 
@@ -47,7 +47,7 @@ def test_formal_complete_requires_audited_load_not_fast_search(tmp_path):
     def slow_failed_search(name, rows):
         if name.endswith("uniform"):
             rows[0].update(status="error", quality_ok=False, error_type="timeout", stage_ms=9000, ts_ms=10500)
-    result = summarize_m4(runs(tmp_path, mutate=slow_failed_search), quick=False)
+    result = summarize_m3(runs(tmp_path, mutate=slow_failed_search), quick=False)
     assert result["status"] == "MEASURED"
     window = result["windows"][0]
     assert window["confirmed_overlap"]["errors"] == 1
@@ -65,7 +65,7 @@ def test_semantic_fact_baseline_does_not_require_marker(tmp_path, found):
             if row["op"] == "read":
                 row.update(marker_found=False, quality_assertion="fixed-fact-in-items",
                            expected_fact_found=found)
-    result = summarize_m4(runs(tmp_path, mutate=mutate), quick=False)
+    result = summarize_m3(runs(tmp_path, mutate=mutate), quick=False)
     assert result["status"] == ("MEASURED" if found else "PARTIAL")
 
 
@@ -73,7 +73,7 @@ def test_baseline_quality_failures_are_data_not_performance_gate(tmp_path):
     def mutate(name, rows):
         if name.endswith("baseline"):
             rows.append(read(0, at=550, marker_found=False, quality_ok=False))
-    result = summarize_m4(runs(tmp_path, mutate=mutate), quick=False)
+    result = summarize_m3(runs(tmp_path, mutate=mutate), quick=False)
     assert result["status"] == "MEASURED"
     assert result["baseline"]["quality_rate"] == .8
     assert result["baseline_tenants"][0]["actual_recall_hits"] == 1
@@ -83,7 +83,7 @@ def test_baseline_quality_failures_are_data_not_performance_gate(tmp_path):
 
 @pytest.mark.parametrize("commit_rpm", [0, 60])
 def test_read_only_baseline_cannot_inherit_background_writers(commit_rpm):
-    case = next(c for c in six_metric_observation_cases() if c["label"] == "m4-baseline")
+    case = next(c for c in six_metric_observation_cases() if c["label"] == "m3-baseline")
     case["commit_rpm"] = commit_rpm
     assert case["commit_workers"] > 0 and case["read_only"]
     profile = build_case_profile(case, base_url="http://unused.invalid", tenant_count=4, auth_headers={})
@@ -106,7 +106,7 @@ def test_real_engine_read_only_baseline_emits_no_write_http(server):
     from performance.engine import Engine, load_scene
     from performance.targets.echomem.orchestrator.suites import SCENES_DIR
     _, _, url = server
-    case = next(c for c in six_metric_observation_cases() if c["label"] == "m4-baseline")
+    case = next(c for c in six_metric_observation_cases() if c["label"] == "m3-baseline")
     case.update(duration_s=.3, search_workers=4)
     profile = build_case_profile(case, base_url=url, tenant_count=4, auth_headers={})
     result = Engine(profile, load_scene(SCENES_DIR / "scene_capacity.py")).run()
@@ -116,8 +116,8 @@ def test_real_engine_read_only_baseline_emits_no_write_http(server):
 
 def test_report_exposes_baseline_counts_quality_and_mean(tmp_path):
     from performance.targets.echomem.acceptance.observation import evaluate_observation, write_observation_report
-    result = evaluate_observation({"runs":[]}, {}, [], quick=True, selected_metrics=["M4"])
-    result["metrics"]["M4"]["baseline"] = {"planned_or_recorded":120, "mean_ms":1170.763,
+    result = evaluate_observation({"runs":[]}, {}, [], quick=True, selected_metrics=["M3"])
+    result["metrics"]["M3"]["baseline"] = {"planned_or_recorded":120, "mean_ms":1170.763,
         "p95_ms":2943.393, "errors":0, "quality_ok":109, "quality_missing":0}
     path = tmp_path / "report.html"
     write_observation_report(result, path)
@@ -151,7 +151,7 @@ def test_three_files_do_not_prove_formal_m4(tmp_path, change):
             rows.append(dict(rows[-1]))
         if change == "missing_tenant":
             rows[:] = [r for r in rows if not (r["op"] == "read" and r["tenant_idx"] == 3)]
-    result = summarize_m4(runs(tmp_path, mutate=mutate), quick=False)
+    result = summarize_m3(runs(tmp_path, mutate=mutate), quick=False)
     assert result["status"] == "PARTIAL"
     assert result["evidence_issues"]
     if change == "rejected":
@@ -167,7 +167,7 @@ def test_audited_nonterminal_commits_are_measured_outcomes(tmp_path):
             if row["op"] == "commit_done":
                 row.update(status="error", http_status=None, terminal_at_ms=None,
                            completed_at_ms=None, commit_terminal_state="", poll_outcome="timeout")
-    result = summarize_m4(runs(tmp_path, mutate=mutate), quick=False)
+    result = summarize_m3(runs(tmp_path, mutate=mutate), quick=False)
     assert result["status"] == "MEASURED"
     assert result["windows"][0]["commit_pending"] == 4
     assert result["windows"][0]["drain_time_s"] is None
@@ -183,7 +183,7 @@ def test_accounted_service_rejection_is_data_not_missing_load(tmp_path):
         submit.update(status="error", http_status=429, archive_id="", accepted_at_ms=None)
         rows[:] = [row for row in rows if not (
             row["op"] == "commit_done" and (row["tenant_idx"], row["archive_id"]) == key)]
-    result = summarize_m4(runs(tmp_path, mutate=mutate), quick=False)
+    result = summarize_m3(runs(tmp_path, mutate=mutate), quick=False)
     assert result["status"] == "MEASURED"
     assert result["windows"][1]["commit_rejected"] == 1
     assert "commit_submit_rejected" in result["windows"][1]["observed_conditions"]
@@ -191,9 +191,9 @@ def test_accounted_service_rejection_is_data_not_missing_load(tmp_path):
 
 def test_quick_and_missing_contract_cannot_be_formal(tmp_path):
     data = runs(tmp_path)
-    assert summarize_m4(data, quick=True)["status"] == "PARTIAL"
+    assert summarize_m3(data, quick=True)["status"] == "PARTIAL"
     data["m4-flood-uniform"]["summary"] = {}
-    assert summarize_m4(data, quick=False)["status"] == "PARTIAL"
+    assert summarize_m3(data, quick=False)["status"] == "PARTIAL"
 
 
 def test_all_key_components_duplicates_and_orphans_are_reconciled():
@@ -213,7 +213,7 @@ def test_observed_window_is_not_confirmed_until_terminal_poll(tmp_path):
         if not name.endswith("baseline"):
             rows.append(read(0, at=2050))  # starts 1950, after last pending at 1800
             rows.append(read(0, at=9000))  # outside observation, never infinite
-    result = summarize_m4(runs(tmp_path, mutate=late_search), quick=False)
+    result = summarize_m3(runs(tmp_path, mutate=late_search), quick=False)
     window = result["windows"][0]
     assert window["overlap"]["planned_or_recorded"] == 5
     assert window["confirmed_overlap"]["planned_or_recorded"] == 4
