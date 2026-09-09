@@ -7,6 +7,20 @@
 > 完整测试会对专用 EchoMem 容器注入租户故障，并在 M5 中执行真实 `kill -9` 和重启。
 > 请勿指向日常开发、共享或生产容器。
 
+## 使用交互式 Skill
+
+仓库自带 `echomem-stress` skill，可让 Codex 自动检查本机环境、展示测试范围选择、生成
+命令、跟踪进度并打开最终 HTML。首次拉取仓库后安装一次：
+
+```bash
+mkdir -p ~/.codex/skills/echomem-stress
+cp -R performance/skills/echomem-stress/. ~/.codex/skills/echomem-stress/
+```
+
+重新打开 Codex 任务后，直接说“使用 echomem-stress 检查环境并启动压测”。skill 会先展示
+readiness 摘要；在新机器上默认建议跑 quick，链路通过后再选择 M1-M3、完整 M1-M6、单项、
+续跑或仅重建报告。M4 故障注入、M5 容器重启以及远程/共享资源操作仍会单独请求明确授权。
+
 ## 测试内容
 
 | 指标 | 测试动作 | 主要输出 |

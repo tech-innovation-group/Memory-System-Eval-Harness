@@ -1,0 +1,4 @@
+interface:
+  display_name: "EchoMem Stress"
+  short_description: "交互式启动 EchoMem 六项真实压测并生成 HTML 报告"
+  default_prompt: "检查本机 EchoMem 压测环境，让我选择测试范围，然后启动真实压测并展示报告。"
