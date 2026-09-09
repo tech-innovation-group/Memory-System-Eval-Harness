@@ -46,3 +46,34 @@ def test_full_report_keeps_all_six_metrics(tmp_path):
     sections = [page.index(f"<section><h2>{code} ") for code in ordered]
     assert cards == sorted(cards)
     assert sections == sorted(sections)
+
+
+def test_m1_report_keeps_failure_domains_and_provider_evidence(tmp_path):
+    data = result(["M1"])
+    data["metrics"]["M1"]["levels"] = [{
+        "topology": "cross-tenant", "hot_users": 8, "load_mode": "search",
+        "status": "MEASURED", "sent_search_rps": 8.0, "effective_search_rps": 3.0,
+        "search": {
+            "sent": 80, "success": 30, "p95_s": 5.0,
+            "error_breakdown": {
+                "denominator_sent": 80,
+                "outcome_partition": {"strict_success": 30},
+                "http_200_quality_failures": 40,
+                "http_non_200": 10,
+                "transport_errors": 0,
+                "reason_code_counts": {"retrieval_inflight_full": 10},
+                "failure_domain_counts": {"atomic_engine": 40, "echomem_admission": 10},
+                "provider_error_code_counts": {},
+                "provider_evidence_available": False,
+                "unclassified_failures": 0,
+                "partition_complete": True,
+            },
+        },
+    }]
+    path = tmp_path / "report.html"
+    write_observation_report(data, path)
+    page = path.read_text()
+    assert "查看 M1 错误、API 异常与失败责任域" in page
+    assert "retrieval_inflight_full" in page
+    assert "atomic_engine" in page
+    assert "Provider 证据未采集时" in page

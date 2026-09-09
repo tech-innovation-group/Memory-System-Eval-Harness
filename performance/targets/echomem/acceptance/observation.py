@@ -952,6 +952,37 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                 for level in metric.get("levels", [])
             ])
             visual += details("查看各档吞吐与完成状态", table(metric.get("levels", []), [("topology", "拓扑"), ("hot_users", "热用户"), ("load_mode", "负载"), ("status", "数据状态"), ("sent_search_rps", "Search发送/s"), ("effective_search_rps", "Search完成/s")]))
+            failure_rows = []
+            for level in metric.get("levels", []):
+                search = level.get("search") or {}
+                breakdown = search.get("error_breakdown") or {}
+                partition = breakdown.get("outcome_partition") or {}
+                failure_rows.append({
+                    "topology": level.get("topology"),
+                    "hot_users": level.get("hot_users"),
+                    "load_mode": level.get("load_mode"),
+                    "sent": breakdown.get("denominator_sent", search.get("sent")),
+                    "strict_success": partition.get("strict_success", search.get("success")),
+                    "quality_failures": breakdown.get("http_200_quality_failures"),
+                    "http_non_200": breakdown.get("http_non_200"),
+                    "transport_errors": breakdown.get("transport_errors"),
+                    "reason_codes": breakdown.get("reason_code_counts"),
+                    "failure_domains": breakdown.get("failure_domain_counts"),
+                    "provider_codes": breakdown.get("provider_error_code_counts"),
+                    "provider_evidence": breakdown.get("provider_evidence_available"),
+                    "unclassified": breakdown.get("unclassified_failures"),
+                    "partition_complete": breakdown.get("partition_complete"),
+                })
+            visual += details("查看 M1 错误、API 异常与失败责任域", table(failure_rows, [
+                ("topology", "拓扑"), ("hot_users", "热用户"), ("load_mode", "负载"),
+                ("sent", "已发出分母"), ("strict_success", "严格成功"),
+                ("quality_failures", "HTTP 200质量失败"), ("http_non_200", "HTTP非200"),
+                ("transport_errors", "传输错误"), ("reason_codes", "EchoMem reason_code"),
+                ("failure_domains", "失败责任域"), ("provider_codes", "Provider/API错误码"),
+                ("provider_evidence", "Provider证据已采集"), ("unclassified", "未分类"),
+                ("partition_complete", "分母闭合"),
+            ], min_width_px=1500))
+            visual += "<p>只有明确的 Provider/API 错误码或服务端安全日志才归因为模型、额度或 API Key；EchoMem 429、引擎降级和网络超时分别统计。Provider 证据未采集时，空错误码不等于外部 API 一定正常。</p>"
             anomaly = metric.get("first_operational_anomaly") or {}
             if anomaly.get("kind") == "congestion":
                 visual += f"<p><b>已观测拥塞档：{esc(anomaly.get('hot_users'))} 热用户，负载 {esc(anomaly.get('load_profile'))}。</b>已按持续阻塞规则停止加压；这不是稳定承载量，也不证明服务崩溃。停压后恢复情况另列。</p>"

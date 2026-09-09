@@ -11,6 +11,21 @@
 以下是新测试人员唯一需要先跑通的入口。完整参数、口径和故障恢复说明见
 [六项观测运行手册](docs/six-metrics-observation.md)。所有命令均在仓库根目录执行。
 
+### 0. 获取当前测试代码并确认入口
+
+PR 尚未合入时：
+
+```bash
+git clone https://github.com/tech-innovation-group/Memory-System-Eval-Harness.git
+cd Memory-System-Eval-Harness
+gh pr checkout 32
+git rev-parse --short HEAD
+```
+
+PR 合入后直接使用目标分支，并保留 `git rev-parse HEAD` 的输出作为测试版本证据。
+不要复制别人机器上的结果目录后只重新生成 HTML；正式结果必须由本次源码、配置和
+真实服务共同产生。
+
 ### 1. 安装并准备本地目录
 
 ```bash
@@ -51,6 +66,24 @@ profile 中的 `resource_container` 必须是这个专用容器。M5 会执行�
 `kill -9/start`，M6 也会借助重启观测计数器代际；禁止指向机器人、共享或生产容器。
 
 ### 4. 先跑快速诊断版，确认链路
+
+执行前先做一分钟检查：
+
+```bash
+test -f .local-stress/six-metrics.profile.json
+test -f .local-stress/echomem.config.json
+test -f .local-stress/tenants.json
+test -f .local-stress/test.env
+bash -n performance/targets/echomem/run_six_metrics.sh
+.venv/bin/python -m performance.targets.echomem.observation_run --help
+curl -fsS http://127.0.0.1:8010/health
+docker inspect echomem-stress-4u8g \
+  --format '{{.State.Running}} cpu={{.HostConfig.NanoCpus}} memory={{.HostConfig.Memory}}'
+```
+
+不要把 `test.env` 的内容打印到终端或 CI 日志。模型是否接入以运行产物中的 LLM 与
+Embedding 真实预检为准；`真实 HTTP：是`、`mock 模型：否` 或普通 Search 返回 200
+都不能单独证明 Provider/API Key 在整场测试中正常。
 
 ```bash
 performance/targets/echomem/run_six_metrics.sh quick \
@@ -117,6 +150,24 @@ NORMAL、QUEUE、REJECT、RESET 所需依赖负载，但不会把依赖数据冒
 
 报告必须与同目录的 `summary.json`、`suite.json`、CSV 和执行清单一起留档；不能只截图，
 也不能删除失败、超时、空召回或 pending Commit 后重新计算。
+
+### 8. 六项是否真正执行的核对表
+
+正式报告按 `M1 → M3 → M4 → M2 → M5 → M6` 展示，编号仍对应需求定义。看到
+`MEASURED` 只表示分母采集完整，不表示性能达标；还要核对下列原始证据：
+
+| 指标 | 测试动作 | 报告必须出现的数据 |
+|---|---|---|
+| M1 最大容量与 DAU | 预注入可验证记忆，按热用户档同时发纯 Search 和混合读写；持续拥塞后停止升档 | 每档发送/严格成功/质量失败/HTTP/传输错误、失败责任域、P95、有效吞吐、Commit、CPU/RSS、首个拥塞档和 DAU 情景换算 |
+| M2 单租户故障隔离 | 对目标租户分别注入 `delay`、`reject`，其他租户持续真实记忆 Search | 目标故障确实生效、旁观租户 before/during/after P95、劣化百分比、恢复分母；正式默认 24/24 用例 |
+| M3 多租户公平性 | 4 租户和 8 租户同档等需求，Search 与独立 Session Commit 周期并发 | 每租户 Commit 窗口内完成吞吐、Search P95、两种 Jain、零完成租户、停压后完成和发压缺口 |
+| M4 Search 洪泛优先级 | 先测纯 Search 基线，再分别进行均匀 Commit 洪泛和单租户洪泛 | 基线/洪泛 Search P95、错误和召回质量；Commit 计划/202/拒绝/完成/未终态；只用确认存在非终态 Commit 的重叠窗口 |
+| M5 202 Commit 崩溃恢复 | Commit 获得 202 且仍未完成时真实 kill-9，重启后观察原任务并进行幂等 replay | 202 回执、kill 时状态、恢复终态、history/archive/cursor 集合与顺序对账、重复执行检查；正式默认 3/3 样本 |
+| M6 分层分租户可观测性 | 从测试开始按固定间隔采集观测端点，并覆盖 NORMAL/QUEUE/REJECT/RESET | 每个实际启用的 `tenant × lane` 均有 queued/wait/exec/rejected 四元组、逐帧缺失/非法值、进程代际和重启后计数器变化 |
+
+最终入口的正式报告是输出目录根部的 `report.html`。旧入口生成的
+`objective-suite.html` 属于历史 O1-O7 验收报告；它缺少上述场景时显示
+`INCONCLUSIVE`，不能据此判断“模型未接入”。
 
 EchoMem 记忆服务的正式压测与验收入口。复用通用 HTTP 压测框架
 （`performance/`：`engine.py` worker 池 + `ctx.py` 请求原语 + `suite.py`
