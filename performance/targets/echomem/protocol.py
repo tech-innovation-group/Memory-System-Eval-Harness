@@ -18,9 +18,12 @@ from __future__ import annotations
 from typing import Any
 import json
 import re
+import time
 
 from performance.ctx import Ctx, Response, PollResult
 from performance.records import content_hash
+from performance.targets.echomem.acceptance.stage_observability import response_trace_ref
+from performance.targets.echomem.probes._client import status_from
 
 ANCHOR_PREFIX = "PERFANCHOR"
 WRITE_ANCHOR_PREFIX = "PERFTAIL"
@@ -93,9 +96,26 @@ def search(ctx: Ctx, query: str, *, top_k: int = 5) -> Response:
         query=query,
     )
     marker = anchor_marker(query)
+    payload = resp.json if isinstance(resp.json, dict) else {}
+    ctx.note(trace_ref=response_trace_ref(payload))
+    sample = ctx.params.get("tenant_query_cases", {}).get(str(ctx.tenant_idx), {}).get(query)
     query_type = "recall" if marker else "no_recall" if query in NO_RECALL_QUERIES else "unclassified"
+    if sample is not None:
+        query_type = sample["query_type"]
     if not resp.ok:
-        ctx.note(quality_ok=False, query_type=query_type, expected_marker=marker)
+        ctx.note(quality_ok=False, query_type=query_type, expected_marker=marker,
+                 quality_assertion="fixed-fact-in-items" if sample is not None else "")
+        return resp
+    if sample is not None:
+        from performance.targets.echomem.acceptance.semantic_corpus import assess_retrieval
+        check = assess_retrieval(resp.json, sample)
+        ctx.note(quality_ok=check["quality_ok"], query_type=query_type,
+                 hit_count=check["hit_count"], real_recall=check["hit_count"] > 0,
+                 degraded=check["degraded"], expected_fact_found=check["matched_expected_fact"],
+                 intent_rejected=check["intent_rejected"],
+                 search_executed=check["search_executed"],
+                 quality_assertion="fixed-fact-in-items",
+                 degraded_reasons=json.dumps(check["degraded_reasons"], ensure_ascii=False))
         return resp
     ctx.note(**recall_quality(resp.json, marker, query_type))
     return resp
@@ -141,8 +161,15 @@ def commit_session(ctx: Ctx, session_id: str) -> Response:
         op="commit_submit",
         session_id=session_id,
     )
-    if resp.ok:
-        ctx.note(archive_id=archive_id(resp.json))
+    if resp.http_status == 202 and archive_id(resp.json):
+        ctx.note(
+            archive_id=archive_id(resp.json),
+            accepted_at_ms=time.time() * 1000,
+        )
+    elif resp.ok:
+        resp.status = "error"
+        resp.error_type = "commit_invalid_receipt"
+        ctx.note(status="error", error_type="commit_invalid_receipt")
     return resp
 
 
@@ -155,7 +182,25 @@ def poll_commit(
     interval_s: float = 0.2,
 ) -> PollResult:
     """GET /api/sessions/{sid}/commits/{aid} 轮询到 completed/failed/timeout。"""
-    return ctx.poll(
+    audit = {"poll_evidence_version": "echomem-poll-v1", "poll_count": 0,
+             "poll_http_errors": 0, "last_nonterminal_at_ms": None,
+             "commit_terminal_state": "", "trace_ref": ""}
+
+    def observed(started_ms, status, body, error):
+        audit["poll_count"] += 1
+        audit["poll_http_errors"] += status != 200 or bool(error)
+        value = body if isinstance(body, dict) else {}
+        observed_trace = response_trace_ref(value)
+        if observed_trace:
+            audit["trace_ref"] = observed_trace
+        state = status_from(value)
+        if status == 200 and not error:
+            if state in {"pending", "queued", "running", "processing", "in_progress", "awaiting_engines"}:
+                audit["last_nonterminal_at_ms"] = started_ms
+            elif state in {"completed", "failed", "error"}:
+                audit["commit_terminal_state"] = state
+
+    result = ctx.poll(
         f"/api/sessions/{session_id}/commits/{archive_id}",
         op="commit_done",
         interval_s=interval_s,
@@ -166,7 +211,21 @@ def poll_commit(
         ),
         session_id=session_id,
         archive_id=archive_id,
+        on_response=observed,
+        state_of=status_from,
+        until=lambda _: audit["commit_terminal_state"] == "completed",
     )
+    ended = time.time() * 1000
+    if result.record is None:
+        result.record = ctx.record(op="commit_done", stage_ms=result.elapsed_ms,
+                                   status="error", error_type="commit_stopped",
+                                   session_id=session_id, archive_id=archive_id)
+    for key, value in {**audit, "poll_outcome": result.status,
+                       "observation_ended_at_ms": ended,
+                       "terminal_at_ms": ended if audit["commit_terminal_state"] else None,
+                       "completed_at_ms": ended if audit["commit_terminal_state"] == "completed" else None}.items():
+        setattr(result.record, key, value)
+    return result
 
 
 # --------------------------------------------------------------------- #
@@ -179,8 +238,10 @@ def task_read(ctx: Ctx) -> None:
     pool = pool or ctx.params.get("queries") or DEFAULT_QUERIES
     mode = ctx.params.get("query_mode", "recall")
     if mode in {"recall", "mixed"}:
+        cases = ctx.params.get("tenant_query_cases", {}).get(str(ctx.tenant_idx), {})
+        semantic_recall = [q for q in pool if (cases.get(q) or {}).get("query_type") == "recall"]
         anchors = [q for q in pool if is_anchor_query(q)]
-        pool = anchors or pool
+        pool = semantic_recall or anchors or pool
     if mode == "mixed":
         pool = list(pool) * len(NO_RECALL_QUERIES) + NO_RECALL_QUERIES * len(pool)
     query = ctx.choose(pool)
@@ -190,14 +251,8 @@ def task_read(ctx: Ctx) -> None:
 NO_RECALL_QUERIES = ["你好", "谢谢", "计算 2 加 3", "把 hello 翻译成中文"]
 
 
-def task_write(ctx: Ctx) -> None:
-    """一个完整注入事务（场景 B 写路径）。
-
-    对齐 ``loadgen.run_write_transaction``：open -> add×N（末条携带
-    PERFTAIL anchor）-> commit submit -> commit done（poll 到 completed，
-    默认 600s 超时）。四阶段独立计时记录；失败阶段即中止事务；commit
-    提交默认不重试（与 ``--commit-retry-max 0`` 一致）。
-    """
+def prepare_commit_session(ctx: Ctx) -> str | None:
+    """Open a session and add all messages; do not submit Commit yet."""
     messages = int(ctx.params.get("messages_per_session", 10))
     anchor = f"{WRITE_ANCHOR_PREFIX}-{ctx.tenant_idx}-{ctx.next_seq()}"
 
@@ -218,6 +273,14 @@ def task_write(ctx: Ctx) -> None:
         if not add_message(ctx, sid, content).ok:
             return
 
+    return sid
+
+
+def task_write(ctx: Ctx) -> None:
+    """Prepare messages, submit once and observe the original Commit."""
+    sid = prepare_commit_session(ctx)
+    if sid is None:
+        return
     commit_resp = commit_session(ctx, sid)
     if not commit_resp.ok:
         return

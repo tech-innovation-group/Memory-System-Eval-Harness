@@ -56,8 +56,11 @@ class _ProbeHandler(http.server.BaseHTTPRequestHandler):
         if state.fail_model:
             self._send(404, {"error": "model not found"})
             return
-        if path in {"/chat/completions", "/embeddings"}:
-            self._send(200, {"ok": True})
+        if path == "/reranks":
+            self._send(200, {"results": [{"index": 0, "relevance_score": 0.9}]})
+        elif path in {"/chat/completions", "/embeddings"}:
+            self._send(200, {"data": [{"embedding": [0.1, 0.2]}]} if path == "/embeddings"
+                       else {"choices": [{"message": {"content": "pong"}}]})
         else:
             self._send(404, {"error": "not found"})
 
@@ -95,6 +98,28 @@ def probe_server():
 
 
 # -- parse_engine_configs --------------------------------------------------
+
+
+def test_recall_intent_layers_override_atomic_rule_backend(tmp_path):
+    path = tmp_path / "native.json"
+    path.write_text(json.dumps({
+        "engine": {"configs": {"atomic_engine": {"search": {"intent": {"backend": "rule"}}}}},
+        "recall": {"intent_recognition_layers": ["rule", "semantic", "llm"],
+                   "model": {"intent_llm": {"api_base": "https://example.test", "model": "intent"},
+                             "rerank": {"api_base": "https://example.test", "model": "rank"}}},
+    }))
+    engines = parse_engine_configs(path)
+    assert {e["id"] for e in engines} == {"recall.model.intent_llm", "recall.model.rerank"}
+    assert next(e for e in engines if e["id"].endswith("rerank"))["kind"] == "rerank"
+
+
+def test_rerank_preflight_uses_reranks_endpoint(probe_server):
+    _, state, url = probe_server()
+    result = probe_endpoint({"id": "rerank", "kind": "rerank", "api_key_env": "",
+                             "api_base": url, "model": "rank"})
+    assert result["status"] == "ok"
+    assert state.requests[0]["path"] == "/reranks"
+    assert state.requests[0]["body"]["documents"]
 
 
 def test_parse_flat_engines(tmp_path):
@@ -409,7 +434,8 @@ def test_run_preflight_env_failure(probe_server, tmp_path, monkeypatch):
     result = run_preflight(config, timeout_s=5.0)
     assert result["ok"] is False
     assert "PROBE_KEY" in result["error"]
-    assert result["engines_checked"] == 1
+    assert result["engines_checked"] == 0
+    assert result["probe_attempts"] == 0
     assert result["digest"]
 
 

@@ -167,6 +167,46 @@ def test_render_objective_suite_html():
     assert "commit-recovery.json" in html
     assert "能力探针" in html
     assert "Commit 崩溃恢复探针" in html
+    assert "未证明真实模型可用或被调用" in html
+    assert "mock 模型：否" not in html
+
+
+def test_objective_report_lists_verified_model_preflight() -> None:
+    from performance.targets.echomem.orchestrator.report import render_objective_suite_html
+
+    result = _objective_suite_result()
+    result["profiles"][0]["model_preflight"] = {
+        "ok": True, "digest": "safe-digest", "probe_attempts": 1,
+        "engines": [
+            {"kind": "llm", "id": "atomic", "model": "real-llm",
+             "api_base": "https://llm.example/v1", "status": "ok",
+             "model_supported": True, "code": 200},
+            {"kind": "embedding", "id": "embedding", "model": "real-embedding",
+             "api_base": "https://embedding.example/v1", "status": "ok",
+             "model_supported": True, "code": 200},
+        ],
+    }
+    result["profiles"][1]["model_preflight"] = result["profiles"][0]["model_preflight"]
+    rendered = render_objective_suite_html(result)
+    assert "真实模型可用性预检已通过" in rendered
+    assert "不能据此宣称负载使用了模型" in rendered
+    assert "real-llm" in rendered
+    assert "real-embedding" in rendered
+    assert "safe-digest" in rendered
+
+
+def test_objective_report_exposes_failed_model_preflight() -> None:
+    from performance.targets.echomem.orchestrator.report import render_objective_suite_html
+
+    result = _objective_suite_result()
+    result["profiles"][0]["model_preflight"] = {
+        "ok": False, "error": "LLM and embedding credentials are missing",
+        "engines_checked": 0, "probe_attempts": 0, "engines": [],
+    }
+    rendered = render_objective_suite_html(result)
+    assert "未证明真实模型可用或被调用" in rendered
+    assert "LLM and embedding credentials are missing" in rendered
+    assert "没有真实模型调用明细" in rendered
 
 
 def test_write_objective_suite_html(tmp_path):

@@ -24,7 +24,7 @@
         "enabled": true,
         "max_tenants": 1,
         "commit_timeout_s": 15,
-        "search_timeout_s": 10,
+        "search_timeout_s": 60,
         "visibility_timeout_s": 20
       },
       "concurrent_commit": {

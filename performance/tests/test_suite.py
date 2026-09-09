@@ -383,6 +383,31 @@ def test_run_case_stubborn_worker_aborts_suite(tmp_path, monkeypatch):
     assert suite_mod._load_completed_run(case, case_dir, timeout_s=0.05) is None
 
 
+def test_timeout_preserves_records_after_confirmed_stop(tmp_path, monkeypatch):
+    import performance.suite as suite_mod
+    from performance.records import RequestRecord
+    from types import SimpleNamespace
+
+    record = RequestRecord("test", 0, 0, "read", 20, "error", "timeout", 1000)
+
+    class RecordedBlockingEngine(_BlockingEngine):
+        def run(self):
+            self._stop_requested.wait(10)
+            return SimpleNamespace(records=[record])
+
+    monkeypatch.setattr(suite_mod, "Engine", RecordedBlockingEngine)
+    captured = []
+    run = run_case(
+        {"label": "timeout-evidence", "scene": "scene_generic"}, _profile(),
+        scene_path=_write_scene(tmp_path), case_dir=tmp_path / "out",
+        timeout_s=0.01, write_evidence=lambda path, records: captured.extend(records),
+    )
+    assert run["status"] == "TIMEOUT"
+    assert run["runner_timeout"] is True
+    assert captured == [record]
+    assert "timeout" in (tmp_path / "out" / "records.csv").read_text()
+
+
 def test_resume_reruns_timed_out_case(tmp_path):
     calls: list[str] = []
     suite_dir = tmp_path / "suite"

@@ -12,8 +12,9 @@ from pathlib import Path
 from performance.stats import percentile
 
 
-def configure_profile(profile: dict) -> dict:
+def configure_profile(profile: dict, *, live: bool = True) -> dict:
     from performance.targets.echomem.probes.fault_isolation import validate_fault_config
+    from performance.targets.echomem.orchestrator.suites import six_metric_cases
     if str(profile.get("name", "")).upper() != "4U8G":
         raise ValueError("six-metrics currently requires a 4U8G profile")
     tenant_config = json.loads(Path(profile["tenant_config"]).read_text(encoding="utf-8"))
@@ -24,12 +25,37 @@ def configure_profile(profile: dict) -> dict:
     base = str(profile.get("base_url", "")).rstrip("/")
     fault = {"enabled": True, "endpoint": base + "/api/inspect/test-control/fault",
              "token_env": "ECHOMEM_TEST_CONTROL_TOKEN", "samples": 100, "repeats": 3,
+             "phase_duration_s": 60, "duration_s": 180, "search_rps_per_tenant": 2, "target_rps": 1,
              **profile.get("fault_isolation", {})}
     validate_fault_config(fault)
+    if live:
+        phase = float(fault["phase_duration_s"])
+        rate = float(fault["search_rps_per_tenant"])
+        target_rate = float(fault["target_rps"])
+        samples = max(100, int(fault["samples"]))
+        if (not all(math.isfinite(v) for v in (phase, rate, target_rate))
+                or phase < 60 or rate <= 0 or target_rate <= 0 or phase * rate < samples
+                or phase >= float(fault["duration_s"]) or int(fault["repeats"]) < 3):
+            raise ValueError("Formal fault phases require >=60s, >=100 bystander samples, positive rates, >=3 repeats, and a longer fault TTL")
+    catalog = six_metric_cases(profile.get("capacity_levels"))
+    # Credential values are never included in the normalized profile or reports.
+    from performance.targets.echomem.probes._client import load_tenant_specs
+    if live:
+        specs = load_tenant_specs(profile["tenant_config"])
+        required = max(c["tenants"] for c in catalog)
+        if len(specs) < required or len({s.auth_key for s in specs[:required]}) != required:
+            raise ValueError(f"six-metrics needs {required} independent tenant credentials for the configured capacity levels")
+        if not profile.get("preflight_config"):
+            raise ValueError("six-metrics requires preflight_config from the deployed EchoMem configuration")
+        recovery = profile.get("commit_recovery") or {}
+        if recovery.get("container", profile.get("resource_container")) != profile.get("resource_container"):
+            raise ValueError("commit_recovery.container must match resource_container")
+        if recovery.get("allow_container_restart") is not True:
+            raise ValueError("Set commit_recovery.allow_container_restart=true only for a dedicated test container")
     observable = {"enabled": True, "expected_tenants": ids,
                   "expected_lanes": ["recall_engine", "recall_intent_llm", "recall_query_embedding", "commit"],
                   "token_env": "ECHOMEM_TEST_CONTROL_TOKEN", **profile.get("tenant_observability", {})}
-    return {**profile, "six_metrics": True, "seed_sessions": 1,
+    return {**profile, "six_metrics": True, "capacity_levels": [c["tenants"] for c in catalog if c["label"].startswith("capacity-")], "seed_sessions": 1,
             "seed_messages": 1, "allow_partial_tenants": False,
             "quick_include_seed": True, "metrics_enabled": True,
             "fairness_expectations": {"tenant_ids": ids}, "fault_isolation": fault,
@@ -115,6 +141,11 @@ def module_issues(data: dict[str, list[dict]], suite: dict) -> list[dict]:
                         "用原任务状态与持久化内容区分处理失败、超时及读取错误")] += 1
     issues = [{"module": module, "symptom": symptom, "count": count, "next_action": action}
               for (module, symptom, action), count in sorted(counts.items())]
+    readiness = suite.get("readiness") or (suite.get("resource_preflight") or {}).get("readiness") or {}
+    for check in readiness.get("checks", []):
+        if check.get("status") != "PASS":
+            issues.append({"module": check.get("owner"), "symptom": check.get("name"),
+                           "count": 1, "next_action": check.get("next_action")})
     for check in (suite.get("commit_recovery") or {}).get("checks", []):
         if check.get("status") != "PASS":
             issues.append({"module": "Commit 恢复 / 对账", "symptom": check.get("reason", check.get("name")),
@@ -217,6 +248,7 @@ def evaluate_six(suite: dict, profile: dict) -> dict:
         fair = [r for r in fair if number(r, "ts_ms") <= window_end]
     tenants = range(4)
     tenant_rows = []
+    fair_window_s = float(runs.get("fairness-bounded", {}).get("duration_s") or 120)
     for t in tenants:
         rows = [r for r in fair if str(r.get("tenant_idx")) == str(t)]
         submits = [r for r in rows if r.get("op") == "commit_submit"]
@@ -224,7 +256,8 @@ def evaluate_six(suite: dict, profile: dict) -> dict:
         tenant_rows.append({"tenant_index": t,
                             "tenant_id": expected_tenants[t] if t < len(expected_tenants) else str(t),
                             "commit_submitted": len(submits),
-                            "commit_completed": len(done), **search_stats(rows)})
+                            "commit_completed": len(done), "window_s": fair_window_s,
+                            "commit_completed_per_s": len(done) / fair_window_s, **search_stats(rows)})
     comparable = all(t["submitted"] >= minimum and t["commit_submitted"] > 0
                      and t["p95_s"] and t["quality_rate"] >= .99 for t in tenant_rows)
     comparable = comparable and len({t["commit_submitted"] for t in tenant_rows}) == 1
@@ -233,7 +266,8 @@ def evaluate_six(suite: dict, profile: dict) -> dict:
     verdict = "INCONCLUSIVE" if not comparable else "PASS" if cj is not None and sj is not None and min(cj, sj) >= .9 else "FAIL"
     add("M3", "同档位租户公平性", verdict, "调度 / 测试负载",
         "只使用同一等权负载窗口；零完成租户保留在分母。",
-        {"tenants": tenant_rows, "commit_jain": cj, "search_inverse_p95_jain": sj})
+        {"tenants": tenant_rows, "commit_jain": cj, "search_inverse_p95_jain": sj,
+         "equal_window_s": fair_window_s, "expected_tenants": 4})
 
     flood = data.get("search-priority-blackbox", [])
     baseline = search_stats(data.get("recall-baseline", []))
@@ -377,7 +411,8 @@ def write_report(result: dict, path: Path) -> None:
                                   ("degradation_percent", "P95 劣化 %"), ("status", "判定")])
         elif check["id"] == "M3":
             visual = table(values.get("tenants", []), [("tenant_index", "租户"), ("commit_submitted", "Commit 提交"),
-                ("commit_completed", "Commit 完成"), ("submitted", "Search 样本"), ("p95_s", "P95 秒")])
+                ("commit_completed", "Commit 完成"), ("commit_completed_per_s", "Commit 完成/秒"),
+                ("window_s", "等权窗口秒"), ("submitted", "Search 样本"), ("p95_s", "P95 秒")])
             for field, label in (("commit_jain", "Commit Jain"), ("search_inverse_p95_jain", "Search Jain")):
                 if values.get(field) is not None:
                     score = values[field]

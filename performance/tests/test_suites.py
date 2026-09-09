@@ -150,6 +150,14 @@ def test_apply_quick_commit_rpm_override():
     assert quick["commit_rpm"] == 0.0
 
 
+def test_apply_quick_can_bound_commit_observation_without_changing_default():
+    case = {**_by_label(complete_cases())["search-priority-blackbox"],
+            "commit_poll_timeout_s": 180}
+    assert apply_quick(case, QuickSpec())["commit_poll_timeout_s"] == 180
+    bounded = apply_quick(case, QuickSpec(commit_poll_timeout_cap_s=45))
+    assert bounded["commit_poll_timeout_s"] == 45
+
+
 def test_apply_quick_uniform_barrier_untouched():
     case = _by_label(complete_cases())["saturation"]
     quick = apply_quick(case, QuickSpec())

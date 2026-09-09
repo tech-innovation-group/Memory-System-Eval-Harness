@@ -21,7 +21,7 @@ from typing import Any
 from performance.profile import Profile
 from performance.suite import (
     QuickSpec,
-    apply_quick,
+    apply_quick as apply_quick,
     build_case_profile as _build_case_profile_general,
 )
 from performance.targets.echomem.protocol import DEFAULT_QUERIES
@@ -464,10 +464,15 @@ def select_cases(profile_name: str, scenarios: list[str] | None) -> list[dict]:
     return [by_label[item] for item in scenarios]
 
 
-def six_metric_cases() -> list[dict]:
+def six_metric_cases(capacity_levels: list[int] | None = None) -> list[dict]:
+    levels = capacity_levels if capacity_levels is not None else [2, 4, 8, 16, 32]
+    if (not isinstance(levels, list) or len(levels) < 2
+            or any(type(n) is not int or n < 2 for n in levels)
+            or levels != sorted(set(levels))):
+        raise ValueError("capacity_levels must contain at least two increasing integer levels >= 2")
     cases = [
         _case(label="recall-baseline", scene="scene_capacity", tenants=4,
-              duration_s=60, search_rps=8, commit_rpm=0, read_only=True),
+              duration_s=60, search_rps=16, search_workers=32, commit_rpm=0, read_only=True),
         _case(label="query-mixed", scene="scene_capacity", tenants=4,
               duration_s=60, search_rps=8, commit_rpm=0, read_only=True,
               query_mode="mixed"),
@@ -476,11 +481,80 @@ def six_metric_cases() -> list[dict]:
          "duration_s": 120, "sessions_per_tenant": 1, "commit_barrier_count": 32,
          "barrier_at_s": 15},
     ]
-    for level in (2, 4, 8, 16, 32):
+    for level in levels:
         cases.append(_case(label=f"capacity-{level}", scene="scene_capacity",
                            tenants=level, duration_s=60, search_rps=level,
                            search_workers=level * 2, commit_rpm=0, read_only=True))
     return cases
+
+
+def six_metric_observation_cases(*, quick: bool = False) -> list[dict]:
+    """Observation-only M2/M3 matrix, including heterogeneous tenant load.
+
+    M1 is executed by the T x U capacity runner and M4/M5/M6 are probes. The
+    cases here therefore contain only the paired Search/Commit windows needed
+    for fairness and flood observations. No case encodes a performance gate.
+    """
+    duration = 15 if quick else 300
+    barrier = 8 if quick else 64
+    common = {
+        "duration_s": duration,
+        "search_rps": 8.0,
+        "search_workers": 64,
+        "commit_workers": 64,
+        "sessions_per_tenant": 2,
+        "messages_per_session": 4,
+    }
+    return [
+        _case(
+            label="m2-fairness-4t", scene="scene_c_mixed", tenants=4,
+            commit_rpm=20.0 if quick else 2.0, commit_barrier=False,
+            arrival_scope="per_tenant", commit_start_s=3 if quick else 30,
+            arrival_end_s=duration, measurement_start_s=3 if quick else 30,
+            measurement_end_s=duration, fairness_mode="independent-periodic-v1",
+            **{**common, "search_rps": 1.0, "duration_s": duration + (30 if quick else 180)},
+        ),
+        _case(
+            label="m2-fairness-8t", scene="scene_c_mixed", tenants=8,
+            commit_rpm=20.0 if quick else 2.0, commit_barrier=False,
+            arrival_scope="per_tenant", commit_start_s=3 if quick else 30,
+            arrival_end_s=duration, measurement_start_s=3 if quick else 30,
+            measurement_end_s=duration, fairness_mode="independent-periodic-v1",
+            **{**common, "search_rps": 1.0, "duration_s": duration + (30 if quick else 180)},
+        ),
+        _case(
+            label="m3-baseline", scene="scene_capacity", tenants=4,
+            commit_rpm=0.0, read_only=True, **common,
+        ),
+        _case(
+            label="m3-flood-uniform", scene="scene_barrier", tenants=4,
+            barrier_prepare_before_commit=True,
+            commit_rpm=0.0, commit_barrier=True,
+            commit_barrier_count=barrier,
+            commit_tenant_distribution="uniform", barrier_at_s=3 if quick else 30,
+            blackbox_search_priority=True, **common,
+        ),
+        _case(
+            label="m3-flood-single-tenant", scene="scene_barrier", tenants=4,
+            barrier_prepare_before_commit=True,
+            commit_rpm=0.0, commit_barrier=True,
+            commit_barrier_count=barrier,
+            commit_tenant_distribution="explicit",
+            commit_tenant_counts=[barrier, 0, 0, 0],
+            barrier_at_s=3 if quick else 30,
+            blackbox_search_priority=True, **common,
+        ),
+        _case(
+            label="m3-heterogeneous-tenants", scene="scene_c_mixed", tenants=4,
+            commit_rpm=20.0 if quick else 2.0, commit_barrier=False,
+            arrival_scope="per_tenant", commit_start_s=3 if quick else 30,
+            arrival_end_s=duration, search_tenant_weights=[8, 4, 2, 1],
+            commit_tenant_weights=[1, 2, 4, 8],
+            heterogeneous_tenant_load=True,
+            **{**common, "search_rps": 1.0,
+               "duration_s": duration + (30 if quick else 180)},
+        ),
+    ]
 
 
 def build_case_profile(
@@ -531,6 +605,7 @@ def _apply_barrier_params(params: dict[str, Any], case: dict) -> None:
         params.update(
             {
                 "barrier_count": barrier_count,
+                "barrier_prepare_before_commit": bool(case.get("barrier_prepare_before_commit", False)),
                 "barrier_at_s": float(case.get("barrier_at_s", 0)),
                 "barrier_distribution": str(
                     case.get("commit_tenant_distribution", "uniform")

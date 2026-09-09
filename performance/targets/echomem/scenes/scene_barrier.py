@@ -25,7 +25,11 @@ from __future__ import annotations
 
 from performance.ctx import Ctx
 from performance.targets.echomem._barrier import barrier_tenant_counts
-from performance.targets.echomem.protocol import task_read, task_write
+from performance.targets.echomem.protocol import (
+    task_read, task_write, prepare_commit_session, commit_session, archive_id, poll_commit,
+)
+import threading
+from collections import defaultdict, deque
 
 
 def _barrier_job(ctx: Ctx) -> None:
@@ -49,11 +53,49 @@ def schedule(ctx: Ctx) -> None:
     at_s = float(ctx.params.get("barrier_at_s", 0.0))
     waves = int(ctx.params.get("barrier_waves", 1))
     cooldown = float(ctx.params.get("barrier_cooldown_s", 0.0))
+    if ctx.params.get("barrier_prepare_before_commit"):
+        if waves != 1:
+            raise ValueError("Prepared Commit flood requires exactly one wave")
+        pending = sum(tenant_counts.values())
+        sessions = defaultdict(deque)
+        lock = threading.Lock()
+        ready = threading.Event()
+
+        def prepare(job):
+            nonlocal pending
+            sid = None
+            try:
+                sid = prepare_commit_session(job)
+            finally:
+                with lock:
+                    sessions[job.tenant_idx].append(sid)
+                    pending -= 1
+                    if pending == 0:
+                        ready.set()
+
+        def submit(job):
+            while not ready.is_set():
+                if job._sleep(0.1):
+                    return
+            with lock:
+                sid = sessions[job.tenant_idx].popleft()
+            if sid is None:
+                job.record(op="commit_preparation_failed", status="error", stage_ms=0)
+                return
+            response = commit_session(job, sid)
+            aid = archive_id(response.json) if response.ok else None
+            if aid:
+                poll_commit(job, sid, aid)
+
+        jobs = {tenant: jobs for tenant, jobs in tenant_counts.items() if jobs > 0}
+        ctx.at_time(0, prepare, tenant_counts=jobs, max_workers=1, name="barrier-prepare")
+        ctx.at_time(at_s, submit, tenant_counts=jobs, max_workers=max_workers, name="barrier")
+        return
     for wave in range(waves):
         ctx.at_time(
             at_s + wave * cooldown,
             _barrier_job,
-            tenant_counts=dict(tenant_counts),
+            tenant_counts={tenant: jobs for tenant, jobs in tenant_counts.items() if jobs > 0},
             max_workers=max_workers,
             name="barrier",
         )

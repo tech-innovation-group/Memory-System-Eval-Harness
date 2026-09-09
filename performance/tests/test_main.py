@@ -191,6 +191,36 @@ def test_main_quick_mock(mock_server, tmp_path):
     assert "EchoMem 七项目标自动化验收" in html
 
 
+def test_main_returns_nonzero_when_configured_model_preflight_failed(tmp_path):
+    tenants_path = tmp_path / "tenants.json"
+    tenants_path.write_text(json.dumps({"tenants": []}), encoding="utf-8")
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{}", encoding="utf-8")
+    profiles_path = tmp_path / "profiles.json"
+    profiles_path.write_text(json.dumps({"profiles": [{
+        "name": "Local", "base_url": "http://127.0.0.1:8010",
+        "tenant_config": str(tenants_path), "preflight_config": str(config_path),
+    }]}), encoding="utf-8")
+    suite_path = tmp_path / "suite.json"
+    suite_path.write_text(json.dumps({
+        "runs": [], "preflight": {
+            "ok": False, "error": "providers were not called", "engines": [],
+            "engines_checked": 0, "probe_attempts": 0,
+        },
+    }), encoding="utf-8")
+    out_dir = tmp_path / "report"
+
+    rc = main([
+        "--profiles", str(profiles_path), "--profile", "Local",
+        "--out-dir", str(out_dir), "--skip-run", "--suite-path", str(suite_path),
+    ])
+
+    assert rc == 2
+    rendered = (out_dir / "objective-suite.html").read_text(encoding="utf-8")
+    assert "未证明真实模型可用或被调用" in rendered
+    assert "providers were not called" in rendered
+
+
 def test_main_resume_merges_prior_runs(mock_server, tmp_path):
     """--resume：同一 out-dir 续跑时跳过已完成的场景并合并历史 run。"""
     _, state, base_url = mock_server()

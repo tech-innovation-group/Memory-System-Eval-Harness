@@ -96,6 +96,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--quick", action="store_true", help="bounded smoke matrix")
     parser.add_argument("--six-metrics", action="store_true",
                         help="4U8G six-metric acceptance with strict evidence gates")
+    parser.add_argument("--check-only", action="store_true",
+                        help="six-metrics preparation check; no seeding, fault injection or container restart")
     parser.add_argument("--scenarios", default="", help="覆盖场景列表，逗号分隔")
     parser.add_argument("--quick-duration-cap-s", type=float, default=30.0)
     parser.add_argument("--quick-case-timeout-s", type=float, default=120.0)
@@ -145,9 +147,10 @@ def build_parser() -> argparse.ArgumentParser:
 def _resolve_profile(profile: dict[str, Any], profiles_path: Path) -> dict[str, Any]:
     """把 profile 引用的文件路径解析为绝对路径（相对清单目录），并展开
     ``${ENV:-default}`` 占位符（instance profile 是 JSON，不经 load_profile）。"""
-    profiles_dir = profiles_path.parent
+    profiles_dir = profiles_path.expanduser().resolve().parent
+    profile = expand_env_in(profile)
     return {
-        **expand_env_in(profile),
+        **profile,
         "tenant_config": resolve_relative_to(
             str(profile.get("tenant_config") or ""), profiles_dir
         ),
@@ -173,6 +176,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--six-metrics cannot use quick-mode evidence")
     if args.six_metrics and args.resume:
         parser.error("six-metrics requires a fresh output directory until resume provenance is verified")
+    if args.check_only and (not args.six_metrics or args.skip_run or args.scenarios):
+        parser.error("--check-only requires --six-metrics and cannot use --skip-run/--scenarios")
+    if args.six_metrics and args.scenarios:
+        parser.error("--six-metrics cannot omit scenarios; use --quick for diagnostic subsets")
 
     child_env = dict(os.environ)
     if args.env_file is not None:
@@ -191,6 +198,8 @@ def main(argv: list[str] | None = None) -> int:
     if not profiles:
         parser.error("没有匹配的 profile")
 
+    if args.six_metrics and not args.skip_run and args.out_dir.exists() and any(args.out_dir.iterdir()):
+        parser.error("six-metrics requires a new or empty output directory; existing evidence was not changed")
     args.out_dir.mkdir(parents=True, exist_ok=True)
     output_lock = None
     if not args.skip_run:
@@ -208,7 +217,26 @@ def main(argv: list[str] | None = None) -> int:
             profile = _resolve_profile(profile, args.profiles)
             if args.six_metrics:
                 from performance.targets.echomem.acceptance.six_metrics import configure_profile
-                profile = configure_profile(profile)
+                try:
+                    profile = configure_profile(profile, live=not args.skip_run)
+                except (ValueError, OSError, KeyError) as exc:
+                    parser.error(str(exc))
+            if args.check_only:
+                from performance.targets.echomem.acceptance.readiness import check_readiness
+                from performance.targets.echomem.acceptance.preflight import run_preflight
+                from performance.targets.echomem.orchestrator.suites import six_metric_cases
+                readiness = check_readiness(profile)
+                models = run_preflight(profile["preflight_config"], required_kinds=("llm", "embedding")) if readiness["ok"] else {"ok": False, "status": "NOT_RUN"}
+                plan = six_metric_cases(profile.get("capacity_levels"))
+                result = {"readiness": readiness, "models": models, "cases": plan,
+                          "fault_cases": 4 * 2 * int(profile["fault_isolation"].get("repeats", 3)),
+                          "ok": readiness["ok"] and models["ok"],
+                          "load_window_seconds": sum(c["duration_s"] for c in plan),
+                          "note": "Preparation only; not six-metric acceptance. No seed, fault or restart executed."}
+                (suite_dir / "readiness.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                output_profiles.append(result)
+                print(suite_dir / "readiness.json")
+                continue
             command_result: dict[str, Any] = {}
             suite_path = suite_dir / "suite.json"
 
@@ -261,7 +289,9 @@ def main(argv: list[str] | None = None) -> int:
             tenant_config = (
                 read_json(Path(profile["tenant_config"])) if profile["tenant_config"] else {}
             )
-            if args.skip_run or (args.six_metrics and not suite.get("resource_evidence")):
+            if args.skip_run or (args.six_metrics and (
+                not suite.get("resource_evidence") or not (suite.get("preflight") or {}).get("ok")
+            )):
                 probe_artifacts, probe_commands = {}, []
             else:
                 visibility = (suite.get("seed") or {}).get("visibility", [])
@@ -306,6 +336,7 @@ def main(argv: list[str] | None = None) -> int:
                 "probe_artifacts": probe_artifacts,
                 "six_metric_status": six["status"] if args.six_metrics else None,
                 "memory_leak": suite.get("memory_leak"),
+                "model_preflight": suite.get("preflight") or {},
                 **probe_artifacts,
                 "command": command_result,
                 "objectives": objective_statuses({
@@ -321,6 +352,9 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         if output_lock is not None:
             output_lock.close()
+
+    if args.check_only:
+        return 0 if all(p["ok"] for p in output_profiles) else 2
 
     completed_profile_records = [
         {
@@ -352,6 +386,13 @@ def main(argv: list[str] | None = None) -> int:
         "objectives": OBJECTIVES,
         "instance_profiles": completed_profile_records,
         "multi_spec_completed_count": completed_profile_count,
+        "real_model_preflight_complete": bool(output_profiles) and all(
+            bool((profile.get("model_preflight") or {}).get("ok"))
+            for profile in output_profiles
+        ),
+        "real_model_evidence_required": bool(args.six_metrics) or any(
+            bool(profile.get("preflight_config")) for profile in output_profiles
+        ),
     }
     (args.out_dir / "objective-suite.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
@@ -360,4 +401,6 @@ def main(argv: list[str] | None = None) -> int:
     print(args.out_dir / "objective-suite.html")
     if args.six_metrics and any(p.get("six_metric_status") != PASS for p in output_profiles):
         return 1 if any(p.get("six_metric_status") == "FAIL" for p in output_profiles) else 2
+    if result["real_model_evidence_required"] and not result["real_model_preflight_complete"]:
+        return 2
     return 0 if output_profiles else 2

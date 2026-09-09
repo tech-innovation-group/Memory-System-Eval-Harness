@@ -62,6 +62,12 @@ def percentile(values: list[float], q: float = 0.95) -> float | None:
     return ordered[lower] + (ordered[upper] - ordered[lower]) * (index - lower)
 
 
+def fault_window_covered(endpoint: str, duration_s: float, elapsed_s: float) -> bool:
+    if urlsplit(endpoint).path.rstrip('/') != '/api/inspect/test-control/fault':
+        return True
+    return math.isfinite(elapsed_s) and 0 <= elapsed_s < duration_s
+
+
 def control(
     config: dict[str, Any],
     *,
@@ -155,33 +161,61 @@ def sample_search(
     workers: int,
     timeout_s: float,
     phase: str,
-    queries: dict[str, str] | None = None,
+    queries: dict[str, str | dict[str, Any]] | None = None,
+    duration_s: float = 0,
+    rps_per_tenant: float = 2,
+    target_tenant: str = "",
+    target_rps: float = 1,
 ) -> dict[str, Any]:
-    def one(tenant_id: str, index: int) -> dict[str, Any]:
+    phase_started = time.monotonic()
+
+    def one(tenant_id: str, index: int, scheduled: float) -> dict[str, Any]:
+        if scheduled > time.monotonic():
+            time.sleep(max(0, scheduled - time.monotonic()))
         started = time.monotonic()
-        query = (queries or {}).get(tenant_id, f"PR397 fault isolation sample {index}")
+        sample = (queries or {}).get(tenant_id, f"PR397 fault isolation sample {index}")
+        query = sample["query"] if isinstance(sample, dict) else sample
         response = clients[tenant_id].search(
             sessions[tenant_id],
             query,
             timeout_s=timeout_s,
         )
-        quality = recall_quality(response.payload, query)
+        if isinstance(sample, dict):
+            from performance.targets.echomem.acceptance.semantic_corpus import assess_retrieval
+            quality = assess_retrieval(response.payload, sample)
+        else:
+            quality = recall_quality(response.payload, query)
         return {
             "tenant": tenant_id,
             "status_code": response.status_code,
             "elapsed_s": time.monotonic() - started,
+            "scheduled_offset_s": scheduled - phase_started,
+            "start_offset_s": started - phase_started,
+            "generator_lag_s": max(0, started - scheduled),
             "error": response.error,
-            "quality_ok": bool(queries and quality["quality_ok"]),
+            "quality_ok": bool(queries and response.status_code == 200 and quality["quality_ok"]),
             "degraded": quality["degraded"], "degraded_reasons": quality["degraded_reasons"],
         }
 
-    jobs = [
-        (tenant_id, index)
-        for index in range(max(1, count))
-        for tenant_id in sessions
-    ]
-    with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
-        rows = list(executor.map(lambda item: one(*item), jobs))
+    # Separate pools keep the target's injected sleep from consuming bystander
+    # generator slots. Each tenant uses the same arrival schedule in all phases.
+    executors = {t: ThreadPoolExecutor(max_workers=max(1, workers // max(1, len(sessions))))
+                 for t in sessions}
+    futures = []
+    try:
+        for tenant in sessions:
+            rate = target_rps if tenant == target_tenant else rps_per_tenant
+            planned = max(1, math.ceil(duration_s * rate)) if duration_s > 0 else max(1, count)
+            for index in range(planned):
+                scheduled = phase_started + index / rate if duration_s > 0 else phase_started
+                futures.append(executors[tenant].submit(one, tenant, index, scheduled))
+        rows = [future.result() for future in futures]
+        remaining = phase_started + duration_s - time.monotonic()
+        if remaining > 0:
+            time.sleep(remaining)
+    finally:
+        for executor in executors.values():
+            executor.shutdown(wait=True)
     by_tenant: dict[str, dict[str, Any]] = {}
     for tenant_id in sessions:
         selected = [row for row in rows if row["tenant"] == tenant_id]
@@ -194,15 +228,47 @@ def sample_search(
         by_tenant[tenant_id] = {
             "submitted": len(selected),
             "succeeded": len(successful),
+            "errors": len(selected) - len(successful),
+            "timeouts": sum("timeout" in str(row.get("error") or "").lower() for row in selected),
+            "quality_observed": sum(bool(queries) for _ in selected),
+            "quality_ok": sum(bool(row.get("quality_ok")) for row in selected),
+            "p50_s": percentile(latencies, 0.50),
             "p95_s": percentile(latencies),
+            "p99_s": percentile(latencies, 0.99),
             "median_s": median(latencies) if latencies else None,
+            "max_generator_lag_s": max((r["generator_lag_s"] for r in selected), default=None),
+            "configured_rps": (target_rps if tenant_id == target_tenant else rps_per_tenant) if duration_s > 0 else None,
             "rows": selected,
         }
-    return {"phase": phase, "by_tenant": by_tenant}
+    return {"phase": phase, "by_tenant": by_tenant, "independent_pools": True,
+            "configured_duration_s": duration_s, "elapsed_s": time.monotonic() - phase_started}
 
 
 def _detail(fields: dict[str, Any]) -> str:
     return json.dumps(fields, ensure_ascii=False)
+
+
+def recovery_evidence(after: dict, target_tenant: str, disable: dict) -> dict:
+    target = after.get("by_tenant", {}).get(target_tenant, {})
+    submitted = target.get("submitted", 0)
+    succeeded = target.get("succeeded", 0)
+    rows = target.get("rows", [])
+    http_ok = [r for r in rows if isinstance(r.get("status_code"), int)
+               and 200 <= r["status_code"] < 300]
+    times = [r.get("start_offset_s", 0) + r["elapsed_s"] for r in http_ok
+             if isinstance(r.get("elapsed_s"), (int, float))
+             and math.isfinite(r["elapsed_s"]) and r["elapsed_s"] >= 0]
+    acknowledged = disable.get("status") == PASS
+    return {
+        "fault_disable_acknowledged": acknowledged,
+        "target_http_responding": acknowledged and bool(http_ok),
+        "target_after_submitted": submitted,
+        "target_after_http_success": len(http_ok),
+        "target_after_quality_success": succeeded,
+        "fault_recovered": acknowledged and succeeded == submitted and submitted > 0,
+        "target_recovery_observed_s": (disable.get("elapsed_s", 0) + min(times))
+            if acknowledged and times else None,
+    }
 
 
 def run(ctx: Ctx) -> None:
@@ -287,11 +353,20 @@ def run(ctx: Ctx) -> None:
         )[0]
         for tenant_id in selected
     }
+    sampling = {"duration_s": float(params.get("phase_duration_s", 0)),
+                "rps_per_tenant": float(params.get("search_rps_per_tenant", 2)),
+                "target_rps": float(params.get("target_rps", 1)), "target_tenant": target_tenant}
+    if (any(not math.isfinite(v) or v <= 0 for v in (sampling["rps_per_tenant"], sampling["target_rps"]))
+            or not math.isfinite(sampling["duration_s"]) or sampling["duration_s"] < 0):
+        ctx.check("fault-isolation", status=INCONCLUSIVE, reason="Invalid per-tenant arrival rate or phase duration")
+        return
     before = sample_search(
         clients, sessions, count=samples, workers=workers,
         timeout_s=timeout_s, phase="before",
         queries=params.get("queries"),
+        **sampling,
     )
+    fault_started = time.monotonic()
     enable = control(
         {"endpoint": endpoint, "command": command},
         action="enable", target_tenant=target_tenant, timeout_s=control_timeout_s,
@@ -308,8 +383,10 @@ def run(ctx: Ctx) -> None:
                 clients, sessions, count=samples, workers=workers,
                 timeout_s=timeout_s, phase="during",
                 queries=params.get("queries"),
+                **sampling,
             )
     finally:
+        fault_elapsed = time.monotonic() - fault_started
         # 无论采样是否抛异常，故障结束后都必须恢复真实依赖。
         disable = control(
             {"endpoint": endpoint, "command": command},
@@ -325,7 +402,7 @@ def run(ctx: Ctx) -> None:
             degradations[tenant_id] = (float(degraded) - float(baseline)) / float(baseline)
     bystander_p95_degradation = max(degradations.values(), default=None)
     after = sample_search(clients, sessions, count=samples, workers=workers,
-                          timeout_s=timeout_s, phase="after", queries=params.get("queries"))
+                          timeout_s=timeout_s, phase="after", queries=params.get("queries"), **sampling)
     target_before = before.get("by_tenant", {}).get(target_tenant, {})
     target_during = during.get("by_tenant", {}).get(target_tenant, {})
     fault_observed = (
@@ -337,12 +414,19 @@ def run(ctx: Ctx) -> None:
                   >= control_args["delay_ms"] / 2000)
     )
     healthy_bystanders = all(
-        block.get("by_tenant", {}).get(t, {}).get("succeeded", 0) == samples
+        block.get("by_tenant", {}).get(t, {}).get("succeeded", 0)
+        == block.get("by_tenant", {}).get(t, {}).get("submitted", 0)
+        and block.get("by_tenant", {}).get(t, {}).get("submitted", 0) >= samples
         for block in (before, during, after) for t in bystanders
     )
-    recovered_target = after.get("by_tenant", {}).get(target_tenant, {}).get("succeeded", 0) == samples
-    baseline_healthy = all(before.get("by_tenant", {}).get(t, {}).get("succeeded", 0) == samples
+    recovered_target = (after.get("by_tenant", {}).get(target_tenant, {}).get("succeeded", 0)
+                        == after.get("by_tenant", {}).get(target_tenant, {}).get("submitted", 0) > 0)
+    baseline_healthy = all(before.get("by_tenant", {}).get(t, {}).get("succeeded", 0)
+                           == before.get("by_tenant", {}).get(t, {}).get("submitted", 0) > 0
                            for t in selected)
+    generator_healthy = sampling["duration_s"] == 0 or all(
+        (block.get("by_tenant", {}).get(t, {}).get("max_generator_lag_s") or 0)
+        <= 1 / sampling["rps_per_tenant"] for block in (before, during, after) for t in bystanders)
 
     ctx.check(
         "fault-control-enable",
@@ -364,11 +448,16 @@ def run(ctx: Ctx) -> None:
         and disable.get("status") == PASS
         and len(degradations) == len(bystanders)
         and fault_observed
+        and fault_window_covered(endpoint, control_args["duration_s"], fault_elapsed)
+        and generator_healthy
     )
+    observation_only = bool(params.get("observation_only"))
     if not baseline_healthy:
         status, reason = INCONCLUSIVE, "故障注入前基线已有错误或降级，保留数据但不能归因于单租户故障"
     elif not complete:
         status, reason = INCONCLUSIVE, "故障控制或旁观租户前后 Search P95 证据不完整"
+    elif observation_only:
+        status, reason = PASS, "故障已实际生效并完成前/中/后观测；未应用性能门槛"
     elif recovered_target and healthy_bystanders and bystander_p95_degradation is not None and bystander_p95_degradation <= 0.20:
         status, reason = PASS, "旁观租户 Search P95 劣化不超过 20%"
     else:
@@ -381,14 +470,19 @@ def run(ctx: Ctx) -> None:
         detail=_detail({
             "target_tenant": target_tenant,
             "fault_observed": fault_observed,
+            "fault_window_covered": fault_window_covered(endpoint, control_args["duration_s"], fault_elapsed),
+            "fault_window_elapsed_s": fault_elapsed,
+            "fault_duration_s": control_args["duration_s"],
             "healthy_bystanders": healthy_bystanders,
             "baseline_healthy": baseline_healthy,
-            "samples_per_tenant": samples,
+            "generator_healthy": generator_healthy,
+            "samples_per_tenant": min((block.get("by_tenant", {}).get(t, {}).get("submitted", 0)
+                                       for block in (before, during, after) for t in bystanders), default=0),
             "before": before,
             "during": during,
             "after": after,
             "bystanders": bystanders,
-            "fault_recovered": disable.get("status") == PASS and recovered_target,
+            **recovery_evidence(after, target_tenant, disable),
             "bystander_p95_degradation": bystander_p95_degradation,
             "degradation_by_tenant": degradations,
             "p95_before_by_tenant": {

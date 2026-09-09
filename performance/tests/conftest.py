@@ -26,6 +26,9 @@ class MockState:
         fail_open: bool = False,
         fail_add: bool = False,
         fail_commit: bool = False,
+        commit_status: int = 202,
+        commit_missing_archive: bool = False,
+        poll_http_status: int = 200,
     ):
         self.search_empty = search_empty
         self.search_degraded = search_degraded
@@ -36,6 +39,9 @@ class MockState:
         self.fail_open = fail_open
         self.fail_add = fail_add
         self.fail_commit = fail_commit
+        self.commit_status = commit_status
+        self.commit_missing_archive = commit_missing_archive
+        self.poll_http_status = poll_http_status
         self.metrics_text: str | None = None
         self.sessions = itertools.count(1)
         self.messages = itertools.count(1)
@@ -43,6 +49,8 @@ class MockState:
         self.poll_counts: dict[tuple[str, str], int] = {}
         self.search_queries: list[str] = []
         self.search_agent_ids: list[str] = []
+        self.semantic_markers: dict[tuple[str, str], str] = {}
+        self.locomo_markers: dict[str, set[str]] = {}
         self.connections = 0
 
 
@@ -85,6 +93,8 @@ def _make_handler(state: MockState):
                 return self._send(404, {"error": "not found"})
             match = re.fullmatch(r"/api/sessions/([^/]+)/commits/([^/]+)", path)
             if match:
+                if state.poll_http_status != 200:
+                    return self._send(state.poll_http_status, {"error": "poll unavailable"})
                 key = (match.group(1), match.group(2))
                 state.poll_counts[key] = state.poll_counts.get(key, 0) + 1
                 if state.poll_fail_after and state.poll_counts[key] > state.poll_fail_after:
@@ -110,18 +120,32 @@ def _make_handler(state: MockState):
             if re.fullmatch(r"/api/sessions/([^/]+)/messages", path):
                 if state.fail_add:
                     return self._send(500, {"error": "add boom"})
+                content = str(body.get("content") or "")
+                subject = re.search(r"第\d+批第\d+条事项", content)
+                marker = re.search(r"PERFANCHOR-[A-Za-z0-9-]+", content)
+                if subject and marker:
+                    state.semantic_markers[(self.headers.get("X-Auth-Key", ""), subject.group(0))] = marker.group(0)
+                locomo = re.search(r"LOCOMO-EVIDENCE-[A-Za-z0-9-]+", content)
+                if locomo:
+                    state.locomo_markers.setdefault(self.headers.get("X-Auth-Key", ""), set()).add(locomo.group(0))
                 return self._send(200, {"message_id": f"m{next(state.messages)}"})
             if re.fullmatch(r"/api/sessions/([^/]+)/commit", path):
                 if state.fail_commit:
                     return self._send(500, {"error": "commit boom"})
-                return self._send(200, {"archive_id": f"a{next(state.archives)}"})
+                return self._send(state.commit_status, {} if state.commit_missing_archive else
+                                  {"archive_id": f"a{next(state.archives)}"})
             if path == "/api/retrieval/search":
                 query = body.get("query", "")
                 state.search_queries.append(query)
                 state.search_agent_ids.append(str(body.get("agent_id", "")))
                 result: dict = {}
                 if not state.search_empty:
-                    result["items"] = [{"text": f"recalled {query}"}]
+                    auth_key = self.headers.get("X-Auth-Key", "")
+                    recalled = next((marker for (key, subject), marker in state.semantic_markers.items()
+                                     if key == auth_key and subject in query), query)
+                    if auth_key in state.locomo_markers:
+                        recalled = " ".join(sorted(state.locomo_markers[auth_key]))
+                    result["items"] = [{"text": f"recalled {recalled}"}]
                     result["explain"] = {"tokens": 1}
                 if state.search_degraded:
                     result["status"] = "degraded"

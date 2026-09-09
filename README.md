@@ -3,10 +3,19 @@
 记忆系统评测框架。全 CLI，无网页 UI。直接通过 Python 脚本完成数据集加载、
 记忆注入、Agent 问答、Judge 评分和结果报告。
 
-**EchoMem 六项本机压测**：任意 AI 或工程师均可直接阅读
-[单文件部署与运行手册](docs/echomem-six-metric-local-guide.md)。手册包含 PR32/PR449
-代码准备、真实模型配置、默认 32 租户及显式扩展到 64/128 的方法、默认/调优两组压测、
-M1-M6 命令与最终 HTML 结果。
+**EchoMem 4U8G 六项黑盒观测压测**：使用
+`python -m performance.targets.echomem.observation_run`，详见
+[随代码维护的本机部署与六项运行手册](performance/targets/echomem/README.md)，默认分支另有
+[公开单文件指南](docs/echomem-six-metric-local-guide.md)。文档不绑定
+特定 AI，包含通用 Agent 提示词、可选 `SKILL.md`、PR32/PR449 代码要求、真实模型配置、
+默认 32 租户及显式扩展到 64/128 的方法、默认/调优两组压测、运行命令和最终报告位置。
+被测 EchoMem 不得停留在默认 `main`：M1-M3 明确使用最新 `develop`，完整 M1-M6 在
+PR449 合入前使用已同步最新 `develop` 的 PR449，并在发压前校验 branch、commit 与非空
+`engine.enabled`。
+该入口不设置 P95、准确率、Jain、劣化比例或吞吐 PASS/FAIL 门槛；状态仅为
+`MEASURED / PARTIAL / BLOCKED / EXECUTION_ERROR`，默认不运行 soak。旧的
+`python -m performance --target echomem --six-metrics` 保留为历史 SLO
+验收入口，不要用于本轮观测结论。
 
 ## 设计目标
 
@@ -466,7 +475,7 @@ python -m performance.run --target echomem \
 缺少故障控制、重启控制或多规格实测时，报告保留 `INCONCLUSIVE`，不会
 根据客户端延迟或 HTTP 200 推断 EchoMem 已实现对应保证。
 
-本次 PR29 的专项验收口径已收紧：容量项必须有真实完成请求且 Search/Commit
+旧完整套件的专项验收口径已收紧：容量项必须有真实完成请求且 Search/Commit
 成功率达标；多规格必须有至少两种规格的实际运行记录；公平性必须同时有逐租户
 Commit 完成吞吐和 Search P95，取两者 Jain 的较小值；Search 优先级只接受已完成的
 洪泛场景，并直接检查 Search P95 是否不超过 5 秒；恢复项必须同时通过消息集合、
@@ -587,7 +596,7 @@ suite 摘要 + 探针制品 + O1-O7 汇总）与 `objective-suite.html`（自包
 
 ### 1. 拉取测试平台
 
-使用测试平台 PR29 的 `v3` 分支：
+以下为既有 `v3` 套件入口；基于 PR31 的无性能门槛观测请使用文首运行手册中的新 PR 分支：
 
 ```bash
 git clone -b v3 git@github.com:noi031/Memory-System-Eval-Harness.git

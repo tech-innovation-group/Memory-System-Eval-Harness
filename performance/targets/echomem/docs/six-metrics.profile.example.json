@@ -6,21 +6,29 @@
       "resource_container": "echomem-stress-4u8g",
       "tenant_config": "./tenants.json",
       "preflight_config": "./echomem.config.json",
+      "m1_tenant_levels": [1, 2, 4, 8, 16, 32],
+      "m1_user_levels": [1, 2, 4, 8, 16, 32],
+      "required_concurrency": 32,
+      "required_embedding_model": "qwen3.7-text-embedding-flash",
+      "require_stage_observability": true,
+      "m1_duration_s": 300,
+      "m1_search_rps_per_user": 1,
+      "dau_scenarios": [
+        {"name": "read-heavy", "searches_per_user_day": 50, "commits_per_user_day": 5, "peak_to_average_ratio": 3},
+        {"name": "balanced", "searches_per_user_day": 20, "commits_per_user_day": 20, "peak_to_average_ratio": 5},
+        {"name": "write-heavy", "searches_per_user_day": 5, "commits_per_user_day": 50, "peak_to_average_ratio": 8}
+      ],
       "fault_isolation": {
         "samples": 100,
         "repeats": 3,
         "token_env": "ECHOMEM_TEST_CONTROL_TOKEN"
       },
       "tenant_observability": {
-        "expected_lanes": [
-          "recall_engine",
-          "recall_intent_llm",
-          "recall_query_embedding",
-          "commit"
-        ],
         "token_env": "ECHOMEM_TEST_CONTROL_TOKEN"
       },
       "commit_recovery": {
+        "allow_container_restart": true,
+        "samples": 3,
         "messages": 12,
         "content_chars": 1000,
         "recovery_timeout_s": 180

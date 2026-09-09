@@ -22,7 +22,7 @@ import logging
 import shutil
 import statistics
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from performance.memory_leak import diagnose_runs
@@ -72,6 +72,7 @@ class QuickSpec:
     duration_cap_s: float = 15.0
     barrier_count_cap: int = 32
     include_seed: bool = False
+    commit_poll_timeout_cap_s: float | None = None
 
 
 def apply_quick(case: dict, quick: QuickSpec) -> dict:
@@ -93,6 +94,11 @@ def apply_quick(case: dict, quick: QuickSpec) -> dict:
             )
     if case.get("quick_commit_rpm") is not None:
         result["commit_rpm"] = case["quick_commit_rpm"]
+    if quick.commit_poll_timeout_cap_s is not None:
+        result["commit_poll_timeout_s"] = min(
+            float(case.get("commit_poll_timeout_s", 180)),
+            quick.commit_poll_timeout_cap_s,
+        )
     result["sessions_per_tenant"] = 1
     return result
 
@@ -128,17 +134,28 @@ def build_case_profile(
     write_workers = case.get("commit_workers") or 0
     if write_workers <= 0 and commit_rps > 0:
         write_workers = max(1, round(commit_rps))
+    if case.get("read_only") or "write" not in scene.tasks:
+        write_workers = 0
+        commit_rps = 0.0
 
     arrival: dict[str, ArrivalSpec] = {}
     mix: dict[str, int] = {}
     if "read" in scene.tasks:
         mix["read"] = max(1, read_workers)
         if search_rps > 0:
-            arrival["read"] = ArrivalSpec(model="fixed_rps", rps=search_rps)
+            arrival["read"] = ArrivalSpec(model="fixed_rps", rps=search_rps,
+                scope=case.get("arrival_scope", "global"), start_s=float(case.get("search_start_s", 0)),
+                end_s=case.get("arrival_end_s"),
+                tenant_weights=tuple(float(v) for v in case["search_tenant_weights"])
+                if case.get("search_tenant_weights") else None)
     if "write" in scene.tasks:
         mix["write"] = max(1, write_workers) if write_workers > 0 else 0
         if commit_rps > 0:
-            arrival["write"] = ArrivalSpec(model="fixed_rps", rps=commit_rps)
+            arrival["write"] = ArrivalSpec(model="fixed_rps", rps=commit_rps,
+                scope=case.get("arrival_scope", "global"), start_s=float(case.get("commit_start_s", 0)),
+                end_s=case.get("arrival_end_s"),
+                tenant_weights=tuple(float(v) for v in case["commit_tenant_weights"])
+                if case.get("commit_tenant_weights") else None)
 
     params: dict[str, Any] = {
         "top_k": int(case.get("top_k", 5)),
@@ -295,6 +312,7 @@ def run_case(
     status = "completed"
     stubborn = False
     records: list[RequestRecord] = []
+    run_result = None
     try:
         if timeout_s and timeout_s > 0:
             holder: dict[str, Any] = {}
@@ -318,16 +336,22 @@ def run_case(
                         "持久化 TIMEOUT 产物后中止套件",
                         case["label"],
                     )
-            else:
-                records = holder["result"].records
+            # A stopped run still owns real evidence; timeout changes status,
+            # not the denominator. Never read a result while its thread is live.
+            if not thread.is_alive():
+                run_result = holder["result"]
+                records = run_result.records
         else:
-            records = Engine(profile, scene).run().records
+            run_result = Engine(profile, scene).run()
+            records = run_result.records
     except Exception:
         status = "ENV_ERROR"
     summarize_fn = summarize or summarize_case_records
     summary = summarize_fn(records)
     summary["status"] = status
     summary["runner_timeout"] = runner_timeout
+    summary["run_clock"] = {"started_wall_ms": getattr(run_result, "started_wall_ms", None),
+                            "load_duration_s": profile.load.duration_s}
     write_records(case_dir, records, summary)
     if write_evidence is not None:
         write_evidence(case_dir, records)
@@ -360,6 +384,15 @@ class SeedContext:
     agent_id: str = "default"
     user_id: str = "default"
     account_id: str = "default"
+    query_cases: dict[str, dict] = field(default_factory=dict)
+
+
+class SeedPreparationError(RuntimeError):
+    """A seed failure with deliberately public, credential-free evidence."""
+
+    def __init__(self, message: str, evidence: dict):
+        super().__init__(message)
+        self.public_evidence = evidence
 
 
 def _run_prepare_command(command: str) -> dict:
@@ -555,6 +588,8 @@ def run_suite(
             manifest["seed"] = seed_summary
         except Exception as exc:
             manifest["seed"] = {"status": "ENV_ERROR", "error": str(exc)}
+            if isinstance(exc, SeedPreparationError):
+                manifest["seed"]["evidence"] = exc.public_evidence
             return finish()
     else:
         manifest["seed"] = {"status": "skipped", "reason": "no tenant_config"}
@@ -583,6 +618,9 @@ def run_suite(
             ]
             case_profile.params["tenant_query_pools"] = {
                 str(index): list(ctx.queries) for index, ctx in enumerate(usable)
+            }
+            case_profile.params["tenant_query_cases"] = {
+                str(index): dict(ctx.query_cases) for index, ctx in enumerate(usable)
             }
             case_profile.params["tenant_identities"] = {
                 str(index): {"agent_id": ctx.agent_id, "user_id": ctx.user_id,

@@ -143,6 +143,26 @@ def test_fixed_rps_requires_rate():
         )
 
 
+def test_per_tenant_arrival_weights_are_validated():
+    profile = load_profile({
+        "name": "p", "target": {"base_url": "http://x"},
+        "load": {"arrival": {"read": {
+            "model": "fixed_rps", "rps": 2, "scope": "per_tenant",
+            "tenant_weights": [4, 2, 1],
+        }}},
+    })
+    assert profile.load.arrival["read"].tenant_weights == (4.0, 2.0, 1.0)
+    for weights in ([], [1, 0], [1, "bad"]):
+        with pytest.raises(ProfileError, match="tenant_weights"):
+            load_profile({
+                "name": "p", "target": {"base_url": "http://x"},
+                "load": {"arrival": {"read": {
+                    "model": "fixed_rps", "rps": 2,
+                    "scope": "per_tenant", "tenant_weights": weights,
+                }}},
+            })
+
+
 def test_arrival_none_ignores_rate():
     profile = load_profile(
         {

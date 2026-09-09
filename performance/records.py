@@ -28,6 +28,16 @@ class RequestRecord:
     http_status: int | None = None
     session_id: str = ""
     archive_id: str = ""
+    accepted_at_ms: float | None = None
+    completed_at_ms: float | None = None
+    terminal_at_ms: float | None = None
+    last_nonterminal_at_ms: float | None = None
+    observation_ended_at_ms: float | None = None
+    commit_terminal_state: str = ""
+    poll_evidence_version: str = ""
+    poll_outcome: str = ""
+    poll_count: int | None = None
+    poll_http_errors: int | None = None
     extra: str = ""  # e.g. "burst"
     # -- write retry instrumentation (commit_submit) ---------------------
     retry_count: int = 0
@@ -50,8 +60,16 @@ class RequestRecord:
     expected_marker: str = ""
     marker_found: bool = False
     degraded_reasons: str = ""
+    # Hash of EchoMem's response trace id. This correlates request records with
+    # normalized stage logs without publishing the service's opaque id.
+    trace_ref: str = ""
     # -- worker-level failure context --------------------------------------
     detail: str = ""
+    arrival_task: str = ""
+    arrival_sequence: int | None = None
+    planned_at_ms: float | None = None
+    quality_assertion: str = ""
+    expected_fact_found: bool | None = None
 
     def to_csv_row(self) -> dict[str, Any]:
         row: dict[str, Any] = {}
@@ -64,6 +82,8 @@ class RequestRecord:
 
 
 CSV_FIELDS: list[str] = [
+    "quality_assertion", "expected_fact_found",
+    "arrival_task", "arrival_sequence", "planned_at_ms",
     "scene",
     "worker_id",
     "tenant_idx",
@@ -75,6 +95,16 @@ CSV_FIELDS: list[str] = [
     "ts_ms",
     "session_id",
     "archive_id",
+    "accepted_at_ms",
+    "completed_at_ms",
+    "terminal_at_ms",
+    "last_nonterminal_at_ms",
+    "observation_ended_at_ms",
+    "commit_terminal_state",
+    "poll_evidence_version",
+    "poll_outcome",
+    "poll_count",
+    "poll_http_errors",
     "extra",
     "retry_count",
     "retried",
@@ -94,5 +124,6 @@ CSV_FIELDS: list[str] = [
     "expected_marker",
     "marker_found",
     "degraded_reasons",
+    "trace_ref",
     "detail",
 ]

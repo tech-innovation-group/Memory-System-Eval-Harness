@@ -244,6 +244,22 @@ def run_configured_probes(
                 break
     redact = {auth_key} if auth_key else set()
 
+    invalid_input = profile.get("invalid_input")
+    if isinstance(invalid_input, dict) and invalid_input.get("enabled", True):
+        output = suite_dir / "invalid-input.json"
+        params = {"tenant_config": str(tenant_path)}
+        for key in ("timeout_s", "auth_header", "token_env"):
+            value = invalid_input.get(key)
+            if value not in (None, ""):
+                params[key] = value
+        payload, execution = run_configured_probe(
+            params, probes_dir=PROBES_DIR, scene="invalid_input.py", output=output,
+            base_url=base_url, timeout_s=min(timeout_s, 120), redact_values=redact,
+        )
+        commands.append(execution)
+        if payload:
+            artifacts["invalid_input"] = {**payload, "path": str(output)}
+
     capability = profile.get("capability_probe")
     if isinstance(capability, dict):
         output = suite_dir / "capability-probe.json"
@@ -376,12 +392,17 @@ def run_configured_probes(
             "duration_s",
             "delay_ms",
             "queries",
+            "phase_duration_s",
+            "search_rps_per_tenant",
+            "target_rps",
+            "observation_only",
         ):
             value = fault_isolation.get(key)
             if value not in (None, ""):
                 params[key] = value
         cases = [params]
-        if profile.get("six_metrics"):
+        observation_mode = bool(profile.get("six_metrics_observation"))
+        if profile.get("six_metrics") or observation_mode:
             tenant_ids = list((profile.get("fairness_expectations") or {}).get("tenant_ids", []))
             cases = [
                 {**params, "target_tenant": tenant,
@@ -391,16 +412,21 @@ def run_configured_probes(
                 for tenant in tenant_ids for fault_type in ("reject", "delay")
                 for repetition in range(1, int(fault_isolation.get("repeats", 3)) + 1)
             ]
+        if observation_mode and fault_isolation.get("behavior_case_only"):
+            cases = cases[:1]
         outcomes = []
         expected_case_count = len(cases)
-        if profile.get("six_metrics") and not params.get("queries"):
+        if observation_mode and quick:
+            repeats = int(fault_isolation.get("repeats", 3))
+            cases = [cases[0], cases[repeats]] if len(cases) > repeats else cases[:1]
+        if (profile.get("six_metrics") or observation_mode) and not params.get("queries"):
             cases = []
             commands.append({"status": "INCONCLUSIVE", "reason": "No verified seed queries for tenant fault testing"})
-        if profile.get("six_metrics") and not os.environ.get(str(params.get("token_env") or "ECHOMEM_TEST_CONTROL_TOKEN")):
+        if (profile.get("six_metrics") or observation_mode) and not os.environ.get(str(params.get("token_env") or "ECHOMEM_TEST_CONTROL_TOKEN")):
             cases = []
             commands.append({"status": "INCONCLUSIVE", "reason": "Test control token is missing; fault matrix was not started"})
         for index, case_params in enumerate(cases):
-            case_output = output if not profile.get("six_metrics") else suite_dir / f"fault-isolation-{index:02d}.json"
+            case_output = output if not (profile.get("six_metrics") or observation_mode) else suite_dir / f"fault-isolation-{index:02d}.json"
             payload, execution = run_configured_probe(
                 case_params, probes_dir=PROBES_DIR, scene="fault_isolation.py",
                 output=case_output, base_url=base_url,
@@ -411,10 +437,14 @@ def run_configured_probes(
                              "target_tenant": case_params.get("target_tenant"),
                              "fault_type": case_params.get("fault_type"),
                              "repetition": case_params.get("repetition", 1)})
-            if profile.get("six_metrics") and not payload.get("checks"):
+            if (profile.get("six_metrics") or observation_mode) and not payload.get("checks"):
                 break
-        if profile.get("six_metrics"):
-            artifacts["fault_isolation"] = {"cases": outcomes, "expected_cases": expected_case_count}
+        if profile.get("six_metrics") or observation_mode:
+            artifacts["fault_isolation"] = {
+                "cases": outcomes,
+                "expected_cases": expected_case_count,
+                "quick_sample": observation_mode and quick,
+            }
         elif outcomes:
             artifacts["fault_isolation"] = outcomes[0]
 
@@ -460,24 +490,48 @@ def run_configured_probes(
             "accepted_wait_s",
             "pid",
             "restart_command",
+            "second_restart",
+            "expected_container_id",
+            "expected_image_id",
         ):
             value = recovery.get(key)
             if value not in (None, ""):
                 params[key] = value
         if recovery.get("require_accepted_202"):
             params["require_accepted_202"] = True
-        payload, execution = run_configured_probe(
-            params,
-            probes_dir=PROBES_DIR,
-            scene="commit_recovery.py",
-            output=output,
-            base_url=base_url,
-            timeout_s=min(timeout_s, 900),
-            redact_values=redact,
-        )
-        commands.append(execution)
-        if payload:
-            artifacts["commit_recovery"] = {**payload, "path": str(output)}
+        sample_count = (1 if quick else int(recovery.get("samples", 3))) \
+            if profile.get("six_metrics_observation") else 1
+        samples = []
+        for sample_index in range(sample_count):
+            sample_output = (
+                suite_dir / f"commit-recovery-{sample_index + 1:02d}.json"
+                if sample_count > 1 else output
+            )
+            payload, execution = run_configured_probe(
+                {**params, "sample_index": sample_index + 1,
+                 "second_restart": bool(
+                     profile.get("six_metrics_observation")
+                     and sample_count > 1 and sample_index == sample_count - 1
+                 )},
+                probes_dir=PROBES_DIR,
+                scene="commit_recovery.py",
+                output=sample_output,
+                base_url=base_url,
+                timeout_s=min(timeout_s, 900),
+                redact_values=redact,
+            )
+            commands.append(execution)
+            if payload:
+                samples.append({**payload, "sample_index": sample_index + 1,
+                                "path": str(sample_output)})
+        if profile.get("six_metrics_observation"):
+            artifacts["commit_recovery"] = {
+                "samples": samples,
+                "expected_samples": sample_count,
+                "quick_sample": quick,
+            }
+        elif samples:
+            artifacts["commit_recovery"] = samples[0]
 
     fault_plan_value = profile.get("fault_plan")
     if fault_plan_value:

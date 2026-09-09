@@ -3,6 +3,8 @@
 .env.*
 !.env.example
 .runtime/
+.local-stress/
+.venv/
 __pycache__/
 *.py[cod]
 node_modules/
@@ -11,6 +13,7 @@ dist/
 runs/
 outputs/
 artifacts/
+.artifacts/
 external/
 deliverables/
 dataset/

@@ -15,8 +15,8 @@ from __future__ import annotations
 import csv
 import json
 import time
-import subprocess
 import os
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +33,7 @@ from performance.targets.echomem.acceptance.evaluate import (
     evaluate_pr421_acceptance,
 )
 from performance.targets.echomem.acceptance.metrics import metric_coverage
+from performance.targets.echomem.acceptance.observation import _commit_window_evidence
 from performance.targets.echomem.acceptance.preflight import run_preflight
 from performance.targets.echomem.acceptance.seed import (
     TenantPreparer,
@@ -43,7 +44,7 @@ from performance.targets.echomem.orchestrator.suites import (
     build_case_profile,
     select_cases,
 )
-from performance.targets.echomem.protocol import anchor_marker, is_anchor_query, recall_quality
+from performance.targets.echomem.protocol import is_anchor_query
 
 SCENES_DIR = Path(__file__).resolve().parent.parent / "scenes"
 
@@ -84,22 +85,37 @@ def summarize_case_records(records: list[RequestRecord]) -> dict:
 
 def _write_commit_results(case_dir: Path, records: list[RequestRecord]) -> None:
     """commit_results.csv：每条 commit_submit 一行，按 commit_done 对账状态。"""
-    done_by_session = {
-        r.session_id: r
-        for r in records
-        if r.op == "commit_done" and r.session_id
-    }
+    evidence = _commit_window_evidence([r.to_csv_row() for r in records])
+    def key(r):
+        return str(r.tenant_idx), r.session_id, r.archive_id
+
+    observations = {}
+    for r in records:
+        if r.op == "commit_done":
+            observations.setdefault(key(r), []).append(r)
+    receipts = Counter(key(r) for r in records if r.op == "commit_submit"
+                       and r.http_status == 202 and r.session_id and r.archive_id)
     rows: list[dict[str, Any]] = []
     for record in records:
         if record.op != "commit_submit":
             continue
-        done = done_by_session.get(record.session_id)
-        if done is not None and done.status == "ok":
-            status, done_ms = "completed", done.stage_ms
-        elif done is not None:
-            status, done_ms = "failed", done.stage_ms
+        terminal = evidence["terminals"].get(key(record))
+        observed = observations.get(key(record), [])
+        observation = observed[0] if len(observed) == 1 else None
+        if record.http_status is not None and record.http_status >= 400:
+            status = "rejected"
+        elif not (record.http_status == 202 and record.session_id and record.archive_id):
+            status = "unaccepted"
+        elif receipts[key(record)] != 1 or len(observed) > 1:
+            status = "ambiguous"
+        elif terminal is not None:
+            status = "completed" if terminal["status"] == "ok" else "failed"
         else:
-            status, done_ms = "submitted", None
+            status = "unresolved"
+        terminal_ms = terminal.get("completed_at_ms") if terminal else None
+        done_ms = observation.stage_ms if terminal and observation else None
+        accepted_latency = terminal_ms - record.accepted_at_ms if terminal_ms is not None else None
+        total_ms = terminal_ms - (record.ts_ms - record.stage_ms) if terminal_ms is not None else None
         rows.append(
             {
                 "tenant_idx": record.tenant_idx,
@@ -108,7 +124,12 @@ def _write_commit_results(case_dir: Path, records: list[RequestRecord]) -> None:
                 "status": status,
                 "submit_ms": round(record.stage_ms, 3),
                 "done_ms": round(done_ms, 3) if done_ms is not None else "",
-                "end_to_end_s": round(done_ms / 1000.0, 3) if done_ms is not None else "",
+                "end_to_end_s": round(total_ms / 1000.0, 3) if total_ms is not None and total_ms >= 0 else "",
+                "accepted_to_terminal_s": round(accepted_latency / 1000.0, 3) if accepted_latency is not None else "",
+                "observation_status": observation.poll_outcome if observation else "unknown",
+                "poll_count": observation.poll_count if observation else "",
+                "poll_http_errors": observation.poll_http_errors if observation else "",
+                "poll_evidence_version": observation.poll_evidence_version if observation else "",
             }
         )
     with (case_dir / "commit_results.csv").open("w", newline="", encoding="utf-8") as handle:
@@ -117,6 +138,7 @@ def _write_commit_results(case_dir: Path, records: list[RequestRecord]) -> None:
             fieldnames=[
                 "tenant_idx", "session_id", "archive_id", "status",
                 "submit_ms", "done_ms", "end_to_end_s",
+                "accepted_to_terminal_s", "observation_status", "poll_count", "poll_http_errors", "poll_evidence_version",
             ],
         )
         writer.writeheader()
@@ -203,10 +225,31 @@ def run_case(
         # coverage 在通用层写盘 summary.json 之后才算出，必须同步写回，
         # 保证磁盘 summary 与内存一致（--resume / rebuild_report 都以
         # 磁盘 summary.json 为唯一数据源）。
-        (case_dir / "summary.json").write_text(
-            json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+    # Persist the effective, quick-capped workload, not credentials or query pools.
+    contract = {"version": "echomem-case-v1", "tenant_count": len(profile.tenants),
+                "query_mode": profile.params.get("query_mode", "recall")}
+    if case.get("fairness_mode") == "independent-periodic-v1":
+        contract.update({"fairness_mode": case["fairness_mode"],
+                         "measurement_start_s": case["measurement_start_s"],
+                         "measurement_end_s": case["measurement_end_s"],
+                         "arrival": {name: {"scope": spec.scope, "rps": spec.rps,
+                                            "start_s": spec.start_s, "end_s": spec.end_s,
+                                            "tenant_weights": list(spec.tenant_weights)
+                                            if spec.tenant_weights else None}
+                                     for name, spec in profile.load.arrival.items()}})
+    elif any(spec.tenant_weights for spec in profile.load.arrival.values()):
+        contract.update({"heterogeneous_tenant_load": True,
+                         "arrival": {name: {"scope": spec.scope, "rps": spec.rps,
+                                            "start_s": spec.start_s, "end_s": spec.end_s,
+                                            "tenant_weights": list(spec.tenant_weights)
+                                            if spec.tenant_weights else None}
+                                     for name, spec in profile.load.arrival.items()}})
+    if case["scene"] == "scene_barrier":
+        contract.update({name: profile.params.get(name) for name in (
+            "barrier_count", "barrier_waves", "barrier_distribution", "commit_tenant_counts")})
+    result["summary"]["measurement_contract"] = contract
+    (case_dir / "summary.json").write_text(
+        json.dumps(result["summary"], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return result
 
 
@@ -214,15 +257,93 @@ def run_case(
 #  suite 编排（钩子 + 薄包装）                                            #
 # ---------------------------------------------------------------------- #
 
-def _preflight_stage(config: str) -> dict:
+def _preflight_stage(config: str, *, strict: bool = False) -> dict:
     """preflight 阶段条目：配置缺失时给 NOT_RUN，否则运行并附加 config。"""
     if not config:
         return {
             "status": "NOT_RUN", "config": "", "engines_checked": 0,
             "engines": [], "digest": "",
         }
-    result = run_preflight(config, timeout_s=30.0)
+    result = run_preflight(config, timeout_s=30.0,
+                           **({"required_kinds": ("llm", "embedding")} if strict else {}))
     return {**result, "config": config}
+
+
+def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, seed_messages, *,
+                           reuse_seed=None, dataset_path="", sample_id="conv-30", session_key="session_1",
+                           search_timeout_s=60):
+    """Observation workloads share remembered facts, not a bare-marker routing gate."""
+    import uuid
+    from performance.suite import SeedPreparationError
+    from performance.targets.echomem.acceptance.capacity_seed import (
+        CapacityActor,
+        prepare_actors,
+        validate_cached_actors,
+        validate_search_timeout,
+    )
+    from performance.targets.echomem.acceptance.semantic_corpus import (
+        DEFAULT_LOCOMO_DATASET,
+        build_locomo_session_corpus,
+    )
+    from performance.targets.echomem.probes._client import EchoMemHTTP
+
+    validate_search_timeout(search_timeout_s)
+    specs = load_tenant_specs(tenant_config, tenant_count=max_tenants)
+    if len(specs) != max_tenants or len({s.auth_key for s in specs}) != max_tenants:
+        raise RuntimeError("Semantic seed requires all independent tenant credentials")
+    run_tag = uuid.uuid4().hex
+    source_path = Path(dataset_path) if dataset_path else DEFAULT_LOCOMO_DATASET
+    actors = [CapacityActor(index, 0, EchoMemHTTP(base_url, spec.auth_key,
+                    tenant_id=spec.tenant_id, user_id=spec.user_id,
+                    account_id=spec.account_id, agent_id=spec.agent_id),
+                build_locomo_session_corpus(f"formal-recall-{run_tag}-{index}",
+                    dataset_path=source_path, sample_id=sample_id, session_key=session_key))
+              for index, spec in enumerate(specs)]
+    if reuse_seed:
+        from dataclasses import replace
+        from performance.targets.echomem.acceptance.capacity_experiment import _load_actors
+        cached, _ = _load_actors(Path(reuse_seed), base_url)
+        incompatible = [a for a in cached if a.corpus.get("query_contract") != "locomo-single-session-evidence-v1"
+                        or (a.corpus.get("source") or {}).get("sample_id") != sample_id
+                        or (a.corpus.get("source") or {}).get("session_key") != session_key]
+        if incompatible:
+            raise RuntimeError("Semantic cache is not the configured LoCoMo single-session corpus")
+        actors = []
+        for spec in specs:
+            matches = [a for a in cached if all(getattr(a.client, field) == getattr(spec, field)
+                       for field in ("tenant_id", "user_id", "account_id", "agent_id", "auth_key"))]
+            if len(matches) != 1:
+                raise RuntimeError("Semantic cache must match each configured identity exactly once")
+            actors.append(replace(matches[0], tenant_index=len(actors)))
+        evidence = validate_cached_actors(actors, validation_queries=4, search_timeout_s=search_timeout_s)
+    else:
+        evidence = prepare_actors(actors, timeout_s=180, validation_queries=4, search_timeout_s=search_timeout_s)
+    if evidence["healthy_actors"] != max_tenants:
+        raise SeedPreparationError(f"Semantic seed validation failed: healthy={evidence['healthy_actors']}/{max_tenants}", evidence)
+    contexts = [SeedContext(tenant_id=actor.client.tenant_id, auth_key=actor.client.auth_key,
+                    agent_id=actor.client.agent_id, user_id=actor.client.user_id,
+                    account_id=actor.client.account_id,
+                    queries=[q["query"] for q in actor.corpus["recall_queries"]],
+                    query_cases={q["query"]: q for q in actor.corpus["recall_queries"]}) for actor in actors]
+    counts = [{"documents": len(a.corpus["documents"]), "facts": len(a.corpus["facts"]),
+               "queries": len(a.corpus["recall_queries"])} for a in actors]
+    def uniform_count(field):
+        values = {row[field] for row in counts}
+        return next(iter(values)) if len(values) == 1 else None
+
+    return contexts, {"status": "completed", "tenant_count": max_tenants,
+                      "identity_mode": "independent", "keys_independent": True,
+                      "seed_contract": "fixed-fact-in-items", "seed_evidence": evidence,
+                      "seed_source": "validated-cache" if reuse_seed else "locomo-single-session",
+                      "corpus_source": {"dataset": source_path.name, "sample_id": sample_id,
+                                        "session_key": session_key},
+                      "probe_queries": {actor.client.tenant_id: actor.corpus["recall_queries"][0] for actor in actors},
+                      "corpus_fingerprints": [actor.corpus["fingerprint"] for actor in actors],
+                      "corpus_counts_by_tenant_index": counts,
+                      "seed_documents_per_tenant": uniform_count("documents"),
+                      "facts_per_tenant": uniform_count("facts"),
+                      "query_variants_per_tenant": uniform_count("queries"),
+                      "validated_queries_per_tenant": 4, "seed_search_timeout_s": search_timeout_s}
 
 
 def _prepare_seed(
@@ -240,27 +361,30 @@ def _prepare_seed(
     )
     if not preparer.keys_independent() or len(contexts) != max_tenants:
         raise RuntimeError("All requested tenants must have distinct, nonempty credentials")
+    from performance.targets.echomem.acceptance.semantic_corpus import assess_retrieval
+
     visibility = []
     for ctx in contexts:
-        markers = list(dict.fromkeys(anchor_marker(q) for q in ctx.queries if anchor_marker(q)))
-        if not markers:
-            raise RuntimeError(f"Seed did not generate recall markers: tenant={ctx.tenant_id}")
-        for query in markers:
+        query_cases = dict(getattr(ctx, "query_cases", {}) or {})
+        if not query_cases:
+            raise RuntimeError(f"Seed did not generate semantic recall cases: tenant={ctx.tenant_id}")
+        for query, sample in query_cases.items():
             deadline = time.monotonic() + 60
             while True:
                 response = ctx.client.search("", query, timeout_s=10)
-                quality = recall_quality(response.payload, query)
+                quality = assess_retrieval(response.payload, sample)
                 # Visibility is a setup prerequisite; degradation remains a
                 # measured quality failure rather than hiding all load evidence.
-                if response.status_code == 200 and quality["marker_found"]:
-                    visibility.append({"tenant_id": ctx.tenant_id, "marker": query, "visible": True,
+                if response.status_code == 200 and quality["matched_expected_fact"]:
+                    visibility.append({"tenant_id": ctx.tenant_id, "query_id": sample["id"], "visible": True,
                                        "quality_ok": quality["quality_ok"], "degraded": quality["degraded"],
+                                       "intent_rejected": quality["intent_rejected"],
                                        "degraded_reasons": quality["degraded_reasons"]})
                     break
                 if time.monotonic() >= deadline:
-                    raise RuntimeError(f"Seed marker not found: tenant={ctx.tenant_id} marker={query}; "
+                    raise RuntimeError(f"Seed fact not found: tenant={ctx.tenant_id} query_id={sample['id']}; "
                                        f"http_status={response.status_code}, hits={quality['hit_count']}, "
-                                       f"degraded={quality['degraded']}")
+                                       f"intent_rejected={quality['intent_rejected']}, degraded={quality['degraded']}")
                 time.sleep(1)
     return [
         SeedContext(
@@ -270,6 +394,7 @@ def _prepare_seed(
             agent_id=ctx.client.agent_id,
             user_id=ctx.client.user_id,
             account_id=ctx.client.account_id,
+            query_cases=dict(ctx.query_cases),
         )
         for ctx in contexts
     ], {
@@ -305,24 +430,16 @@ def run_suite(
     """
     metrics_enabled = bool(profile.get("metrics_enabled", True))
     observation_before = None
-    if profile.get("six_metrics"):
-        container = str(profile.get("resource_container") or (profile.get("commit_recovery") or {}).get("container") or "")
-        try:
-            from performance.targets.echomem.probes.docker_inspect import inspect_container
-            config = inspect_container(container)["HostConfig"]
-            cpus = float(config.get("NanoCpus", 0)) / 1e9
-            if not cpus and config.get("CpuPeriod", 0) > 0:
-                cpus = config.get("CpuQuota", 0) / config["CpuPeriod"]
-            resource = {"cpus": cpus, "memory_bytes": config.get("Memory"), "container": container}
-            if cpus != 4 or config.get("Memory") != 8 * 1024 ** 3:
-                raise ValueError("Container limits must be exactly 4 CPUs and 8 GiB")
-            profile = {**profile, "resource_evidence": resource}
-        except (OSError, subprocess.SubprocessError, ValueError) as exc:
+    if profile.get("six_metrics") or profile.get("six_metrics_observation"):
+        from performance.targets.echomem.acceptance.readiness import check_readiness
+        readiness = check_readiness(profile)
+        if not readiness["ok"]:
             suite_dir.mkdir(parents=True, exist_ok=True)
-            result = {"runs": [], "resource_preflight": {"status": "INCONCLUSIVE", "reason": str(exc)},
+            result = {"runs": [], "resource_preflight": {"status": "INCONCLUSIVE", "readiness": readiness},
                       "output_root": str(suite_dir), "instance_profile": profile.get("name")}
             (suite_dir / "suite.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
             return result
+        profile = {**profile, "resource_evidence": readiness["resource_evidence"]}
         observation = profile.get("tenant_observability", {})
         from performance.targets.echomem.probes.tenant_observability import collect
         observation_before = collect(
@@ -338,6 +455,28 @@ def run_suite(
             collect_metrics=metrics_enabled,
         )
 
+    def _select_cases(name, scenarios):
+        if profile.get("six_metrics_observation"):
+            from performance.targets.echomem.orchestrator.suites import six_metric_observation_cases
+            catalog = six_metric_observation_cases(quick=quick is not None)
+            if scenarios is None:
+                return catalog
+            selected = set(scenarios)
+            return [case for case in catalog if case["label"] in selected]
+        if profile.get("six_metrics"):
+            from performance.targets.echomem.orchestrator.suites import six_metric_cases
+            return six_metric_cases(profile.get("capacity_levels"))
+        return select_cases(name, scenarios)
+
+    from functools import partial
+    semantic_seed = partial(
+        _prepare_semantic_seed,
+        reuse_seed=profile.get("semantic_seed_cache"),
+        dataset_path=profile.get("semantic_seed_dataset", ""),
+        sample_id=profile.get("semantic_seed_sample", "conv-30"),
+        session_key=profile.get("semantic_seed_session", "session_1"),
+        search_timeout_s=profile.get("seed_search_timeout_s", 60),
+    )
     result = run_suite_impl(
         profile,
         suite_dir=suite_dir,
@@ -347,17 +486,22 @@ def run_suite(
         scenarios=scenarios,
         quick=quick,
         resume=resume,
-        select_cases=select_cases,
+        select_cases=_select_cases,
         build_profile=lambda case, url, tenant_count, q: build_case_profile(
             case, base_url=url, tenant_count=tenant_count, auth_headers={}, quick=q
         ),
         run_case=_run_case,
-        preflight=_preflight_stage,
-        seed=_prepare_seed,
+        preflight=lambda config: _preflight_stage(
+            config,
+            strict=bool(profile.get("six_metrics") or profile.get("six_metrics_observation")),
+        ),
+        seed=(semantic_seed if profile.get("six_metrics_observation") else _prepare_seed),
         evaluate=evaluate_pr421_acceptance,
     )
     if profile.get("resource_evidence"):
         result["resource_evidence"] = profile["resource_evidence"]
+    if profile.get("six_metrics") or profile.get("six_metrics_observation"):
+        result["readiness"] = readiness
     if observation_before is not None:
         result["tenant_observability_before"] = observation_before
     return result

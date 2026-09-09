@@ -24,6 +24,26 @@ _PROBE_LABELS = (
 )
 
 
+def _model_evidence(profile: dict[str, Any]) -> dict[str, Any]:
+    preflight = profile.get("model_preflight") or profile.get("preflight") or {}
+    engines = preflight.get("engines") if isinstance(preflight.get("engines"), list) else []
+    verified_kinds = {
+        str(engine.get("kind") or "") for engine in engines
+        if engine.get("status") == "ok" and engine.get("model_supported") is True
+    }
+    verified = bool(preflight.get("ok")) and {"llm", "embedding"}.issubset(verified_kinds)
+    if verified:
+        status = "VERIFIED"
+        reason = "LLM 与 Embedding 均完成真实 Provider 请求预检"
+    elif preflight:
+        status = "FAILED"
+        reason = str(preflight.get("error") or "真实模型预检未通过")
+    else:
+        status = "MISSING"
+        reason = "没有模型预检记录，不能判断是否调用真实模型"
+    return {"status": status, "reason": reason, "preflight": preflight, "engines": engines}
+
+
 def render_objective_suite_html(result: dict[str, Any]) -> str:
     """把 objective-suite.json 渲染为自包含 HTML 字符串。"""
     rows = []
@@ -43,7 +63,33 @@ def render_objective_suite_html(result: dict[str, Any]) -> str:
                 "</tr>"
             )
     details = []
+    model_sections = []
+    model_evidence = [_model_evidence(profile) for profile in result.get("profiles") or []]
     for profile in result.get("profiles") or []:
+        evidence = _model_evidence(profile)
+        engine_rows = "".join(
+            "<tr>"
+            f"<td>{html.escape(str(engine.get('kind') or ''))}</td>"
+            f"<td>{html.escape(str(engine.get('id') or ''))}</td>"
+            f"<td>{html.escape(str(engine.get('model') or ''))}</td>"
+            f"<td>{html.escape(str(engine.get('api_base') or ''))}</td>"
+            f"<td>{html.escape(str(engine.get('status') or ''))}</td>"
+            f"<td>{html.escape(str(engine.get('code') or ''))}</td>"
+            "</tr>"
+            for engine in evidence["engines"]
+        ) or "<tr><td colspan='6'>没有真实模型调用明细</td></tr>"
+        css_class = "pass" if evidence["status"] == "VERIFIED" else "fail"
+        model_sections.append(
+            f"<h3>{html.escape(str(profile.get('name')))}："
+            f"<span class='{css_class}'>{html.escape(evidence['status'])}</span></h3>"
+            f"<p>{html.escape(evidence['reason'])}</p>"
+            f"<p class='muted'>配置指纹：<code>{html.escape(str(evidence['preflight'].get('digest') or '-'))}</code>；"
+            f"预检尝试：{html.escape(str(evidence['preflight'].get('probe_attempts', '-')))}。"
+            "API Key 不写入报告。</p>"
+            "<table><thead><tr><th>类型</th><th>配置路径/用途</th><th>模型</th>"
+            "<th>Endpoint</th><th>真实请求状态</th><th>HTTP</th></tr></thead>"
+            f"<tbody>{engine_rows}</tbody></table>"
+        )
         details.append(f"<h3>{html.escape(str(profile.get('name')))}</h3>")
         for key, label in _PROBE_LABELS:
             payload = profile.get(key)
@@ -78,6 +124,15 @@ def render_objective_suite_html(result: dict[str, Any]) -> str:
             details.append(
                 f"<p class='muted'>制品：<code>{html.escape(str(payload.get('path', '')))}</code></p></details>"
             )
+    all_models_verified = bool(model_evidence) and all(
+        evidence["status"] == "VERIFIED" for evidence in model_evidence
+    )
+    model_banner_class = "pass" if all_models_verified else "fail"
+    model_banner = (
+        "真实模型可用性预检已通过，但本报告没有压测期间模型调用证据，不能据此宣称负载使用了模型。"
+        if all_models_verified else
+        "未证明真实模型可用或被调用，本报告不能宣称使用了真实模型。"
+    )
     return f"""<!doctype html>
 <html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>EchoMem 七项目标自动化验收</title>
@@ -90,8 +145,12 @@ th,td{{border-bottom:1px solid #e7ecef;padding:9px;text-align:left;vertical-alig
 code{{background:#f0f3f5;padding:2px 4px}}.scroll{{overflow:auto}}
 </style><main>
 <section><h1>EchoMem 七项目标自动化验收</h1>
-<div class="muted">生成时间：{html.escape(str(result.get("created_at", "")))} · 真实 HTTP：是 · mock 模型：否</div>
+<div class="muted">生成时间：{html.escape(str(result.get("created_at", "")))} · 真实 HTTP：是</div>
+<p class="{model_banner_class}">{html.escape(model_banner)}</p>
 <p>报告只依据实际运行证据判定；缺少部署控制或服务端指标时标记为 INCONCLUSIVE，不推断为通过。</p></section>
+<section class="scroll"><h2>模型可用性预检（不是负载调用证明）</h2>
+<p class="muted">“没有启用 mock”不等于调用了真实模型。下表只证明独立的 Provider 预检；负载期间调用需另有阶段日志或 Provider 指标。</p>
+{"".join(model_sections)}</section>
 <section class="scroll"><h2>逐 profile 目标状态</h2>
 <table><thead><tr><th>Profile</th><th>目标</th><th>状态</th><th>说明</th><th>归属</th><th>证据</th></tr></thead>
 <tbody>{"".join(rows)}</tbody></table></section>

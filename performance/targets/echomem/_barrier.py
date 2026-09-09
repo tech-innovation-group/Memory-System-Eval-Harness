@@ -42,6 +42,8 @@ def barrier_tenant_counts(
             )
         if sum(values) != count:
             raise ValueError(f"explicit barrier 计数总和 {sum(values)} != count {count}")
+        if any(value < 0 for value in values):
+            raise ValueError("explicit barrier counts must be non-negative")
     else:
         raise ValueError(f"unknown barrier distribution: {distribution}")
     return {index: value for index, value in enumerate(values)}

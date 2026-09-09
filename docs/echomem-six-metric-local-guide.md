@@ -83,8 +83,11 @@ M4 故障注入、M5 容器重启以及远程/共享资源操作仍需获得操�
 Commit 状态、History、Archive、Cursor、Metrics、故障控制和租户观测分别统计实际
 调用次数与错误；负向契约探针独立检查缺认证、畸形 JSON、缺必填字段、错误字段类型、
 不存在资源及非法故障类型，不把这些请求混入性能分母。接口和模块耗时分开显示：
-客户端仅能证明 HTTP 端到端耗时，EchoMem 响应实际提供的 route/engine 阶段计时另表展示，
-缺失的内部阶段保持“不可观测”，不使用 P95 相减猜测。
+客户端记录 HTTP 端到端耗时；测试平台按 `trace_id` 关联 EchoMem 的结构化 Recall、
+Engine、Rerank、Commit 和 Atomic Pipeline 日志，逐阶段统计 observations、P50、P95、
+P99 与 queue wait。七组 Prometheus Histogram 使用测试窗口内累计值增量独立汇总，并与
+日志覆盖交叉校验。不得通过端到端耗时相减推算模块耗时；只有日志和指标均无真实样本时，
+才将对应阶段标记为“不可观测”并列明原因。
 
 M3 同时包含均匀 Commit 洪泛和单租户洪泛。后者让一个租户承担全部 Commit，四个租户
 继续独立 Search，用于观察不同租户负载与耗时是否串扰；它是异构/吵闹邻居场景，不能
@@ -96,11 +99,20 @@ M3 同时包含均匀 Commit 洪泛和单租户洪泛。后者让一个租户承
 本机需要 macOS 或 Linux、Docker Compose、Git、Python 3.11+，以及可用的真实 LLM 和
 Embedding 凭证。禁止使用 mock。EchoMem 被测版本还需包含故障控制和租户观测接口。
 
-获取两个仓库。`ECHOMEM_DIR` 可以换成自己的绝对路径：
+获取两个仓库。`ECHOMEM_DIR` 可以换成自己的绝对路径。EchoMem 必须显式检出
+`develop`；不要依赖 `git clone` 当时的默认分支，因为默认分支可能是 `main`：
 
 ```bash
-git clone https://github.com/tech-innovation-group/EchoMem.git
-export ECHOMEM_DIR="$PWD/EchoMem"
+git clone --branch develop https://github.com/tech-innovation-group/EchoMem.git
+cd EchoMem
+git fetch origin develop
+git switch develop
+git pull --ff-only origin develop
+export ECHOMEM_DIR="$PWD"
+printf 'EchoMem branch=%s commit=%s\n' \
+  "$(git branch --show-current)" "$(git rev-parse HEAD)"
+test "$(git branch --show-current)" = develop
+cd ..
 
 git clone https://github.com/tech-innovation-group/Memory-System-Eval-Harness.git
 cd Memory-System-Eval-Harness
@@ -121,18 +133,25 @@ GET/POST /api/inspect/test-control/fault
 GET      /api/inspect/tenant-observability
 ```
 
-在 PR449 合入前，可在 EchoMem 仓库中显式检出该 PR：
+只运行 M1-M3 时使用上一步锁定的最新 `develop`。运行完整 M1-M6 时，在 PR449 合入
+`develop` 前必须显式检出 PR449，并验证它已同步当前 `origin/develop`：
 
 ```bash
 cd "$ECHOMEM_DIR"
-git fetch origin pull/449/head:pr449-blackbox
+git fetch origin develop pull/449/head:pr449-blackbox
 git switch pr449-blackbox
+git merge-base --is-ancestor origin/develop HEAD || {
+  echo 'BLOCKED: PR449 尚未同步当前 origin/develop，请使用已同步分支后再测完整 M1-M6。'
+  exit 1
+}
+printf 'EchoMem branch=%s commit=%s develop=%s\n' \
+  "$(git branch --show-current)" "$(git rev-parse HEAD)" "$(git rev-parse origin/develop)"
 git rev-parse HEAD
 ```
 
-若要测试“最新 develop + PR449”，必须使用已经把 PR449 独有改动同步到最新 develop 的
-分支；不要让 AI 静默把旧 PR449 历史强行 rebase 或 cherry-pick。无论选择哪个版本，运行
-前都要用上面的两个路径确认接口存在，并把最终 EchoMem commit 写入报告。
+若上面的祖先校验失败，停止测试；不要让 AI 静默把旧 PR449 历史强行 rebase 或
+cherry-pick。PR449 合入后，完整 M1-M6 也直接使用最新 `develop`。无论选择哪个版本，
+都必须把最终 EchoMem branch、commit 和 `origin/develop` commit 写入报告。
 
 ## 2. 本机部署 EchoMem
 
@@ -142,6 +161,19 @@ git rev-parse HEAD
 cd "$ECHOMEM_DIR/deploy/single-node"
 ./manage.sh init
 cp ../../configs/config.example.json ./config.json
+```
+
+这里必须复制仓库根目录的完整 `configs/config.example.json`，不能使用
+`deploy/single-node/config.json.example`；后者允许 `engine.enabled=[]`，只能启动空引擎服务，
+不能完成真实记忆 Commit/Search 压测。启动前执行硬校验：
+
+```bash
+test "$(jq '.engine.enabled | length' config.json)" -gt 0 || {
+  echo 'BLOCKED: engine.enabled 为空，未启用任何真实记忆引擎。'
+  exit 1
+}
+git -C "$ECHOMEM_DIR" branch --show-current
+git -C "$ECHOMEM_DIR" rev-parse HEAD
 ```
 
 编辑当前目录的 `.env` 和 `config.json`：
@@ -313,6 +345,18 @@ ECHOMEM_EMBEDDING_API_KEY=<真实 Embedding key>
 若 `config.json` 使用其他 `*_api_key_env` 名称，也要把对应变量加入 `test.env`。测试平台
 会在发压前分别验证 LLM 和 Embedding；任何一个失败都会阻止依赖真实记忆的场景。
 
+M1-M3 要采集真实内部阶段耗时，EchoMem 配置必须启用 DEBUG JSON 日志：
+
+```json
+{
+  "runtime": {"log_level": "DEBUG"},
+  "logging": {"level": "debug", "format": "json"}
+}
+```
+
+profile 还要设置准确的 `resource_container` 和 `require_stage_observability: true`。测试平台
+只保存白名单阶段字段和哈希后的 trace 引用，不保存原始 trace id 或请求正文。
+
 ## 5. 创建唯一的本机 profile
 
 新建 `.local-stress/six-metrics.profile.json`，只放下面这一个 profile。将三处绝对路径和
@@ -332,6 +376,7 @@ ECHOMEM_EMBEDDING_API_KEY=<真实 Embedding key>
       "m1_user_levels": [1, 2, 4, 8, 16, 32],
       "required_concurrency": 32,
       "required_embedding_model": "qwen3.7-text-embedding-flash",
+      "require_stage_observability": true,
       "m1_duration_s": 300,
       "m1_search_rps_per_user": 1,
       "dau_scenarios": [
@@ -473,6 +518,7 @@ results/local-six-metrics-tuned/report.html
 | `suite.json` | 场景、探针与分母明细 |
 | `records.csv` | 每个请求的延迟、状态和结果 |
 | `metrics_samples.csv` | 测试期间 CPU、内存及 Prometheus 采样 |
+| `structured-stage-events.jsonl` | 脱敏后的真实阶段日志样本，不含请求正文 |
 | `execution-manifest.json` | 测试平台 commit、profile、模型预检和执行状态 |
 
 | 状态 | 含义 |
