@@ -10,6 +10,7 @@
       "m1_user_levels": [1, 2, 4, 8, 16, 32],
       "required_concurrency": 32,
       "required_embedding_model": "qwen3.7-text-embedding-flash",
+      "require_stage_observability": true,
       "m1_duration_s": 300,
       "m1_search_rps_per_user": 1,
       "dau_scenarios": [

@@ -76,8 +76,12 @@ M4 故障注入、M5 容器重启以及远程/共享资源操作仍需获得操�
 Commit 状态、History、Archive、Cursor、Metrics、故障控制和租户观测分别统计实际
 调用次数与错误；负向契约探针独立检查缺认证、畸形 JSON、缺必填字段、错误字段类型、
 不存在资源及非法故障类型，不把这些请求混入性能分母。接口和模块耗时分开显示：
-客户端仅能证明 HTTP 端到端耗时，EchoMem 响应实际提供的 route/engine 阶段计时另表展示，
-缺失的内部阶段保持“不可观测”，不使用 P95 相减猜测。
+客户端记录 HTTP 端到端耗时；测试平台按 `trace_id` 关联 EchoMem 的
+`recall_stage_completed`、`recall_engine_completed`、`memory_extraction_completed` 和
+`atomic_pipeline_completed` 结构化日志，分别统计 observations、P50、P95、P99 与
+queue wait。七组 Prometheus Histogram 使用测试窗口内累计值增量独立汇总，并与日志
+覆盖交叉校验。不得通过端到端耗时相减推算模块耗时；只有日志和指标均无真实样本时，
+才将对应阶段标记为“不可观测”并列明原因。
 
 M3 同时包含均匀 Commit 洪泛和单租户洪泛。后者让一个租户承担全部 Commit，四个租户
 继续独立 Search，用于观察不同租户负载与耗时是否串扰；它是异构/吵闹邻居场景，不能
@@ -306,6 +310,19 @@ ECHOMEM_EMBEDDING_API_KEY=<真实 Embedding key>
 若 `config.json` 使用其他 `*_api_key_env` 名称，也要把对应变量加入 `test.env`。测试平台
 会在发压前分别验证 LLM 和 Embedding；任何一个失败都会阻止依赖真实记忆的场景。
 
+M1-M3 要采集真实内部阶段耗时，EchoMem 的被测配置必须启用 DEBUG JSON 日志：
+
+```json
+{
+  "runtime": {"log_level": "DEBUG"},
+  "logging": {"level": "debug", "format": "json"}
+}
+```
+
+profile 中的 `resource_container` 必须是该 EchoMem 容器的准确名称，并设置
+`require_stage_observability: true`。运行器只保存白名单阶段、耗时、队列等待和脱敏后的
+trace 引用，不保存请求正文或原始 trace id。
+
 ## 5. 创建唯一的本机 profile
 
 新建 `.local-stress/six-metrics.profile.json`，只放下面这一个 profile。将三处绝对路径和
@@ -325,6 +342,7 @@ ECHOMEM_EMBEDDING_API_KEY=<真实 Embedding key>
       "m1_user_levels": [1, 2, 4, 8, 16, 32],
       "required_concurrency": 32,
       "required_embedding_model": "qwen3.7-text-embedding-flash",
+      "require_stage_observability": true,
       "m1_duration_s": 300,
       "m1_search_rps_per_user": 1,
       "dau_scenarios": [

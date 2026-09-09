@@ -64,6 +64,21 @@ export YOUR_EMBEDDING_API_KEY='...'
 expected lanes，不接受在测试配置里写死四条 lane。它会在发压前真实调用 LLM 和
 embedding endpoint，mock/fake 或错误模型不会生成成功结果。
 
+M1-M3 的模块耗时来自 EchoMem 自身证据，不从 HTTP 端到端耗时做减法。被测配置需要：
+
+```json
+{
+  "runtime": {"log_level": "DEBUG"},
+  "logging": {"level": "debug", "format": "json"}
+}
+```
+
+profile 同时设置 `resource_container` 和 `require_stage_observability: true`。测试平台会在
+本次运行时间窗内收集结构化 Search/Recall、Commit/Atomic Engine 日志，按脱敏后的
+trace 引用关联请求，逐阶段输出 observations、P50、P95、P99 和 queue wait；七组
+Prometheus Histogram 则按窗口累计值增量独立统计并与日志覆盖交叉校验。只有某阶段两路
+均没有真实样本时才标记为不可观测，并说明是日志采集失败、指标缺失还是场景未触发。
+
 ## 完整运行
 
 ```bash
@@ -174,6 +189,7 @@ M3 先串行 open/add 准备每个计划事务，再集中提交 Commit；Search
 - `suite.json`：场景、探针及完整原始引用；`tenant_observability_monitor` 保留本机单调时钟窗口、采样间隔上限及采集异常类型
 - `records.csv`：合并后的逐请求记录
 - `metrics_samples.csv`：合并后的资源/Prometheus 采样
+- `structured-stage-events.jsonl`：白名单结构化阶段事件；原始 trace id 已哈希，不含请求正文
 - `summary.json`：M1-M6 四态观测汇总
 - `tenant-observability-samples.json`：M6 两秒快照、队列和重启分段来源
 - `tenant-observability-before.json`：M6 发压前同步基线，用于计算计数器增量

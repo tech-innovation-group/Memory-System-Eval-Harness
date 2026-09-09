@@ -17,7 +17,11 @@ from performance.targets.echomem.acceptance.observation import (
     summarize_timing_evidence,
     write_observation_report,
 )
-from performance.targets.echomem.observation_run import _m1_levels, _validate_m1_resume
+from performance.targets.echomem.observation_run import (
+    _m1_levels,
+    _validate_m1_resume,
+    _validate_stage_observability_config,
+)
 from performance.targets.echomem.probes.tenant_observability import expected_lanes_from_config
 
 
@@ -124,6 +128,27 @@ def test_m1_resume_rejects_changed_configuration() -> None:
         assert "levels_requested" in str(exc)
     else:
         raise AssertionError("changed M1 resume configuration was accepted")
+
+
+def test_stage_observability_requires_debug_json_and_container(tmp_path: Path) -> None:
+    config = tmp_path / "config.json"
+    config.write_text(json.dumps({
+        "runtime": {"log_level": "DEBUG"},
+        "logging": {"level": "debug", "format": "json"},
+    }))
+    profile = {"require_stage_observability": True,
+               "preflight_config": str(config), "resource_container": "echomem"}
+    _validate_stage_observability_config(profile, ["M1", "M2", "M3"])
+    config.write_text(json.dumps({
+        "runtime": {"log_level": "INFO"},
+        "logging": {"level": "info", "format": "console"},
+    }))
+    try:
+        _validate_stage_observability_config(profile, ["M1"])
+    except ValueError as exc:
+        assert "runtime.log_level=DEBUG" in str(exc)
+    else:
+        raise AssertionError("INFO logging was accepted for required stage observation")
 
 
 def test_overlap_uses_search_start_not_interval_intersection(tmp_path: Path) -> None:
@@ -296,7 +321,40 @@ def test_timing_summary_does_not_invent_internal_stages(tmp_path: Path) -> None:
     read = next(row for row in summary["operation_timings"] if row["module"].endswith("/read"))
     assert read["observations"] == 2
     assert read["p95_ms"] == 30
-    assert "atomic engine" in summary["unobservable_modules"]
+    assert "atomic/extraction" in summary["unobservable_modules"]
+    assert summary["trace_correlation"]["status"] == "MISSING"
+
+
+def test_timing_summary_uses_real_structured_stage_events(tmp_path: Path) -> None:
+    run = _run(tmp_path, "timings-with-stage", [
+        {"op": "read", "status": "ok", "stage_ms": 20, "trace_ref": "trace-a"},
+    ])
+    summary = summarize_timing_evidence({
+        "runs": [run],
+        "stage_observability": {"status": "COLLECTED", "events": [{
+            "event": "recall_stage_completed", "module": "recall/query_embedding",
+            "trace_ref": "trace-a", "duration_ms": 8, "queue_wait_ms": 2,
+        }]},
+    }, [])
+    row = next(item for item in summary["structured_log_timings"]
+               if item["module"] == "recall/query_embedding")
+    assert row["observations"] == 1
+    assert row["p95_ms"] == 8
+    assert summary["trace_correlation"]["status"] == "CORRELATED"
+    assert "recall/query_embedding" not in summary["unobservable_modules"]
+
+
+def test_timing_summary_accepts_engine_specific_memory_extraction(tmp_path: Path) -> None:
+    run = _run(tmp_path, "memory-extraction", [])
+    summary = summarize_timing_evidence({
+        "runs": [run],
+        "stage_observability": {"status": "COLLECTED", "events": [{
+            "event": "memory_extraction_completed",
+            "module": "commit/memory_extraction/atomic_engine",
+            "duration_ms": 10,
+        }]},
+    }, [])
+    assert "commit/memory_extraction" not in summary["unobservable_modules"]
 
 
 def test_service_concurrency_limits_are_recorded_without_capping_client(tmp_path: Path) -> None:

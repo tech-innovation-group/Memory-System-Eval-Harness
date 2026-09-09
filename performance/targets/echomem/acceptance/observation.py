@@ -14,6 +14,14 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from performance.targets.echomem.acceptance.stage_observability import (
+    correlate_requests,
+    cross_check,
+    read_stage_events,
+    summarize_log_stages,
+    summarize_prometheus_histograms,
+)
+
 from performance.stats import percentile
 from performance.targets.echomem.acceptance.provenance import render_platform_provenance
 
@@ -225,20 +233,69 @@ def summarize_timing_evidence(suite: dict[str, Any], m1_reports: list[dict[str, 
         operation_rows.append({"module": f"HTTP端到端/{operation}", "source": "客户端计时",
                                "observations": len(values), "p50_ms": percentile(values, 50),
                                "p95_ms": percentile(values, 95), "p99_ms": percentile(values, 99)})
-    module_rows = []
+    response_rows = []
     for report in m1_reports:
         for level in report.get("levels", []):
             search = level.get("search") or {}
             prefix = f"M1/{level.get('topology')}/H={level.get('hot_users')}/{level.get('load_mode')}"
             for engine, values in (search.get("engine_timings") or {}).items():
-                module_rows.append({"module": f"{prefix}/engine:{engine}", "source": "服务响应", **values})
+                response_rows.append({"module": f"{prefix}/engine:{engine}", "source": "服务响应", **values})
             for route, values in (search.get("route_path_timings") or {}).items():
-                module_rows.append({"module": f"{prefix}/route:{route}", "source": "服务响应", **values})
+                response_rows.append({"module": f"{prefix}/route:{route}", "source": "服务响应", **values})
+    stage_evidence = suite.get("stage_observability") or {}
+    events = stage_evidence.get("events") or read_stage_events(
+        Path(str(stage_evidence.get("path") or ""))
+    )
+    log_rows = summarize_log_stages(events)
+    metric_paths = [
+        Path(str(run.get("output_dir") or "")) / "metrics_samples.csv"
+        for run in suite.get("runs", [])
+    ]
+    metric_rows = summarize_prometheus_histograms(metric_paths)
+    expected = [
+        "recall/rule", "recall/semantic", "recall/llm", "recall/query_embedding",
+        "recall/memory_profile", "recall/engine_execution",
+        "recall/candidate_governance_filter", "recall/rerank", "recall/composer",
+        "recall/recall_total", "commit/memory_extraction",
+        "atomic/extraction", "atomic/contradiction_resolution",
+        "atomic/organized_projection", "atomic/atom_persistence",
+        "atomic/atom_vector_publication", "atomic/operation_publication",
+        "atomic/cursor_advance",
+    ]
+    observed = {str(row.get("module")) for row in log_rows if row.get("observations")}
+    for row in metric_rows:
+        if not row.get("observations"):
+            continue
+        metric = row.get("metric")
+        if metric == "echomem_memrouter_stage_duration_seconds":
+            stage = (row.get("labels") or {}).get("stage")
+            if stage:
+                observed.add(f"recall/{stage}")
+        elif metric == "echomem_recall_duration_seconds":
+            observed.add("recall/recall_total")
+        elif metric == "echomem_router_embedding_duration_seconds":
+            observed.add("recall/query_embedding")
+    missing = [name for name in expected if not any(
+        module == name or module.startswith(name + "/") for module in observed
+    )]
     return {
-        "operation_timings": operation_rows, "module_timings": module_rows,
-        "unobservable_modules": [] if module_rows else [
-            "router/intent", "embedding", "retrieval fanout", "rerank/merge", "atomic engine"],
-        "note": "端到端耗时不能拆分或相减推定内部模块耗时；仅展示 EchoMem 响应实际返回的阶段计时。",
+        "operation_timings": operation_rows,
+        "module_timings": [*response_rows, *log_rows],
+        "structured_log_timings": log_rows,
+        "prometheus_timings": metric_rows,
+        "trace_correlation": correlate_requests(rows, events),
+        "cross_check": cross_check(log_rows, metric_rows),
+        "stage_collection": {key: value for key, value in stage_evidence.items() if key != "events"},
+        "unobservable_modules": missing,
+        "missing_stage_reasons": [
+            {"module": name, "reason": (
+                "结构化日志采集失败或未配置容器，且没有对应阶段的真实耗时指标样本"
+                if stage_evidence.get("status") not in {"COLLECTED", "PARTIAL"}
+                else "本轮未采到该阶段的真实日志或对应耗时指标样本；需检查是否触发该阶段及采样覆盖"
+            )}
+            for name in missing
+        ],
+        "note": "端到端、结构化日志和 Prometheus 是独立证据；不通过端到端耗时相减推定模块耗时。",
     }
 
 
@@ -1539,15 +1596,45 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             ], min_width_px=1000)) + "</section>"
     )
     timing = result.get("timing_evidence") or {}
+    correlation = timing.get("trace_correlation") or {}
     timing_section = (
         "<section><h2>接口与模块耗时</h2><p>" + esc(timing.get("note")) + "</p>" +
+        table([correlation], [
+            ("status", "Trace 关联状态"), ("eligible_requests", "可关联请求"),
+            ("requests_with_trace", "带 Trace"),
+            ("requests_linked_to_internal_stage", "关联内部阶段"),
+            ("requests_missing_trace", "缺 Trace"),
+            ("traced_without_stage_log", "有 Trace 无阶段日志")]) +
         table(timing.get("operation_timings", []), [
             ("module", "接口/阶段"), ("source", "来源"), ("observations", "样本"),
             ("p50_ms", "P50 ms"), ("p95_ms", "P95 ms"), ("p99_ms", "P99 ms")]) +
-        details("查看 EchoMem 返回的内部阶段计时", table(timing.get("module_timings", []), [
+        details("结构化日志：逐阶段真实耗时", table(timing.get("structured_log_timings", []), [
+            ("module", "模块路径"), ("observations", "耗时样本"),
+            ("trace_count", "Trace 数"), ("p50_ms", "P50 ms"),
+            ("p95_ms", "P95 ms"), ("p99_ms", "P99 ms"),
+            ("queue_wait_observations", "排队样本"),
+            ("queue_wait_p50_ms", "排队 P50 ms"),
+            ("queue_wait_p95_ms", "排队 P95 ms"),
+            ("queue_wait_p99_ms", "排队 P99 ms")], min_width_px=1250)) +
+        details("Prometheus：运行窗口 Histogram 增量", table(timing.get("prometheus_timings", []), [
+            ("module", "指标与标签"), ("observations", "窗口样本"),
+            ("mean_ms", "均值 ms"), ("p50_ms", "P50 ms"),
+            ("p95_ms", "P95 ms"), ("p99_ms", "P99 ms")], min_width_px=1050)) +
+        details("日志与 Prometheus 交叉校验", table(timing.get("cross_check", []), [
+            ("check", "阶段"), ("log_observations", "日志样本"),
+            ("prometheus_metric", "Prometheus 指标"),
+            ("prometheus_observations", "指标样本"), ("status", "两路状态"),
+            ("note", "说明")], min_width_px=1150)) +
+        details("服务响应附带的阶段计时", table([
+            row for row in timing.get("module_timings", []) if row.get("source") == "服务响应"
+        ], [
             ("module", "模块路径"), ("source", "来源"), ("observations", "样本"),
-            ("p50_s", "P50 秒"), ("p95_s", "P95 秒"), ("p99_s", "P99 秒")], min_width_px=900)) +
-        "<p><b>当前无法独立观测：</b>" + esc("、".join(timing.get("unobservable_modules", []))) + "。</p></section>"
+            ("p50_s", "P50 秒"), ("p95_s", "P95 秒"),
+            ("p99_s", "P99 秒")], min_width_px=900)) +
+        ("<p><b>本轮没有真实样本的阶段：</b>" + esc("、".join(timing.get("unobservable_modules", []))) + "。</p>"
+         if timing.get("unobservable_modules") else "<p><b>阶段可观测性：</b>本轮要求的阶段均采到真实日志样本。</p>") +
+        details("查看缺失阶段及原因", table(timing.get("missing_stage_reasons", []), [
+            ("module", "阶段"), ("reason", "缺失原因")])) + "</section>"
     )
     concurrency = result.get("concurrency_configuration") or {}
     concurrency_section = (
@@ -1572,4 +1659,4 @@ body{margin:0;color:#18242b;background:#f4f7f8;font:14px/1.6 system-ui;letter-sp
         stage_notice + model_section + "<section><h2>准备阶段证据</h2><p>没有完成负载场景时不能给出性能结论。裸编号未命中不等于语义事实没有写入；需分别验证实际返回的记忆内容、路由和降级。</p>" + table([result.get("setup_evidence") or {}], [("seed_status", "种子状态"), ("seed_contract", "校验方式"), ("healthy_actors", "验证通过租户"), ("expected_actors", "验证租户总数"), ("validated_queries_per_tenant", "每租户预检问题数"), ("bare_marker_gate_failed", "裸编号前置校验失败"), ("load_cases_completed", "已有负载场景")]) + "</section>" +
         "<section><h2>EchoMem 模块改进建议</h2><p class='purpose'>建议只由本轮可见证据推导；无法从黑盒区分的阶段明确写为需补观测，不把端到端延迟武断归因给原子引擎。</p>" + recommendation_table + details("查看责任边界与技术证据", table(result.get("issue_categories", []), [("category", "类别"), ("note", "观测/下一步"), ("evidence", "证据")])) + "</section>" +
         api_section + timing_section + concurrency_section + seed_source + seed_diagnosis + render_platform_provenance(result.get("platform_provenance")) +
-        "".join(sections) + "<section><h2>原始产物</h2><p><a href='summary.json'>summary.json</a> · <a href='suite.json'>suite.json</a> · <a href='records.csv'>records.csv</a> · <a href='metrics_samples.csv'>metrics_samples.csv</a> · <a href='execution-manifest.json'>execution-manifest.json</a></p></section></main></body></html>", encoding="utf-8")
+        "".join(sections) + "<section><h2>原始产物</h2><p><a href='summary.json'>summary.json</a> · <a href='suite.json'>suite.json</a> · <a href='records.csv'>records.csv</a> · <a href='metrics_samples.csv'>metrics_samples.csv</a> · <a href='structured-stage-events.jsonl'>structured-stage-events.jsonl</a> · <a href='execution-manifest.json'>execution-manifest.json</a></p></section></main></body></html>", encoding="utf-8")

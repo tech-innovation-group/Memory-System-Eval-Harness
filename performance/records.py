@@ -60,6 +60,9 @@ class RequestRecord:
     expected_marker: str = ""
     marker_found: bool = False
     degraded_reasons: str = ""
+    # Hash of EchoMem's response trace id. This correlates request records with
+    # normalized stage logs without publishing the service's opaque id.
+    trace_ref: str = ""
     # -- worker-level failure context --------------------------------------
     detail: str = ""
     arrival_task: str = ""
@@ -121,5 +124,6 @@ CSV_FIELDS: list[str] = [
     "expected_marker",
     "marker_found",
     "degraded_reasons",
+    "trace_ref",
     "detail",
 ]
