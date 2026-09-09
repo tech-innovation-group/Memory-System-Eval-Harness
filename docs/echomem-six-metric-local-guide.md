@@ -35,6 +35,8 @@ EchoMem 仓库：<EchoMem 绝对路径>
 保留超时、拒绝、Provider 异常、pending、空召回和质量失败的原始分母。
 允许对本次专用容器执行 M4 delay/reject 故障注入和 M5 kill/restart。
 完成后打开 report.html，逐项解释数据、分母、错误归属和 EchoMem 模块改进建议。
+报告顶部必须列出实际预检的 LLM、Embedding、Endpoint、真实请求状态和配置指纹；只有
+LLM 与 Embedding 的真实请求都成功且返回结构有效，才显示“已使用真实模型”。
 ```
 
 AI 必须先展示 readiness 和实际命令，再开始会消耗模型额度或重启容器的步骤。若它不能
