@@ -114,6 +114,37 @@ end-to-end measurements. Do not hardcode previous run values into new reports.
 
 ## 5. Verify and deliver
 
+### Four-topology short comparison
+
+When the user explicitly requests the short four-topology comparison, use
+`scripts.run_quick_topology_matrix`, not the six-metric claim. Prepare a private
+directory with the actual target `config.json`, 64 independently provisioned
+identities in `tenants.json`, and provider/tenant environment variables loaded
+using the canonical setup guide. Do not publish that private directory.
+
+```bash
+.venv/bin/python -m scripts.run_quick_topology_matrix \
+  --out "$PRIVATE_RUN" --base-url "$ECHOMEM_BASE_URL"
+.venv/bin/python -m scripts.build_quick_topology_report --root "$PRIVATE_RUN"
+```
+
+This preset is ten bounded groups: shared Search baseline at4, three Search
+topologies at16/64, and heterogeneous Search/Commit at4/16/64. Search has10s
+warmup plus45s measured arrivals; mixed groups have60s arrivals and up to90s
+terminal observation per Commit. Mixed groups use independent Search/Commit
+workers, 512/4096-character inputs, and fresh Commit sessions. Record actual
+arrivals per user: closed-loop arrival rates are not guaranteed equal. Compare
+Jain within each size group only. Keep all seed visibility attempts, misses,
+degradation, and operational failures. Seed quality failures qualify the latency
+conclusion, while pending seed commits block the load to prevent contamination.
+Stop on unresolved mixed Commit backlog. `FINISHED` means collected, not all passed.
+
+The groups share a service and run in fixed order. Outstanding server work after
+client timeouts can affect the next group; do not describe this as isolated A/B
+testing or as proof of maximum capacity. The new renderer consumes
+`quick-matrix.json` and optional `manifest.json`/`service-diagnostics.json`, not
+the old bounded diagnostic schema. Report-only rendering makes no model calls.
+
 Confirm report.html exists, is newly generated, and matches the input run and
 counts. Inspect desktop and mobile widths when browser tooling is available:
 no horizontal overflow, readable chart labels, functioning evidence disclosures.
