@@ -8,11 +8,13 @@ from pathlib import Path
 import sys
 
 from performance.targets.echomem.probes.failure_evidence import failure_evidence, public_label, reference
+from scripts.module_timing_stats import TimingStats
 
 
 def collect(lines):
     counts = Counter()
     samples = []
+    timings = TimingStats()
     for line in lines:
         try:
             row = json.loads(line)
@@ -20,6 +22,8 @@ def collect(lines):
             continue
         event = public_label(row.get("event")) or "UNKNOWN"
         counts[event] += 1
+        # Aggregate the whole stream before the detailed-event retention cap.
+        timings.add(row)
         if row.get("level") not in ("WARNING", "ERROR") and not any(word in event for word in ("commit", "extraction", "atomic", "recall", "provider")):
             continue
         if len(samples) >= 10000:
@@ -42,7 +46,8 @@ def collect(lines):
             if isinstance(row.get(key), (int, float)):
                 entry[key] = row[key]
         samples.append(entry)
-    return {"events": dict(counts), "samples": samples, "sample_cap": 10000}
+    return {"events": dict(counts), "samples": samples, "sample_cap": 10000,
+            "module_timings": timings.export(), "module_timing_scope": "full_input_log_stream"}
 
 
 if __name__ == "__main__":

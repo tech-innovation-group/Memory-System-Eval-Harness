@@ -41,6 +41,34 @@ def group_fairness(scene, indices):
     return jain(commits), jain(inverse)
 
 
+def module_section(diagnostics):
+    from scripts.module_timing_stats import from_diagnostics
+    result = from_diagnostics(diagnostics)
+    prefix = result['scope'] == 'retained_prefix_only'
+    note = ('本轮详细日志只保存了前10,000条符合条件的事件。下表是保留前段样本，不是全程或64并发专属统计；不能解释64并发P95上升的精确归因。缺失的后段日志不能由汇总次数恢复。'
+            if prefix else '耗时聚合覆盖输入日志流，不受详细事件保留上限影响；输入日志本身是否完整仍须核验。')
+    labels = {'llm': '意图识别 LLM', 'semantic': '语义路由', 'query_embedding': '查询向量化',
+              'rule': '规则路由', 'memory_profile': '记忆画像', 'engine_execution': '检索引擎执行',
+              'candidate_governance_filter': '候选过滤', 'composer': '结果组装', 'recall_total': '召回总耗时',
+              'engine_dispatch': 'Commit 引擎分发', 'extraction': '原子记忆抽取',
+              'atom_persistence': '原子落盘', 'atom_vector_publication': '向量发布',
+              'cursor_advance': '游标推进', 'executor_queue': 'Commit执行器排队',
+              'memory_extraction_completed': '记忆抽取总耗时', 'engine_recall': '单引擎检索'}
+    rows, bars = '', ''
+    groups = result['groups']
+    maximum = max([r['duration']['p95_ms'] or 0 for r in groups] + [1])
+    for row in groups:
+        d, q = row['duration'], row['queue_wait']
+        label = labels.get(row['stage'], row['stage']) + (' / ' + row['engine'] if row['engine'] else '')
+        values = (label, row['event'], d['observations'], number(d['p50_ms'],3), number(d['p95_ms'],3),
+                  number(d['p99_ms'],3), q['observations'], number(q['p95_ms'],3), row['distinct_traces'])
+        rows += '<tr>' + ''.join(f'<td>{esc(v)}</td>' for v in values) + '</tr>'
+        if d['p95_ms'] is not None:
+            bars += f'<div class="bar"><span>{esc(label)}</span><div class="track"><i style="width:{100*d["p95_ms"]/maximum:.3f}%;background:#197d91"></i></div><b>{number(d["p95_ms"])}</b></div>'
+    return ('<section><h2>模块实测耗时 · 毫秒</h2><div class="warning">'+note+'</div><p>阶段P95不能相加：父子阶段包含重叠、不同请求样本和并行执行。缺少排队样本写“未采集”，不是0。trace数量表示有可关联标识，不代表已经完成端到端与场景逐请求对账。</p>'
+            + '<div class="scroll"><table><tr><th>模块/阶段</th><th>事件来源</th><th>耗时样本</th><th>P50</th><th>P95</th><th>P99</th><th>排队样本</th><th>排队P95</th><th>trace数</th></tr>'+rows+'</table></div><h3>阶段P95对比（不是耗时占比）</h3>'+bars+'<p>只有真实计时样本才进入上表，skip事件不等于实际Rerank调用耗时；不从端到端相减推算，也不对缺失模块补零。此报告未接入Prometheus窗口差分，未完成日志与指标交叉验证。</p></section>')
+
+
 def render(state, manifest=None, diagnostics=None, resources=None, models=None):
     scenes = state.get('scenes', [])
     manifest = manifest or {}
@@ -150,7 +178,8 @@ def render(state, manifest=None, diagnostics=None, resources=None, models=None):
         evidence += '<p>改进方向：Memory Unit引擎核查发布状态与接管初始化；Recall/意图路由保留上游HTTP状态和错误码，区分限流与其他模型异常；入口/调度记录每阶段排队与执行时间；测试平台采用按事件分桶采样，并对超时任务继续逐笔核对终态。全局完成事件数不能代替每个超时任务的匹配证据。</p>'
     evidence += f'<details><summary>运行版本与环境证据</summary><pre>{esc(json.dumps(manifest,ensure_ascii=False,indent=2))}</pre></details><p><a href="quick-matrix.json">原始汇总数据</a> · <a href="manifest.json">运行清单</a></p></section>'
     css = 'body{font:16px/1.6 system-ui;margin:32px auto;padding:0 24px;max-width:1200px;color:#202a26;background:#f9fbfa}h1{font-size:32px}h2{font-size:23px}section{padding:24px 0;border-top:1px solid #ccd7d0}.subtitle,.note{color:#596960}.warning{border-left:4px solid #ba691e;padding:14px;background:#fff}.charts{display:grid;grid-template-columns:1fr 1fr;gap:36px}.bar{display:grid;grid-template-columns:1.5fr 1fr 65px;gap:10px;align-items:center;margin:12px 0;font-size:13px}.track{background:#e5ebe7;height:12px}.track i{display:block;height:12px}table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:10px;text-align:left;border-bottom:1px solid #dbe2dd;white-space:nowrap}.scroll{overflow-x:auto}summary{cursor:pointer;padding:12px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere}@media(max-width:700px){.charts{grid-template-columns:1fr}body{padding:0 14px}h1{font-size:26px}}'
-    return '<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>四类并发拓扑实测</title><style>'+css+'</style><body>'+header+table+'<section class="charts">'+charts+'</section>'+detail+evidence+'</body></html>'
+    modules = module_section(diagnostics) if diagnostics else ''
+    return '<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>四类并发拓扑实测</title><style>'+css+'</style><body>'+header+modules+table+'<section class="charts">'+charts+'</section>'+detail+evidence+'</body></html>'
 
 
 if __name__ == '__main__':
@@ -168,6 +197,9 @@ if __name__ == '__main__':
     manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
     diagnostic_path = args.root/'service-diagnostics.json'
     diagnostics = json.loads(diagnostic_path.read_text()) if diagnostic_path.exists() else None
+    if diagnostics:
+        from scripts.module_timing_stats import from_diagnostics
+        (args.root/'module-timings.json').write_text(json.dumps(from_diagnostics(diagnostics),ensure_ascii=False,indent=2))
     resource_file = args.root/'resources.json'
     resources = json.loads(resource_file.read_text()) if resource_file.exists() else None
     models_file = args.root/'public-models.json'
