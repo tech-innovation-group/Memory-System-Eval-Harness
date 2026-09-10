@@ -22,6 +22,9 @@ def failure_evidence(payload: Any) -> dict[str, Any]:
     """Never export free-form errors, prompts, response content, or credentials."""
     if not isinstance(payload, dict):
         payload = {"error": str(payload or "")}
+    # The session status endpoint wraps its terminal details in {"status": {...}}.
+    if isinstance(payload.get("status"), dict):
+        payload = {**payload, **payload["status"]}
     error = payload.get("error") or payload.get("error_message") or payload.get("exception") or ""
     text = json.dumps(error, ensure_ascii=False) if not isinstance(error, str) else error
     if not text:

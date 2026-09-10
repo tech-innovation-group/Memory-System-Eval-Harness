@@ -70,7 +70,7 @@ def diagnose(out: Path, base: str):
         result.update(stage="16-way-mixed", burst_started=True)
         save(out / "diagnostic.json", result)
         params = {"tenant_config": str(out / "tenants.json"), "levels": [16],
-                  "topologies": ["heterogeneous-users"], "requests_per_level": 128,
+                  "topologies": ["heterogeneous-users"], "requests_per_level": 32,
                   "large_commit_chars": 65536, "commit_poll_timeout_s": 90,
                   "timeout_s": 20, "stop_after_boundary": True,
                   "queries": {t.tenant_id: sample for t in tenants}}

@@ -26,7 +26,18 @@ def collect(lines):
             continue
         entry = {"event": event, "level": public_label(row.get("level")),
                  "evidence": failure_evidence(row), "commit_ref": reference(row.get("commit_id")),
+                 "archive_id_ref": reference(row.get("archive_id")),
                  "archive_ref": reference(str(row.get("tenant_id", "")) + ":" + str(row.get("session_id", "")) + ":" + str(row.get("archive_id", ""))) if row.get("archive_id") else ""}
+        for key in ("engine_id", "engine", "model", "model_alias", "call_site", "logger", "logger_name"):
+            if public_label(row.get(key)):
+                entry[key] = public_label(row[key])
+        message = str(row.get("message") or row.get("msg") or "")
+        entry["message_class"] = next((label for phrase, label in (
+            ("Atomic extraction LLM call", "atomic_extraction_llm"),
+            ("Overview generation failed", "base_overview_llm"),
+            ("Abstract generation failed", "base_abstract_llm"),
+            ("legacy Engine state requires adoption", "legacy_state_adoption"),
+        ) if phrase in message), "")
         for key in ("duration_ms", "queue_wait_ms", "status_code"):
             if isinstance(row.get(key), (int, float)):
                 entry[key] = row[key]

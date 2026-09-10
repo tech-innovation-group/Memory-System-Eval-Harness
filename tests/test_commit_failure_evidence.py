@@ -2,7 +2,7 @@ import json
 import unittest
 from types import SimpleNamespace
 
-from performance.targets.echomem.probes.failure_evidence import failure_evidence
+from performance.targets.echomem.probes.failure_evidence import failure_evidence, reference
 from performance.targets.echomem.probes.concurrency_topology import _commit_call, _summary
 from scripts.collect_commit_diagnostics import collect
 from performance.targets.echomem.orchestrator.report import _probe_visual
@@ -19,6 +19,17 @@ class EvidenceTests(unittest.TestCase):
         self.assertNotIn("PROMPT", json.dumps(result))
         self.assertEqual(failure_evidence({"error": "req_429401abcdef"})["upstream_http_statuses"], [])
 
+    def test_nested_session_status_preserves_error_and_trace(self):
+        result = failure_evidence({"status": {"status": "failed",
+            "error": "insufficient_quota sk-secret", "error_type": "ExtractorError",
+            "stage": "engine_dispatch", "trace_id": "private-trace"}})
+        self.assertTrue(result["error_present"])
+        self.assertEqual(result["categories"], ["PROVIDER_QUOTA"])
+        self.assertEqual(result["error_type"], "ExtractorError")
+        self.assertEqual(result["trace_ref"], reference("private-trace"))
+        self.assertNotIn("private-trace", json.dumps(result))
+        self.assertNotIn("sk-secret", json.dumps(result))
+
     def test_commit_terminal_evidence_and_dedup(self):
         class Client:
             def add_message(self, *args):
@@ -26,7 +37,7 @@ class EvidenceTests(unittest.TestCase):
             def commit(self, *args, **kwargs):
                 return SimpleNamespace(status_code=202, payload={"archive_id": "a", "commit_id": "c"}, reason_code="", transport_error_type="")
             def commit_status(self, *args):
-                return SimpleNamespace(status_code=200, payload={"status": "failed", "error": "insufficient quota", "stage": "extraction"})
+                return SimpleNamespace(status_code=200, payload={"status": {"status": "failed", "error": "insufficient quota", "stage": "extraction"}})
         row = _commit_call(Client(), "tenant", "session", "text", 1)()
         self.assertEqual(row["terminal_state"], "failed")
         self.assertEqual(row["terminal_evidence"]["categories"], ["PROVIDER_QUOTA"])
@@ -40,6 +51,17 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(result["events"]["commit_failed"], 1)
         self.assertNotIn("sk-secret", json.dumps(result))
         self.assertNotIn("PRIVATE_PROMPT", json.dumps(result))
+
+    def test_extraction_source_is_classified_without_exporting_message(self):
+        result = collect([json.dumps({"event": "log_message", "level": "WARNING",
+            "msg": "Atomic extraction LLM call failed: insufficient_quota sk-secret",
+            "engine_id": "atomic_engine", "archive_id": "archive-private"})])
+        row = result["samples"][0]
+        self.assertEqual(row["message_class"], "atomic_extraction_llm")
+        self.assertEqual(row["engine_id"], "atomic_engine")
+        self.assertTrue(row["archive_id_ref"])
+        self.assertNotIn("archive-private", json.dumps(result))
+        self.assertNotIn("sk-secret", json.dumps(result))
 
     def test_report_labels_log_evidence_separately(self):
         rendered = _probe_visual("commit_diagnostic", {"checks": [{"detail": {"rows": [{
