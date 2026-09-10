@@ -18,6 +18,7 @@ def build(root: Path):
     diagnostic, preflight = load("diagnostic.json"), load("model-preflight.json")
     topology, service = load("concurrency-topology.json"), load("service-diagnostics.json")
     parameters = load("deployment-parameters.json")
+    targeted = load("provider-targeted-diagnosis.json")
     rows = [{**row, "phase": phase} for phase, field in (("小内容串行", "smoke"), ("64 KiB串行", "serial_large"))
             for row in diagnostic.get(field, [])]
     matrix = []
@@ -52,11 +53,16 @@ def build(root: Path):
         "诊断程序PASS只表示采集完成，本轮业务未通过。终态接口未返回错误详情；不能将全部抽取异常直接归因于额度不足。")
     if diagnostic.get("reason"):
         summary += " 停止原因：" + diagnostic["reason"]
+    probes = targeted.get("probes", [])
+    if probes:
+        summary += (f" 后续定向模型复核{sum(p.get('http_status') == 200 for p in probes)}/{len(probes)}成功；"
+                    "当前单请求成功不否定此前压测错误，也不证明并发窗口没有限额。不能据insufficient_quota断言账户欠费。")
     profile = {"name": "4U8G · 固定高限额 · 16并发诊断", "model_preflight": preflight,
         "objectives": [{"id": "Commit", "name": "失败归因复测", "status": business_status,
             "reason": summary, "owner": "按逐任务证据归因，不推断历史失败", "evidence": str(folder),
             "observed": {"manifest": load("manifest.json"), "container": load("container-evidence.json"),
                 "parameters": parameters, "failure_categories": dict(categories), "provider_codes": dict(provider_codes),
+                "targeted_model_recheck": targeted,
                 "seed_degraded_reasons": dict(seed_reasons), "service_events": service.get("events", {}),
                 "commit_log_error_types": dict(errors), "model_quota_log_events": quota_events,
                 "failure_evidence_by_archive": service_failed,
