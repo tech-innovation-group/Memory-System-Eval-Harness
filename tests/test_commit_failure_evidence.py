@@ -1,14 +1,28 @@
 import json
 import unittest
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 from types import SimpleNamespace
 
 from performance.targets.echomem.probes.failure_evidence import failure_evidence, reference
 from performance.targets.echomem.probes.concurrency_topology import _commit_call, _summary
 from scripts.collect_commit_diagnostics import collect
 from performance.targets.echomem.orchestrator.report import _probe_visual
+from scripts.run_commit_diagnostic import diagnose
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_diagnostic_records_configured_length(self):
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory)
+            (out / "diagnostic-options.json").write_text('{"commit_chars":4096}')
+            with patch("scripts.run_commit_diagnostic.run_preflight", return_value={"ok":False}):
+                diagnose(out, "http://unused.invalid")
+            self.assertEqual(json.loads((out / "diagnostic.json").read_text())["commit_chars"], 4096)
+            (out / "diagnostic-options.json").write_text('{"commit_chars":0}')
+            self.assertRaises(ValueError, diagnose, out, "http://unused.invalid")
+
     def test_provider_code_without_free_text_or_key(self):
         payload = {"error": "Error code: 429 - {'code': 'InsufficientFreeQuota', 'message': 'sk-secret PROMPT'}", "stage": "extraction"}
         result = failure_evidence(payload)

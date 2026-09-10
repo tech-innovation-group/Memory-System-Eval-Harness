@@ -17,6 +17,11 @@ def save(path: Path, value):
 
 
 def diagnose(out: Path, base: str):
+    options_file = out / "diagnostic-options.json"
+    options = json.loads(options_file.read_text()) if options_file.exists() else {}
+    commit_chars = int(options.get("commit_chars", 65536))
+    if not 1 <= commit_chars <= 1048576:
+        raise ValueError("commit_chars must be between 1 and 1048576")
     preflight = run_preflight(out / "config.json", timeout_s=40, retry_attempts=1,
                               required_kinds=("llm", "embedding"))
     for entry in preflight.get("engines", []):
@@ -25,7 +30,7 @@ def diagnose(out: Path, base: str):
     preflight["error"] = "MODEL_PREFLIGHT_FAILED" if not preflight.get("ok") else ""
     save(out / "model-preflight.json", preflight)
     result = {"status": "RUNNING", "stage": "model-preflight", "burst_started": False,
-              "smoke": [], "serial_large": [], "seeds": []}
+              "smoke": [], "serial_large": [], "seeds": [], "commit_chars": commit_chars}
     save(out / "diagnostic.json", result)
     if not preflight.get("ok"):
         result.update(status="BLOCKED", reason="MODEL_PREFLIGHT_FAILED")
@@ -52,7 +57,7 @@ def diagnose(out: Path, base: str):
                 save(out / "diagnostic.json", result)
                 return
         result["stage"] = "serial-large-commit"
-        large = (fact * (65536 // len(fact) + 1))[:65536]
+        large = (fact * (commit_chars // len(fact) + 1))[:commit_chars]
         for t, client in zip(tenants[1::2], clients[1::2]):
             session, _ = client.open_session(t.tenant_id, "diagnostic-large-serial")
             row = _commit_call(client, t.tenant_id, session, large, 90)()
@@ -71,7 +76,7 @@ def diagnose(out: Path, base: str):
         save(out / "diagnostic.json", result)
         params = {"tenant_config": str(out / "tenants.json"), "levels": [16],
                   "topologies": ["heterogeneous-users"], "requests_per_level": 32,
-                  "large_commit_chars": 65536, "commit_poll_timeout_s": 90,
+                  "large_commit_chars": commit_chars, "commit_poll_timeout_s": 90,
                   "timeout_s": 20, "stop_after_boundary": True,
                   "queries": {t.tenant_id: sample for t in tenants}}
         payload, execution = run_configured_probe(params, probes_dir=Path(__file__).resolve().parents[1] / "performance/targets/echomem/probes",
