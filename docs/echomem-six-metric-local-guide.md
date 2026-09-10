@@ -204,6 +204,41 @@ P99 与 queue wait。七组 Prometheus Histogram 使用测试窗口内累计值�
 日志覆盖交叉校验。不得通过端到端耗时相减推算模块耗时；只有日志和指标均无真实样本时，
 才将对应阶段标记为“不可观测”并列明原因。
 
+profile 可另外开启两项横向探针，产物并入同一个 `report.html`：
+
+```json
+{
+  "concurrency_topology": {
+    "enabled": true,
+    "levels": [16, 32, 64, 128],
+    "requests_per_level": 128,
+    "sessions_per_user": 2,
+    "within_session_concurrency": 4
+  },
+  "payload_boundary": {
+    "enabled": true,
+    "sizes_bytes": [0, 1, 1024, 65536, 262144, 524288, 1048576],
+    "commit_content_chars": 1048576,
+    "commit_chunk_chars": 262144,
+    "mcp_base_url": "http://127.0.0.1:8001",
+    "mcp_add_memory_tool": "add_memory",
+    "mcp_add_memory_chars": 1048576
+  }
+}
+```
+
+`concurrency_topology` 依次测四种真实 HTTP 拓扑：多用户单 Session 串行、
+多用户多 Session 串行、多用户单 Session 内并发，以及不同租户的短 Search 与长
+Message+Commit 异构负载。档位表示目标总在途并发，不等于用户数；报告分别写出目标并发、
+实际/所需用户数、Session 数、每 Session 并发、P50/P95/P99、2xx 吞吐、错误类型和 Jain。
+独立租户凭据不足时不复用同一 Key 冒充多租户，该档明确标为 `INCONCLUSIVE`。
+
+`payload_boundary` 对 Message、Commit、Search 发出 0 到 1 MiB 的文本和二进制请求，
+同时把 1 MiB 文本分块写入 Session 后提交真实 Commit 并轮询终态。配置 MCP 地址时，
+它还会执行真正的 Streamable HTTP `add_memory`；未配置时报告 `BLOCKED`，不会用 HTTP
+Message 假冒 MCP 调用。HTML 表格展示内容字节、实际 wire bytes、HTTP/传输结果、稳定
+reason code 与耗时，原始 JSON 保留完整分母。
+
 M3 同时包含均匀 Commit 洪泛和单租户洪泛。后者让一个租户承担全部 Commit，四个租户
 继续独立 Search，用于观察不同租户负载与耗时是否串扰；它是异构/吵闹邻居场景，不能
 拿来计算 M2 的等权 Jain 公平性。当前 EchoMem 故障控制作用于目标租户全部认证请求，

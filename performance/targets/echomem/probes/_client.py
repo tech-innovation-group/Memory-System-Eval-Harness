@@ -30,6 +30,8 @@ PUBLIC_HTTP_ERROR_CODES = frozenset({
     "UNAUTHENTICATED", "INVALID_ARGUMENT", "CONFLICT", "NOT_FOUND",
     "INPUT_ASSOCIATION_NOT_CONFIGURED", "LOG_QUERY_FORBIDDEN",
     "LOG_QUERY_UNAVAILABLE", "INTERNAL_ERROR",
+    "INVALID_REQUEST_BODY", "REQUEST_BODY_TOO_LARGE", "REQUEST_BODY_TIMEOUT",
+    "UNSUPPORTED_MEDIA_TYPE",
 })
 
 @dataclass
@@ -259,9 +261,12 @@ class EchoMemHTTP:
         path: str,
         body: dict[str, Any] | None = None,
         timeout_s: float | None = None,
+        *,
+        raw_body: bytes | None = None,
+        content_type: str = "application/json",
     ) -> HttpResult:
         started = time.monotonic()
-        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        headers = {"Content-Type": content_type, "Accept": "application/json"}
         if self.auth_key:
             if self.auth_header.lower() == "authorization":
                 headers["Authorization"] = (
@@ -271,7 +276,11 @@ class EchoMemHTTP:
                 )
             else:
                 headers[self.auth_header] = self.auth_key
-        data = json.dumps(body or {}).encode("utf-8") if method != "GET" else None
+        data = (
+            raw_body
+            if raw_body is not None
+            else json.dumps(body or {}).encode("utf-8") if method != "GET" else None
+        )
         request = urllib.request.Request(self.base_url + path, data=data, headers=headers, method=method)
         try:
             with urllib.request.urlopen(request, timeout=timeout_s or self.timeout_s) as response:
@@ -316,6 +325,24 @@ class EchoMemHTTP:
                 f"{type(exc).__name__}: {exc}",
                 transport_error_type=_transport_error_type(exc),
             )
+
+    def request_bytes(
+        self,
+        method: str,
+        path: str,
+        body: bytes,
+        *,
+        content_type: str,
+        timeout_s: float | None = None,
+    ) -> HttpResult:
+        """Send an exact request body for ingress boundary tests."""
+        return self._request_raw(
+            method,
+            path,
+            timeout_s=timeout_s,
+            raw_body=body,
+            content_type=content_type,
+        )
 
     def request(
         self,

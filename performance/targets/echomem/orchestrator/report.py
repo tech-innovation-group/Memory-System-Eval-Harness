@@ -17,11 +17,77 @@ _PROBE_LABELS = (
     ("blackbox_contract_probe", "黑盒契约探针"),
     ("missing_cases", "PR397 黑盒一致性探针"),
     ("concurrent_commit", "并发 Commit 探针"),
+    ("concurrency_topology", "用户与 Session 并发拓扑矩阵"),
+    ("payload_boundary", "API/MCP 请求体与超长 Commit 边界"),
     ("fault_isolation", "单租户故障隔离探针"),
     ("limit_failure_sweep", "真实限流阶梯"),
     ("commit_recovery", "Commit 崩溃恢复探针"),
     ("fault_suite", "故障套件"),
 )
+
+
+def _check_detail(payload: dict[str, Any]) -> dict[str, Any]:
+    checks = payload.get("checks")
+    if not isinstance(checks, list) or not checks:
+        return {}
+    detail = checks[-1].get("detail") if isinstance(checks[-1], dict) else None
+    if isinstance(detail, dict):
+        return detail
+    if isinstance(detail, str):
+        try:
+            parsed = json.loads(detail)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def _probe_visual(key: str, payload: dict[str, Any]) -> str:
+    detail = _check_detail(payload)
+    if key == "concurrency_topology":
+        matrix = detail.get("matrix") if isinstance(detail.get("matrix"), list) else []
+        rows = []
+        maximum = max((float(row.get("p95_ms") or 0) for row in matrix), default=1.0)
+        for row in matrix:
+            width = min(100.0, 100.0 * float(row.get("p95_ms") or 0) / maximum)
+            rows.append(
+                "<tr>"
+                f"<td>{html.escape(str(row.get('requested_concurrency') or row.get('level')))}</td>"
+                f"<td>{html.escape(str(row.get('topology')))}</td>"
+                f"<td>{html.escape(str(row.get('actual_users')))} / {html.escape(str(row.get('requested_users')))}</td>"
+                f"<td>{html.escape(str(row.get('completed_2xx')))} / {html.escape(str(row.get('offered')))}</td>"
+                f"<td><div class='bar' style='width:{width:.1f}%'></div>{html.escape(str(row.get('p95_ms')))} ms</td>"
+                f"<td>{html.escape(str(row.get('throughput_rps_2xx')))}</td>"
+                f"<td>{html.escape(str(row.get('tenant_throughput_jain')))}</td>"
+                f"<td><code>{html.escape(json.dumps(row.get('http_counts') or {}, ensure_ascii=False))}</code></td>"
+                "</tr>"
+            )
+        if rows:
+            return ("<table><thead><tr><th>并发档</th><th>拓扑</th><th>实际/请求用户</th>"
+                    "<th>2xx/总请求</th><th>Search/操作 P95</th><th>2xx吞吐</th>"
+                    "<th>租户吞吐 Jain</th><th>HTTP/传输分布</th></tr></thead><tbody>"
+                    + "".join(rows) + "</tbody></table>")
+    if key == "payload_boundary":
+        cases = detail.get("cases") if isinstance(detail.get("cases"), list) else []
+        rows = []
+        for row in cases:
+            rows.append(
+                "<tr>"
+                f"<td>{html.escape(str(row.get('api')))}</td>"
+                f"<td>{html.escape(str(row.get('encoding')))}</td>"
+                f"<td>{html.escape(str(row.get('content_bytes')))}</td>"
+                f"<td>{html.escape(str(row.get('wire_bytes')))}</td>"
+                f"<td>{html.escape(str(row.get('http_status') or row.get('transport_error_type') or '-'))}</td>"
+                f"<td>{html.escape(str(row.get('reason_code') or '-'))}</td>"
+                f"<td>{html.escape(str(row.get('elapsed_ms')))} ms</td>"
+                "</tr>"
+            )
+        if rows:
+            return ("<table><thead><tr><th>API</th><th>编码</th><th>内容字节</th>"
+                    "<th>Wire 字节</th><th>结果</th><th>原因类型</th><th>耗时</th>"
+                    "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+                    f"<pre>{html.escape(json.dumps({'long_commit': detail.get('long_commit'), 'mcp_add_memory': detail.get('mcp_add_memory')}, ensure_ascii=False, indent=2))}</pre>")
+    return ""
 
 
 def _model_evidence(profile: dict[str, Any]) -> dict[str, Any]:
@@ -121,6 +187,9 @@ def render_objective_suite_html(result: dict[str, Any]) -> str:
                         "</tr>"
                     )
                 details.append("</tbody></table>")
+            visual = _probe_visual(key, payload)
+            if visual:
+                details.append(visual)
             details.append(
                 f"<p class='muted'>制品：<code>{html.escape(str(payload.get('path', '')))}</code></p></details>"
             )
@@ -142,7 +211,8 @@ main{{max-width:1280px;margin:auto;padding:28px 18px 56px}}section{{background:#
 h1{{margin:0 0 6px;font-size:25px}}.muted{{color:#687784}}table{{border-collapse:collapse;width:100%}}
 th,td{{border-bottom:1px solid #e7ecef;padding:9px;text-align:left;vertical-align:top}}th{{background:#f7f9fa}}
 .pass{{color:#197c62;font-weight:700}}.fail,.timeout{{color:#b6403b;font-weight:700}}.inconclusive{{color:#9a6a00;font-weight:700}}
-code{{background:#f0f3f5;padding:2px 4px}}.scroll{{overflow:auto}}
+code{{background:#f0f3f5;padding:2px 4px}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;background:#f7f9fa;padding:10px}}
+.bar{{height:6px;background:#247a68;margin:2px 0 4px;min-width:2px}}.scroll{{overflow:auto}}
 </style><main>
 <section><h1>EchoMem 七项目标自动化验收</h1>
 <div class="muted">生成时间：{html.escape(str(result.get("created_at", "")))} · 真实 HTTP：是</div>

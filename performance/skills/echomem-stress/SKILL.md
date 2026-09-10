@@ -146,6 +146,16 @@ The final report must also expose three cross-metric audits:
 - endpoint and service-returned module timing distributions. Never infer internal
   router, recall, scheduler, or engine timings by subtracting unrelated clocks.
 
+When the profile enables `concurrency_topology`, run the 16/32/64/128 matrix for
+four real layouts: one session per user with serial session access, multiple
+serial sessions per user, concurrent requests within one session, and unequal
+small-Search/large-Message+Commit tenant load. Treat each level as target client
+concurrency, not tenant count, and preserve required versus actual identities.
+When `payload_boundary` is enabled, exercise Message, Commit, and Search from 0
+through 1 MiB as JSON text and raw binary, poll the oversized Commit to a terminal
+state, and call the configured Streamable HTTP `add_memory` tool. Missing MCP
+configuration is BLOCKED; never substitute an HTTP message and call it MCP.
+
 For M1-M3, require EchoMem DEBUG JSON logging and a concrete
 `resource_container`. Collect whitelisted `recall_stage_completed`,
 `recall_engine_completed`, `dashscope_rerank_operation`,
