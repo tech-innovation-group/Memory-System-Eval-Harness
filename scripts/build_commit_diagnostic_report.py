@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 
-from performance.targets.echomem.orchestrator.report import write_objective_suite_html
+from performance.targets.echomem.orchestrator.commit_diagnostic_report import write_commit_diagnostic_html
 
 
 def build(root: Path):
@@ -132,8 +132,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument("--compare-root", type=Path, help="Optional earlier run for side-by-side measured charts")
     args = parser.parse_args()
     result = build(args.root)
+    if args.compare_root:
+        result["comparison"] = build(args.compare_root)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.with_suffix(".json").write_text(json.dumps(result, ensure_ascii=False, indent=2))
-    write_objective_suite_html(result, args.out)
+    write_commit_diagnostic_html(result, args.out)
