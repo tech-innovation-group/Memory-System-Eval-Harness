@@ -47,11 +47,12 @@ def collect(lines, scene_rows=None):
             if request_ref in slow[name]:
                 entry = {'event': event, 'stage': public_label(row.get('stage')),
                          'engine': public_label(row.get('engine_id') or row.get('engine'))}
-                for key in ('duration_ms', 'queue_wait_ms', 'status_code'):
+                for key in ('duration_ms', 'queue_wait_ms', 'status_code', 'caller_thread_cpu_ms',
+                            'matrix_rows', 'matrix_dimensions', 'rule_index', 'input_chars'):
                     if isinstance(row.get(key), (int,float)):
                         entry[key] = row[key]
                 slow[name][request_ref]['events'].append(entry)
-        if row.get("level") not in ("WARNING", "ERROR") and not any(word in event for word in ("commit", "extraction", "atomic", "recall", "provider")):
+        if row.get("level") not in ("WARNING", "ERROR") and not any(word in event for word in ("commit", "extraction", "atomic", "recall", "provider", "prototype_multiply", "rule_pattern")):
             continue
         if len(samples) >= 10000:
             continue
@@ -69,7 +70,8 @@ def collect(lines, scene_rows=None):
             ("Abstract generation failed", "base_abstract_llm"),
             ("legacy Engine state requires adoption", "legacy_state_adoption"),
         ) if phrase in message), "")
-        for key in ("duration_ms", "queue_wait_ms", "status_code"):
+        for key in ("duration_ms", "queue_wait_ms", "status_code", "caller_thread_cpu_ms",
+                    "matrix_rows", "matrix_dimensions", "rule_index", "input_chars"):
             if isinstance(row.get(key), (int, float)):
                 entry[key] = row[key]
         samples.append(entry)

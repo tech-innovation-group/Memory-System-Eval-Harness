@@ -56,6 +56,26 @@ def build(root):
             'reason':'向量发布失败须与输入拒绝区分；不将供应商错误当作服务容量上限。',
             'observed':{'result':result, 'diagnosis':diagnosis}, 'evidence':str(long_path),
             'owner':'以真实阶段日志为准'}]})
+    rule_path = root / 'rule-cost.json'
+    if rule_path.exists():
+        rule_data = json.loads(rule_path.read_text())
+        samples = rule_data.get('samples', [])
+        limited = [s for s in samples if s.get('status') == 'TIME_LIMIT']
+        evidence = {key: rule_data.get(key) for key in (
+            'scope', 'input', 'python', 'asset_sha256', 'pattern_timeout_s', 'rule_count')}
+        evidence['timings'] = [{key: sample.get(key) for key in (
+            'rule_index', 'chars', 'status', 'wall_ms', 'cpu_ms', 'matched')}
+            for sample in samples]
+        overview.append(['长Search逐规则CPU诊断', 'PARTIAL',
+                         f'{len(samples)}个独立规则/长度样本，{len(limited)}个触及单规则计时上限；非HTTP性能数据'])
+        profiles.append({'name': '长Search规则诊断（本机隔离执行）', 'objectives': [{
+            'id': 'rule-cost', 'name': '路由正则长输入耗时', 'status': 'PARTIAL',
+            'reason': '对运行镜像同哈希规则资产逐条执行真实Python正则，输入为重复ASCII x。'
+                      '部分规则的未锚定负向前瞻可能反复扫描后缀，局部计时支持超线性计算风险。'
+                      'TIME_LIMIT是诊断器主动中断，不是HTTP超时；wall_ms与cpu_ms不代表服务器P95。'
+                      '新增逐规则开始/结束打点后，仍需在独立服务实例按trace关联HTTP请求，'
+                      '才能确认原长Search阻塞位置。此问题与短Search的semantic/画像匹配涨幅分开分析。',
+            'observed': evidence, 'evidence': str(rule_path), 'owner': 'EchoMem路由规则；待HTTP打点复测'}]})
     return {'title':'超长写入与API边界 · 补测报告',
             'created_at':datetime.now(timezone.utc).isoformat(),
             'model_evidence_note':'MCP全文回读只验证会话历史保存，不要求模型抽取。长Commit有真实阶段日志及Embedding 429证据；不将接口200或未启用mock当作成功模型调用证明。',

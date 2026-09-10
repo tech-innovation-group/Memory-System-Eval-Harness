@@ -54,3 +54,25 @@ class ModuleTimingsTests(unittest.TestCase):
         self.assertEqual(result['users-64']['groups'][0]['duration']['p95_ms'], 2000)
         self.assertEqual(result['users-16']['groups'][0]['duration']['p95_ms'], 10)
         self.assertEqual(result['users-64']['matched_requests'], 1)
+
+    def test_matrix_and_rule_diagnostics_keep_cpu_separate_and_payload_private(self):
+        scenes = {'users-64': [{'request_ref': reference('private-request'), 'elapsed_ms': 2000}]}
+        lines = [json.dumps({'event': 'prototype_multiply_completed', 'level': 'DEBUG',
+                            'request_id': 'private-request', 'duration_ms': 1800,
+                            'caller_thread_cpu_ms': 15, 'matrix_rows': 20000,
+                            'matrix_dimensions': 1024, 'query_vector': ['secret-vector']}),
+                 json.dumps({'event': 'rule_pattern_started', 'level': 'DEBUG',
+                             'request_id': 'private-request', 'rule_index': 11, 'input_chars': 65536}),
+                 json.dumps({'event': 'rule_pattern_completed', 'level': 'DEBUG',
+                             'request_id': 'private-request', 'rule_index': 11,
+                             'input_chars': 4096, 'duration_ms': 250})]
+        result = collect(lines, scenes)
+        groups = result['scene_timings']['users-64']['groups']
+        matrix = next(g for g in groups if g['event'] == 'prototype_multiply_completed')
+        self.assertEqual(matrix['duration']['p95_ms'], 1800)
+        self.assertEqual(matrix['caller_thread_cpu']['p95_ms'], 15)
+        self.assertIsNone(matrix['queue_wait']['p95_ms'])
+        self.assertEqual(next(g for g in groups if g['event'] == 'rule_pattern_completed')['stage'], 'rule_11')
+        self.assertEqual(len(result['samples']), 3)
+        self.assertNotIn('secret-vector', json.dumps(result))
+        self.assertNotIn('private-request', json.dumps(result))

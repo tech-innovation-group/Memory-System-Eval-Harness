@@ -6,7 +6,8 @@ from performance.targets.echomem.probes.failure_evidence import public_label, re
 
 EVENTS = {'recall_stage_completed', 'recall_engine_completed', 'dashscope_rerank_operation',
           'http_request_completed', 'memory_extraction_completed', 'atomic_pipeline_completed',
-          'atomic_macro_stage_completed', 'commit_stage_completed'}
+          'atomic_macro_stage_completed', 'commit_stage_completed',
+          'prototype_multiply_completed', 'rule_pattern_completed'}
 
 
 def numeric(value):
@@ -24,7 +25,7 @@ def distribution(values):
 
 class TimingStats:
     def __init__(self):
-        self.groups = defaultdict(lambda: {'duration': [], 'queue': [], 'traces': set()})
+        self.groups = defaultdict(lambda: {'duration': [], 'queue': [], 'caller_cpu': [], 'traces': set()})
 
     def add(self, row):
         event = row.get('event')
@@ -32,6 +33,8 @@ class TimingStats:
             return
         evidence = row.get('evidence') or {}
         stage = public_label(row.get('stage') or evidence.get('stage')) or event
+        if event == 'rule_pattern_completed' and isinstance(row.get('rule_index'), int):
+            stage = f"rule_{row['rule_index']}"
         engine = public_label(row.get('engine_id') or row.get('engine')) or ''
         trace = evidence.get('trace_ref') or reference(row.get('trace_id'))
         values = [(event, stage, row.get('duration_ms'), row.get('queue_wait_ms'))]
@@ -44,11 +47,14 @@ class TimingStats:
             bucket = self.groups[(source, label, engine)]
             if numeric(duration): bucket['duration'].append(duration)
             if numeric(queue): bucket['queue'].append(queue)
+            if numeric(row.get('caller_thread_cpu_ms')):
+                bucket['caller_cpu'].append(row['caller_thread_cpu_ms'])
             if trace: bucket['traces'].add(trace)
 
     def export(self):
         return [{'event': event, 'stage': stage, 'engine': engine,
                  'duration': distribution(bucket['duration']), 'queue_wait': distribution(bucket['queue']),
+                 'caller_thread_cpu': distribution(bucket['caller_cpu']),
                  'distinct_traces': len(bucket['traces'])}
                 for (event,stage,engine),bucket in sorted(self.groups.items())]
 

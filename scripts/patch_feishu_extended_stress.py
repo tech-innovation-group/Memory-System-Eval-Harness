@@ -4,6 +4,26 @@ import ast
 from pathlib import Path
 
 
+def _add_disk_guard(body):
+    if '# PR33 result disk guard' in body:
+        return body
+    anchor = '    result_dir = RESULTS_DIR / job_id'
+    if body.count(anchor) != 1:
+        raise ValueError('Expected one result directory anchor for disk guard')
+    guard = (
+        '    # PR33 result disk guard\n'
+        '    import shutil as _stress_shutil\n'
+        '    _stress_disk = Path(RESULTS_DIR)\n'
+        '    while not _stress_disk.exists():\n'
+        '        _stress_disk = _stress_disk.parent\n'
+        '    _stress_free = _stress_shutil.disk_usage(_stress_disk).free\n'
+        '    if _stress_free < 2 * 1024 ** 3:\n'
+        '        raise RuntimeError(f"STRESS_DISK_SPACE_LOW: result filesystem has {_stress_free} bytes free; "\n'
+        '                           "at least 2 GiB required before provisioning; no files were deleted")\n'
+    )
+    return body.replace(anchor, guard + anchor, 1)
+
+
 def patch_source(source, harness_root=None):
     if harness_root is not None and not Path(harness_root).is_absolute():
         raise ValueError('harness_root must be absolute')
@@ -17,7 +37,8 @@ def patch_source(source, harness_root=None):
     if 'performance.targets.echomem.observation_run' not in body:
         raise ValueError('Bot does not use the supported observation entrypoint')
     if '# PR33 extended load contract' in body:
-        return source
+        body = _add_disk_guard(body)
+        return ''.join(lines[:node.lineno-1]) + body + ''.join(lines[node.end_lineno:])
     replacements = [
         ('    result_dir = RESULTS_DIR / job_id',
          '    # PR33 extended load contract\n    tenant_count = max(64, STRESS_TENANT_COUNT)\n'
@@ -34,7 +55,7 @@ def patch_source(source, harness_root=None):
         if body.count(before) != 1:
             raise ValueError(f'Unsupported bot source: expected one anchor {before!r}')
         body = body.replace(before, after, 1)
-    result = ''.join(lines[:node.lineno-1]) + body + ''.join(lines[node.end_lineno:])
+    result = ''.join(lines[:node.lineno-1]) + _add_disk_guard(body) + ''.join(lines[node.end_lineno:])
     compile(result, '<patched-bot>', 'exec')
     return result
 

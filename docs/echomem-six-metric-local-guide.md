@@ -974,6 +974,26 @@ cd "$ECHOMEM_DIR/deploy/single-node"
 
 ## 常见阻塞
 
+### 慢请求诊断与复测边界
+
+正式采集器额外支持 `prototype_multiply_started/completed` 与
+`rule_pattern_started/completed` 诊断事件。它们需要 EchoMem 对应打点版本；
+安装测试平台不会自动修改 EchoMem，缺失事件不代表耗时为零。
+
+- 矩阵事件记录真实乘法 `duration_ms`、矩阵大小及 `caller_thread_cpu_ms`。
+  调用线程 CPU 不包含其他 BLAS 工作线程，不得从墙钟耗时减去它推算排队。
+- 规则事件记录规则序号、输入字符数；开始事件没有完成耗时，不计入完成样本分母。
+  开始但未结束是定位线索，不自动等于服务崩溃。
+- 按客户端请求标识归入并发场景。只有日志存在唯一的 request/trace 对应关系时，
+  正式采集器才补齐 trace 关联；存在歧义则保留未关联，不按时间接近猜测。
+- 不记录原始查询、向量或凭证。16/64 组应使用同一版本、配置、模型、种子和打点，
+  保留超时、拒绝与降级请求；不要将不同轮次的阶段 P95 相加或当作占比。
+
+机器人扩展入口在创建压测租户前检查结果文件系统至少有 2 GiB 可用空间。
+`STRESS_DISK_SPACE_LOW` 表示部署空间不足，不是 EchoMem 容量边界；该最低门槛也不保证
+整个实验空间充足。检查 `df -h`、`df -i`、`docker system df` 后，由部署人员明确批准
+缓存清理或扩容，不自动删除已有测试结果、镜像、数据库或其他服务。
+
 | 现象 | 处理 |
 | --- | --- |
 | `resource-container` 阻塞 | 核对 profile 容器名、Docker 是否运行以及当前用户是否可访问 Docker |

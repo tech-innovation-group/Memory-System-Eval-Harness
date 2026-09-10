@@ -37,3 +37,22 @@ def test_bot_can_pin_a_deployment_without_overwriting_shared_checkout():
     assert 'str(harness_root):' in patched
     with pytest.raises(ValueError):
         patch_source(SOURCE, 'relative')
+
+
+def test_low_disk_stops_before_provisioning(tmp_path, monkeypatch):
+    import shutil
+    from pathlib import Path
+    monkeypatch.setattr(shutil, 'disk_usage', lambda path: shutil._ntuple_diskusage(10, 9, 1))
+    namespace = {'RESULTS_DIR': tmp_path / 'not-created', 'Path': Path,
+                 'STRESS_TENANT_COUNT': 32, 'STRESS_HARNESS_ROOT': tmp_path}
+    exec(patch_source(SOURCE), namespace)
+    with pytest.raises(RuntimeError, match='STRESS_DISK_SPACE_LOW'):
+        namespace['run_stress_job']('job')
+    assert not (tmp_path / 'not-created').exists()
+
+
+def test_existing_extended_deployment_gets_guard_once():
+    from scripts.patch_feishu_extended_stress import _add_disk_guard
+    patched = patch_source(SOURCE)
+    assert patched.count('# PR33 result disk guard') == 1
+    assert _add_disk_guard(patched) == patched

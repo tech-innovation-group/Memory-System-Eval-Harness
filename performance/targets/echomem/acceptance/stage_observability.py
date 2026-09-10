@@ -26,6 +26,10 @@ LOG_EVENTS = frozenset({
     "http_request_completed",
     "memory_extraction_completed",
     "atomic_pipeline_completed",
+    "prototype_multiply_started",
+    "prototype_multiply_completed",
+    "rule_pattern_started",
+    "rule_pattern_completed",
 })
 
 PROMETHEUS_HISTOGRAMS = frozenset({
@@ -80,6 +84,7 @@ def _base_event(payload: dict[str, Any], *, module: str) -> dict[str, Any]:
         "event": str(payload.get("event") or ""),
         "module": module,
         "trace_ref": trace_ref(payload.get("trace_id")),
+        "request_ref": trace_ref(payload.get("request_id")),
         "status": str(payload.get("status") or ""),
         "duration_ms": _number(payload.get("duration_ms")),
         "queue_wait_ms": _number(payload.get("queue_wait_ms")),
@@ -93,6 +98,18 @@ def normalize_log_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
     event = str(payload.get("event") or "")
     if event not in LOG_EVENTS:
         return []
+    if event.startswith(('prototype_multiply_', 'rule_pattern_')):
+        index = payload.get('rule_index')
+        module = 'recall/prototype_multiply' if event.startswith('prototype_') else (
+            f'recall/rule_pattern/{index}' if isinstance(index, int) and not isinstance(index, bool)
+            else 'recall/rule_pattern/unknown')
+        row = _base_event(payload, module=module)
+        for field in ('caller_thread_cpu_ms', 'matrix_rows', 'matrix_dimensions', 'rule_index', 'input_chars'):
+            row[field] = _number(payload.get(field))
+        if event.endswith('_started'):
+            row['duration_ms'] = None
+            row['queue_wait_ms'] = None
+        return [row]
     if event == "recall_stage_completed":
         return [_base_event(payload, module=f"recall/{payload.get('stage') or 'unknown'}")]
     if event == "recall_engine_completed":
@@ -130,6 +147,16 @@ def parse_structured_logs(text: str) -> list[dict[str, Any]]:
         payload = _json_payload(line)
         if payload is not None:
             rows.extend(normalize_log_payload(payload))
+    # Join only explicit, unambiguous request/trace pairs from this log window.
+    request_traces: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        if row['request_ref'] and row['trace_ref']:
+            request_traces[row['request_ref']].add(row['trace_ref'])
+    for row in rows:
+        candidates = request_traces.get(row['request_ref'], set())
+        if not row['trace_ref'] and len(candidates) == 1:
+            row['trace_ref'] = next(iter(candidates))
+            row['trace_link_source'] = 'explicit_request_trace_pair'
     return rows
 
 
