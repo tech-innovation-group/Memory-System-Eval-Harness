@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from pathlib import Path
@@ -60,7 +61,7 @@ def _mcp_add_memory(params: dict[str, Any], tenant: Any, content: str) -> dict[s
                            timeout_s=float(params.get("mcp_timeout_s", 120)))
         client.initialize()
         arguments = dict(params.get("mcp_add_memory_arguments") or {})
-        arguments.setdefault("content", content)
+        arguments.setdefault(str(params.get("mcp_content_field") or "user_message"), content)
         arguments.setdefault("session_id", f"stress-{uuid.uuid4().hex}")
         started = time.perf_counter()
         result = client.call_tool(
@@ -69,7 +70,12 @@ def _mcp_add_memory(params: dict[str, Any], tenant: Any, content: str) -> dict[s
         return {"status": "PASS" if result else "INCONCLUSIVE", "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
                 "result_nonempty": bool(result)}
     except Exception as exc:  # noqa: BLE001 - MCP failures are classified, never hidden.
-        return {"status": "FAIL", "error_type": type(exc).__name__}
+        message = str(exc)
+        status_match = re.search(r"MCP HTTP (\d{3})\b", message)
+        return {"status": "FAIL", "error_type": type(exc).__name__,
+                "http_status": int(status_match.group(1)) if status_match else None,
+                "reason_code": "INVALID_HOST" if "Invalid Host header" in message else
+                    "TOOL_ARGUMENT_ERROR" if "validation error" in message.lower() else "MCP_REQUEST_FAILED"}
 
 
 def run(ctx: Ctx) -> None:
@@ -118,12 +124,6 @@ def run(ctx: Ctx) -> None:
         search_body = {"query": content, "agent_id": tenant.agent_id,
                        "session_id": session_id, "limit": 10}
         search_raw = _json_bytes(search_body)
-        search = client.request_bytes(
-            "POST", "/api/retrieval/search", search_raw,
-            content_type="application/json", timeout_s=timeout_s,
-        )
-        rows.append({"api": "search", "encoding": "text", "content_bytes": size,
-                     "wire_bytes": len(search_raw), **_safe_result(search)})
 
         # Commit is a control API, not a text-storage API. Test raw textual
         # bodies separately from the valid long-message -> Commit sequence.
@@ -146,15 +146,26 @@ def run(ctx: Ctx) -> None:
             rows.append({"api": api, "encoding": "binary", "content_bytes": size,
                          "wire_bytes": size, **_safe_result(binary)})
 
+        # Run the potentially expensive model path last, preserving input-validation evidence.
+        search = client.request_bytes(
+            "POST", "/api/retrieval/search", search_raw,
+            content_type="application/json", timeout_s=timeout_s,
+        )
+        rows.append({"api": "search", "encoding": "text", "content_bytes": size,
+                     "wire_bytes": len(search_raw), **_safe_result(search)})
+
     commit_chars = max(1, int(params.get("commit_content_chars", 1048576)))
     chunk_chars = max(1, int(params.get("commit_chunk_chars", 262144)))
-    long_commit = _long_commit(client, tenant.tenant_id, commit_chars, chunk_chars,
-                               float(params.get("commit_timeout_s", 600)))
+    skip_commit = bool(params.get("skip_long_commit", False))
+    skip_mcp = bool(params.get("skip_mcp", False))
+    long_commit = ({"status": "NOT_SELECTED"} if skip_commit else
+                   _long_commit(client, tenant.tenant_id, commit_chars, chunk_chars,
+                                float(params.get("commit_timeout_s", 600))))
     accepted_chars = long_commit.get("accepted_chars", 0)
     terminal = long_commit.get("terminal", {})
 
     mcp_chars = max(1, int(params.get("mcp_add_memory_chars", 1048576)))
-    mcp = _mcp_add_memory(params, tenant, "m" * mcp_chars)
+    mcp = {"status": "NOT_SELECTED"} if skip_mcp else _mcp_add_memory(params, tenant, "m" * mcp_chars)
     detail = {
         "sizes_bytes": sizes,
         "cases_total": len(rows),
@@ -168,11 +179,11 @@ def run(ctx: Ctx) -> None:
         row["encoding"] == "binary" and row["content_bytes"] > 0 and row["accepted"]
         for row in rows
     )
-    commit_completed = (accepted_chars == commit_chars and
+    commit_completed = skip_commit or (accepted_chars == commit_chars and
                         terminal.get("state") in {"completed", "done", "success"})
     if binary_accepted or mcp["status"] == "FAIL":
         status = FAIL
-    elif transport_failures or mcp["status"] != "PASS" or not commit_completed:
+    elif transport_failures or (not skip_mcp and mcp["status"] != "PASS") or not commit_completed:
         status = INCONCLUSIVE
     else:
         status = PASS

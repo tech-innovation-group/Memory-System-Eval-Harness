@@ -95,14 +95,15 @@ def _probe_visual(key: str, payload: dict[str, Any]) -> str:
                 f"<td>{html.escape(str(row.get('encoding')))}</td>"
                 f"<td>{html.escape(str(row.get('content_bytes')))}</td>"
                 f"<td>{html.escape(str(row.get('wire_bytes')))}</td>"
+                f"<td>{'未发出' if row.get('dispatched') is False else '已发出'}</td>"
                 f"<td>{html.escape(str(row.get('http_status') or row.get('transport_error_type') or '-'))}</td>"
                 f"<td>{html.escape(str(row.get('reason_code') or '-'))}</td>"
                 f"<td>{html.escape(str(row.get('elapsed_ms')))} ms</td>"
                 "</tr>"
             )
-        if rows:
+        if rows or detail.get("long_commit") or detail.get("mcp_add_memory"):
             return ("<table><thead><tr><th>API</th><th>编码</th><th>内容字节</th>"
-                    "<th>Wire 字节</th><th>结果</th><th>原因类型</th><th>耗时</th>"
+                    "<th>Wire 字节</th><th>发送状态</th><th>结果</th><th>原因类型</th><th>耗时</th>"
                     "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
                     f"<pre>{html.escape(json.dumps({'long_commit': detail.get('long_commit'), 'mcp_add_memory': detail.get('mcp_add_memory')}, ensure_ascii=False, indent=2))}</pre>")
     return ""
@@ -133,6 +134,14 @@ def render_objective_suite_html(result: dict[str, Any]) -> str:
     title = html.escape(str(result.get("title") or "EchoMem 七项目标自动化验收"))
     scope = html.escape(str(result.get("scope") or ""))
     run_summary = html.escape(str(result.get("summary") or ""))
+    def summary_table(key, heading):
+        table = result.get(key)
+        if not isinstance(table, dict):
+            return ""
+        headers = "".join(f"<th>{html.escape(str(v))}</th>" for v in table.get("headers", []))
+        body = "".join("<tr>" + "".join(f"<td>{html.escape(str(v if v is not None else '未采集'))}</td>" for v in row) + "</tr>"
+                       for row in table.get("rows", []))
+        return f'<section class="scroll"><h2>{heading}</h2><table><thead><tr>{headers}</tr></thead><tbody>{body}</tbody></table></section>'
     rows = []
     for profile in result.get("profiles") or []:
         for objective in profile.get("objectives") or []:
@@ -239,6 +248,10 @@ code{{background:#f0f3f5;padding:2px 4px}}pre{{white-space:pre-wrap;overflow-wra
 <div class="muted">生成时间：{html.escape(str(result.get("created_at", "")))} · 真实 HTTP：是</div>
 <p class="{model_banner_class}">{html.escape(model_banner)}</p>
 <p>报告只依据实际运行证据判定；缺少部署控制或服务端指标时标记为 INCONCLUSIVE，不推断为通过。</p></section>
+{summary_table('overview', '并发结果总览')}
+{summary_table('parameter_table', 'EchoMem 实际配置文件参数')}
+{summary_table('boundary_overview', '请求长度覆盖（原始与独立补测分别保留；同一用例采用最新证据）')}
+{('<section><h2>测试方式与解释边界</h2><p>' + html.escape(str(result['method'])) + '</p></section>') if result.get('method') else ''}
 <section class="scroll"><h2>模型可用性预检（不是负载调用证明）</h2>
 <p class="muted">“没有启用 mock”不等于调用了真实模型。下表只证明独立的 Provider 预检；负载期间调用需另有阶段日志或 Provider 指标。</p>
 {"".join(model_sections)}</section>

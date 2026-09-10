@@ -110,3 +110,19 @@ JSON 包装也占长度。Commit 本身是控制接口，合法超长路径是�
 
 报告将 Search 命中且未降级数、Commit 最终完成数与 HTTP 2xx 受理数分开统计，
 分别展示操作延迟和完成吞吐 Jain。不要把短窗口受理公平性解释成稳态服务公平性。
+
+## 隔离超长输入
+
+超长 Search 可能导致后续 Session 创建超时。探针会保留此前结果，并将因 Session
+准备失败而未发出的用例标记 `dispatched=false`，不能将计划数量当作已发送数量。
+补测应为每个长度启动干净实例：`sizes_bytes: [262144]`（或其他长度），同时设置
+`skip_long_commit: true`、`skip_mcp: true`。先执行输入校验，最后执行可能昂贵的 Search。
+
+长 Commit 独立实例设置 `sizes_bytes: []`、`skip_long_commit: false`、`skip_mcp: true`；
+MCP 独立实例设置 `sizes_bytes: []`、`skip_long_commit: true`、`skip_mcp: false`。
+EchoMem `add_memory` 默认参数为 `user_message`，并非 `content`；返回非空 Session 仅代表
+本次工具接收结果，不能宣称后台 Commit 或记忆抽取已完成。
+
+报告命令可加 `--boundary-root /path/to/rerun` 和
+`--isolated-root /path/to/isolated`，后者包含 `262144/`、`524288/`、`1048576/`、
+`commit/`、`mcp/`，各自下层为 `boundary-32/`。源版本与配置指纹按实验分别保留。

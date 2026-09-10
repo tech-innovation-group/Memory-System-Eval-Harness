@@ -7,6 +7,16 @@ from performance.targets.echomem.orchestrator.report import render_objective_sui
 
 
 class ScopedProbeReportTest(unittest.TestCase):
+    def test_mcp_uses_echomem_user_message_argument(self):
+        from performance.targets.echomem.probes.payload_boundary import _mcp_add_memory
+        with patch("plugins.echomem_mcp.mcp_client.McpClient") as client:
+            client.return_value.call_tool.return_value = "session-1"
+            result = _mcp_add_memory({"mcp_base_url": "http://test"}, SimpleNamespace(auth_key="test"), "long body")
+        args = client.return_value.call_tool.call_args.args[1]
+        self.assertEqual(args["user_message"], "long body")
+        self.assertNotIn("content", args)
+        self.assertEqual(result["status"], "PASS")
+
     def test_boundary_setup_failure_keeps_planned_cases_and_runs_mcp(self):
         from performance.targets.echomem.probes import payload_boundary as probe
         tenant = SimpleNamespace(auth_key="test", tenant_id="a", user_id="u", account_id="a", agent_id="g")
