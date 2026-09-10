@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 _PROBE_LABELS = (
+    ("commit_diagnostic", "Commit 终态与失败归因"),
     ("capability_probe", "能力探针"),
     ("blackbox_contract_probe", "黑盒契约探针"),
     ("missing_cases", "PR397 黑盒一致性探针"),
@@ -44,6 +45,23 @@ def _check_detail(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _probe_visual(key: str, payload: dict[str, Any]) -> str:
     detail = _check_detail(payload)
+    if key == "commit_diagnostic":
+        rows = []
+        for row in detail.get("rows", []):
+            evidence = row.get("terminal_evidence", {})
+            source = "终态接口"
+            if not evidence.get("error_present") and row.get("service_failure_evidence"):
+                evidence = row["service_failure_evidence"]
+                source = "服务日志（任务标识匹配）"
+            rows.append("<tr>" + "".join(f"<td>{html.escape(str(value))}</td>" for value in (
+                row.get("phase"), row.get("archive_ref"), row.get("http_status"),
+                row.get("terminal_state"), row.get("elapsed_ms"), evidence.get("stage"),
+                evidence.get("error_type"), evidence.get("fault_domain"),
+                ", ".join(evidence.get("categories", []) + evidence.get("provider_codes", [])),
+                evidence.get("error_signature"), source)) + "</tr>")
+        return ("<table><thead><tr><th>阶段</th><th>任务脱敏标识</th><th>提交HTTP</th><th>终态</th><th>耗时ms</th>"
+                "<th>服务阶段</th><th>错误类型</th><th>故障域</th><th>原因分类/供应商代码</th><th>错误指纹</th><th>证据来源</th></tr></thead><tbody>"
+                + "".join(rows) + "</tbody></table>")
     if key == "concurrency_topology":
         matrix = detail.get("matrix") if isinstance(detail.get("matrix"), list) else []
         rows = []
@@ -232,6 +250,8 @@ def render_objective_suite_html(result: dict[str, Any]) -> str:
         if all_models_verified else
         "未证明真实模型可用或被调用，本报告不能宣称使用了真实模型。"
     )
+    if result.get("model_evidence_note"):
+        model_banner = str(result["model_evidence_note"])
     return f"""<!doctype html>
 <html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title}</title>

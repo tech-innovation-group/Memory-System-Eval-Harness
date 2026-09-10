@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from performance.ctx import Ctx
+from performance.targets.echomem.probes.failure_evidence import failure_evidence, reference
 from performance.targets.echomem.acceptance.semantic_corpus import assess_retrieval
 from performance.targets.echomem.probes._client import (
     EchoMemHTTP,
@@ -108,6 +109,7 @@ def _summary(rows: list[dict[str, Any]], elapsed_s: float) -> dict[str, Any]:
                             "p95_ms": _percentile([row["elapsed_ms"] for row in samples], .95)})
     searches = [row for row in rows if row.get("operation") == "search"]
     commits = [row for row in rows if row.get("operation") == "commit"]
+    task_refs = {row.get("archive_ref") for row in commits if row.get("archive_ref")}
     operational_failures = [
         row for row in rows
         if row.get("http_status") is None
@@ -146,6 +148,11 @@ def _summary(rows: list[dict[str, Any]], elapsed_s: float) -> dict[str, Any]:
         "search_recall_hits": sum(bool(row.get("recall_hit")) for row in searches),
         "search_degraded": sum(bool(row.get("degraded")) for row in searches),
         "commit_offered": len(commits),
+        "commit_unique_archives": len(task_refs),
+        "commit_observations_with_archive": sum(bool(row.get("archive_ref")) for row in commits),
+        "commit_repeated_archive_observations": sum(bool(row.get("archive_ref")) for row in commits) - len(task_refs),
+        "commit_unique_failed_archives": len({row["archive_ref"] for row in commits if row.get("archive_ref") and row.get("terminal_state") in {"failed", "error"}}),
+        "commit_failure_categories": dict(Counter(category for row in commits for category in row.get("terminal_evidence", {}).get("categories", []))),
         "commit_accepted": sum(bool(row.get("accepted")) for row in commits),
         "commit_completed": sum(row.get("terminal_state") == "completed" for row in commits),
         "commit_failed": sum(row.get("terminal_state") in {"failed", "error"} for row in commits),
@@ -243,12 +250,21 @@ def _commit_call(client: EchoMemHTTP, tenant_id: str, session_id: str,
             "missing_archive" if result.status_code in {200, 202} and not archive_id else ""
         )
         poll_count = 0
+        terminal_evidence = {}
+        last_poll_status = None
+        transitions = []
         deadline = time.monotonic() + poll_timeout_s
         while archive_id and time.monotonic() < deadline:
             poll_call = lambda: client.commit_status(session_id, archive_id)
             observed = inflight.call(poll_call) if inflight else poll_call()
             poll_count += 1
-            terminal_state = status_from(observed.payload)
+            last_poll_status = getattr(observed, "status_code", None)
+            terminal_evidence = failure_evidence(observed.payload)
+            new_state = status_from(observed.payload)
+            if not transitions or transitions[-1]["state"] != new_state:
+                transitions.append({"state": new_state, "elapsed_ms": round((time.perf_counter()-started)*1000, 3),
+                                    "http_status": last_poll_status, "evidence": terminal_evidence})
+            terminal_state = new_state
             if terminal_state in {"complete", "completed", "succeeded", "success"}:
                 terminal_state = "completed"
                 break
@@ -264,6 +280,11 @@ def _commit_call(client: EchoMemHTTP, tenant_id: str, session_id: str,
                 "transport_error_type": result.transport_error_type or message.transport_error_type,
                 "accepted": result.status_code in {200, 202},
                 "archive_id_present": bool(archive_id), "terminal_state": terminal_state,
+                "archive_ref": reference(tenant_id + ":" + session_id + ":" + archive_id) if archive_id else "",
+                "commit_ref": reference(result.payload.get("commit_id")),
+                "submit_evidence": failure_evidence(result.payload),
+                "terminal_evidence": terminal_evidence, "last_poll_http_status": last_poll_status,
+                "state_transitions": transitions, "observed_at": time.time(),
                 "poll_count": poll_count}
     return call
 
@@ -323,6 +344,8 @@ def run(ctx: Ctx) -> None:
             ("heterogeneous-users", min(4, level), math.ceil(level / min(4, level)), False),
         )
         for topology, required_users, per_session, use_multi in topologies:
+            if params.get("topologies") and topology not in params["topologies"]:
+                continue
             user_count = min(required_users, len(tenants))
             calls = []
             inflight = _InflightCounter()
