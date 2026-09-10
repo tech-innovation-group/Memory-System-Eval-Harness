@@ -69,13 +69,62 @@ def module_section(diagnostics):
             + '<div class="scroll"><table><tr><th>模块/阶段</th><th>事件来源</th><th>耗时样本</th><th>P50</th><th>P95</th><th>P99</th><th>排队样本</th><th>排队P95</th><th>trace数</th></tr>'+rows+'</table></div><h3>阶段P95对比（不是耗时占比）</h3>'+bars+'<p>只有真实计时样本才进入上表，skip事件不等于实际Rerank调用耗时；不从端到端相减推算，也不对缺失模块补零。此报告未接入Prometheus窗口差分，未完成日志与指标交叉验证。</p></section>')
 
 
-def render(state, manifest=None, diagnostics=None, resources=None, models=None):
+def scene_timing_section(diagnostics):
+    phases = diagnostics.get('scene_timings', {})
+    if not phases:
+        return ''
+    output = '<section><h2>按请求标识关联：16→64 模块耗时</h2><p>以每组正式Search请求标识匹配服务日志，包含这些请求在窗口结束后才产生的日志；不按日志先后次序猜测归属。排队耗时与执行耗时分别展示，阶段P95不相加。</p>'
+    output += '<p><b>如何判断：</b>先看下方各阶段16→64的涨幅，再打开慢请求明细核对同一请求。模型阶段几百毫秒、而语义路由或画像匹配达到数秒时，应优先排查路由本地匹配、共享执行资源和未埋点等待；不能仅凭Search总时长归因于模型或Thinking。精确到锁、CPU热点仍需服务端剖析。</p>'
+    for name in ('users', 'sessions', 'session-concurrent'):
+        pair = [phases.get(f'{name}-{level}-samples', {}) for level in (16, 64)]
+        if not all(pair):
+            continue
+        output += f'<h3>{NAMES[name]}</h3>'
+        for level, phase in zip((16,64),pair):
+            output += f'<p>{level}并发：客户端样本 {phase["client_requests"]}，带标识 {phase["requests_with_reference"]}，匹配至少一个服务事件 {phase["matched_requests"]}。LLM失败事件 {phase["events"].get("recall_llm_failed",0)}。</p>'
+        indexed = [{(g['event'],g['stage'],g['engine']):g for g in phase['groups']} for phase in pair]
+        selected = [('semantic', '语义路由'), ('memory_profile', '记忆画像匹配'),
+                    ('llm', '意图模型阶段'), ('query_embedding', '查询向量化阶段'),
+                    ('engine_execution', '检索引擎执行')]
+        chart_values = [(stage, label, [i.get(('recall_stage_completed', stage, '')) for i in indexed])
+                        for stage, label in selected]
+        maximum = max([g['duration']['p95_ms'] or 0 for _, _, pair_groups in chart_values
+                       for g in pair_groups if g] + [1])
+        output += '<h4>哪些阶段变慢了？P95 毫秒，蓝色16并发 / 橙色64并发</h4>'
+        for _, label, pair_groups in chart_values:
+            for level, group, color in zip((16,64), pair_groups, ('#197d91','#ad6420')):
+                value = group['duration']['p95_ms'] if group else None
+                output += f'<div class="bar"><span>{label} · {level}</span><div class="track"><i style="width:{100*(value or 0)/maximum:.3f}%;background:{color}"></i></div><b>{number(value)}</b></div>'
+        output += '<p class="note">这是阶段墙钟耗时，可能含线程调度、计算或内部等待，不是纯CPU时间，也不等于供应商侧模型生成时间。semantic与query_embedding等可能是父子关系，禁止相加；排队字段只覆盖已埋点的队列。</p>'
+        keys = sorted(set(indexed[0]) | set(indexed[1]))
+        output += '<div class="scroll"><table><tr><th>事件 / 阶段 / 引擎</th><th>16样本</th><th>16执行P95 ms</th><th>16排队P95 ms</th><th>64样本</th><th>64执行P95 ms</th><th>64排队P95 ms</th><th>执行P95倍数</th></tr>'
+        for key in keys:
+            groups = [i.get(key) for i in indexed]
+            cells = [' / '.join(s for s in key if s)]
+            for group in groups:
+                cells.extend([group['duration']['observations'],number(group['duration']['p95_ms'],3),number(group['queue_wait']['p95_ms'],3)] if group else ['未采集']*3)
+            a,b = [g['duration']['p95_ms'] if g else None for g in groups]
+            cells.append(number(b/a) if a is not None and a>0 and b is not None else '未采集')
+            output += '<tr>' + ''.join(f'<td>{esc(v)}</td>' for v in cells) + '</tr>'
+        output += '</table></div>'
+        for level, phase in zip((16,64),pair):
+            output += f'<details><summary>{level}并发：最慢20个请求的逐笔阶段证据</summary><div class="scroll"><table><tr><th>请求（脱敏）</th><th>客户端 ms</th><th>客户端 HTTP</th><th>语义路由 ms</th><th>画像匹配 ms</th><th>意图模型 ms</th><th>向量化 ms</th><th>检索执行 ms</th></tr>'
+            for ref, request in phase.get('slow_requests', {}).items():
+                stages = {e['stage']:e.get('duration_ms') for e in request['events'] if e['event']=='recall_stage_completed'}
+                cells = [ref, number(request['client_elapsed_ms']), request['http_status'] or '传输失败/超时']
+                cells += [number(stages.get(stage)) for stage, _ in selected]
+                output += '<tr>'+''.join(f'<td>{esc(v)}</td>' for v in cells)+'</tr>'
+            output += '</table></div><details><summary>原始阶段事件</summary><pre>'+esc(json.dumps(phase.get('slow_requests', {}),ensure_ascii=False,indent=2))+'</pre></details></details>'
+    return output + '<p class="note">匹配任意事件不表示所有阶段都有样本；失败、中止或未传播请求上下文的阶段可能缺失。内部trace去重数见全程表；当前关联主键为HTTP请求标识。服务端可能已接受超时请求，但未返回响应，必须保留它们而非排除。</p></section>'
+
+
+def render(state, manifest=None, diagnostics=None, resources=None, models=None, analysis=None):
     scenes = state.get('scenes', [])
     manifest = manifest or {}
     seed = state.get('seed_quality', {})
     status = {'BLOCKED_UNRESOLVED_BACKLOG': '已采集全部已列场景；存在Commit观察超时，未全部通过',
               'FINISHED': '采集结束（不代表业务全部通过）'}.get(state.get('status'), state.get('status'))
-    header = f'<h1>四类并发拓扑 · 实测报告</h1><p class="subtitle">{len(scenes)}/10 组已测 · {esc(status)}</p>'
+    header = f'<h1>并发拓扑 · 实测报告</h1><p class="subtitle">{len(scenes)}/{state.get("planned_count",10)} 组已测 · {esc(status)}</p>'
     header += '<p>比较用户数、会话数、会话内并发与大小写入干扰。这里只报告短测数据，不宣称最大容量。</p>'
     if manifest:
         header += f'<p>服务器容器：{esc(manifest.get("cpu", "未采集"))} CPU / {esc(manifest.get("memory_gib", "未采集"))} GiB；场景总耗时（含预热、末尾排空，不含准备）{sum(s["elapsed_s"] for s in scenes)/60:.1f} 分钟。</p>'
@@ -169,7 +218,7 @@ def render(state, manifest=None, diagnostics=None, resources=None, models=None):
         if 'healthy_p95_ms' in scene:
             detail += f'<p>仅健康召回样本 P95：{number(scene["healthy_p95_ms"])} ms，样本 {s["search_quality_ok"]}/{s["offered"]}；这是成功子集延迟，不能替代全请求指标。</p>'
         detail += fairness + '<details><summary>展开每用户数据</summary><div class="scroll"><table><tr><th>用户</th><th>Search数</th><th>P95 ms</th><th>健康命中</th><th>健康召回/s</th><th>Commit数</th><th>完成</th><th>完成/s</th><th>超时</th></tr>' + per + '</table></div></details><p class="note">吞吐分母为正式窗口加末尾排空耗时；HTTP峰值含预热。Commit失败和观察超时均未从调用分母排除。</p></section>'
-    evidence = '<section><h2>边界与问题归属</h2><p>HTTP200不代表召回健康，HTTP202不代表写入完成，90秒观察超时不代表服务端failed。种子质量不足时，本轮只能作为含降级的真实链路数据。服务日志、模型阶段耗时、CPU/内存需与本轮采样对齐，不使用旧报告数值补齐。</p><p>前三类共享4并发基线；场景顺序固定，缓存热度与上一阶段未结束的服务端请求可能影响后续场景，不能当作完全独立的A/B实验。HTTP峰值不包括会话创建。大小写入使用重复事实构造不同长度，不代表所有真实文本复杂度。</p>'
+    evidence = '<section><h2>边界与问题归属</h2><p>HTTP200不代表召回健康，HTTP202不代表写入完成，90秒观察超时不代表服务端failed。种子质量不足时，本轮只能作为含降级的真实链路数据。服务日志、模型阶段耗时、CPU/内存需与本轮采样对齐，不使用旧报告数值补齐。</p><p>只比较本页实际列出的并发档位；场景顺序固定，缓存热度与上一阶段未结束的服务端请求可能影响后续场景，不能当作完全独立的A/B实验。HTTP峰值不包括会话创建。大小写入使用重复事实构造不同长度，不代表所有真实文本复杂度。</p>'
     if diagnostics:
         errors = Counter(row.get('evidence', {}).get('error_type') for row in diagnostics.get('samples', []) if row.get('evidence', {}).get('error_type'))
         evidence += f'<h3>本轮服务日志错误类型</h3><p>{esc(dict(errors))}</p><p class="note">这是采集到的事件数，不是独立失败请求数；采样上限或日志截断会影响计数。不能仅凭这些事件认定全部超时或降级同因。</p>'
@@ -178,8 +227,11 @@ def render(state, manifest=None, diagnostics=None, resources=None, models=None):
         evidence += '<p>改进方向：Memory Unit引擎核查发布状态与接管初始化；Recall/意图路由保留上游HTTP状态和错误码，区分限流与其他模型异常；入口/调度记录每阶段排队与执行时间；测试平台采用按事件分桶采样，并对超时任务继续逐笔核对终态。全局完成事件数不能代替每个超时任务的匹配证据。</p>'
     evidence += f'<details><summary>运行版本与环境证据</summary><pre>{esc(json.dumps(manifest,ensure_ascii=False,indent=2))}</pre></details><p><a href="quick-matrix.json">原始汇总数据</a> · <a href="manifest.json">运行清单</a></p></section>'
     css = 'body{font:16px/1.6 system-ui;margin:32px auto;padding:0 24px;max-width:1200px;color:#202a26;background:#f9fbfa}h1{font-size:32px}h2{font-size:23px}section{padding:24px 0;border-top:1px solid #ccd7d0}.subtitle,.note{color:#596960}.warning{border-left:4px solid #ba691e;padding:14px;background:#fff}.charts{display:grid;grid-template-columns:1fr 1fr;gap:36px}.bar{display:grid;grid-template-columns:1.5fr 1fr 65px;gap:10px;align-items:center;margin:12px 0;font-size:13px}.track{background:#e5ebe7;height:12px}.track i{display:block;height:12px}table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:10px;text-align:left;border-bottom:1px solid #dbe2dd;white-space:nowrap}.scroll{overflow-x:auto}summary{cursor:pointer;padding:12px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere}@media(max-width:700px){.charts{grid-template-columns:1fr}body{padding:0 14px}h1{font-size:26px}}'
-    modules = module_section(diagnostics) if diagnostics else ''
-    return '<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>四类并发拓扑实测</title><style>'+css+'</style><body>'+header+modules+table+'<section class="charts">'+charts+'</section>'+detail+evidence+'</body></html>'
+    modules = (scene_timing_section(diagnostics) + module_section(diagnostics)) if diagnostics else ''
+    findings = ''
+    if analysis:
+        findings = '<section><h2>本轮定位结论</h2>'+''.join(f'<p><b>{esc(item["label"])}</b>：{esc(item["text"])}</p>' for item in analysis)+'<p><a href="run-analysis.json">结论与证据说明</a></p></section>'
+    return '<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>并发拓扑实测</title><style>'+css+'</style><body>'+header+findings+modules+table+'<section class="charts">'+charts+'</section>'+detail+evidence+'</body></html>'
 
 
 if __name__ == '__main__':
@@ -204,4 +256,6 @@ if __name__ == '__main__':
     resources = json.loads(resource_file.read_text()) if resource_file.exists() else None
     models_file = args.root/'public-models.json'
     models = json.loads(models_file.read_text()) if models_file.exists() else None
-    (args.root/'report.html').write_text(render(state, manifest, diagnostics, resources, models))
+    analysis_file = args.root/'run-analysis.json'
+    analysis = json.loads(analysis_file.read_text()) if analysis_file.exists() else None
+    (args.root/'report.html').write_text(render(state, manifest, diagnostics, resources, models, analysis))

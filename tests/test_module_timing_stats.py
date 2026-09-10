@@ -1,11 +1,21 @@
 import json
 import unittest
+from unittest.mock import patch
 
 from scripts.collect_commit_diagnostics import collect
 from scripts.module_timing_stats import TimingStats, from_diagnostics
+from performance.targets.echomem.probes.failure_evidence import reference
+from performance.targets.echomem.probes._client import EchoMemHTTP
 
 
 class ModuleTimingsTests(unittest.TestCase):
+    def test_transport_timeout_preserves_sent_request_identity(self):
+        with patch('urllib.request.urlopen', side_effect=TimeoutError()) as transport:
+            result = EchoMemHTTP('http://test.invalid').search('s', 'query', 1)
+        self.assertIsNone(result.status_code)
+        self.assertTrue(result.request_id)
+        self.assertEqual(transport.call_args.args[0].get_header('X-request-id'), result.request_id)
+
     def test_whole_stream_survives_detail_cap(self):
         lines = (json.dumps({'event': 'recall_stage_completed', 'stage': 'llm',
                              'duration_ms': i, 'queue_wait_ms': 2, 'trace_id': 'PRIVATE_TRACE'}) for i in range(10005))
@@ -33,3 +43,14 @@ class ModuleTimingsTests(unittest.TestCase):
         result = from_diagnostics({'samples': [{'event': 'recall_stage_completed', 'evidence': {'stage': 'rule'}, 'duration_ms': 1}]})
         self.assertEqual(result['scope'], 'retained_prefix_only')
         self.assertEqual(result['groups'][0]['stage'], 'rule')
+
+    def test_scene_correlation_uses_request_identity_not_log_order(self):
+        scenes = {'users-64': [{'request_ref': reference('slow')}],
+                  'users-16': [{'request_ref': reference('fast')}]}
+        lines = [json.dumps({'event': 'recall_stage_completed', 'stage': 'llm',
+                            'request_id': key, 'duration_ms': ms})
+                 for key, ms in [('slow', 2000), ('unmatched', 9999), ('fast', 10)]]
+        result = collect(lines, scenes)['scene_timings']
+        self.assertEqual(result['users-64']['groups'][0]['duration']['p95_ms'], 2000)
+        self.assertEqual(result['users-16']['groups'][0]['duration']['p95_ms'], 10)
+        self.assertEqual(result['users-64']['matched_requests'], 1)

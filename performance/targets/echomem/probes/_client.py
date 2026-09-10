@@ -12,6 +12,7 @@ import os
 import socket
 import ssl
 import time
+import uuid
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -267,6 +268,8 @@ class EchoMemHTTP:
     ) -> HttpResult:
         started = time.monotonic()
         headers = {"Content-Type": content_type, "Accept": "application/json"}
+        sent_request_id = uuid.uuid4().hex
+        headers['X-Request-ID'] = sent_request_id
         if self.auth_key:
             if self.auth_header.lower() == "authorization":
                 headers["Authorization"] = (
@@ -324,6 +327,7 @@ class EchoMemHTTP:
                 method, path, None, time.monotonic() - started, {},
                 f"{type(exc).__name__}: {exc}",
                 transport_error_type=_transport_error_type(exc),
+                headers={'x-request-id': sent_request_id},
             )
 
     def request_bytes(

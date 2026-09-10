@@ -54,16 +54,17 @@ def report(out, state):
                         f'<details><summary>Per-user statistics and errors</summary><pre>{html.escape(json.dumps(scene,ensure_ascii=False,indent=2))}</pre></details></section>')
     page = '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
     page += '<title>Topology comparison</title><style>body{font:16px/1.6 system-ui;margin:24px auto;padding:0 20px;max-width:1100px;color:#202923;background:#fafbfb}section{border-top:1px solid #ccd5cf;padding:24px 0}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}b{font-size:24px}pre{white-space:pre-wrap;overflow-wrap:anywhere}@media(max-width:600px){.stats{grid-template-columns:1fr 1fr}}</style>'
-    page += f'<h1>四类拓扑短测对比</h1><p>{html.escape(state["status"])} · {len(state["scenes"])}/10 groups · updated {time.strftime("%H:%M:%S")}</p>'
+    page += f'<h1>四类拓扑短测对比</h1><p>{html.escape(state["status"])} · {len(state["scenes"])}/{state.get("planned_count",10)} groups · updated {time.strftime("%H:%M:%S")}</p>'
     page += '<p>Real HTTP / real models. Short-run observations, not maximum capacity. HTTP202 is acceptance, not completion. Timeout is not server failure. Degraded overlaps non-healthy; bars are not additive.</p>'
     page += ''.join(sections)
     page += '<p>Search: 10s warmup + 45s measurement. Mixed: separate Search/Commit workers, 60s admission window; each Commit observed up to90s. New Session per Commit avoids task reuse. All users have Search and Commit offers; short/long groups are reported separately in raw evidence.</p>'
     (out / 'report.html').write_text(page)
 
 
-def run(out, base):
+def run(out, base, search_timing_only=False):
     out = Path(out)
-    state = {'status': 'PREFLIGHT', 'scenes': [], 'seed': []}
+    selected = [p for p in plans() if not search_timing_only or p[0] in ('users', 'sessions', 'session-concurrent')]
+    state = {'status': 'PREFLIGHT', 'scenes': [], 'seed': [], 'planned_count': len(selected)}
     report(out, state)
     preflight = run_preflight(out / 'config.json', timeout_s=40, retry_attempts=1, required_kinds=('llm', 'embedding'))
     # Public artifact retains status only; provider credentials remain in config/env.
@@ -101,7 +102,7 @@ def run(out, base):
     if any(r['commit'].get('terminal_state') == 'timeout' for r in state['seed']):
         state['status'] = 'BLOCKED_SEED_PENDING'; report(out, state); return
     # Retain degradation in every observation, even when the fact exists.
-    for name, level, users, sessions, width in plans():
+    for name, level, users, sessions, width in selected:
         state['status'] = f'RUNNING {name}/{level}'; report(out, state)
         session_ids = [[clients[i].open_session(tenants[i].tenant_id, f'quick-{name}-{j}')[0]
                         for j in range(sessions)] for i in range(users)]
@@ -138,6 +139,7 @@ def run(out, base):
                     with lock: rows.append(row)
                 iteration += 1
         started = time.monotonic()
+        started_at = time.time()
         timing.update(start=started, measure=started + warmup, end=started + warmup + duration)
         with ThreadPoolExecutor(max_workers=level) as pool:
             futures = [pool.submit(worker, slot) for slot in range(level)]
@@ -147,6 +149,7 @@ def run(out, base):
         scene = {'name': name, 'level': level, 'users': users, 'sessions': sessions,
                  'session_width': width, 'http_peak': counter.peak, 'elapsed_s': elapsed,
                  'measurement_s': duration, 'drain_s': max(0, elapsed - warmup - duration)}
+        scene.update(started_at=started_at, measurement_started_at=started_at+warmup, finished_at=time.time())
         for op in ('search', 'commit'):
             subset = [r for r in rows if r['operation'] == op]
             scene[op] = _summary(subset, max(elapsed - warmup, .001))
