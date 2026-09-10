@@ -17,7 +17,11 @@
         "requests_per_level": 128,
         "sessions_per_user": 2,
         "within_session_concurrency": 4,
-        "timeout_s": 60
+        "timeout_s": 60,
+        "commit_poll_timeout_s": 120,
+        "max_concurrency": 128,
+        "stop_after_boundary": true,
+        "require_recall_quality": true
       },
       "payload_boundary": {
         "enabled": true,

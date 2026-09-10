@@ -477,6 +477,10 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
         probe_queries = (suite.get("seed") or {}).get("probe_queries")
         if probe_queries and isinstance(profile.get("fault_isolation"), dict):
             profile["fault_isolation"] = {**profile["fault_isolation"], "queries": probe_queries}
+        if probe_queries and isinstance(profile.get("concurrency_topology"), dict):
+            profile["concurrency_topology"] = {
+                **profile["concurrency_topology"], "queries": probe_queries,
+            }
         elif visibility and isinstance(profile.get("fault_isolation"), dict):
             profile["fault_isolation"] = {
                 **profile["fault_isolation"],
