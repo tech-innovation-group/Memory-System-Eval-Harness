@@ -91,11 +91,19 @@ def run(ctx: Ctx) -> None:
     sizes = sorted({max(0, int(value)) for value in params.get(
         "sizes_bytes", [0, 1, 1024, 65536, 262144, 524288, 1048576]
     )})
-    session_id, _ = client.open_session(tenant.tenant_id, "payload-boundary")
     rows: list[dict[str, Any]] = []
 
     for size in sizes:
-        session_id, _ = client.open_session(tenant.tenant_id, f"payload-{size}")
+        try:
+            session_id, _ = client.open_session(tenant.tenant_id, f"payload-{size}")
+        except Exception as exc:
+            for api, encoding in (("message", "text"), ("search", "text"), ("commit", "text/plain"),
+                                  ("message", "binary"), ("commit", "binary"), ("search", "binary")):
+                rows.append({"api": api, "encoding": encoding, "content_bytes": size,
+                             "wire_bytes": None, "http_status": None, "elapsed_ms": None,
+                             "accepted": False, "dispatched": False,
+                             "reason_code": "SESSION_SETUP_FAILED", "transport_error_type": type(exc).__name__})
+            continue
         content = "x" * size
         message_body = {"role": "user", "content": content,
                         "metadata": {"stress_message_id": f"size-{size}"}}
@@ -140,38 +148,17 @@ def run(ctx: Ctx) -> None:
 
     commit_chars = max(1, int(params.get("commit_content_chars", 1048576)))
     chunk_chars = max(1, int(params.get("commit_chunk_chars", 262144)))
-    commit_session, _ = client.open_session(tenant.tenant_id, "oversized-commit")
-    add_results = []
-    remaining = commit_chars
-    accepted_chars = 0
-    while remaining > 0:
-        chunk = "c" * min(chunk_chars, remaining)
-        response = client.add_message(commit_session, uuid.uuid4().hex, chunk)
-        add_results.append(_safe_result(response))
-        remaining -= len(chunk)
-        if response.status_code is None or response.status_code >= 400:
-            break
-        accepted_chars += len(chunk)
-    commit = client.commit(commit_session, idempotency_key=f"stress-{uuid.uuid4().hex}")
-    archive_id = extract_archive(commit.payload)
-    terminal = _poll_commit(client, commit_session, archive_id,
-                            float(params.get("commit_timeout_s", 600))) if archive_id else {}
-    long_commit = {
-        "requested_chars": commit_chars,
-        "accepted_chars": accepted_chars,
-        "all_content_accepted": accepted_chars == commit_chars,
-        "chunks_attempted": len(add_results),
-        "chunks_accepted": sum(bool(row["accepted"]) for row in add_results),
-        "submit": _safe_result(commit),
-        "archive_id_present": bool(archive_id),
-        "terminal": terminal,
-    }
+    long_commit = _long_commit(client, tenant.tenant_id, commit_chars, chunk_chars,
+                               float(params.get("commit_timeout_s", 600)))
+    accepted_chars = long_commit.get("accepted_chars", 0)
+    terminal = long_commit.get("terminal", {})
 
     mcp_chars = max(1, int(params.get("mcp_add_memory_chars", 1048576)))
     mcp = _mcp_add_memory(params, tenant, "m" * mcp_chars)
     detail = {
         "sizes_bytes": sizes,
         "cases_total": len(rows),
+        "cases_dispatched": sum(row.get("dispatched", True) for row in rows),
         "cases": rows,
         "long_commit": long_commit,
         "mcp_add_memory": {"requested_chars": mcp_chars, **mcp},
@@ -192,8 +179,40 @@ def run(ctx: Ctx) -> None:
     ctx.check(
         "payload-boundary",
         status=status,
-        reason=(f"observed {len(rows)} exact-body cases; transport failures={transport_failures}; "
+        reason=(f"planned {len(rows)} exact-body cases; dispatched={detail['cases_dispatched']}; transport/setup failures={transport_failures}; "
                 f"binary accepted={binary_accepted}; long commit state={terminal.get('state') or 'unknown'}; "
                 f"MCP={mcp['status']}"),
         detail=json.dumps(detail, ensure_ascii=False),
     )
+
+
+def _long_commit(client, tenant_id, commit_chars, chunk_chars, timeout_s):
+    try:
+        commit_session, _ = client.open_session(tenant_id, "oversized-commit")
+    except Exception as exc:
+        return {"requested_chars": commit_chars, "accepted_chars": 0, "all_content_accepted": False,
+                "reason_code": "SESSION_SETUP_FAILED", "error_type": type(exc).__name__, "terminal": {}}
+    add_results = []
+    remaining = commit_chars
+    accepted_chars = 0
+    while remaining > 0:
+        chunk = "c" * min(chunk_chars, remaining)
+        response = client.add_message(commit_session, uuid.uuid4().hex, chunk)
+        add_results.append(_safe_result(response))
+        remaining -= len(chunk)
+        if response.status_code is None or response.status_code >= 400:
+            break
+        accepted_chars += len(chunk)
+    commit = client.commit(commit_session, idempotency_key=f"stress-{uuid.uuid4().hex}")
+    archive_id = extract_archive(commit.payload)
+    terminal = _poll_commit(client, commit_session, archive_id, timeout_s) if archive_id else {}
+    return {
+        "requested_chars": commit_chars,
+        "accepted_chars": accepted_chars,
+        "all_content_accepted": accepted_chars == commit_chars,
+        "chunks_attempted": len(add_results),
+        "chunks_accepted": sum(bool(row["accepted"]) for row in add_results),
+        "submit": _safe_result(commit),
+        "archive_id_present": bool(archive_id),
+        "terminal": terminal,
+    }

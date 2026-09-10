@@ -11,6 +11,7 @@ DEBUG JSON 日志。Embedding 固定 qwen3.7-text-embedding-flash。先完成本
 ```bash
 .venv/bin/python -m performance.targets.echomem.prepare_concurrency_configs \
   --config /absolute/path/to/EchoMem/config.json \
+  --auto-commit-threshold 4194304 \
   --out-dir .local-stress/concurrency-configs
 ```
 
@@ -29,6 +30,11 @@ Provider budget 根据全部消费者份额求和；这不代表外部模型账�
 每份配置都必须由目标 EchoMem 启动校验。若内存预算、字段或资源约束不通过，记录
 配置失败并停止该档，不删除保护校验。核对环境变量没有覆盖 JSON，保存实际生效值。
 每份配置使用新结果目录，先排空再切换；禁止用不同配置的结果拼成同一次容量测量。
+
+上述可选参数会显式写入 `session.auto_commit_threshold=4194304`，用于这组最大
+1 MiB 的显式 Commit 实验。只设置环境变量可能被配置文件覆盖。必须核对运行时配置，
+并检查 `session_auto_commit_triggered`；若仍触发，标记为混合自动/显式提交，不声称隔离成功。
+不传该参数时保留 EchoMem 原值。测试自动 Commit 本身时不要提高该阈值。
 
 ## 四种拓扑
 
@@ -90,3 +96,17 @@ JSON 包装也占长度。Commit 本身是控制接口，合法超长路径是�
 自动 Commit 可能被大消息触发，必须采集对应任务并排空后才能得到独立案例的结果；
 当前边界探针尚未完成自动 Commit 全量对账，应将受其影响的延迟解释为混合积压观测。
 模型上下文超限、413、415、429、503、超时分别保留；HTTP 成功不代表内容全部入库。
+
+## 已有数据生成报告
+
+将各档证据放到 `topology-16/32/64/128`（分别为四个目录）和 `boundary-32` 下，
+每档保留 `concurrency-topology.json` 或 `payload-boundary.json`，以及可选的
+`manifest.json`、`seed.json`、`resources.json`。缺失档位明确显示 NOT_RUN。
+
+```bash
+.venv/bin/python -m scripts.build_concurrency_boundary_report \
+  --root /absolute/path/to/results --out /absolute/path/to/results/report.html
+```
+
+报告将 Search 命中且未降级数、Commit 最终完成数与 HTTP 2xx 受理数分开统计，
+分别展示操作延迟和完成吞吐 Jain。不要把短窗口受理公平性解释成稳态服务公平性。

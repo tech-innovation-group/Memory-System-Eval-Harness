@@ -6,10 +6,14 @@ import json
 from pathlib import Path
 
 
-def configure(source: dict, level: int) -> dict:
+def configure(source: dict, level: int, *, auto_commit_threshold=None) -> dict:
     if level not in (16, 32, 64, 128):
         raise ValueError("supported concurrency levels: 16,32,64,128")
     result = copy.deepcopy(source)
+    if auto_commit_threshold is not None:
+        if auto_commit_threshold < 1:
+            raise ValueError("auto_commit_threshold must be positive")
+        result.setdefault("session", {})["auto_commit_threshold"] = auto_commit_threshold
     embedding = result.get("model", {}).get("embedding", {})
     if embedding.get("model") != "qwen3.7-text-embedding-flash":
         raise ValueError("configure qwen3.7-text-embedding-flash before generating experiments")
@@ -47,9 +51,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--out-dir", required=True, type=Path)
+    parser.add_argument("--auto-commit-threshold", type=int,
+                        help="Explicit session threshold for isolated long Commit experiments")
     args = parser.parse_args()
     source = json.loads(args.config.read_text())
-    documents = {level: configure(source, level) for level in (16, 32, 64, 128)}
+    documents = {level: configure(source, level, auto_commit_threshold=args.auto_commit_threshold)
+                 for level in (16, 32, 64, 128)}
     args.out_dir.mkdir(parents=True, exist_ok=False)
     for level, document in documents.items():
         path = args.out_dir / f"config-{level}.json"

@@ -65,10 +65,26 @@ def _probe_visual(key: str, payload: dict[str, Any]) -> str:
                 "</tr>"
             )
         if rows:
+            operation_rows = []
+            for row in matrix:
+                for op, values in (row.get("operations") or {}).items():
+                    operation_rows.append("<tr>" + "".join(
+                        f"<td>{html.escape(str(value))}</td>" for value in (
+                            row.get("level"), row.get("topology"), op,
+                            values.get("offered"), values.get("p50_ms"), values.get("p95_ms"), values.get("p99_ms"),
+                            values.get("search_quality_ok") if op == "search" else values.get("commit_completed"),
+                            values.get("search_strict_throughput_jain") if op == "search" else values.get("commit_completion_throughput_jain"),
+                            json.dumps(values.get("boundary_reasons") or {}, ensure_ascii=False),
+                        )) + "</tr>")
             return ("<table><thead><tr><th>并发档</th><th>拓扑</th><th>实际/请求用户</th>"
                     "<th>峰值在途操作</th><th>2xx/总请求</th><th>操作 P95（含超时）</th><th>2xx受理吞吐</th>"
                     "<th>受理 Jain（非完成公平性）</th><th>HTTP/传输分布</th><th>Commit 排空</th></tr></thead><tbody>"
-                    + "".join(rows) + "</tbody></table>")
+                    + "".join(rows) + "</tbody></table>"
+                    "<h4>按操作拆分（延迟单位 ms）</h4><p>Search 成功要求真实召回命中；Commit 成功要求最终 completed。"
+                    "Jain 仅在有可比较的完成吞吐时展示，受理公平性不等于完成公平性。</p>"
+                    "<table><thead><tr><th>档位</th><th>拓扑</th><th>操作</th><th>分母</th><th>P50</th><th>P95</th><th>P99</th>"
+                    "<th>严格成功</th><th>完成吞吐 Jain</th><th>错误分类</th></tr></thead><tbody>"
+                    + "".join(operation_rows) + "</tbody></table>")
     if key == "payload_boundary":
         cases = detail.get("cases") if isinstance(detail.get("cases"), list) else []
         rows = []
@@ -114,6 +130,9 @@ def _model_evidence(profile: dict[str, Any]) -> dict[str, Any]:
 
 def render_objective_suite_html(result: dict[str, Any]) -> str:
     """把 objective-suite.json 渲染为自包含 HTML 字符串。"""
+    title = html.escape(str(result.get("title") or "EchoMem 七项目标自动化验收"))
+    scope = html.escape(str(result.get("scope") or ""))
+    run_summary = html.escape(str(result.get("summary") or ""))
     rows = []
     for profile in result.get("profiles") or []:
         for objective in profile.get("objectives") or []:
@@ -206,7 +225,7 @@ def render_objective_suite_html(result: dict[str, Any]) -> str:
     )
     return f"""<!doctype html>
 <html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>EchoMem 七项目标自动化验收</title>
+<title>{title}</title>
 <style>
 body{{font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#17212b;background:#f5f7f8;margin:0}}
 main{{max-width:1280px;margin:auto;padding:28px 18px 56px}}section{{background:#fff;border:1px solid #dfe6ea;padding:18px;margin-top:14px}}
@@ -216,7 +235,7 @@ th,td{{border-bottom:1px solid #e7ecef;padding:9px;text-align:left;vertical-alig
 code{{background:#f0f3f5;padding:2px 4px}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;background:#f7f9fa;padding:10px}}
 .bar{{height:6px;background:#247a68;margin:2px 0 4px;min-width:2px}}.scroll{{overflow:auto}}
 </style><main>
-<section><h1>EchoMem 七项目标自动化验收</h1>
+<section><h1>{title}</h1><p>{scope}</p><p>{run_summary}</p>
 <div class="muted">生成时间：{html.escape(str(result.get("created_at", "")))} · 真实 HTTP：是</div>
 <p class="{model_banner_class}">{html.escape(model_banner)}</p>
 <p>报告只依据实际运行证据判定；缺少部署控制或服务端指标时标记为 INCONCLUSIVE，不推断为通过。</p></section>
@@ -226,7 +245,7 @@ code{{background:#f0f3f5;padding:2px 4px}}pre{{white-space:pre-wrap;overflow-wra
 <section class="scroll"><h2>逐 profile 目标状态</h2>
 <table><thead><tr><th>Profile</th><th>目标</th><th>状态</th><th>说明</th><th>归属</th><th>证据</th></tr></thead>
 <tbody>{"".join(rows)}</tbody></table></section>
-<section class="scroll"><h2>内存泄漏诊断</h2>{"".join(_leak_sections(result))}</section>
+{('<section class="scroll"><h2>内存泄漏诊断</h2>' + ''.join(_leak_sections(result)) + '</section>') if any(p.get('memory_leak') for p in result.get('profiles', [])) else ''}
 <section class="scroll"><h2>探针与黑盒证据明细</h2>
 <p class="muted">这里显示真实 HTTP 探针实际检查到的内容。没有真实输入、控制能力或服务端观测时，状态保持 INCONCLUSIVE。</p>
 {"".join(details)}</section>
