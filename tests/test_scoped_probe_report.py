@@ -2,11 +2,21 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 import json
+import tempfile
+from pathlib import Path
 
 from performance.targets.echomem.orchestrator.report import render_objective_suite_html
 
 
 class ScopedProbeReportTest(unittest.TestCase):
+    def test_extended_report_does_not_claim_missing_cases_complete(self):
+        from scripts.build_extended_boundary_report import build
+        with tempfile.TemporaryDirectory() as tmp:
+            result = build(Path(tmp))
+        self.assertTrue(all(row[1] == 'NOT_RUN' for row in result['overview']['rows']))
+        self.assertEqual(len(result['overview']['rows']), 5)
+        self.assertIn('不是M1-M3完整验收', result['scope'])
+
     def test_mcp_uses_echomem_user_message_argument(self):
         from performance.targets.echomem.probes.payload_boundary import _mcp_add_memory
         with patch("plugins.echomem_mcp.mcp_client.McpClient") as client:
@@ -15,7 +25,20 @@ class ScopedProbeReportTest(unittest.TestCase):
         args = client.return_value.call_tool.call_args.args[1]
         self.assertEqual(args["user_message"], "long body")
         self.assertNotIn("content", args)
-        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["status"], "INCONCLUSIVE")
+        self.assertEqual(result["reason_code"], "HISTORY_VERIFIER_NOT_CONFIGURED")
+
+    def test_mcp_full_content_readback_required(self):
+        from performance.targets.echomem.probes.payload_boundary import _mcp_add_memory
+        for actual, expected in [("long body", "PASS"), ("long", "FAIL")]:
+            response = SimpleNamespace(status_code=200, elapsed_s=.1, reason_code="",
+                                       transport_error_type="", payload={"messages": [{"role":"user", "content":actual}]})
+            verifier = SimpleNamespace(get_history=lambda *_args: response)
+            with patch("plugins.echomem_mcp.mcp_client.McpClient") as client:
+                client.return_value.call_tool.return_value = "stored in session test"
+                result = _mcp_add_memory({"mcp_base_url":"http://test"}, SimpleNamespace(auth_key="test"), "long body", verifier)
+            self.assertEqual(result["status"], expected)
+            self.assertNotIn("long body", json.dumps(result))
 
     def test_boundary_setup_failure_keeps_planned_cases_and_runs_mcp(self):
         from performance.targets.echomem.probes import payload_boundary as probe

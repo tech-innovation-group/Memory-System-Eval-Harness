@@ -116,12 +116,18 @@ def _probe_visual(key: str, payload: dict[str, Any]) -> str:
                 f"<td>{'未发出' if row.get('dispatched') is False else '已发出'}</td>"
                 f"<td>{html.escape(str(row.get('http_status') or row.get('transport_error_type') or '-'))}</td>"
                 f"<td>{html.escape(str(row.get('reason_code') or '-'))}</td>"
+                f"<td>{html.escape(str(row.get('outcome') or '未分类'))}</td>"
                 f"<td>{html.escape(str(row.get('elapsed_ms')))} ms</td>"
                 "</tr>"
             )
         if rows or detail.get("long_commit") or detail.get("mcp_add_memory"):
-            return ("<table><thead><tr><th>API</th><th>编码</th><th>内容字节</th>"
-                    "<th>Wire 字节</th><th>发送状态</th><th>结果</th><th>原因类型</th><th>耗时</th>"
+            counts = detail.get('outcome_counts') or {}
+            maximum = max(list(counts.values()) + [1])
+            chart = '<h4>边界结果分布（项）</h4>' + ''.join(
+                f"<p>{html.escape(str(label))}：{count}</p><div class='bar' style='width:{100*count/maximum:.2f}%'></div>"
+                for label, count in counts.items()) if counts else ''
+            return (chart + "<table><thead><tr><th>API</th><th>编码</th><th>内容字节</th>"
+                    "<th>Wire 字节</th><th>发送状态</th><th>结果</th><th>原因类型</th><th>边界判定</th><th>耗时</th>"
                     "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
                     f"<pre>{html.escape(json.dumps({'long_commit': detail.get('long_commit'), 'mcp_add_memory': detail.get('mcp_add_memory')}, ensure_ascii=False, indent=2))}</pre>")
     return ""
@@ -268,7 +274,7 @@ code{{background:#f0f3f5;padding:2px 4px}}pre{{white-space:pre-wrap;overflow-wra
 <div class="muted">生成时间：{html.escape(str(result.get("created_at", "")))} · 真实 HTTP：是</div>
 <p class="{model_banner_class}">{html.escape(model_banner)}</p>
 <p>报告只依据实际运行证据判定；缺少部署控制或服务端指标时标记为 INCONCLUSIVE，不推断为通过。</p></section>
-{summary_table('overview', '并发结果总览')}
+{summary_table('overview', result.get('overview_title', '并发结果总览'))}
 {summary_table('parameter_table', 'EchoMem 实际配置文件参数')}
 {summary_table('boundary_overview', '请求长度覆盖（原始与独立补测分别保留；同一用例采用最新证据）')}
 {('<section><h2>测试方式与解释边界</h2><p>' + html.escape(str(result['method'])) + '</p></section>') if result.get('method') else ''}

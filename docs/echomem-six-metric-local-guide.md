@@ -227,6 +227,13 @@ P99 与 queue wait。七组 Prometheus Histogram 使用测试窗口内累计值�
 普通 M1-M3 可以省略这两个配置段；交付“16/64并发四类拓扑与0至1MiB边界”时必须启用，
 它们会作为 M1-M3 报告的补充探针执行。不能用 M1-M3 三张通过卡片代替扩展场景完成。
 
+在包含本次PR33更新的版本，可在profile中设置 `"extended_load_tests": true`，同时设置
+`"payload_boundary": {"mcp_base_url": "http://127.0.0.1:8001"}`，由正式入口展开完整配置。
+仍使用 `--metrics M1,M2,M3`。开关会校验64个独立凭据、MCP地址、16/64两档、全部四种拓扑、
+0和1MiB边界以及两项超长写入，不允许以skip或提前停止省略场景。普通profile不受影响。
+机器人也必须写入该开关和地址、创建至少64个独立租户，并挂载包含此实现的Harness版本；
+仅更换模型配置或只设置 `STRESS_METRICS=M1,M2,M3` 并不会自动增加这些测试。
+
 ```json
 {
   "concurrency_topology": {
@@ -274,7 +281,9 @@ reason code 与耗时，原始 JSON 保留完整分母。
 HTTP400/413/415/422记录为输入拒绝，HTTP5xx为服务错误，401/403/404/405为环境或接口阻塞，
 429为限流，不得把“收到响应”当作通过。HTTP202只代表受理；只有成功的状态查询返回
 completed等终态且全部预期字符已受理，才能记为长Commit完成。MCP非空工具返回只能证明
-工具有响应，不单独证明1MiB全文无截断落盘；需另核对history/archive，缺少时必须说明证据范围。
+工具有响应；探针现在会继续用同一租户读取该Session的history，并与输入全文逐字比较，
+只保存字符数、SHA256和匹配结果，不在报告输出正文。全文一致才记为PASS；无回读接口或
+读取失败记为INCONCLUSIVE，截断/丢失记为FAIL。这证明会话历史保存，不等于后台记忆抽取完成。
 
 慢请求诊断先使用每条HTTP的请求标识关联内部阶段，超时请求仍保留发送时的标识。
 采集器 `scripts.collect_commit_diagnostics --scene-root <场景样本目录>` 按 `*-samples.json`

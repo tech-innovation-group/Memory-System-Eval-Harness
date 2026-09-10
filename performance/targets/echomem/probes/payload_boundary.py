@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import time
 import uuid
@@ -71,7 +72,7 @@ def _poll_commit(client: EchoMemHTTP, session_id: str, archive_id: str,
     return last
 
 
-def _mcp_add_memory(params: dict[str, Any], tenant: Any, content: str) -> dict[str, Any]:
+def _mcp_add_memory(params: dict[str, Any], tenant: Any, content: str, verifier=None) -> dict[str, Any]:
     base_url = str(params.get("mcp_base_url") or "").strip()
     if not base_url:
         return {"status": "BLOCKED", "reason": "mcp_base_url is not configured"}
@@ -84,12 +85,35 @@ def _mcp_add_memory(params: dict[str, Any], tenant: Any, content: str) -> dict[s
         arguments = dict(params.get("mcp_add_memory_arguments") or {})
         arguments.setdefault(str(params.get("mcp_content_field") or "user_message"), content)
         arguments.setdefault("session_id", f"stress-{uuid.uuid4().hex}")
+        arguments.setdefault("client_turn_id", uuid.uuid4().hex)
         started = time.perf_counter()
         result = client.call_tool(
             str(params.get("mcp_add_memory_tool") or "add_memory"), arguments
         )
-        return {"status": "PASS" if result else "INCONCLUSIVE", "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
-                "result_nonempty": bool(result)}
+        evidence = {"status": INCONCLUSIVE, "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
+                    "result_nonempty": bool(result), "persistence_verified": False,
+                    "expected_chars": len(content),
+                    "expected_sha256": hashlib.sha256(content.encode('utf-8')).hexdigest()}
+        if verifier is None:
+            return {**evidence, "reason_code": "HISTORY_VERIFIER_NOT_CONFIGURED"}
+        history = verifier.get_history(arguments["session_id"])
+        evidence["history"] = _safe_result(history)
+        if not evidence["history"]["accepted"]:
+            return {**evidence, "reason_code": "HISTORY_READ_FAILED"}
+        def contents(value):
+            if isinstance(value, dict):
+                if value.get("role") == "user" and isinstance(value.get("content"), str):
+                    yield value["content"]
+                for child in value.values():
+                    yield from contents(child)
+            elif isinstance(value, list):
+                for child in value:
+                    yield from contents(child)
+        messages = list(contents(history.payload))
+        matched = any(message == content for message in messages)
+        return {**evidence, "status": PASS if matched else FAIL,
+                "persistence_verified": matched, "history_user_messages": len(messages),
+                "reason_code": "FULL_CONTENT_MATCH" if matched else "FULL_CONTENT_MISMATCH"}
     except Exception as exc:  # noqa: BLE001 - MCP failures are classified, never hidden.
         message = str(exc)
         status_match = re.search(r"MCP HTTP (\d{3})\b", message)
@@ -186,7 +210,7 @@ def run(ctx: Ctx) -> None:
     terminal = long_commit.get("terminal", {})
 
     mcp_chars = max(1, int(params.get("mcp_add_memory_chars", 1048576)))
-    mcp = {"status": "NOT_SELECTED"} if skip_mcp else _mcp_add_memory(params, tenant, "m" * mcp_chars)
+    mcp = {"status": "NOT_SELECTED"} if skip_mcp else _mcp_add_memory(params, tenant, "m" * mcp_chars, verifier=client)
     for row in rows:
         row["outcome"] = _case_outcome(row)
     detail = {
