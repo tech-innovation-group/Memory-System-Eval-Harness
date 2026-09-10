@@ -118,7 +118,23 @@ def scene_timing_section(diagnostics):
     return output + '<p class="note">匹配任意事件不表示所有阶段都有样本；失败、中止或未传播请求上下文的阶段可能缺失。内部trace去重数见全程表；当前关联主键为HTTP请求标识。服务端可能已接受超时请求，但未返回响应，必须保留它们而非排除。</p></section>'
 
 
-def render(state, manifest=None, diagnostics=None, resources=None, models=None, analysis=None):
+def supplemental_section(supplement):
+    if not supplement:
+        return ''
+    overview = supplement.get('overview', {})
+    rows = ''.join('<tr>' + ''.join(f'<td>{esc(v)}</td>' for v in row) + '</tr>'
+                   for row in overview.get('rows', []))
+    headers = ''.join(f'<th>{esc(v)}</th>' for v in overview.get('headers', []))
+    return ('<section><h2>超长写入与 API 边界补测</h2><p>'
+            + esc(supplement.get('summary', '')) + '</p><p>'
+            + esc(supplement.get('method', '')) + '</p><div class="scroll"><table><tr>'
+            + headers + '</tr>' + rows + '</table></div><p class="warning">'
+            '这些是独立实例的补测，不与上方并发实验合并分母。正则CPU诊断不是HTTP实测；'
+            'MCP全文回读不是模型抽取完成。独立补测不能代替机器人端到端运行，'
+            '本报告不是完整 M1–M3 验收通过证明。</p></section>')
+
+
+def render(state, manifest=None, diagnostics=None, resources=None, models=None, analysis=None, supplement=None):
     scenes = state.get('scenes', [])
     manifest = manifest or {}
     seed = state.get('seed_quality', {})
@@ -231,12 +247,14 @@ def render(state, manifest=None, diagnostics=None, resources=None, models=None, 
     findings = ''
     if analysis:
         findings = '<section><h2>本轮定位结论</h2>'+''.join(f'<p><b>{esc(item["label"])}</b>：{esc(item["text"])}</p>' for item in analysis)+'<p><a href="run-analysis.json">结论与证据说明</a></p></section>'
-    return '<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>并发拓扑实测</title><style>'+css+'</style><body>'+header+findings+modules+table+'<section class="charts">'+charts+'</section>'+detail+evidence+'</body></html>'
+    return '<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>并发拓扑实测</title><style>'+css+'</style><body>'+header+findings+modules+table+'<section class="charts">'+charts+'</section>'+detail+supplemental_section(supplement)+evidence+'</body></html>'
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, required=True)
+    parser.add_argument('--boundary-supplement', type=Path,
+                        help='Persisted boundary report JSON; keep experiments and denominators separate')
     args = parser.parse_args()
     state = json.loads((args.root/'quick-matrix.json').read_text())
     from performance.targets.echomem.probes.concurrency_topology import _percentile
@@ -258,4 +276,5 @@ if __name__ == '__main__':
     models = json.loads(models_file.read_text()) if models_file.exists() else None
     analysis_file = args.root/'run-analysis.json'
     analysis = json.loads(analysis_file.read_text()) if analysis_file.exists() else None
-    (args.root/'report.html').write_text(render(state, manifest, diagnostics, resources, models, analysis))
+    supplement = json.loads(args.boundary_supplement.read_text()) if args.boundary_supplement else None
+    (args.root/'report.html').write_text(render(state, manifest, diagnostics, resources, models, analysis, supplement))
