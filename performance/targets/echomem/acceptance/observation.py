@@ -1180,6 +1180,20 @@ def evaluate_observation(suite: dict[str, Any], profile: dict[str, Any],
         {"category": "测试平台/部署", "evidence": profile.get("resource_evidence"),
          "note": "实际容器资源、发送池和原始产物完整性"},
     ]
+    supplemental_probes = {}
+    for key, check_name, artifact in (
+        ("concurrency_topology", "concurrency-topology", "concurrency-topology.json"),
+        ("payload_boundary", "payload-boundary", "payload-boundary.json"),
+    ):
+        payload = suite.get(key) or {}
+        if payload:
+            supplemental_probes[key] = {
+                "status": payload.get("status"),
+                "reason": next((row.get("reason") for row in payload.get("checks", [])
+                                if row.get("name") == check_name), None),
+                "artifact": artifact,
+                **_probe_detail(payload, check_name),
+            }
     return {"schema_version": 2,
             "metric_numbering": "capacity-fairness-priority-isolation-recovery-observability-v2",
             "assessment": "observation-only",
@@ -1195,6 +1209,7 @@ def evaluate_observation(suite: dict[str, Any], profile: dict[str, Any],
         "api_coverage": summarize_api_coverage(suite),
         "timing_evidence": summarize_timing_evidence(suite, m1_reports or []),
         "concurrency_configuration": summarize_concurrency_configuration(profile),
+        "supplemental_probes": supplemental_probes,
         "raw_suite": "suite.json"}
 
 
@@ -1728,6 +1743,72 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             ("below_requested_concurrency", "低于客户端目标")
         ]) + "</section>"
     )
+    supplemental = result.get("supplemental_probes") or {}
+    topology = supplemental.get("concurrency_topology") or {}
+    topology_rows = topology.get("matrix") if isinstance(topology.get("matrix"), list) else []
+    boundary = topology.get("first_boundary") or {}
+    payload = supplemental.get("payload_boundary") or {}
+    payload_rows = payload.get("cases") if isinstance(payload.get("cases"), list) else []
+    supplemental_section = ""
+    if topology or payload:
+        artifact_links = " · ".join(
+            f"<a href='{esc(probe.get('artifact'))}'>{esc(probe.get('artifact'))}</a>"
+            for probe in (topology, payload) if probe.get("artifact")
+        )
+        topology_visual = bars("并发拓扑 P95 / ms", [
+            (f"C{row.get('requested_concurrency')} {row.get('topology')}", row.get("p95_ms"))
+            for row in topology_rows
+        ]) if topology_rows else ""
+        topology_table = table(topology_rows, [
+            ("requested_concurrency", "并发档"), ("topology", "拓扑"),
+            ("actual_users", "实际用户"), ("requested_users", "计划用户"),
+            ("actual_sessions", "实际Session"),
+            ("generator_workers", "客户端工作线程"),
+            ("observed_inflight_peak", "实测峰值在途"),
+            ("offered", "总请求"), ("completed_2xx", "2xx"),
+            ("p95_ms", "P95 ms"), ("throughput_rps_2xx", "2xx吞吐/s"),
+            ("search_offered", "Search分母"),
+            ("search_quality_observed", "质量断言分母"),
+            ("search_recall_hits", "事实命中"),
+            ("search_quality_ok", "召回质量通过"),
+            ("search_quality_failures", "召回质量失败"),
+            ("search_degraded", "降级"),
+            ("commit_offered", "Commit"), ("commit_accepted", "Commit受理"),
+            ("commit_completed", "Commit完成"), ("commit_failed", "Commit失败"),
+            ("commit_timed_out", "Commit超时"), ("commit_missing_receipt", "Commit缺Receipt"),
+            ("operational_failures", "运行边界事件"),
+            ("search_strict_throughput_jain", "严格Search吞吐Jain"),
+            ("commit_completion_throughput_jain", "Commit完成吞吐Jain"),
+            ("http_counts", "HTTP/传输分布"), ("boundary_reasons", "边界原因"),
+        ], min_width_px=1800) if topology_rows else "<p>未执行并发拓扑探针。</p>"
+        payload_table = table(payload_rows, [
+            ("api", "API"), ("encoding", "编码"),
+            ("content_bytes", "内容字节"), ("wire_bytes", "Wire字节"),
+            ("http_status", "HTTP"), ("reason_code", "原因码"),
+            ("transport_error_type", "传输错误"), ("elapsed_ms", "耗时ms"),
+            ("accepted", "受理"),
+        ], min_width_px=1100) if payload_rows else "<p>未执行请求体边界探针。</p>"
+        supplemental_section = (
+            "<section><h2>并发拓扑与请求边界补充证据</h2>"
+            "<p class='purpose'>这是 M1-M3 的横向诊断数据，不替代六项指标。并发档位只有在实际用户、"
+            "实际在途和请求分母均实现时才算完整；HTTP 2xx 与真实召回质量分开统计。"
+            "Commit 同时展示受理和最终完成，不能把 202 当作完成。</p>"
+            f"<p><b>拓扑证据：</b>{esc(topology.get('status') or 'NOT_SELECTED')}；"
+            f"已测档位：{esc(topology.get('measured_levels'))}；"
+            f"边界状态：{esc(topology.get('boundary_status'))}；"
+            f"首个边界：C{esc(boundary.get('level'))} {esc(boundary.get('topology'))} "
+            f"{esc(boundary.get('reasons'))}。</p>"
+            + topology_visual + details("查看并发拓扑精确分母", topology_table)
+            + f"<p><b>请求边界证据：</b>{esc(payload.get('status') or 'NOT_SELECTED')}。"
+              "文本 JSON 与非法二进制分别展示；超长 Commit 的终态和 MCP add_memory 单列，"
+              "不从某个 HTTP 200 推定全部接口支持该尺寸。</p>"
+            + details("查看每个请求体用例", payload_table)
+            + details("查看超长 Commit 与 MCP", "<pre>" + esc(json.dumps({
+                "long_commit": payload.get("long_commit"),
+                "mcp_add_memory": payload.get("mcp_add_memory"),
+            }, ensure_ascii=False, indent=2)) + "</pre>")
+            + f"<p>原始证据：{artifact_links or '未记录路径'}</p></section>"
+        )
     path.parent.mkdir(parents=True, exist_ok=True)
     stage_notice = ""
     if result.get("pending_metrics"):
@@ -1738,5 +1819,5 @@ body{margin:0;color:#18242b;background:#f4f7f8;font:14px/1.6 system-ui;letter-sp
         f"<h1>{esc(title)}</h1><div class='lead'><b>本次所选指标结论：{esc(result['status'])}</b><p>这是观测报告，不是性能准入验收；没有 P95、准确率、Jain、吞吐或劣化比例 PASS/FAIL 门槛。错误、超时、空召回与 pending/failed Commit 均保留在分母。采样模式：{esc(result['sampling_mode'])}。</p>{scope_notice}</div><div class='cards'>{cards}</div>" +
         stage_notice + model_section + "<section><h2>准备阶段证据</h2><p>没有完成负载场景时不能给出性能结论。裸编号未命中不等于语义事实没有写入；需分别验证实际返回的记忆内容、路由和降级。</p>" + table([result.get("setup_evidence") or {}], [("seed_status", "种子状态"), ("seed_contract", "校验方式"), ("healthy_actors", "验证通过租户"), ("expected_actors", "验证租户总数"), ("validated_queries_per_tenant", "每租户预检问题数"), ("bare_marker_gate_failed", "裸编号前置校验失败"), ("load_cases_completed", "已有负载场景")]) + "</section>" +
         "<section><h2>EchoMem 模块改进建议</h2><p class='purpose'>建议只由本轮可见证据推导；无法从黑盒区分的阶段明确写为需补观测，不把端到端延迟武断归因给原子引擎。</p>" + recommendation_table + details("查看责任边界与技术证据", table(result.get("issue_categories", []), [("category", "类别"), ("note", "观测/下一步"), ("evidence", "证据")])) + "</section>" +
-        api_section + timing_section + concurrency_section + seed_source + seed_diagnosis + render_platform_provenance(result.get("platform_provenance")) +
+        api_section + timing_section + concurrency_section + supplemental_section + seed_source + seed_diagnosis + render_platform_provenance(result.get("platform_provenance")) +
         "".join(sections) + "<section><h2>原始产物</h2><p><a href='summary.json'>summary.json</a> · <a href='suite.json'>suite.json</a> · <a href='records.csv'>records.csv</a> · <a href='metrics_samples.csv'>metrics_samples.csv</a> · <a href='structured-stage-events.jsonl'>structured-stage-events.jsonl</a> · <a href='execution-manifest.json'>execution-manifest.json</a></p></section></main></body></html>", encoding="utf-8")

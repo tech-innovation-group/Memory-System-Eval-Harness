@@ -14,8 +14,12 @@ from pathlib import Path
 from typing import Any
 
 from performance.ctx import Ctx
+from performance.targets.echomem.acceptance.semantic_corpus import assess_retrieval
 from performance.targets.echomem.probes._client import (
-    EchoMemHTTP, extract_archive, load_tenant_specs, status_from,
+    EchoMemHTTP,
+    extract_archive,
+    load_tenant_specs,
+    status_from,
 )
 
 PASS = "PASS"
@@ -36,21 +40,87 @@ def _jain(values: list[float]) -> float | None:
     return round(sum(values) ** 2 / denominator, 6) if denominator else None
 
 
+def _capacity_levels(values: Any, maximum: int | None = None) -> list[int]:
+    configured = sorted({max(1, int(value)) for value in (values or [16, 32, 64, 128])})
+    limit = max(configured[-1], int(maximum or configured[-1]))
+    while configured[-1] < limit:
+        configured.append(min(limit, configured[-1] * 2))
+    return configured
+
+
+def _generator_workers(
+    level: int,
+    user_count: int,
+    per_session_concurrency: int,
+    sessions_per_user: int,
+) -> int:
+    return min(
+        level,
+        max(1, user_count * per_session_concurrency * sessions_per_user),
+    )
+
+
+class _InflightCounter:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._active = 0
+        self.peak = 0
+
+    def call(self, operation: Callable[[], Any]) -> Any:
+        with self._lock:
+            self._active += 1
+            self.peak = max(self.peak, self._active)
+        try:
+            return operation()
+        finally:
+            with self._lock:
+                self._active -= 1
+
+
 def _summary(rows: list[dict[str, Any]], elapsed_s: float) -> dict[str, Any]:
-    latencies = [float(row["elapsed_ms"]) for row in rows]
+    latencies = [float(row["elapsed_ms"]) for row in rows if row.get("elapsed_ms") is not None]
     codes = Counter(str(row.get("http_status") or "transport") for row in rows)
     per_tenant: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         per_tenant[str(row["tenant_id"])].append(row)
     rates = []
+    search_rates = []
+    commit_rates = []
     tenant_rows = []
     for tenant_id, samples in sorted(per_tenant.items()):
         completed = sum(row.get("http_status") is not None and 200 <= row["http_status"] < 300
                         for row in samples)
+        strict_search = sum(
+            row.get("operation") == "search" and bool(row.get("quality_ok"))
+            for row in samples
+        )
+        completed_commits = sum(
+            row.get("operation") == "commit" and row.get("terminal_state") == "completed"
+            for row in samples
+        )
         rates.append(completed / max(elapsed_s, 0.001))
+        search_rates.append(strict_search / max(elapsed_s, 0.001))
+        commit_rates.append(completed_commits / max(elapsed_s, 0.001))
         tenant_rows.append({"tenant_id": tenant_id, "offered": len(samples),
                             "completed_2xx": completed,
+                            "strict_search_completed": strict_search,
+                            "commit_completed": completed_commits,
                             "p95_ms": _percentile([row["elapsed_ms"] for row in samples], .95)})
+    searches = [row for row in rows if row.get("operation") == "search"]
+    commits = [row for row in rows if row.get("operation") == "commit"]
+    operational_failures = [
+        row for row in rows
+        if row.get("http_status") is None
+        or row.get("http_status") == 429
+        or int(row.get("http_status") or 0) >= 500
+        or row.get("reason_code") in {
+            "HTTP_INGRESS_SATURATED", "HTTP_LANE_SATURATED", "RETRIEVAL_BUSY",
+            "COMMIT_QUEUE_FULL", "TENANT_RATE_LIMITED",
+        }
+        or row.get("terminal_state") in {
+            "failed", "error", "timeout", "missing_archive", "message_rejected",
+        }
+    ]
     return {
         "offered": len(rows),
         "completed_2xx": sum(
@@ -61,106 +131,141 @@ def _summary(rows: list[dict[str, Any]], elapsed_s: float) -> dict[str, Any]:
         "throughput_rps_2xx": round(sum(rates), 3),
         "p50_ms": _percentile(latencies, .50), "p95_ms": _percentile(latencies, .95),
         "p99_ms": _percentile(latencies, .99), "tenant_throughput_jain": _jain(rates),
+        "search_strict_throughput_jain": _jain(search_rates) if searches else None,
+        "commit_completion_throughput_jain": _jain(commit_rates) if commits else None,
+        "actual_sessions": len({str(row.get("session_id")) for row in rows if row.get("session_id")}),
+        "search_offered": len(searches),
+        "search_2xx": sum(row.get("http_status") is not None
+                           and 200 <= row["http_status"] < 300 for row in searches),
+        "search_quality_observed": sum(bool(row.get("quality_observed")) for row in searches),
+        "search_quality_ok": sum(bool(row.get("quality_ok")) for row in searches),
+        "search_quality_failures": sum(
+            bool(row.get("quality_observed")) and not bool(row.get("quality_ok"))
+            for row in searches
+        ),
+        "search_recall_hits": sum(bool(row.get("recall_hit")) for row in searches),
+        "search_degraded": sum(bool(row.get("degraded")) for row in searches),
+        "commit_offered": len(commits),
+        "commit_accepted": sum(bool(row.get("accepted")) for row in commits),
+        "commit_completed": sum(row.get("terminal_state") == "completed" for row in commits),
+        "commit_failed": sum(row.get("terminal_state") in {"failed", "error"} for row in commits),
+        "commit_timed_out": sum(row.get("terminal_state") == "timeout" for row in commits),
+        "commit_missing_receipt": sum(
+            row.get("terminal_state") == "missing_archive" for row in commits
+        ),
+        "operational_failures": len(operational_failures),
+        "boundary_reasons": dict(Counter(
+            str(row.get("reason_code") or row.get("transport_error_type")
+                or row.get("terminal_state") or row.get("http_status"))
+            for row in operational_failures
+        )),
         "tenants": tenant_rows,
-        "latency_scope": "all attempts including transport failures",
-        "fairness_scope": "HTTP acceptance only; 202 is not commit completion",
     }
 
 
-def _run_calls(calls: list[Callable[[], dict[str, Any]]], workers: int) -> tuple[list[dict[str, Any]], float]:
+def _run_calls(
+    calls: list[Callable[[], dict[str, Any]]], workers: int,
+) -> tuple[list[dict[str, Any]], float]:
     started = time.perf_counter()
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         rows = list(pool.map(lambda call: call(), calls))
     return rows, time.perf_counter() - started
 
 
+def _session_call(operation: Callable[[], dict[str, Any]],
+                  gate: threading.Semaphore) -> dict[str, Any]:
+    with gate:
+        return operation()
+
+
 def _search_call(client: EchoMemHTTP, tenant_id: str, session_id: str,
-                 query: str, timeout_s: float, payload_class: str,
-                 lock: threading.Lock | None = None) -> Callable[[], dict[str, Any]]:
+                 sample: dict[str, Any] | str | None, timeout_s: float, payload_class: str,
+                 lock: threading.Lock | None = None,
+                 inflight: _InflightCounter | None = None) -> Callable[[], dict[str, Any]]:
     def call() -> dict[str, Any]:
+        query = sample.get("query") if isinstance(sample, dict) else str(
+            sample or "What is the stress marker?"
+        )
         if lock:
             lock.acquire()
         try:
-            result = client.search(session_id, query, timeout_s)
+            operation = lambda: client.search(session_id, query, timeout_s)
+            result = inflight.call(operation) if inflight else operation()
         finally:
             if lock:
                 lock.release()
-        return {"tenant_id": tenant_id, "operation": "search", "payload_class": payload_class,
+        quality = assess_retrieval(result.payload, sample) if isinstance(sample, dict) else None
+        return {"tenant_id": tenant_id, "session_id": session_id,
+                "operation": "search", "payload_class": payload_class,
                 "http_status": result.status_code, "elapsed_ms": round(result.elapsed_s * 1000, 3),
                 "reason_code": result.reason_code,
-                "transport_error_type": result.transport_error_type}
+                "transport_error_type": result.transport_error_type,
+                "quality_observed": quality is not None,
+                "quality_ok": bool(result.status_code == 200 and quality and quality["quality_ok"]),
+                "recall_hit": bool(quality and quality["matched_expected_fact"]),
+                "hit_count": quality.get("hit_count") if quality else None,
+                "degraded": quality.get("degraded") if quality else None}
     return call
 
 
 def _commit_call(client: EchoMemHTTP, tenant_id: str, session_id: str,
-                 content: str, lock: threading.Lock | None = None) -> Callable[[], dict[str, Any]]:
+                 content: str, poll_timeout_s: float,
+                 lock: threading.Lock | None = None,
+                 inflight: _InflightCounter | None = None) -> Callable[[], dict[str, Any]]:
     def call() -> dict[str, Any]:
         if lock:
             lock.acquire()
         started = time.perf_counter()
         try:
-            message = client.add_message(session_id, uuid.uuid4().hex, content)
-            result = (client.commit(session_id, idempotency_key=f"topology-{uuid.uuid4().hex}")
-                      if message.status_code is not None and 200 <= message.status_code < 300
-                      else message)
+            message_call = lambda: client.add_message(session_id, uuid.uuid4().hex, content)
+            message = inflight.call(message_call) if inflight else message_call()
+            if message.status_code is None or message.status_code >= 400:
+                return {
+                    "tenant_id": tenant_id, "session_id": session_id,
+                    "operation": "commit",
+                    "payload_class": "large", "http_status": message.status_code,
+                    "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
+                    "reason_code": message.reason_code,
+                    "transport_error_type": message.transport_error_type,
+                    "accepted": False, "archive_id_present": False,
+                    "terminal_state": "message_rejected", "poll_count": 0,
+                }
+            commit_call = lambda: client.commit(
+                session_id, idempotency_key=f"topology-{uuid.uuid4().hex}"
+            )
+            result = inflight.call(commit_call) if inflight else commit_call()
         finally:
             if lock:
                 lock.release()
         status = result.status_code if message.status_code is not None and message.status_code < 400 else message.status_code
-        return {"tenant_id": tenant_id, "operation": "commit", "payload_class": "large",
-                "session_id": session_id, "archive_id": extract_archive(result.payload),
+        archive_id = extract_archive(result.payload) if result.status_code in {200, 202} else ""
+        terminal_state = (
+            "missing_archive" if result.status_code in {200, 202} and not archive_id else ""
+        )
+        poll_count = 0
+        deadline = time.monotonic() + poll_timeout_s
+        while archive_id and time.monotonic() < deadline:
+            poll_call = lambda: client.commit_status(session_id, archive_id)
+            observed = inflight.call(poll_call) if inflight else poll_call()
+            poll_count += 1
+            terminal_state = status_from(observed.payload)
+            if terminal_state in {"complete", "completed", "succeeded", "success"}:
+                terminal_state = "completed"
+                break
+            if terminal_state in {"failed", "error"}:
+                break
+            time.sleep(0.5)
+        if archive_id and terminal_state not in {"completed", "failed", "error"}:
+            terminal_state = "timeout"
+        return {"tenant_id": tenant_id, "session_id": session_id,
+                "operation": "commit", "payload_class": "large",
                 "http_status": status, "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
                 "reason_code": result.reason_code or message.reason_code,
-                "transport_error_type": result.transport_error_type or message.transport_error_type}
+                "transport_error_type": result.transport_error_type or message.transport_error_type,
+                "accepted": result.status_code in {200, 202},
+                "archive_id_present": bool(archive_id), "terminal_state": terminal_state,
+                "poll_count": poll_count}
     return call
-
-
-def _drain(rows: list[dict[str, Any]], clients: dict[str, EchoMemHTTP],
-           timeout_s: float) -> dict[str, Any]:
-    accepted = [row for row in rows if row.get("operation") == "commit"
-                and row.get("http_status") == 202]
-    pending = list(accepted)
-    started = time.monotonic()
-    deadline = time.monotonic() + timeout_s
-    counts: Counter[str] = Counter()
-    per_tenant = {row["tenant_id"]: {"accepted": 0, "completed": 0, "failed": 0}
-                  for row in accepted if "tenant_id" in row}
-    for row in accepted:
-        if "tenant_id" in row:
-            per_tenant[row["tenant_id"]]["accepted"] += 1
-    while pending and time.monotonic() < deadline:
-        for row in list(pending):
-            if time.monotonic() >= deadline:
-                break
-            if not row.get("archive_id"):
-                continue
-            response = clients[row["tenant_id"]].commit_status(row["session_id"], row["archive_id"])
-            state = status_from(response.payload)
-            if response.status_code == 200 and state in {"completed", "done", "success", "failed", "error"}:
-                terminal = "completed" if state in {"completed", "done", "success"} else "failed"
-                counts[terminal] += 1
-                per_tenant[row["tenant_id"]][terminal] += 1
-                row["terminal_state"] = state
-                pending.remove(row)
-        if pending:
-            time.sleep(.5)
-    return {"accepted_202": len(accepted), "completed": counts["completed"],
-            "failed": counts["failed"], "pending": len(pending),
-            "drained": not pending, "timeout_s": timeout_s,
-            "elapsed_s": round(time.monotonic() - started, 3), "tenants": per_tenant}
-
-
-def _bounded_call(call: Callable[[], dict[str, Any]], gate: threading.Semaphore,
-                  state: dict[str, int], mutex: threading.Lock) -> dict[str, Any]:
-    with gate:
-        with mutex:
-            state["active"] += 1
-            state["peak"] = max(state["peak"], state["active"])
-        try:
-            return call()
-        finally:
-            with mutex:
-                state["active"] -= 1
 
 
 def run(ctx: Ctx) -> None:
@@ -175,14 +280,18 @@ def run(ctx: Ctx) -> None:
         ctx.check("concurrency-topology", status=INCONCLUSIVE, reason="no tenants")
         return
 
-    levels = sorted({max(1, int(value)) for value in params.get("levels", [16, 32, 64, 128])})
-    if any(level > 128 for level in levels):
-        raise ValueError("levels above 128 require an explicit larger test plan")
+    levels = _capacity_levels(
+        params.get("levels"),
+        int(params["max_concurrency"]) if params.get("max_concurrency") else None,
+    )
     sessions_per_user = max(2, int(params.get("sessions_per_user", 2)))
     requests_per_level = max(1, int(params.get("requests_per_level", 128)))
     within_session_concurrency = max(2, int(params.get("within_session_concurrency", 4)))
     timeout_s = max(1.0, float(params.get("timeout_s", 60)))
-    small_query = str(params.get("small_query") or "What is the stress marker?")
+    poll_timeout_s = max(1.0, float(params.get("commit_poll_timeout_s", params.get("drain_timeout_s", 300))))
+    stop_after_boundary = bool(params.get("stop_after_boundary", True))
+    require_quality = bool(params.get("require_recall_quality", True))
+    queries = params.get("queries") if isinstance(params.get("queries"), dict) else {}
     large_chars = max(1, int(params.get("large_commit_chars", 65536)))
     fact = "My project review is on September 18 at 10 AM in meeting room Cedar. "
     large_query = str(params.get("large_query") or (fact * (large_chars // len(fact) + 1))[:large_chars])
@@ -201,7 +310,11 @@ def run(ctx: Ctx) -> None:
         multi_sessions.append(sessions)
 
     matrix = []
+    backlog_unresolved = False
+    measured_levels = []
+    first_boundary: dict[str, Any] | None = None
     for level in levels:
+        level_boundary = False
         topologies = (
             ("many-users-one-session-serial", level, 1, False),
             ("many-users-many-sessions-serial", math.ceil(level / sessions_per_user), 1, True),
@@ -211,18 +324,11 @@ def run(ctx: Ctx) -> None:
         )
         for topology, required_users, per_session, use_multi in topologies:
             user_count = min(required_users, len(tenants))
-            if user_count != required_users:
-                matrix.append({"level": level, "topology": topology,
-                               "requested_users": required_users, "actual_users": user_count,
-                               "fully_realized": False, "status": INCONCLUSIVE,
-                               "offered": requests_per_level, "sent": 0,
-                               "reason": "insufficient independent tenant credentials"})
-                continue
             calls = []
+            inflight = _InflightCounter()
             gates: dict[str, threading.Semaphore] = {}
-            state = {"active": 0, "peak": 0}
-            mutex = threading.Lock()
-            for index in range(requests_per_level):
+            offered_requests = max(requests_per_level, level)
+            for index in range(offered_requests):
                 actor = index % user_count
                 session = (multi_sessions[actor][(index // user_count) % sessions_per_user]
                            if use_multi else single_sessions[actor])
@@ -231,43 +337,68 @@ def run(ctx: Ctx) -> None:
                 gate = gates.setdefault(session, threading.Semaphore(per_session))
                 if is_large:
                     operation = _commit_call(clients[actor], tenants[actor].tenant_id,
-                                              session, large_query)
+                                              session, large_query, poll_timeout_s,
+                                              None, inflight)
                 else:
                     operation = _search_call(clients[actor], tenants[actor].tenant_id,
-                                              session, small_query, timeout_s, "small")
-                calls.append(lambda operation=operation, gate=gate:
-                             _bounded_call(operation, gate, state, mutex))
-            effective_workers = min(level, user_count * per_session * (sessions_per_user if use_multi else 1))
+                                              session, queries.get(tenants[actor].tenant_id),
+                                              timeout_s, "small", None, inflight)
+                calls.append(lambda operation=operation, gate=gate: _session_call(operation, gate))
+            session_width = sessions_per_user if use_multi else 1
+            effective_workers = _generator_workers(
+                level, user_count, per_session, session_width,
+            )
             rows, elapsed = _run_calls(calls, effective_workers)
             summary = _summary(rows, elapsed)
-            drain = _drain(rows, {t.tenant_id: c for t, c in zip(tenants, clients)},
-                           float(params.get("drain_timeout_s", 300)))
-            matrix.append({"level": level, "topology": topology,
+            row = {"level": level, "topology": topology,
                            "requested_concurrency": level,
                            "requested_users": required_users, "actual_users": user_count,
                            "sessions_per_user": sessions_per_user if use_multi else 1,
                            "per_session_concurrency": per_session,
-                           "configured_workers": effective_workers,
-                           "peak_active_operations": state["peak"],
-                           "fully_realized": state["peak"] == level,
-                           "drain": drain,
+                           "generator_workers": effective_workers,
+                           "observed_inflight_peak": inflight.peak,
+                           "peak_active_operations": inflight.peak,
+                           "samples": rows,
                            "operations": {op: _summary([r for r in rows if r["operation"] == op], elapsed)
                                           for op in {r["operation"] for r in rows}},
-                           "samples": rows,
-                           **summary})
-            if not drain["drained"]:
-                ctx.check("concurrency-topology", status=INCONCLUSIVE,
-                          reason="previous-case-commit-backlog-unresolved; later cases not run",
-                          detail=json.dumps({"matrix": matrix, "levels": levels,
-                                             "available_tenants": len(tenants)}, ensure_ascii=False))
-                return
+                           "drain": {"completed": summary["commit_completed"],
+                                     "failed": summary["commit_failed"],
+                                     "pending": summary["commit_timed_out"] + summary["commit_missing_receipt"]},
+                           "fully_realized": (
+                               effective_workers == level
+                               and user_count == required_users
+                               and inflight.peak >= level
+                           ),
+                           **summary}
+            matrix.append(row)
+            if summary["commit_timed_out"] or summary["commit_missing_receipt"]:
+                backlog_unresolved = True
+            if summary["operational_failures"]:
+                level_boundary = True
+                first_boundary = first_boundary or {
+                    "level": level, "topology": topology,
+                    "reasons": summary["boundary_reasons"],
+                }
+            if backlog_unresolved:
+                break
+        measured_levels.append(level)
+        if backlog_unresolved or (level_boundary and stop_after_boundary):
+            break
 
     incomplete = sum(not row["fully_realized"] for row in matrix)
+    quality_missing = sum(
+        row["search_offered"] - row["search_quality_observed"] for row in matrix
+    )
+    evidence_complete = not backlog_unresolved and incomplete == 0 and (not require_quality or quality_missing == 0)
     ctx.check(
         "concurrency-topology",
-        status=INCONCLUSIVE if incomplete else PASS,
+        status=PASS if evidence_complete else INCONCLUSIVE,
         reason=(f"measured {len(matrix)} topology/level cases through real HTTP; "
-                f"{incomplete} cases did not realize requested concurrency"),
-        detail=json.dumps({"levels": levels, "available_tenants": len(tenants),
-                           "matrix": matrix}, ensure_ascii=False),
+                f"incomplete topology cases={incomplete}; missing recall-quality samples={quality_missing}; "
+                f"boundary={first_boundary or 'not observed within configured maximum'}"),
+        detail=json.dumps({"planned_levels": levels, "measured_levels": measured_levels,
+                           "stop_reason": "previous-case-commit-backlog-unresolved" if backlog_unresolved else None,
+                           "available_tenants": len(tenants),
+                           "boundary_status": "observed" if first_boundary else "not_observed_within_cap",
+                           "first_boundary": first_boundary, "matrix": matrix}, ensure_ascii=False),
     )
