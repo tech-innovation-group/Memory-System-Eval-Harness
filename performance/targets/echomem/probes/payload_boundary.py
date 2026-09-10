@@ -66,7 +66,7 @@ def _mcp_add_memory(params: dict[str, Any], tenant: Any, content: str) -> dict[s
         result = client.call_tool(
             str(params.get("mcp_add_memory_tool") or "add_memory"), arguments
         )
-        return {"status": "PASS", "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
+        return {"status": "PASS" if result else "INCONCLUSIVE", "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
                 "result_nonempty": bool(result)}
     except Exception as exc:  # noqa: BLE001 - MCP failures are classified, never hidden.
         return {"status": "FAIL", "error_type": type(exc).__name__}
@@ -95,6 +95,7 @@ def run(ctx: Ctx) -> None:
     rows: list[dict[str, Any]] = []
 
     for size in sizes:
+        session_id, _ = client.open_session(tenant.tenant_id, f"payload-{size}")
         content = "x" * size
         message_body = {"role": "user", "content": content,
                         "metadata": {"stress_message_id": f"size-{size}"}}
@@ -116,6 +117,15 @@ def run(ctx: Ctx) -> None:
         rows.append({"api": "search", "encoding": "text", "content_bytes": size,
                      "wire_bytes": len(search_raw), **_safe_result(search)})
 
+        # Commit is a control API, not a text-storage API. Test raw textual
+        # bodies separately from the valid long-message -> Commit sequence.
+        commit_text = client.request_bytes(
+            "POST", f"/api/sessions/{session_id}/commit", content.encode("utf-8"),
+            content_type="text/plain", timeout_s=timeout_s,
+        )
+        rows.append({"api": "commit", "encoding": "text/plain", "content_bytes": size,
+                     "wire_bytes": size, **_safe_result(commit_text)})
+
         for api, path in (
             ("message", f"/api/sessions/{session_id}/messages"),
             ("commit", f"/api/sessions/{session_id}/commit"),
@@ -133,6 +143,7 @@ def run(ctx: Ctx) -> None:
     commit_session, _ = client.open_session(tenant.tenant_id, "oversized-commit")
     add_results = []
     remaining = commit_chars
+    accepted_chars = 0
     while remaining > 0:
         chunk = "c" * min(chunk_chars, remaining)
         response = client.add_message(commit_session, uuid.uuid4().hex, chunk)
@@ -140,12 +151,15 @@ def run(ctx: Ctx) -> None:
         remaining -= len(chunk)
         if response.status_code is None or response.status_code >= 400:
             break
+        accepted_chars += len(chunk)
     commit = client.commit(commit_session, idempotency_key=f"stress-{uuid.uuid4().hex}")
     archive_id = extract_archive(commit.payload)
     terminal = _poll_commit(client, commit_session, archive_id,
                             float(params.get("commit_timeout_s", 600))) if archive_id else {}
     long_commit = {
         "requested_chars": commit_chars,
+        "accepted_chars": accepted_chars,
+        "all_content_accepted": accepted_chars == commit_chars,
         "chunks_attempted": len(add_results),
         "chunks_accepted": sum(bool(row["accepted"]) for row in add_results),
         "submit": _safe_result(commit),
@@ -167,10 +181,11 @@ def run(ctx: Ctx) -> None:
         row["encoding"] == "binary" and row["content_bytes"] > 0 and row["accepted"]
         for row in rows
     )
-    commit_completed = terminal.get("state") in {"completed", "done", "success"}
+    commit_completed = (accepted_chars == commit_chars and
+                        terminal.get("state") in {"completed", "done", "success"})
     if binary_accepted or mcp["status"] == "FAIL":
         status = FAIL
-    elif transport_failures or mcp["status"] == "BLOCKED" or not commit_completed:
+    elif transport_failures or mcp["status"] != "PASS" or not commit_completed:
         status = INCONCLUSIVE
     else:
         status = PASS

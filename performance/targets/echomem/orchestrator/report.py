@@ -47,7 +47,7 @@ def _probe_visual(key: str, payload: dict[str, Any]) -> str:
     if key == "concurrency_topology":
         matrix = detail.get("matrix") if isinstance(detail.get("matrix"), list) else []
         rows = []
-        maximum = max((float(row.get("p95_ms") or 0) for row in matrix), default=1.0)
+        maximum = max(1.0, max((float(row.get("p95_ms") or 0) for row in matrix), default=1.0))
         for row in matrix:
             width = min(100.0, 100.0 * float(row.get("p95_ms") or 0) / maximum)
             rows.append(
@@ -55,17 +55,19 @@ def _probe_visual(key: str, payload: dict[str, Any]) -> str:
                 f"<td>{html.escape(str(row.get('requested_concurrency') or row.get('level')))}</td>"
                 f"<td>{html.escape(str(row.get('topology')))}</td>"
                 f"<td>{html.escape(str(row.get('actual_users')))} / {html.escape(str(row.get('requested_users')))}</td>"
+                f"<td>{html.escape(str(row.get('peak_active_operations', '-')))}</td>"
                 f"<td>{html.escape(str(row.get('completed_2xx')))} / {html.escape(str(row.get('offered')))}</td>"
                 f"<td><div class='bar' style='width:{width:.1f}%'></div>{html.escape(str(row.get('p95_ms')))} ms</td>"
                 f"<td>{html.escape(str(row.get('throughput_rps_2xx')))}</td>"
                 f"<td>{html.escape(str(row.get('tenant_throughput_jain')))}</td>"
                 f"<td><code>{html.escape(json.dumps(row.get('http_counts') or {}, ensure_ascii=False))}</code></td>"
+                f"<td><code>{html.escape(json.dumps(row.get('drain') or {'reason': row.get('reason')}, ensure_ascii=False))}</code></td>"
                 "</tr>"
             )
         if rows:
             return ("<table><thead><tr><th>并发档</th><th>拓扑</th><th>实际/请求用户</th>"
-                    "<th>2xx/总请求</th><th>Search/操作 P95</th><th>2xx吞吐</th>"
-                    "<th>租户吞吐 Jain</th><th>HTTP/传输分布</th></tr></thead><tbody>"
+                    "<th>峰值在途操作</th><th>2xx/总请求</th><th>操作 P95（含超时）</th><th>2xx受理吞吐</th>"
+                    "<th>受理 Jain（非完成公平性）</th><th>HTTP/传输分布</th><th>Commit 排空</th></tr></thead><tbody>"
                     + "".join(rows) + "</tbody></table>")
     if key == "payload_boundary":
         cases = detail.get("cases") if isinstance(detail.get("cases"), list) else []

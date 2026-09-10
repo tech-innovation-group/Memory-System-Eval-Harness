@@ -24,7 +24,50 @@ def test_concurrency_summary_keeps_full_denominator_and_errors() -> None:
     assert result["offered"] == 3
     assert result["completed_2xx"] == 1
     assert result["http_counts"] == {"200": 1, "429": 1, "transport": 1}
-    assert result["p95_ms"] == 20.0
+    assert result["p95_ms"] == 30.0
+
+
+def test_generated_config_preserves_engines_and_respects_share_constraints():
+    from performance.targets.echomem.prepare_concurrency_configs import configure
+    source = {"model": {"embedding": {"model": "qwen3.7-text-embedding-flash"}},
+              "engine": {"enabled": ["atomic_engine"]},
+              "scheduling": {"commit": {"executor_workers": 5, "gate_workers": 3}}}
+    for level in (16, 32, 64, 128):
+        config = configure(source, level)
+        scheduling = config["scheduling"]
+        assert scheduling["http"]["max_workers"] >= 4 * scheduling["retrieval"]["admission_permits"]
+        assert scheduling["fanout"]["executor_workers"] > scheduling["fanout"]["engine_max_inflight"]
+        assert scheduling["commit"]["executor_workers"] == 5
+        assert config["engine"] == source["engine"]
+        assert config["recall"]["max_inflight"] == level
+    assert "recall" not in source
+
+
+def test_session_gate_caps_actual_parallel_calls():
+    import threading
+    import time
+    from performance.targets.echomem.probes.concurrency_topology import _bounded_call, _run_calls
+    gate = threading.Semaphore(2)
+    mutex = threading.Lock()
+    state = {"active": 0, "peak": 0}
+
+    def operation():
+        time.sleep(.02)
+        return {"ok": True}
+
+    rows, _ = _run_calls([lambda: _bounded_call(operation, gate, state, mutex)] * 16, 16)
+    assert len(rows) == 16
+    assert state["peak"] == 2
+    assert state["active"] == 0
+
+
+def test_drain_does_not_treat_missing_archive_as_completed():
+    from performance.targets.echomem.probes.concurrency_topology import _drain
+    result = _drain([{"operation": "commit", "http_status": 202}], {}, 0)
+    assert result["accepted_202"] == 1
+    assert result["pending"] == 1
+    assert result["completed"] == 0
+    assert not result["drained"]
 
 
 def test_fairness_and_percentile_are_deterministic() -> None:

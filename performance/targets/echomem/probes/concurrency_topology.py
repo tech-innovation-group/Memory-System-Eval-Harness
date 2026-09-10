@@ -14,7 +14,9 @@ from pathlib import Path
 from typing import Any
 
 from performance.ctx import Ctx
-from performance.targets.echomem.probes._client import EchoMemHTTP, load_tenant_specs
+from performance.targets.echomem.probes._client import (
+    EchoMemHTTP, extract_archive, load_tenant_specs, status_from,
+)
 
 PASS = "PASS"
 INCONCLUSIVE = "INCONCLUSIVE"
@@ -35,7 +37,7 @@ def _jain(values: list[float]) -> float | None:
 
 
 def _summary(rows: list[dict[str, Any]], elapsed_s: float) -> dict[str, Any]:
-    latencies = [float(row["elapsed_ms"]) for row in rows if row.get("http_status") is not None]
+    latencies = [float(row["elapsed_ms"]) for row in rows]
     codes = Counter(str(row.get("http_status") or "transport") for row in rows)
     per_tenant: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
@@ -60,6 +62,8 @@ def _summary(rows: list[dict[str, Any]], elapsed_s: float) -> dict[str, Any]:
         "p50_ms": _percentile(latencies, .50), "p95_ms": _percentile(latencies, .95),
         "p99_ms": _percentile(latencies, .99), "tenant_throughput_jain": _jain(rates),
         "tenants": tenant_rows,
+        "latency_scope": "all attempts including transport failures",
+        "fairness_scope": "HTTP acceptance only; 202 is not commit completion",
     }
 
 
@@ -96,16 +100,67 @@ def _commit_call(client: EchoMemHTTP, tenant_id: str, session_id: str,
         started = time.perf_counter()
         try:
             message = client.add_message(session_id, uuid.uuid4().hex, content)
-            result = client.commit(session_id, idempotency_key=f"topology-{uuid.uuid4().hex}")
+            result = (client.commit(session_id, idempotency_key=f"topology-{uuid.uuid4().hex}")
+                      if message.status_code is not None and 200 <= message.status_code < 300
+                      else message)
         finally:
             if lock:
                 lock.release()
         status = result.status_code if message.status_code is not None and message.status_code < 400 else message.status_code
         return {"tenant_id": tenant_id, "operation": "commit", "payload_class": "large",
+                "session_id": session_id, "archive_id": extract_archive(result.payload),
                 "http_status": status, "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
                 "reason_code": result.reason_code or message.reason_code,
                 "transport_error_type": result.transport_error_type or message.transport_error_type}
     return call
+
+
+def _drain(rows: list[dict[str, Any]], clients: dict[str, EchoMemHTTP],
+           timeout_s: float) -> dict[str, Any]:
+    accepted = [row for row in rows if row.get("operation") == "commit"
+                and row.get("http_status") == 202]
+    pending = list(accepted)
+    started = time.monotonic()
+    deadline = time.monotonic() + timeout_s
+    counts: Counter[str] = Counter()
+    per_tenant = {row["tenant_id"]: {"accepted": 0, "completed": 0, "failed": 0}
+                  for row in accepted if "tenant_id" in row}
+    for row in accepted:
+        if "tenant_id" in row:
+            per_tenant[row["tenant_id"]]["accepted"] += 1
+    while pending and time.monotonic() < deadline:
+        for row in list(pending):
+            if time.monotonic() >= deadline:
+                break
+            if not row.get("archive_id"):
+                continue
+            response = clients[row["tenant_id"]].commit_status(row["session_id"], row["archive_id"])
+            state = status_from(response.payload)
+            if response.status_code == 200 and state in {"completed", "done", "success", "failed", "error"}:
+                terminal = "completed" if state in {"completed", "done", "success"} else "failed"
+                counts[terminal] += 1
+                per_tenant[row["tenant_id"]][terminal] += 1
+                row["terminal_state"] = state
+                pending.remove(row)
+        if pending:
+            time.sleep(.5)
+    return {"accepted_202": len(accepted), "completed": counts["completed"],
+            "failed": counts["failed"], "pending": len(pending),
+            "drained": not pending, "timeout_s": timeout_s,
+            "elapsed_s": round(time.monotonic() - started, 3), "tenants": per_tenant}
+
+
+def _bounded_call(call: Callable[[], dict[str, Any]], gate: threading.Semaphore,
+                  state: dict[str, int], mutex: threading.Lock) -> dict[str, Any]:
+    with gate:
+        with mutex:
+            state["active"] += 1
+            state["peak"] = max(state["peak"], state["active"])
+        try:
+            return call()
+        finally:
+            with mutex:
+                state["active"] -= 1
 
 
 def run(ctx: Ctx) -> None:
@@ -121,14 +176,16 @@ def run(ctx: Ctx) -> None:
         return
 
     levels = sorted({max(1, int(value)) for value in params.get("levels", [16, 32, 64, 128])})
-    max_level = min(128, max(levels))
-    levels = [value for value in levels if value <= max_level]
+    if any(level > 128 for level in levels):
+        raise ValueError("levels above 128 require an explicit larger test plan")
     sessions_per_user = max(2, int(params.get("sessions_per_user", 2)))
     requests_per_level = max(1, int(params.get("requests_per_level", 128)))
     within_session_concurrency = max(2, int(params.get("within_session_concurrency", 4)))
     timeout_s = max(1.0, float(params.get("timeout_s", 60)))
     small_query = str(params.get("small_query") or "What is the stress marker?")
-    large_query = str(params.get("large_query") or (small_query + " " + "context " * 2048))
+    large_chars = max(1, int(params.get("large_commit_chars", 65536)))
+    fact = "My project review is on September 18 at 10 AM in meeting room Cedar. "
+    large_query = str(params.get("large_query") or (fact * (large_chars // len(fact) + 1))[:large_chars])
     clients = [EchoMemHTTP(ctx.base_url, tenant.auth_key, timeout_s=timeout_s,
                            tenant_id=tenant.tenant_id, user_id=tenant.user_id,
                            account_id=tenant.account_id, agent_id=tenant.agent_id,
@@ -144,7 +201,6 @@ def run(ctx: Ctx) -> None:
         multi_sessions.append(sessions)
 
     matrix = []
-    session_locks: dict[str, threading.Lock] = defaultdict(threading.Lock)
     for level in levels:
         topologies = (
             ("many-users-one-session-serial", level, 1, False),
@@ -155,37 +211,63 @@ def run(ctx: Ctx) -> None:
         )
         for topology, required_users, per_session, use_multi in topologies:
             user_count = min(required_users, len(tenants))
+            if user_count != required_users:
+                matrix.append({"level": level, "topology": topology,
+                               "requested_users": required_users, "actual_users": user_count,
+                               "fully_realized": False, "status": INCONCLUSIVE,
+                               "offered": requests_per_level, "sent": 0,
+                               "reason": "insufficient independent tenant credentials"})
+                continue
             calls = []
+            gates: dict[str, threading.Semaphore] = {}
+            state = {"active": 0, "peak": 0}
+            mutex = threading.Lock()
             for index in range(requests_per_level):
                 actor = index % user_count
                 session = (multi_sessions[actor][(index // user_count) % sessions_per_user]
                            if use_multi else single_sessions[actor])
                 heterogeneous = topology == "heterogeneous-users"
                 is_large = bool(heterogeneous and actor % 2)
-                lock = session_locks[session] if per_session == 1 else None
+                gate = gates.setdefault(session, threading.Semaphore(per_session))
                 if is_large:
-                    calls.append(_commit_call(clients[actor], tenants[actor].tenant_id,
-                                              session, large_query, lock))
+                    operation = _commit_call(clients[actor], tenants[actor].tenant_id,
+                                              session, large_query)
                 else:
-                    calls.append(_search_call(clients[actor], tenants[actor].tenant_id,
-                                              session, small_query, timeout_s, "small", lock))
-            effective_workers = min(level, max(1, user_count * per_session))
+                    operation = _search_call(clients[actor], tenants[actor].tenant_id,
+                                              session, small_query, timeout_s, "small")
+                calls.append(lambda operation=operation, gate=gate:
+                             _bounded_call(operation, gate, state, mutex))
+            effective_workers = min(level, user_count * per_session * (sessions_per_user if use_multi else 1))
             rows, elapsed = _run_calls(calls, effective_workers)
             summary = _summary(rows, elapsed)
+            drain = _drain(rows, {t.tenant_id: c for t, c in zip(tenants, clients)},
+                           float(params.get("drain_timeout_s", 300)))
             matrix.append({"level": level, "topology": topology,
                            "requested_concurrency": level,
                            "requested_users": required_users, "actual_users": user_count,
                            "sessions_per_user": sessions_per_user if use_multi else 1,
                            "per_session_concurrency": per_session,
-                           "fully_realized": effective_workers == level and user_count == required_users,
+                           "configured_workers": effective_workers,
+                           "peak_active_operations": state["peak"],
+                           "fully_realized": state["peak"] == level,
+                           "drain": drain,
+                           "operations": {op: _summary([r for r in rows if r["operation"] == op], elapsed)
+                                          for op in {r["operation"] for r in rows}},
+                           "samples": rows,
                            **summary})
+            if not drain["drained"]:
+                ctx.check("concurrency-topology", status=INCONCLUSIVE,
+                          reason="previous-case-commit-backlog-unresolved; later cases not run",
+                          detail=json.dumps({"matrix": matrix, "levels": levels,
+                                             "available_tenants": len(tenants)}, ensure_ascii=False))
+                return
 
     incomplete = sum(not row["fully_realized"] for row in matrix)
     ctx.check(
         "concurrency-topology",
         status=INCONCLUSIVE if incomplete else PASS,
         reason=(f"measured {len(matrix)} topology/level cases through real HTTP; "
-                f"{incomplete} cases lacked enough independent tenant credentials"),
+                f"{incomplete} cases did not realize requested concurrency"),
         detail=json.dumps({"levels": levels, "available_tenants": len(tenants),
                            "matrix": matrix}, ensure_ascii=False),
     )
