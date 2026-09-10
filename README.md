@@ -17,6 +17,10 @@ PR449 合入前使用已同步最新 `develop` 的 PR449，并在发压前校验
 `python -m performance --target echomem --six-metrics` 保留为历史 SLO
 验收入口，不要用于本轮观测结论。
 
+当前六项运行的唯一主报告是 `<OUTPUT_DIR>/report.html`。如果结果目录只有
+`objective-suite.html`，说明执行了下文保留的旧 O1-O7 编排器；不要解释该文件，
+应改用 `observation_run` 或 `performance/targets/echomem/run_six_metrics.sh` 重新运行。
+
 ## 设计目标
 
 ### 1. 支撑业界所有 agent 的评测
@@ -406,7 +410,12 @@ EchoAgent 完整管线，含 prefill / TTFT）；指定则进入 `replay` 模式
 再用 `replay` 把同一份数据集对 `echomem` / `openviking` 各回放一遍，最后生成
 自包含 HTML 图表报告。一键流程见 `START_BAT/compare_echomem_vs_openviking.bat`。
 
-## 性能压测
+## 性能压测（Legacy O1-O7，仅作历史兼容）
+
+> **不要用本节命令执行当前 M1-M6 观测压测。** 本节记录旧场景引擎和旧
+> `performance.run --target echomem` 编排器，因此主产物是
+> `objective-suite.html`。当前 M1-M6 请回到文首链接的本机手册，最终产物必须是
+> `<OUTPUT_DIR>/report.html`。
 
 对运行中的 EchoMem 服务做多租户高并发**读写性能**压测（不需要 LLM）：检索
 吞吐/延迟、注入四段延迟（open / add / commit 提交 / commit 完成）、读写混合与
@@ -451,7 +460,7 @@ commit 成功保证）· `C` 读写混合（多档 read:write）· `D` 注入洪
 正式验收不直接调用场景引擎，而是通过编排器（`echomem-acceptance`）统一
 执行：按机器规格 profile 组织场景矩阵、灌种、跑探针并汇总 O1-O7。
 
-### 正式验收编排器（echomem-acceptance）
+### 旧版正式验收编排器（echomem-acceptance）
 
 正式验收按机器规格逐个执行容量、稳定性、公平性、Search 优先级、Commit 恢复
 和 `/metrics` 可观测性检查，对每轮套件汇总七项目标 `O1-O7`（DAU/热租户容量、
@@ -757,7 +766,7 @@ find "$STRESS_OUTPUT_DIR" -name summary.json -type f | sort
 为 `completed`；`4U8G/acceptance.json` 中的 `PASS`、`FAIL`、`INCONCLUSIVE`
 要逐项查看，不能只看总准确率或退出码。
 
-### 七项目标统一自动化入口
+### 旧版七项目标统一自动化入口
 
 按实例规格逐个执行容量、稳定性、公平性、Search 优先级、Commit 恢复和
 `/metrics` 可观测性检查、汇总 O1-O7 的入口就是上面的编排器

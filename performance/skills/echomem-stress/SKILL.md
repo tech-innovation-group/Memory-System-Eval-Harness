@@ -38,6 +38,11 @@ Run the repository's real HTTP six-metric suite as a guided product flow. Read
   `mock=false`, HTTP 200, or a configured model name is never call evidence. A
   report may claim workload model usage only when bounded service-stage logs or
   Provider metrics contain real samples; otherwise mark it unverified.
+- Use only `performance.targets.echomem.observation_run` or
+  `performance/targets/echomem/run_six_metrics.sh` for the current M1-M6 flow.
+  `performance.run --target echomem` is the legacy O1-O7 flow. If an output has
+  `objective-suite.html` but no `report.html`, stop and report `WRONG_ENTRYPOINT`;
+  never present that legacy report as the current six-metric result.
 
 ## Interactive flow
 
@@ -61,6 +66,9 @@ Run the repository's real HTTP six-metric suite as a guided product flow. Read
 6. On completion, inspect `execution-manifest.json`, `summary.json`, `suite.json`,
    and `report.html`. Open the HTML report and summarize every selected metric's
    status, denominator, primary number, and responsible module.
+   Before interpreting results, verify `<OUTPUT>/report.html` exists. The mere
+   presence of `objective-suite.html` proves the legacy report renderer ran, not
+   that the current M1-M6 report was generated.
 
 ## Product conversation
 

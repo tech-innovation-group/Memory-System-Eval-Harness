@@ -108,6 +108,16 @@ performance/targets/echomem/run_six_metrics.sh quick \
 Quick results are `PARTIAL` by design. They must never be reported as a capacity
 boundary or formal acceptance result.
 
+After the command exits, verify the report contract:
+
+```bash
+test -f "OUTPUT/report.html"
+```
+
+If only `OUTPUT/objective-suite.html` exists, the operator ran the legacy O1-O7
+entry point. Classify this as `WRONG_ENTRYPOINT` and rerun with the commands in
+section 5; do not reinterpret or rename the legacy report.
+
 ## 4. Six metric test cases
 
 ### M1: Capacity, hot users, and DAU

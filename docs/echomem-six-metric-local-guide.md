@@ -10,6 +10,41 @@
 > `observation_run.py` 和 `run_six_metrics.sh`。原有的历史
 > `python -m performance --target echomem --six-metrics` 不是本手册对应的观测入口。
 
+> **报告出口自检**：当前入口无论完成、阻塞还是执行异常，都会在指定
+> `OUTPUT_DIR` 写出 `report.html`。如果运行结束后只有 `objective-suite.html`，
+> 说明误用了旧 O1-O7 编排器；该文件不能作为当前六项结果，应使用本文命令重跑。
+
+## 开始前先确认版本与配置
+
+| 对象 | 本机测试要求 |
+| --- | --- |
+| 测试平台 | 使用 `performance_refactor` 分支，记录实际 commit；不要检出 EchoMem 的同名分支来代替 |
+| EchoMem | 从明确更新并锁定的 `develop` 开始；完整六项还需检查下文 PR449 接口要求，不能只凭分支名判断可测 |
+| 单机后端 | `deployment.mode = "local"` 可以用于本机多租户压测，不需要为此改成云模式或安装 MySQL |
+| 租户认证 | `auth.mode = "x_auth_key"`，每个租户使用独立凭据；不能把同一个 key 重复填写当成多个租户 |
+| 记忆引擎 | 从被测 commit 的 `configs/config.example.json` 生成配置，保留真实引擎；不能拿空引擎部署模板直接测召回 |
+| 实际运行版本 | 更新源码后重新构建专用容器，核对挂载配置、镜像与源码 commit；只执行 git pull 不代表运行中的服务已更新 |
+
+如果本机失败而别人可以运行，先比较以上项目以及模型、并发设置、实际错误日志。
+不能仅根据 `deployment.mode = "local"` 就认定本机不支持压测。
+预检通过只代表可以开始测，不代表六项指标已经通过。
+
+### 本机能启动，但压测不能运行时
+
+**本机部署不等于 `auth.mode=local`。** `deployment.mode` 选择存储/运行后端，
+`auth.mode` 决定请求如何识别租户。本文保留前者为 `local`，将后者设为
+`x_auth_key`；只改其中一个并不能完成多租户配置。
+
+| 现象 | 先核对什么 | 不能直接得出的结论 |
+| --- | --- | --- |
+| 不同人的本机结果不同 | 两个仓库的 commit、最终加载配置、启动命令和镜像 | 不能只凭都叫 develop 就认为版本一致 |
+| 租户请求认证失败 | `auth.mode`、独立租户注册结果、请求的 `X-Auth-Key` | 不是 local 后端一定不支持多租户 |
+| Search 返回 200 但没有记忆 | 真实引擎是否启用、模型错误、Commit 终态、预注入事实是否能召回 | 不是接口 200 就说明召回链路可用 |
+| 故障注入或租户观测不可用 | 下文 PR449 能力检查、测试控制开关和控制 token | 不代表全部六项都无法运行，也不能把缺失项判为通过 |
+
+请先完成下文的版本、配置和 readiness 检查，再开始发压。不要为解决启动错误
+盲目切换云模式、删掉引擎或替换成 mock；应保留错误日志并定位具体配置或代码问题。
+
 ## 交给任意 AI 助手的完整任务
 
 这份手册不依赖 Codex。让 AI 在测试平台仓库中工作，并把下面一段直接发给它；替换两个
@@ -27,6 +62,12 @@ EchoMem 仓库：<EchoMem 绝对路径>
 将这三份文件作为本次 EchoMem 压测的执行规范。即使当前 AI 没有 Skill 安装机制，
 也必须按照其中的 Discover、Configure、Preview、Validate、Execute、Explain 流程执行。
 先核对两个仓库的 branch、commit 和 dirty state，不要静默 fetch、switch、reset。
+测试平台目标分支为 performance_refactor；EchoMem 从更新并锁定的 develop 开始。
+完整 M1-M6 按本文“EchoMem 代码要求与 PR449”检查接口和 develop 祖先关系；
+不满足时明确阻塞原因，不得自行使用旧分支或把未测项标记为完成。
+使用 deployment.mode=local、auth.mode=x_auth_key 和独立租户凭据；
+基于被测 commit 的完整 config.example.json 配置真实引擎，不使用空引擎模板。
+更新源码后重新构建本次专用容器，并记录实际运行镜像与配置指纹。
 使用真实 LLM 和 qwen3.7-text-embedding-flash Embedding，运行完整 M1-M6。
 默认容量档位为 1、2、4、8、16、32，创建 32 个独立租户凭据。需要继续寻找更高
 边界时，由使用者在 profile 中追加 64、128 等档位并补足独立租户凭据。
@@ -66,6 +107,39 @@ M4 故障注入、M5 容器重启以及远程/共享资源操作仍需获得操�
 
 ## 测试内容
 
+### 磁盘空间与异常续跑
+
+完整运行除记忆数据外，还会持续保存结构化日志、每次请求记录、Prometheus
+采样、租户观测快照及 HTML 汇总。启动前检查结果目录和 Docker 虚拟机所在磁盘：
+
+```bash
+df -h .
+docker system df
+```
+
+建议至少预留 5 GiB 可用空间，并随运行监控增长；这是本机执行的预留建议，
+不是完整运行的空间上限，也不是平台已经自动强制执行的检查。
+不要在空间接近耗尽时启动长运行或同时构建镜像。`No space left on device`
+属于测试环境故障，不是 EchoMem 性能边界，也不能据此判定 OOM。
+
+遇到异常先确认进程退出状态，再保留原目录并检查 JSON 是否完整。HTML 中的
+旧进度不代表进程仍在运行；输出文件存在也不代表六项已经完成。
+清理时优先处理确认可重建的重复汇总或无损归档已结束运行的日志，不删除
+唯一原始证据，不执行无范围的 Docker / 用户目录清理。
+
+只有 EchoMem 镜像、模型、有效配置、租户和请求计划未改变，才考虑 `--resume`。
+当前入口可复用已有 M1 报告和完成的 M2/M3 场景，故障/恢复探针仍可能重跑。
+续跑前核对原任务终态、残留故障已撤销以及磁盘空间；不要直接重复完整命令。
+若升级镜像或改变并发参数，应新建输出目录，分别标注版本和测试窗口，
+不能把跨版本证据合并成“同一配置的一次完整验收”。
+
+接口契约探针还必须使用产生该 Session 的租户凭据。当前结果 CSV 的字段是
+`tenant_idx`，旧结果可能使用 `tenant`；不能因字段未识别而默认使用第一个
+租户的 key。Session 接口返回 400、Cursor 返回 404 时，应先核对身份与资源，
+不能仅凭这些状态码推断 EchoMem 未实现接口。
+
+### 六项指标概览
+
 | 指标 | 测试动作 | 主要输出 |
 | --- | --- | --- |
 | M1 单实例容量与 DAU | 预注入真实记忆，按租户数和租户内热用户数逐档增加 Search、Commit 与混合负载，直到出现持续阻塞、失败、崩溃或积压不能恢复 | 每档 P95、吞吐、错误类型、质量分母、CPU、内存、最后正常档、首个拥塞档、三种业务画像 DAU 换算 |
@@ -78,6 +152,48 @@ M4 故障注入、M5 容器重启以及远程/共享资源操作仍需获得操�
 测试是**观测型**的，不内置“P95 必须小于多少”之类性能门槛。`MEASURED` 表示规定的
 数据分母已采集完整，不等于性能优秀；失败、超时、HTTP 200 但召回质量失败、Provider
 异常和长期 pending Commit 都会原样进入报告。
+
+### M1 的人数、QPS 与耗时口径
+
+本手册在 profile 中显式选择 `semantic_seed_kind: synthetic`：M2/M3 的共享 seed
+和 M4 复用查询使用 5 段自然语言笔记、20 项日期/时间/地点/联系人事实、40 道查询，
+种子阶段校验其中 4 道。M1 使用同类合成事实语料，正式默认校验 40 道。
+所有记忆仍须经过真实 Commit 抽取与 Search 召回，合成语料不等于 mock 模型。
+
+为了兼容历史任务，未设置该字段时仍使用 `locomo-single-session`：
+LoCoMo conv-30 的 session_1，不是完整 81 题准确率评测。该旧契约还要求记忆保留
+随机证据标识，真实模型可能在提炼事实时丢弃标识，造成种子校验失败；不能因此
+断言事实丢失，也不能跳过校验启动性能测试。
+最终以 suite.json 中的 seed_source、corpus_source、corpus_counts_by_tenant_index
+和种子校验结果为准，不能混合两种语料或沿用另一种语料的缓存。
+
+M1 每个档位依次测 Search、Commit、混合与热点四种负载：
+
+| 负载 | 发压方式 |
+| --- | --- |
+| Search | 每个用户按 profile 的 Search RPS 发出纯记忆召回问题 |
+| Commit | 每个用户默认每 30 秒追加内容并提交，独立轮询终态 |
+| 混合 | 同时进行 Search 与 Commit，查询计划约 70% 为记忆召回 |
+| 热点 | 在混合负载上，将首个用户的 Search RPS 放大到 8 倍 |
+
+因此，1 个用户、基准 1 QPS 在热点场景会产生约 8 Search QPS，而不是 1 QPS。
+必须同时看 load_mode、planned/sent、窗口长度和 peak_inflight_requests，
+不能把一个热点场景的拥塞直接写成“服务最多支持 1 个用户”。
+
+默认完整 M1 有两个拓扑：跨租户递增，以及固定 4 租户、每租户用户数递增。
+1/2/4/8/16/32 全档位若均运行，每档四种负载、每种 300 秒测量加 30 秒预热，
+仅这些窗口合计约 4.4 小时；实际还包括种子注入、召回校验、排空和恢复观察。
+观察到持续拥塞或故障时会提前停止后续档位，所以这不是固定运行时长。
+其余 M2-M6 另需时间，默认组与调优组也分别执行；不要承诺完整两组一小时完成。
+这些时间不是 soak，手册没有启用长稳态 soak。
+
+还要预留种子阶段：当前实现先按最大档位准备身份，再开始该拓扑的阶梯发压，
+不是到某一档才追加记忆。默认跨租户 32 个身份，租户内为 4×32 个用户，
+每个身份 40 道校验，共计划 6,400 次初始召回，外加每个身份的记忆 Commit。
+种子最多 4 个身份并行。若每次召回约 5 秒，仅召回的理想估算已约 2.2 小时，
+还未计入抽取、长尾和重试；实际以每个身份的 elapsed_s 与查询记录为准。
+容量早期停止不会退还已经完成的最大档位种子准备时间；quick 只适合链路检查，
+不能把小样本结果标成完整容量报告。执行前应明确接受此规模和模型额度开销。
 
 每次运行还会生成两组横向证据：关键接口调用账本按 Search、Open、Add、Commit、
 Commit 状态、History、Archive、Cursor、Metrics、故障控制和租户观测分别统计实际
@@ -94,9 +210,57 @@ M3 同时包含均匀 Commit 洪泛和单租户洪泛。后者让一个租户承
 拿来计算 M2 的等权 Jain 公平性。当前 EchoMem 故障控制作用于目标租户全部认证请求，
 若要分别制造“仅 Search 慢”或“仅 Commit 慢”，服务端还需提供按 operation 选择的故障范围。
 
+### Commit 状态轮询也产生请求
+
+M2/M3 当前的 `poll_commit` 默认轮询间隔为 0.2 秒，每个未终态任务独立轮询。
+这不是每租户 0.2 秒只请求一次；任务越多，状态查询流量越大。
+例如 64 个任务同时未完成时，忽略请求本身耗时的理论轮询频率上限约为 320 次/秒，
+实际值以接口调用账本和 `poll_count/poll_http_errors` 为准。
+
+因此，Search 的计划 QPS 不等于服务收到的总 QPS。解释租户限流和排队时，要同时列出
+Search、Commit 提交、状态查询的次数与错误，不能把轮询触发的 429 直接归因于模型、
+原子引擎或硬件容量。改变轮询节奏属于测试负载变化，应单独记录，不与原组直接混算。
+
+### 场景之间的 Commit 排空
+
+M2/M3 每个场景的发压窗口结束后，平台继续轮询本场返回 202 的原 Commit，
+默认最多观察 300 秒（`post_case_drain_timeout_s`）。结果写入该场景的
+`post-case-drain.json` 和 `summary.json`，不再次提交、不修改原始请求记录，
+也不把排空期间的完成数计入窗口内吞吐或 Jain 公平指数。
+
+只有确认全部受理任务达到终态后才进入下一场；`failed` 也是终态，
+“已排空”不代表 Commit 成功。如果仍有未确认终态的任务，平台保留当前场景数据，
+停止后续负载和故障探针，记录 `previous-case-commit-backlog-unresolved`。
+状态查询超时或 429 不能视为任务已完成。此时不能用下一场的 Search 作为干净基线。
+续跑不会自动忽略已记录的排空阻塞；应先确认原任务终态、查明原因，再新建结果目录复测。
+
+### M4 发压端与样本口径
+
+设置 `phase_duration_s > 0` 时，故障前、故障中、恢复后三个窗口分别按固定到达率发压：
+每个旁观租户请求数为 `ceil(phase_duration_s × search_rps_per_tenant)`，目标租户使用
+`target_rps`；此时不是由 `samples` 控制请求总数。例如 quick 默认每阶段 15 秒、
+旁观租户 2 QPS，每个旁观租户每阶段计划 30 次，而不是 10 次。
+`samples` 仅在不配置持续时间时控制采样次数，正式证据另检查样本量是否完整。
+
+各租户使用独立发压线程池。定时发压时，线程池至少覆盖“到达率 × HTTP 超时”
+对应的同时在途请求，且不超过本阶段计划请求数，避免测试端自身排队造成隐性降载。
+报告保留实际 `generator_workers`、计划/实际发出次数和 `max_generator_lag_s`；
+这不是调高 EchoMem 内部并发，也不保证操作系统不会产生发压延迟。
+
+故障必须覆盖整个故障中采样窗口，完成后显式关闭并检查恢复。
+如果发压延迟过大或故障 TTL 提前结束，保留数据但不能认定隔离测试有效；
+不能仅凭旁观租户 P95 没变差就判定通过。
+
 ## 1. 准备环境
 
-本机需要 macOS 或 Linux、Docker Compose、Git、Python 3.11+，以及可用的真实 LLM 和
+先执行 `docker compose version` 和 `docker info`。二者均成功后再执行
+`manage.sh`；只有 `docker-compose` 命令可用不代表 `docker compose` 插件可用。
+Homebrew 安装时应将实际的 CLI 插件目录配置到 Docker 客户端
+`cliPluginsExtraDirs`。使用独立 `DOCKER_CONFIG` 时还需选择正确 context，
+或显式指定由 `docker context inspect` 查到的 `DOCKER_HOST`；
+不要默认使用 `/var/run/docker.sock`，Colima 的 socket 通常位于用户目录。
+
+本机需要 macOS 或 Linux、Docker Compose、Git、jq、Python 3.11+，以及可用的真实 LLM 和
 Embedding 凭证。禁止使用 mock。EchoMem 被测版本还需包含故障控制和租户观测接口。
 
 获取两个仓库。`ECHOMEM_DIR` 可以换成自己的绝对路径。EchoMem 必须显式检出
@@ -156,13 +320,81 @@ cherry-pick。PR449 合入后，完整 M1-M6 也直接使用最新 `develop`。�
 
 ## 2. 本机部署 EchoMem
 
-使用 EchoMem 仓库自带的单节点 Compose，不设置 CPU 或内存上限：
+### 单机部署不等于单租户认证
+
+`deployment.mode` 和 `auth.mode` 是两个不同的配置，不能混为一谈：
+
+| 配置 | 本手册要求 | 含义 |
+| --- | --- | --- |
+| EchoMem 代码 | 显式更新并记录 `develop`；完整六项按上一节检查 PR449 接口 | 不使用 clone 默认分支代替版本确认 |
+| `deployment.mode` | `local`，各 overrides 保持当前版本默认值 | 使用单机后端；不意味着不能多租户压测，也不要求为了压测启动 MySQL |
+| `auth.mode` | `x_auth_key` | 每个业务请求通过各租户自己的凭据解析身份 |
+| `engine.enabled` | 非空，使用源码完整示例中的真实引擎 | 防止只启动空引擎服务 |
+
+在复制完整示例后，修改其中的认证字段：
+
+```json
+{
+  "auth": {
+    "mode": "x_auth_key"
+  }
+}
+```
+
+这只是字段示例，不要覆盖整个配置或删除其他 auth 字段。源码示例可能默认
+`auth.mode=local`；不能因为已经复制了完整示例就跳过认证检查。
+业务请求使用各租户独立的 `X-Auth-Key`；PR449 受保护控制面使用
+`X-EchoMem-Test-Token`，两者不能互相替代，也不能把同一个业务 key 重复当作多个租户。
+
+启动前检查实际要挂载的配置，不输出任何密钥：
+
+```bash
+jq -e '
+  .deployment.mode == "local" and
+  .auth.mode == "x_auth_key" and
+  (.engine.enabled | length > 0)
+' config.json >/dev/null || {
+  echo 'BLOCKED: 请检查单机部署模式、多租户认证模式和真实引擎配置。'
+  exit 1
+}
+```
+
+这段检查应在下方 init、复制配置、编辑配置之后执行。修改后重建或重新创建 Core，
+确认容器挂载的是本次配置；仅修改宿主机文件不能证明运行进程已经加载新配置。
+
+### 种子失败先排查，不直接进入压测
+
+正式负载前，每个独立租户都必须走通 Open Session → Add → Commit → 轮询终态 →
+Search 命中预期事实。202 只表示接受，completed 也不能代替实际召回验证。
+
+若出现 `seed commit failed ... status=failed error=`，即使 error 为空也必须保留失败：
+
+1. 核对运行容器的代码 commit、配置挂载、端口和认证模式，避免请求打到旧实例。
+2. 用创建 Session 时的同一租户凭据调用后续接口；404/not_found 先检查路径、
+   Session ID 与租户归属，不直接推断为单机模式不支持。
+3. 保存原 Commit 状态响应、Session/Archive 标识及对应时间窗口的 Core 日志，
+   检查真实引擎、模型错误、存储错误；分享前脱敏凭据与用户内容。
+4. 分别预检 LLM、Embedding，以及启用的 Rerank；单次 API 成功不代表 Commit
+   全链路正常，更不代表并发时没有限流。
+5. 没有足够错误证据时记录“原因待确认”，停止依赖种子的性能场景，不把失败隐藏或
+   改成通过，也不要仅为绕过错误切换 cluster_shared/MySQL。
+
+使用 EchoMem 仓库自带的单节点 Compose。本机测试需要显式核对资源限制：
+新版本 Compose 可能默认设置 Core 为 3.5 CPU、6GB，不能把默认启动描述成无上限。
 
 ```bash
 cd "$ECHOMEM_DIR/deploy/single-node"
 ./manage.sh init
 cp ../../configs/config.example.json ./config.json
 ```
+
+在专用测试的 `.env` 中设置 `ECHOMEM_CORE_CPUS=0` 和
+`ECHOMEM_CORE_MEM_LIMIT=0`，并在启动后检查 Docker 的 `HostConfig.NanoCpus`、
+`CpuQuota`、`Memory`；只有实际限制均为零才可报告容器未设置上限。
+Docker Desktop/Colima 虚拟机仍有自己的 CPU/内存边界，也必须记录。
+如果本机已经存在 EchoMem，给本轮设置独立的 `COMPOSE_PROJECT_NAME`、
+`ECHOMEM_CORE_IMAGE` 和空闲的 Core/Plugin/Web 端口，并把 profile 的
+`base_url`、`resource_container` 改为本轮实例，避免 M5 重启其他实例。
 
 这里必须复制仓库根目录的完整 `configs/config.example.json`，不能使用
 `deploy/single-node/config.json.example`；后者允许 `engine.enabled=[]`，只能启动空引擎服务，
@@ -221,7 +453,20 @@ GET      /api/inspect/tenant-observability
 
 缺少这些接口时，M4 和 M6 会明确报告 `BLOCKED`，不能用客户端模拟结果替代。
 
+若路由日志持续出现 `recall_llm_failed / invalid_output`，检查模型是否把推理
+token 计入输出预算。曾实测分类只允许 1 个 token 时，模型返回
+`finish_reason=length`、content 为空，即使 Search 通过保守降级召回事实，
+也不是完整链路通过。应修复被测代码的路由预算兼容性并重新验证，不能关闭质量
+检查或把普通模型连通性预检当作路由成功。
+
 启动并检查：
+
+首次更换 Embedding 模型时，路由静态示例可能需要重新生成数万条向量，
+这是服务启动阶段，不计入 Search 压测时延。查看初始化日志中的
+`required/hits/missing`，在 ready 成功前不要开始发压。
+可以复用相同模型、endpoint 和维度指纹的路由静态缓存，但须确认当前版本接受
+其 JSON 格式并实际命中；例如额外的 `schema_version` 字段可能使旧解析器拒绝缓存。
+不得改写指纹或伪造向量。租户测试记忆仍应独立注入，并验证真实召回。
 
 ```bash
 cd "$ECHOMEM_DIR/deploy/single-node"
@@ -231,6 +476,19 @@ cd "$ECHOMEM_DIR/deploy/single-node"
 curl -fsS http://127.0.0.1:8010/api/v1/system/ready
 curl -fsS http://127.0.0.1:8010/metrics >/dev/null
 ```
+
+如果只测本手册的 Core HTTP 接口、不需要 Web/Plugin，可在已完成 init、
+确认所有 deployment 组件使用单机后端后，仅构建并启动 Core：
+
+```bash
+docker compose build core
+docker compose up -d --no-build --no-deps core
+curl -fsS http://127.0.0.1:8010/api/v1/system/ready
+```
+
+`--no-deps` 避免启动 Compose 中声明的其他依赖；不能用于需要 MySQL 等
+外部后端的配置。非默认端口应同步替换上述 URL。不要把初始化中的连接拒绝
+当成最终失败，检查容器状态与启动日志，等待 ready 后再测试。
 
 取得 Core 容器名，后面填入 profile：
 
@@ -301,6 +559,18 @@ Recall 队列。这些值可能在默认 32 客户端并发前先形成排队，
 `http.max_workers=128` 与 `retrieval.admission_permits=32` 满足 EchoMem 的 4:1 约束；
 Commit executor+gate 为 `5+3=8`，不超过 4 核的 2 倍约束。
 
+注意区分两层名称相似的限制：`scheduling.llm_gateway.recall_llm_max_concurrent`
+用于原子引擎的 Recall 模型网关；路由意图识别使用
+`recall.concurrency.intent_llm.max_concurrent`，还受共享 Provider 预算约束。
+当前 EchoMem 的 V4 校验要求前者不大于 `llm_max_concurrent / 4`；
+不能只提高前者而不核对对应约束，也不能把它当成整个 Search 的并发上限。
+
+还要检查外层 `recall.max_inflight`：当前验证版本默认 16，且环境变量
+`ECHOMEM_RECALL_MAX_INFLIGHT` 优先于 JSON。调优目标为 32 时，应同时核对并设置
+这个外层上限，不能只提高 `recall.concurrency.*`；保留默认组原值。
+出现 `RETRIEVAL_BUSY` 时结合日志中的实际 in_flight/max_inflight 判断，不把配置拒绝
+直接当成硬件容量极限，也不要无条件把上限设为 0 关闭保护。
+
 不要为了展示“32 热租户”把租户常驻缓存硬改成 32。4U8G 的租户缓存有真实内存预算，
 启动校验拒绝超出预算的配置也属于有效容量证据。32 个独立凭据表示测试平台会产生
 最多 32 租户流量，不代表 32 个租户必须同时常驻；报告要分别展示活动租户、峰值在途请求、
@@ -368,6 +638,7 @@ profile 还要设置准确的 `resource_container` 和 `require_stage_observabil
   "profiles": [
     {
       "name": "Local",
+      "semantic_seed_kind": "synthetic",
       "base_url": "http://127.0.0.1:8010",
       "resource_container": "echomem-core-1",
       "require_4u8g": false,
@@ -430,8 +701,15 @@ Commit 权重为 `1:2:4:8`。报告逐租户展示计划速率、实际请求数
 
 ```bash
 bash -n performance/targets/echomem/run_six_metrics.sh
+jq '
+  .profiles[0].m1_tenant_levels = [1,2] |
+  .profiles[0].m1_user_levels = [1,2] |
+  .profiles[0].fault_isolation.samples = 10 |
+  .profiles[0].fault_isolation.repeats = 1 |
+  .profiles[0].commit_recovery.samples = 1
+' .local-stress/six-metrics.profile.json > .local-stress/quick.profile.json
 performance/targets/echomem/run_six_metrics.sh quick \
-  .local-stress/six-metrics.profile.json \
+  .local-stress/quick.profile.json \
   results/local-six-metrics-quick \
   .local-stress/test.env
 ```
@@ -439,6 +717,10 @@ performance/targets/echomem/run_six_metrics.sh quick \
 profile 文件只有一个 profile 时，脚本会自动选择 `Local`，不需要再写 `--profile`。
 `quick` 使用真实 HTTP、模型、租户、故障和重启，但缩短采样时间，结果固定视为
 `PARTIAL`，只用于确认整条链路能跑通。
+
+注意：quick 不会覆盖 profile 显式指定的容量档位及探针采样配置，因此这里单独
+生成小规模 quick profile。正式测试继续使用原始 six-metrics.profile.json，
+不能拿 quick 的 1/2 档位、短窗口或单次恢复结果声称完成最大容量或完整六项。
 
 ## 7. 运行完整六项测试
 
@@ -508,6 +790,16 @@ performance/targets/echomem/run_six_metrics.sh m6 \
 ```text
 results/local-six-metrics-default/report.html
 results/local-six-metrics-tuned/report.html
+```
+
+运行结束后先执行出口检查，避免打开旧报告：
+
+```bash
+test -f "$OUTPUT_DIR/report.html" || {
+  test -f "$OUTPUT_DIR/objective-suite.html" && \
+    echo "错误：运行了旧 O1-O7 编排器，请改用 observation_run"
+  exit 2
+}
 ```
 
 不能只交付 HTML；同目录的结构化分母和逐请求证据必须一起保留：
