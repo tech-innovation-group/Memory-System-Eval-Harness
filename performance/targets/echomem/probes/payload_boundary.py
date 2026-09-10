@@ -22,6 +22,27 @@ FAIL = "FAIL"
 INCONCLUSIVE = "INCONCLUSIVE"
 
 
+def _case_outcome(row: dict[str, Any]) -> str:
+    code = row.get("http_status")
+    if not row.get("dispatched", True):
+        return "SETUP_FAILED"
+    if code is None:
+        return "TRANSPORT_FAILED"
+    if code >= 500:
+        return "SERVER_ERROR"
+    if code in {401, 403, 404, 405}:
+        return "AUTH_OR_ENDPOINT_BLOCKED"
+    if code == 429:
+        return "RATE_LIMITED"
+    if code in {400, 413, 415, 422}:
+        return "INPUT_REJECTED"
+    if 200 <= code < 300:
+        if row["encoding"] == "binary" and row["content_bytes"] > 0:
+            return "INVALID_BINARY_ACCEPTED"
+        return "ACCEPTED_NOT_PERSISTENCE_PROOF"
+    return "UNEXPECTED_STATUS"
+
+
 def _safe_result(result: Any) -> dict[str, Any]:
     return {
         "http_status": result.status_code,
@@ -44,7 +65,7 @@ def _poll_commit(client: EchoMemHTTP, session_id: str, archive_id: str,
         response = client.commit_status(session_id, archive_id)
         state = status_from(response.payload)
         last = {**_safe_result(response), "state": state}
-        if state in {"completed", "done", "success", "failed", "error"}:
+        if last["accepted"] and state in {"completed", "done", "success", "failed", "error"}:
             break
         time.sleep(0.5)
     return last
@@ -166,6 +187,8 @@ def run(ctx: Ctx) -> None:
 
     mcp_chars = max(1, int(params.get("mcp_add_memory_chars", 1048576)))
     mcp = {"status": "NOT_SELECTED"} if skip_mcp else _mcp_add_memory(params, tenant, "m" * mcp_chars)
+    for row in rows:
+        row["outcome"] = _case_outcome(row)
     detail = {
         "sizes_bytes": sizes,
         "cases_total": len(rows),
@@ -173,17 +196,22 @@ def run(ctx: Ctx) -> None:
         "cases": rows,
         "long_commit": long_commit,
         "mcp_add_memory": {"requested_chars": mcp_chars, **mcp},
+        "outcome_counts": {outcome: sum(row["outcome"] == outcome for row in rows)
+                           for outcome in sorted({row["outcome"] for row in rows})},
     }
     transport_failures = sum(row["http_status"] is None for row in rows)
     binary_accepted = sum(
         row["encoding"] == "binary" and row["content_bytes"] > 0 and row["accepted"]
         for row in rows
     )
-    commit_completed = skip_commit or (accepted_chars == commit_chars and
+    commit_completed = skip_commit or (accepted_chars == commit_chars and terminal.get("accepted") and
                         terminal.get("state") in {"completed", "done", "success"})
-    if binary_accepted or mcp["status"] == "FAIL":
+    server_errors = sum(row["outcome"] == "SERVER_ERROR" for row in rows)
+    blocked_cases = sum(row["outcome"] in {"AUTH_OR_ENDPOINT_BLOCKED", "RATE_LIMITED", "UNEXPECTED_STATUS"}
+                        for row in rows)
+    if server_errors or binary_accepted or mcp["status"] == "FAIL" or terminal.get("state") in {"failed", "error"}:
         status = FAIL
-    elif transport_failures or (not skip_mcp and mcp["status"] != "PASS") or not commit_completed:
+    elif blocked_cases or transport_failures or (not skip_mcp and mcp["status"] != "PASS") or not commit_completed:
         status = INCONCLUSIVE
     else:
         status = PASS
@@ -191,7 +219,7 @@ def run(ctx: Ctx) -> None:
         "payload-boundary",
         status=status,
         reason=(f"planned {len(rows)} exact-body cases; dispatched={detail['cases_dispatched']}; transport/setup failures={transport_failures}; "
-                f"binary accepted={binary_accepted}; long commit state={terminal.get('state') or 'unknown'}; "
+                f"server errors={server_errors}; blocked cases={blocked_cases}; binary accepted={binary_accepted}; long commit state={terminal.get('state') or 'unknown'}; "
                 f"MCP={mcp['status']}"),
         detail=json.dumps(detail, ensure_ascii=False),
     )
@@ -211,7 +239,7 @@ def _long_commit(client, tenant_id, commit_chars, chunk_chars, timeout_s):
         response = client.add_message(commit_session, uuid.uuid4().hex, chunk)
         add_results.append(_safe_result(response))
         remaining -= len(chunk)
-        if response.status_code is None or response.status_code >= 400:
+        if response.status_code is None or not 200 <= response.status_code < 300:
             break
         accepted_chars += len(chunk)
     commit = client.commit(commit_session, idempotency_key=f"stress-{uuid.uuid4().hex}")

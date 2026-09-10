@@ -1782,6 +1782,7 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             ("http_counts", "HTTP/传输分布"), ("boundary_reasons", "边界原因"),
         ], min_width_px=1800) if topology_rows else "<p>未执行并发拓扑探针。</p>"
         payload_table = table(payload_rows, [
+            ("outcome", "实际边界处理结果"),
             ("api", "API"), ("encoding", "编码"),
             ("content_bytes", "内容字节"), ("wire_bytes", "Wire字节"),
             ("http_status", "HTTP"), ("reason_code", "原因码"),

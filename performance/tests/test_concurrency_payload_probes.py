@@ -12,6 +12,7 @@ from performance.targets.echomem.acceptance.observation import (
 )
 from performance.targets.echomem.orchestrator.probes import run_configured_probes
 from performance.targets.echomem.orchestrator.report import render_objective_suite_html
+from performance.targets.echomem.probes.payload_boundary import _case_outcome, _poll_commit
 from performance.targets.echomem.probes.concurrency_topology import (
     _capacity_levels,
     _commit_call,
@@ -37,6 +38,27 @@ def test_concurrency_summary_keeps_full_denominator_and_errors() -> None:
     assert result["p95_ms"] == 30.0
     assert result["operational_failures"] == 2
     assert result["boundary_reasons"] == {"429": 1, "transport": 1}
+
+
+def test_payload_outcomes_do_not_confuse_server_failures_with_input_rejection():
+    row = {"encoding": "text", "content_bytes": 1048576}
+    for code, expected in [(500, "SERVER_ERROR"), (503, "SERVER_ERROR"),
+                           (413, "INPUT_REJECTED"), (422, "INPUT_REJECTED"),
+                           (401, "AUTH_OR_ENDPOINT_BLOCKED"), (429, "RATE_LIMITED"),
+                           (None, "TRANSPORT_FAILED"), (200, "ACCEPTED_NOT_PERSISTENCE_PROOF")]:
+        assert _case_outcome({**row, "http_status": code}) == expected
+    assert _case_outcome({**row, "encoding": "binary", "http_status": 200}) == "INVALID_BINARY_ACCEPTED"
+    assert _case_outcome({**row, "http_status": None, "dispatched": False}) == "SETUP_FAILED"
+
+
+def test_commit_terminal_label_in_http_error_is_not_completion():
+    response = SimpleNamespace(status_code=500, elapsed_s=.1, reason_code="server_error",
+                               transport_error_type="", payload={"status": "completed"})
+    client = SimpleNamespace(commit_status=lambda *_args: response)
+    with patch('performance.targets.echomem.probes.payload_boundary.time.monotonic', side_effect=[0, 0, 2]), \
+         patch('performance.targets.echomem.probes.payload_boundary.time.sleep'):
+        result = _poll_commit(client, 'session', 'archive', 1)
+    assert result["accepted"] is False
 
 
 def test_fairness_and_percentile_are_deterministic() -> None:

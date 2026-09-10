@@ -224,13 +224,16 @@ P99 与 queue wait。七组 Prometheus Histogram 使用测试窗口内累计值�
 编排逻辑，不能直接启用下面配置并期待生成结果。** 使用包含 PR33 实现的版本时，先核对
 `performance/targets/echomem/probes/` 中存在 `concurrency_topology.py` 和
 `payload_boundary.py`，且编排器确实调用它们；最终仍需检查报告中的实际请求分母。
-只执行本手册 M1-M3 时省略这两个配置段。
+普通 M1-M3 可以省略这两个配置段；交付“16/64并发四类拓扑与0至1MiB边界”时必须启用，
+它们会作为 M1-M3 报告的补充探针执行。不能用 M1-M3 三张通过卡片代替扩展场景完成。
 
 ```json
 {
   "concurrency_topology": {
     "enabled": true,
-    "levels": [16, 32, 64, 128],
+    "levels": [16, 64],
+    "max_concurrency": 64,
+    "stop_after_boundary": false,
     "requests_per_level": 128,
     "sessions_per_user": 2,
     "within_session_concurrency": 4
@@ -258,6 +261,27 @@ Message+Commit 异构负载。档位表示目标总在途并发，不等于用�
 它还会执行真正的 Streamable HTTP `add_memory`；未配置时报告 `BLOCKED`，不会用 HTTP
 Message 假冒 MCP 调用。HTML 表格展示内容字节、实际 wire bytes、HTTP/传输结果、稳定
 reason code 与耗时，原始 JSON 保留完整分母。
+
+16/64完整对照需要至少64个独立租户凭据，不能把32个租户重复使用成64个。上述标准探针中，
+第一类分别为16/64用户，每用户1会话、会话内1并发；第二类默认8/32用户，每用户2会话、
+会话内1并发；第三类默认4/16用户，每用户1会话、会话内4并发。第四类使用4用户，
+部分用户发Search、部分用户发长Message后Commit。以上是标准探针的布局；独立短测脚本
+可能固定4个用户再增加会话数，不能将两种布局混称为同一组实验，必须以报告实际用户/会话列为准。
+
+边界测试分母为7个长度档乘6种API/编码组合，共42项；0至1MiB表示这些离散档位，
+不是逐字节穷举。JSON文本字段长度与整个HTTP请求体长度分别记录；Commit是控制接口，
+其任意文本/二进制请求仅测试输入处理，真正的长Commit是先分块写入再提交并轮询。
+HTTP400/413/415/422记录为输入拒绝，HTTP5xx为服务错误，401/403/404/405为环境或接口阻塞，
+429为限流，不得把“收到响应”当作通过。HTTP202只代表受理；只有成功的状态查询返回
+completed等终态且全部预期字符已受理，才能记为长Commit完成。MCP非空工具返回只能证明
+工具有响应，不单独证明1MiB全文无截断落盘；需另核对history/archive，缺少时必须说明证据范围。
+
+慢请求诊断先使用每条HTTP的请求标识关联内部阶段，超时请求仍保留发送时的标识。
+采集器 `scripts.collect_commit_diagnostics --scene-root <场景样本目录>` 按 `*-samples.json`
+分组聚合全日志流，再由 `scripts.build_quick_topology_report --root <结果目录>` 展示
+16/64阶段图与最慢20个请求明细；它是拓扑诊断报告，不替代正式M1-M3报告。
+语义路由、画像匹配是阶段墙钟耗时，不等于模型生成时间；阶段P95不能相加，
+若只能定位到阶段，应继续采集该阶段内部矩阵计算、评分与等待计时，而不是直接修改限流参数。
 
 M3 同时包含均匀 Commit 洪泛和单租户洪泛。后者让一个租户承担全部 Commit，四个租户
 继续独立 Search，用于观察不同租户负载与耗时是否串扰；它是异构/吵闹邻居场景，不能
