@@ -62,6 +62,27 @@ def render(state, manifest=None, diagnostics=None, resources=None, models=None):
         header += f'<h2>总体结论</h2><p>已测 Search 场景中最高 P95 为 {worst["search"]["p95_ms"]/1000:.2f} 秒，出现在「{esc(NAMES[worst["name"]])} / {worst["level"]}」。请同时看健康召回率；延迟低不意味着检索正确。</p>'
     if seed:
         header += f'<div class="warning">种子写入完成 {seed["completed"]}/{seed["total"]}；最终事实命中 {seed["hits"]}/{seed["total"]}；健康命中 {seed["healthy"]}/{seed["total"]}。未命中和降级均保留，接口响应速度不能当作健康召回性能。</div>'
+    comparisons = ''
+    indexed = {(s['name'], s['level']): s for s in scenes}
+    for name, op in [('users', 'search'), ('sessions', 'search'),
+                     ('session-concurrent', 'search'), ('mixed', 'search'), ('mixed', 'commit')]:
+        low, high = indexed.get((name, 16)), indexed.get((name, 64))
+        if low is None or high is None:
+            continue
+        before, after = low[op]['p95_ms'], high[op]['p95_ms']
+        if before is None or after is None or before <= 0:
+            continue
+        comparisons += '<tr>' + ''.join(f'<td>{esc(value)}</td>' for value in (
+            NAMES[name] + ' / ' + op.capitalize(), f'{before/1000:.3f}秒', f'{after/1000:.3f}秒',
+            f'{after/before:.2f}倍', f'{(after/before-1)*100:+.1f}%')) + '</tr>'
+    if comparisons:
+        header += '<section><h2>哪些 P95 增加了？</h2><p>以下在同一种场景内比较总配置并发16→64，倍数表示“变为原来的几倍”。</p><div class="scroll"><table><tr><th>指标</th><th>16并发</th><th>64并发</th><th>倍数</th><th>变化</th></tr>' + comparisons + '</table></div>'
+        header += '<h3>可能原因：先看证据，再作判断</h3><p><b>① 共享资源和排队压力：</b>前三种纯Search拓扑在64并发时都明显变慢，优先排查共享CPU、路由/检索工作池、Embedding与意图模型调用队列，而不是直接认定某一种Session锁有问题。全程CPU峰值只能证明出现过满载，未逐场景关联时不能单独证明因果。</p>'
+        header += '<p><b>② 超时上限影响了P95：</b>Search客户端超时设为20秒，超时样本保留在分布中。接近20秒的P95不是“请求最终都在20秒完成”，更慢的服务端完成时间在这次观测中未知。</p>'
+        header += '<p><b>③ 外部依赖和检索降级：</b>Recall LLM错误与引擎状态异常说明链路不健康，但不能仅凭ModelHttpError判定限流，也不能把每次降级都归因于同一模块。模型本身变慢、调度等待、错误后的快速降级都可能改变延迟分布，需按trace关联阶段耗时才能拆清。</p>'
+        header += '<p><b>④ 混合场景的压力并不等同：</b>总64名额中只有32个Search名额，另外32个用于Commit及轮询；纯Search场景则是64个Search名额。因此混合Search更快，不证明Commit洪泛下Search优先级已满足。还需匹配Search到达率、并发与相同缓存状态作对照。</p>'
+        header += '<p><b>⑤ Commit等待变长：</b>混合Commit的操作P95包含Message写入、提交、抽取/持久化等待和状态轮询。90秒观察超时也计入分布，不能将约91秒的P95解释为模型推理花了91秒；应分别检查网关排队、抽取、原子引擎发布和终态可见性。</p>'
+        header += '<p class="note">场景固定顺序、没有在每组之间重建环境，缓存与上组遗留服务端请求可能影响后组。当前是短测线索，不是已定位的唯一根因。</p></section>'
     rows = ''
     for scene in scenes:
         s, c = scene['search'], scene['commit']
