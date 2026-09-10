@@ -10,6 +10,13 @@ NAMES = {'baseline': '共享低负载基线', 'users': '① 多用户 · 单会�
          'mixed': '④ 四用户 · 大小写入与检索混合'}
 
 
+def scene_label(scene):
+    if scene['name'] == 'mixed':
+        return f'④ {scene["users"]}用户 · 大小请求混合'
+    return (f'{scene["users"]}用户 × 每用户{scene["sessions"]}会话'
+            f' × 会话内{scene["session_width"]}并发')
+
+
 def esc(value):
     return html.escape(str(value))
 
@@ -59,10 +66,11 @@ def render(state, manifest=None, diagnostics=None, resources=None, models=None):
     for scene in scenes:
         s, c = scene['search'], scene['commit']
         rows += '<tr>' + ''.join(f'<td>{esc(v)}</td>' for v in (
-            NAMES[scene['name']], scene['level'], scene['http_peak'], s['offered'],
+            scene_label(scene), scene['level'], scene['http_peak'], s['offered'],
             number(s['p95_ms']), f'{s["search_quality_ok"]}/{s["offered"]}',
             f'{c["commit_completed"]}/{c["offered"]}' if c['offered'] else '未测', c['commit_failed'], c['commit_timed_out'])) + '</tr>'
-    table = '<section><h2>先看总体数据</h2><div class="scroll"><table><thead><tr>'
+    table = '<section><h2>先弄清楚：用户、会话、串行</h2><p><b>用户</b>是独立测试身份；本轮每个用户对应独立租户凭据。<b>会话（Session）</b>可以理解为该用户打开的一段对话。</p><p><b>会话内串行</b>：同一Session发出请求A后，等A返回或超时，才发请求B。不同Session、不同用户仍然可以同时请求。这里不表示服务端内部串行。</p><p><b>单会话串行</b>：每用户只有1个Session，每个Session最多1个在途请求。例：16用户各发1个请求，总共最多16个并发。</p><p><b>多会话串行</b>：每用户有多个Session，各Session内部串行，但Session之间并行。例：4用户各4个Session，每个Session发1个请求，总共最多16个并发。</p><p><b>单会话内并发</b>：同一Session允许多个请求同时在途。例：4用户各1个Session，每个Session同时发4个请求，总共最多16个并发。</p></section>'
+    table += '<section><h2>先看总体数据</h2><div class="scroll"><table><thead><tr>'
     table += ''.join(f'<th>{label}</th>' for label in ('场景', '配置并发', 'HTTP峰值', 'Search数', 'Search P95 ms', '健康召回', 'Commit完成', 'Commit失败', '观察超时'))
     table += f'</tr></thead><tbody>{rows}</tbody></table></div><p class="note">前三类按确认方案仅压测Search，第四类为Search/Commit混合，不代表前三类Commit也已覆盖。配置并发是客户端工作名额，HTTP 峰值是实际请求数；Commit 等待轮询期间并不一直占用 HTTP 连接。完成分母是调用数，不自动等同于独立任务数。</p></section>'
     charts = ''
@@ -73,7 +81,7 @@ def render(state, manifest=None, diagnostics=None, resources=None, models=None):
         bars = ''
         for scene in scenes:
             value = metric(scene)
-            bars += f'<div class="bar"><span>{esc(NAMES[scene["name"]])} / {scene["level"]}</span><div class="track"><i style="width:{100*(value or 0)/maximum:.2f}%;background:{color}"></i></div><b>{number(value)}</b></div>'
+            bars += f'<div class="bar"><span>{esc(scene_label(scene))} / 总{scene["level"]}</span><div class="track"><i style="width:{100*(value or 0)/maximum:.2f}%;background:{color}"></i></div><b>{number(value)}</b></div>'
         charts += f'<article><h3>{title}</h3>{bars}</article>'
     detail = ''
     for scene in scenes:
@@ -86,6 +94,10 @@ def render(state, manifest=None, diagnostics=None, resources=None, models=None):
                 f'{a["search_quality_ok"]}/{a["offered"]}', number(a['search_quality_ok']/elapsed),
                 b['offered'], b['commit_completed'], number(b['commit_completed']/elapsed), b['commit_timed_out'])) + '</tr>'
         method = f'{scene["users"]} 个独立用户，每用户 {scene["sessions"]} 个 Search 会话，单会话 {scene["session_width"]} 个配置名额。'
+        if scene['name'] != 'mixed':
+            method += f'共 {scene["users"] * scene["sessions"]} 个Session；总配置并发 = {scene["users"]} × {scene["sessions"]} × {scene["session_width"]} = {scene["level"]}。'
+            method += ('每个Session等前一个请求返回或超时才发下一个；不同Session同时执行。'
+                       if scene['session_width'] == 1 else '同一Session允许多个请求同时执行，不等前一个返回再发下一个。')
         fairness = ''
         if scene['name'] == 'mixed':
             method = '4 用户，Search 与 Commit 各占一半独立工作名额。U1/U2 写入512字符，U3/U4写入4096字符。所有用户轮转参与Search和Commit；每个Commit使用新会话，避免合并复用。低并发下用户不会同时全活跃。'
@@ -102,7 +114,7 @@ def render(state, manifest=None, diagnostics=None, resources=None, models=None):
                     size = '短写入' if int(user) < 2 else '长写入'
                     color = '#197d91' if int(user) < 2 else '#ad6420'
                     fairness += f'<div class="bar"><span>U{int(user)+1} · {size}</span><div class="track"><i style="width:{100*(value or 0)/maximum:.2f}%;background:{color}"></i></div><b>{number(value)}</b></div>'
-        detail += f'<section><h2>{esc(NAMES[scene["name"]])} · {scene["level"]} 并发</h2><p>{method}</p>'
+        detail += f'<section><h2>{esc(NAMES[scene["name"]])} · {scene["users"]}用户 · 总{scene["level"]}并发</h2><p>{method}</p>'
         detail += f'<p>正式提交窗口 {scene["measurement_s"]} 秒；含预热及排空总耗时 {scene["elapsed_s"]:.1f} 秒。Search HTTP分布 {esc(s["http_counts"])}；降级 {s["search_degraded"]} 次。Commit接收 {c["commit_accepted"]} 次，独立归档 {c["commit_unique_archives"]} 个。</p>'
         detail += f'<p>Search P50/P95/P99：{number(s["p50_ms"])}/{number(s["p95_ms"])}/{number(s["p99_ms"])} ms；Commit操作 P95：{number(c["p95_ms"])} ms（包括提交和等待，不是模型耗时）。</p>'
         if 'healthy_p95_ms' in scene:
