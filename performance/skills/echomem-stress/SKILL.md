@@ -38,6 +38,27 @@ Run the repository's real HTTP six-metric suite as a guided product flow. Read
   `mock=false`, HTTP 200, or a configured model name is never call evidence. A
   report may claim workload model usage only when bounded service-stage logs or
   Provider metrics contain real samples; otherwise mark it unverified.
+- Use only `performance.targets.echomem.observation_run` or
+  `performance/targets/echomem/run_six_metrics.sh` for the current M1-M6 flow.
+  If an output has no `report.html`, stop and report `WRONG_ENTRYPOINT`; never
+  present another HTML artifact as the current six-metric result.
+- Default to M1, M2, and M3 when the user asks for a stress test without naming
+  a scope. Do not run M4, M5, or M6 unless the user explicitly requests those
+  metrics or a full M1-M6 run. The `full` wrapper remains an explicit M1-M6 run.
+- Treat `<OUTPUT>/report.html` as a live artifact. Update or regenerate that same
+  file after preflight, memory seeding, every completed M1 level, every M2/M3
+  scenario, every M4 fault phase, every M5 recovery sample, and final M6
+  collection. Clearly label unfinished metrics as running, partial, blocked, or
+  not selected; never wait until the entire run ends before publishing the first
+  report. After each checkpoint, tell the user the report path, update time, and
+  newest measured denominator without flooding chat with per-request messages.
+- Treat the repository report generator as the single implementation of visual
+  layout. Do not hand-build a second HTML report in chat or with an ad-hoc
+  script. Read `references/interactive-workflow.md#8-report-display-contract`
+  before presenting results. If persisted evidence exists but a required card,
+  chart, denominator, failure class, or raw-evidence link is absent, classify it
+  as `REPORT_CONTRACT_GAP` and fix the generator; never fill the gap with an
+  inferred value or a separate report file.
 
 ## Interactive flow
 
@@ -49,9 +70,9 @@ Run the repository's real HTTP six-metric suite as a guided product flow. Read
 2. Inspect prerequisites and present a compact readiness summary: EchoMem ready,
    Docker/container, profile, tenant count, LLM preflight, Embedding preflight,
    protected test endpoints, output directory, and destructive-test safety.
-3. If the requested scope is not already clear, offer: quick chain check;
-   M1-M3; full M1-M6; one metric; resume; report-only. Recommend quick on a new
-   machine and full only after it passes.
+3. If the requested scope is not already clear, default to M1-M3. On a new
+   machine, run a quick M1-M3 chain check first. Use full M1-M6, one metric,
+   resume, or report-only only when the user explicitly selects that scope.
 4. Preview the exact command, selected metrics, estimated destructive actions,
    and output directory. Obtain explicit user authorization before M4 fault
    injection, M5 kill/restart, root login, or use of remote/shared resources.
@@ -61,6 +82,8 @@ Run the repository's real HTTP six-metric suite as a guided product flow. Read
 6. On completion, inspect `execution-manifest.json`, `summary.json`, `suite.json`,
    and `report.html`. Open the HTML report and summarize every selected metric's
    status, denominator, primary number, and responsible module.
+   Before interpreting results, verify `<OUTPUT>/report.html` exists. No other
+   HTML filename is a valid substitute for the current M1-M6 report.
 
 ## Product conversation
 
@@ -123,6 +146,16 @@ The final report must also expose three cross-metric audits:
 - endpoint and service-returned module timing distributions. Never infer internal
   router, recall, scheduler, or engine timings by subtracting unrelated clocks.
 
+When the profile enables `concurrency_topology`, run the 16/32/64/128 matrix for
+four real layouts: one session per user with serial session access, multiple
+serial sessions per user, concurrent requests within one session, and unequal
+small-Search/large-Message+Commit tenant load. Treat each level as target client
+concurrency, not tenant count, and preserve required versus actual identities.
+When `payload_boundary` is enabled, exercise Message, Commit, and Search from 0
+through 1 MiB as JSON text and raw binary, poll the oversized Commit to a terminal
+state, and call the configured Streamable HTTP `add_memory` tool. Missing MCP
+configuration is BLOCKED; never substitute an HTTP message and call it MCP.
+
 For M1-M3, require EchoMem DEBUG JSON logging and a concrete
 `resource_container`. Collect whitelisted `recall_stage_completed`,
 `recall_engine_completed`, `dashscope_rerank_operation`,
@@ -143,7 +176,7 @@ performance/targets/echomem/run_six_metrics.sh quick PROFILE OUTPUT ENV_FILE
 performance/targets/echomem/run_six_metrics.sh full PROFILE OUTPUT ENV_FILE
 
 .venv/bin/python -m performance.targets.echomem.observation_run \
-  --profiles PROFILE --metrics M1,M2,M3 --env-file ENV_FILE --out-dir OUTPUT
+  --profiles PROFILE --env-file ENV_FILE --out-dir OUTPUT
 
 .venv/bin/python -m performance.targets.echomem.observation_run \
   --profiles PROFILE --env-file ENV_FILE --out-dir OUTPUT --resume

@@ -31,11 +31,12 @@ If setup is missing, direct the user to the single local guide:
 
 ## 2. Scope chooser
 
-Do not ask again when the user already named metrics or a mode. Otherwise offer:
+Do not ask again when the user already named metrics or a mode. Otherwise use
+M1-M3 as the default scope. The available explicit alternatives are:
 
 1. **Quick chain check (recommended on a new machine)**: real HTTP and real
    providers with shortened sampling. It validates wiring, not capacity.
-2. **First three metrics**: M1 capacity, M2 fairness, and M3 Search priority.
+2. **First three metrics (default)**: M1 capacity, M2 fairness, and M3 Search priority.
 3. **Full M1-M6**: includes tenant fault injection and real container restart.
 4. **Single metric**: accept one or more of `M1` through `M6`.
 5. **Resume**: continue the same profile and output directory with `--resume`.
@@ -107,6 +108,16 @@ performance/targets/echomem/run_six_metrics.sh quick \
 
 Quick results are `PARTIAL` by design. They must never be reported as a capacity
 boundary or formal acceptance result.
+
+After the command exits, verify the report contract:
+
+```bash
+test -f "OUTPUT/report.html"
+```
+
+If `OUTPUT/report.html` does not exist, classify the run as `WRONG_ENTRYPOINT`
+and rerun with the commands in section 5; do not reinterpret or rename another
+HTML artifact as the current M1-M6 report.
 
 ## 4. Six metric test cases
 
@@ -210,10 +221,12 @@ First three or selected metrics:
 ```bash
 .venv/bin/python -m performance.targets.echomem.observation_run \
   --profiles PROFILE \
-  --metrics M1,M2,M3 \
   --env-file ENV_FILE \
   --out-dir OUTPUT
 ```
+
+Omitting `--metrics` intentionally selects `M1,M2,M3`. Use an explicit metrics
+list for every other scope. The `full` wrapper explicitly selects all six.
 
 Resume in the same output directory:
 
@@ -230,10 +243,14 @@ the user explicitly selected `--resume` with the same profile and metric set.
 
 ## 6. Progress presentation
 
-Send updates only at meaningful transitions: preflight, memory seeding, each M1
-level, M2 tenant tier, each M3 flood mode, M4 fault phase, each M5 recovery sample,
-and final M6/report assembly. Include completed/total work, current denominator,
-latest P95/error count, and the output path. Do not flood chat with every request.
+Keep one live report at `OUTPUT/report.html`. Create it after preflight and
+refresh it after memory seeding, each M1 level, each M2 tenant tier, each M3 flood
+mode, each M4 fault phase, each M5 recovery sample, and final M6 collection. Each
+refresh must use persisted evidence, retain the full denominator, and label
+unfinished metrics as running, partial, blocked, or not selected. Verify the
+file modification time advances and tell the user the path, update time,
+completed/total work, current denominator, latest P95, and error count. Do not
+flood chat with every request or wait until the whole run finishes to publish.
 
 When an error occurs, continue independent metrics when safe and classify it as:
 
@@ -278,3 +295,60 @@ Add these report-wide audits after the six metric sections:
    timing fields returned by EchoMem. Mark router, recall, admission, Commit, and
    atomic-engine stages as unobservable when the service does not expose them;
    never manufacture stage timing through subtraction.
+
+## 8. Report display contract
+
+The repository report generator, not the agent, owns HTML structure, styling,
+charts, status calculation, and escaping. The agent owns timely regeneration,
+validation, opening the result, and a concise explanation. Do not create a
+parallel `*-explained.html`, rename another artifact to `report.html`, or paste
+secret/raw payloads into the page.
+
+The top of `report.html` must make the run understandable without opening raw
+JSON. Show, in this order:
+
+1. an overall conclusion naming the measured boundary and the largest blocker;
+2. generation/update time and run state (`RUNNING`, `PARTIAL`, `PASS`, `FAIL`,
+   `BLOCKED`, `INCONCLUSIVE`, or `NOT_SELECTED`), with text as well as color;
+3. EchoMem/harness commits, profile/config fingerprint, real model names, actual
+   resource limits, selected metrics, elapsed time, and completed/total work;
+4. provider and deployment preflight state without secret values.
+
+Every metric section must keep the same reading order:
+
+1. **What it reflects** and **how it was tested** in plain language.
+2. A status card with the primary value, numerator/denominator, latest completed
+   level or phase, errors, and confidence limitation.
+3. A chart for comparison or trend, followed by the exact-value table used to
+   draw it. Tooltips or labels must expose exact values; charts never replace
+   denominators.
+4. Failure classes split into EchoMem, external provider, deployment/control,
+   and harness/evidence causes. Keep unknown failures visible.
+5. Concrete improvement suggestions grouped by the responsible EchoMem module,
+   plus the exact rerun condition for partial or inconclusive evidence.
+6. Links to the relevant persisted JSON/CSV/log evidence using relative paths.
+
+Use these metric-specific visuals and tables:
+
+| Metric | Required visual | Required exact data |
+| --- | --- | --- |
+| M1 capacity | load-level lines/bars for Search P95/P99, strict-success throughput, error rate, CPU, RSS, and Commit backlog | configured tenants/hot users, observed peak in-flight, Search sent/strict-success/quality-fail/non-200/transport error, recall hits/attempts, Commit planned/202/completed/failed/pending, backlog drain result, provider errors, first blocking level |
+| M2 fairness | per-tenant Commit throughput and Search P95 bars, plus Jain summary | credential-unique tenant count, offered/actual Search and Commit per tenant, completions, errors, inverse-latency input, both Jain numerators/denominators, zero-completion tenants |
+| M3 priority | baseline versus overlapping-flood Search P95/P99 for uniform, single-tenant, and heterogeneous cases | confirmed unfinished-Commit overlap window, overlapping Search count, recall hits/attempts, Commit planned/202/rejected/completed/non-terminal, per-tenant configured weights and actual arrivals |
+| M4 isolation | each bystander's before/during/after Search P95 and degradation percentage | injected tenant and fault type, control response, exercised-fault evidence, bystander-only denominator, errors and recovery samples for every repeat |
+| M5 recovery | acceptance-to-recovery funnel and per-sample outcome table | planned, 202 accepted, killed while non-terminal, recovered terminal, replayed idempotency key, history/archive/cursor missing/duplicate/order mismatches; failed samples remain in the denominator |
+| M6 observability | tenant-by-lane coverage matrix and queue-depth/wait/execute/reject charts | expected and observed cells, sample timestamps, queue depth, wait/execute totals or deltas, rejected count, missing/non-monotonic/reset frames, generation/restart boundaries |
+
+After M1-M6, render the invalid-input matrix, API call ledger, Search/Recall and
+Commit/Atomic module timing distributions, and raw artifact index. For module
+timings, show observation count and P50/P95/P99 plus queue wait when available;
+identify whether each value came from a trace-correlated JSON log or a Prometheus
+window delta. Never mix endpoint latency, model latency, and internal stage time
+in one unlabeled series.
+
+On every live refresh, preserve completed sections and prior denominators. The
+agent must verify that `report.html` exists, its modification time advanced, its
+displayed checkpoint matches persisted evidence, and no selected metric silently
+disappeared. If the generator cannot render an available field, report
+`REPORT_CONTRACT_GAP`, patch the canonical generator, regenerate the same file,
+and rerun its focused tests before presenting the result.
