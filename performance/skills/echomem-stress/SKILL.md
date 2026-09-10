@@ -13,6 +13,19 @@ Run the repository's real HTTP six-metric suite as a guided product flow. Read
 `references/interactive-workflow.md` before starting a run. Use
 `performance/targets/echomem/README.md` as the canonical setup and CLI reference.
 
+## Portable chart-report workflow
+
+For Kimi, Codex, or another local coding assistant, read
+`references/chart-report-workflow.md` before executing or regenerating a report.
+These are repository-relative instructions, not Codex-tool dependencies. The
+assistant needs local file and shell access; the assistant model is independent
+of the LLM/Embedding used by the EchoMem service under test. A report-only request
+must not start a new paid workload. Select the generator by evidence type:
+M1-M6 uses the canonical suite; the bounded Commit diagnostic uses
+`scripts.build_commit_diagnostic_report`, never as a substitute for six metrics.
+Deliver the generated HTML path, evidence scope, and verification result, not
+just a prose summary or raw JSON.
+
 ## Non-negotiable evidence rules
 
 - Use a real EchoMem deployment, real LLM, real Embedding, and independent tenant
