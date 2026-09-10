@@ -13,9 +13,8 @@
 PR449 合入前使用已同步最新 `develop` 的 PR449，并在发压前校验 branch、commit 与非空
 `engine.enabled`。
 该入口不设置 P95、准确率、Jain、劣化比例或吞吐 PASS/FAIL 门槛；状态仅为
-`MEASURED / PARTIAL / BLOCKED / EXECUTION_ERROR`，默认不运行 soak。旧的
-`python -m performance --target echomem --six-metrics` 保留为历史 SLO
-验收入口，不要用于本轮观测结论。
+`MEASURED / PARTIAL / BLOCKED / EXECUTION_ERROR`，默认不运行 soak。当前六项运行的
+唯一主报告是 `<OUTPUT_DIR>/report.html`。
 
 ## 设计目标
 
@@ -126,7 +125,7 @@ dynamic/                    # 动态评测 (generate / replay)
   configs/                  #   evaluator / user_simulator YAML 配置
   skills/                   #   交互式 skill 操作手册（dynamic）
   results/                  #   运行结果
-performance/        # 性能压测与正式验收（多租户并发读写、注入/检索延迟、CPU/RSS、O1-O7）
+performance/        # EchoMem M1-M6 压测（多租户读写、容量、公平性、恢复与可观测性）
   engine.py                  #   通用场景引擎（场景=Python 文件，画像=YAML）
   probe.py                   #   探针执行器（PASS/FAIL/INCONCLUSIVE/NOT_IMPLEMENTED 四态）
   profile.py                 #   画像加载（YAML，${ENV:-default} 展开）
@@ -136,12 +135,12 @@ performance/        # 性能压测与正式验收（多租户并发读写、注�
   monitor.py                 #   服务端 Prometheus /metrics 采样与推导（系统无关）
   suite.py                   #   通用套件能力：case records 汇总 + 单 case 执行（Engine + 产物写盘）
   targets/echomem/
-    main.py                  #   正式验收编排器 CLI（python -m performance.run --target echomem）
+    observation_run.py       #   当前 M1-M6 唯一 CLI，生成 OUTPUT_DIR/report.html
+    run_six_metrics.sh       #   quick / full / m6 包装脚本
     scenes/                  #   场景文件（A 纯读 / B 纯写 / C 混合 / D 洪峰 / barrier / burst-waves / capacity）
     probes/                  #   故障/恢复/限流/对账探针（真实 HTTP）
-    acceptance/              #   求值器：preflight / seed / metrics / features /
-                             #     evaluate(8 门禁) / scheduler(7 检查) / objectives(O1-O7) / report_html
-    orchestrator/            #   编排器实现（场景矩阵 + 套件执行 + 探针编排 + objective-suite 报告）
+    acceptance/              #   M1-M6 预检、灌种、证据聚合、模块计时与 HTML 报告
+    orchestrator/            #   内部场景矩阵、套件执行和探针编排
     profiles/                #   画像示例 + instance-profiles / tenants / fault-plan 示例
   targets/general/
     main.py                  #   通用场景引擎 CLI（python -m performance --target general：run / validate / probe / list）
@@ -406,442 +405,102 @@ EchoAgent 完整管线，含 prefill / TTFT）；指定则进入 `replay` 模式
 再用 `replay` 把同一份数据集对 `echomem` / `openviking` 各回放一遍，最后生成
 自包含 HTML 图表报告。一键流程见 `START_BAT/compare_echomem_vs_openviking.bat`。
 
-## 性能压测
+## EchoMem M1-M6 性能压测
 
-对运行中的 EchoMem 服务做多租户高并发**读写性能**压测（不需要 LLM）：检索
-吞吐/延迟、注入四段延迟（open / add / commit 提交 / commit 完成）、读写混合与
-「注入洪峰」下的劣化（**检出"注入阻塞检索"**）。设计见
-`performance/docs/设计意图.md`。
+当前唯一入口是 `performance.targets.echomem.observation_run`；也可以使用同一入口的
+包装脚本 `performance/targets/echomem/run_six_metrics.sh`。测试在使用者本机部署的
+EchoMem 上运行，不要求服务器，也不强制限制为 4U8G。完整部署、配置字段和指标口径见
+[EchoMem 本机部署与六项压测手册](performance/targets/echomem/README.md)。
 
-场景引擎（`performance --target general run`）产出 `summary.json`（请求统计：rps、延迟
-p50/p95/p99、错误分类、租户分组；场景可挂 `report` 钩子输出 `custom` 段，
-如 search 质量聚合）与 `records.csv`（逐请求明细）。正式验收不直接消费
-summary，而是由编排器（`echomem-acceptance`）统一灌种、跑 case，把 records
-汇总成验收门禁与七项目标：
+### 1. 准备本机配置
 
-- **验收门禁**（`acceptance/evaluate.py`，8 gate）：search 成功率 / report6
-  质量 / 隔离 / 公平 / commit 完成 / 拒绝 / hot tenant / 容量阶梯，逐项
-  PASS / FAIL / INCONCLUSIVE，产出 `suite.json` / `acceptance.json`。
-- **七项目标 O1-O7**（`acceptance/objectives.py`）：DAU/热租户容量、多规格
-  配置、单租户故障隔离、Jain 公平性、Search 优先级、Commit kill-9 恢复重放、
-  分层调度可观测性，产出 `objective-suite.json` + `objective-suite.html`。
-- **服务端观测与特性判定**（`acceptance/metrics.py` 的 `/metrics` 采样、
-  `features.py` 的 13 特性判定，含 commit_guarantee / tenant_fairness /
-  memory_leak / resource_timeline 四项保证）：纯逻辑模块，由单元测试约束，
-  供验收口径扩展复用（阈值见设计意图 §15.2）。
+使用 `performance_refactor` 分支，并从当前 EchoMem 代码自己的
+`configs/config.example.json` 生成运行配置。使用真实 LLM、真实 Embedding、真实记忆引擎，
+并为各租户准备独立凭据；密钥只写入 Git 之外的环境文件。
+
+需要准备：
+
+- `PROFILE_JSON`：本机服务地址、容器名、租户文件、M1 档位和所选参数；
+- `ENV_FILE`：模型密钥、租户密钥和测试控制 token；
+- `OUTPUT_DIR`：本次全新的结果目录，续跑时才允许复用。
+
+第一次运行前安装项目依赖，并确认入口存在：
 
 ```bash
-# 运行一个场景（场景=Python 文件，画像=YAML；输出 performance/targets/echomem/results/<ts>/）
-# 通用引擎入口统一走 --target general；不针对具体系统的场景/探针放 targets/general/ 下
-python -m performance --target general run \
-  --scene performance/targets/echomem/scenes/scene_c_mixed.py \
-  --profile performance/targets/echomem/profiles/echomem.yaml
-
-# 场景清单与契约校验
-python -m performance --target general list
-python -m performance --target general validate --scene performance/targets/echomem/scenes/scene_a_pure_read.py
+test -f performance/targets/echomem/observation_run.py
+bash -n performance/targets/echomem/run_six_metrics.sh
 ```
 
-场景说明：`A` 纯读基线（劣化对照）· `B` 纯写注入（四段延迟 + 写后读一致性 +
-commit 成功保证）· `C` 读写混合（多档 read:write）· `D` 注入洪峰（读持续 +
-突发 K 个 commit，检出 search-commit 干扰与读写数据倾斜）· 另有 `barrier` /
-`burst-waves` / `capacity` 三个正式场景，由编排器的场景矩阵按 case 参数驱动。
-引擎、场景契约与画像格式详见 `performance/docs/设计意图.md`。
-
-正式验收不直接调用场景引擎，而是通过编排器（`echomem-acceptance`）统一
-执行：按机器规格 profile 组织场景矩阵、灌种、跑探针并汇总 O1-O7。
-
-### 正式验收编排器（echomem-acceptance）
-
-正式验收按机器规格逐个执行容量、稳定性、公平性、Search 优先级、Commit 恢复
-和 `/metrics` 可观测性检查，对每轮套件汇总七项目标 `O1-O7`（DAU/热租户容量、
-多规格配置、单租户故障隔离、Jain 公平性、Search 优先级、Commit kill-9 恢复
-重放、分层调度可观测性），写 `objective-suite.json` + `objective-suite.html`。
-场景矩阵：`complete` 26 例（报告 12 例 + 场景集 14 例）；`4u8g` 22 例 bounded
-目录（容量档关后台 Commit，另含 fairness-bounded）。先把
-`performance/targets/echomem/profiles/instance-profiles.example.json`
-复制为实际 profile 配置，填写真实 `tenant_config`、`preflight_config` 和可选
-`prepare_command`：
+### 2. 先跑快速链路检查
 
 ```bash
-# quick bounded smoke（默认 7 例 QUICK_SCENARIOS，每场景 ≤30s、barrier ≤32）
-python -m performance.run --target echomem \
-  --profiles performance/targets/echomem/profiles/instance-profiles.example.json \
-  --profile 4U8G \
-  --out-dir performance/targets/echomem/results/objective-suite-$(date +%Y%m%d_%H%M%S) \
-  --quick
+performance/targets/echomem/run_six_metrics.sh quick \
+  PROFILE_JSON OUTPUT_DIR ENV_FILE
 ```
 
-缺少故障控制、重启控制或多规格实测时，报告保留 `INCONCLUSIVE`，不会
-根据客户端延迟或 HTTP 200 推断 EchoMem 已实现对应保证。
+Quick 使用真实 HTTP 和真实模型，但缩短采样，只用于确认部署、租户、模型、记忆注入、
+Search、Commit 和报告链路能够执行。它的结论是 `PARTIAL`，不能当作正式容量边界。
 
-旧完整套件的专项验收口径已收紧：容量项必须有真实完成请求且 Search/Commit
-成功率达标；多规格必须有至少两种规格的实际运行记录；公平性必须同时有逐租户
-Commit 完成吞吐和 Search P95，取两者 Jain 的较小值；Search 优先级只接受已完成的
-洪泛场景，并直接检查 Search P95 是否不超过 5 秒；恢复项必须同时通过消息集合、
-cursor 和幂等重放对账；可观测性必须验证至少两个租户在每个预期 lane 上都有
-queued/wait/exec/rejected 四元组。旧报告只有单维 Jain、单一指标族或“配置已写入”
-的结果，会保留为 `INCONCLUSIVE`，不会被误判为通过。
-
-恢复对账必须使用 EchoMem `POST /messages` 返回的服务端消息 `id`（例如
-`msg_*`）；压测脚本生成的 `recovery-*` 只作为请求关联字段，不能当作持久化
-消息 ID。`Commit` 返回 `completed` 只证明事务到达终态，仍需另外核对
-`history`、archive 和 `echo://sessions/{session}/current/commit_cursor.json`；
-没有显式幂等键时，报告会把“消息已持久化”和“重复提交幂等”分开判定。
-
-正式压测先执行两道前置门禁：profile 配置 `preflight_config` 时先跑
-模型/配置 preflight 检查（确认 EchoMem 使用真实模型而非 fake-llm，结果记录在
-`suite.json` 的 `preflight` 段，失败提前返回）；随后在灌种阶段用每个租户的
-真实凭据调用 `POST /api/sessions/open` 灌入种子。任何一个租户返回 `401`、
-连接失败或配置缺失，`seed` 段都会记录 `ENV_ERROR` 并提前返回，不再输出
-「0 请求」的伪压测数据；该段只保留错误摘要与租户计数，不保存密钥。
-正式复用已有记忆时，种子按 case 的 `sessions_per_tenant` / `messages_per_session`
-灌入并真实提交到 EchoMem，可被后续场景复用。
-
-如果正式套件在场景启动前停止，先看 `suite.json` 的 `preflight` / `seed` 段和
-`objective-suite.json` 的探针命令记录。`preflight` 失败说明 EchoMem 配置仍指向
-fake 模型或模型凭据缺失；`seed` 段 `ENV_ERROR` 说明租户凭据错误（401）、接口
-错误（4xx）、服务异常（5xx）或网络超时，错误信息保留状态码、请求路径和截断后的
-服务响应，便于区分。这类前置失败应归为测试环境/配置问题，不能直接判定 EchoMem
-功能失败。
-如果服务器只注册了部分租户，可以在 profile 中设置 `"allow_partial_tenants": true`
-（记录在 `suite.json` 的 manifest 中，表示本轮接受部分租户参与）；场景仍按
-`tenant_config` 实际可用的租户数运行，公平性、故障隔离和多租户容量在没有覆盖
-全部租户样本时保持 `INCONCLUSIVE`，不会把单租户结果冒充多租户通过。
-`--quick` 默认把灌种降到每租户 1 个会话（`seed_sessions_per_tenant=1`），不做
-真实模型灌种；需要把已有租户记忆纳入 quick 验证时可加 `--quick-include-seed`
-（或 profile 配置 `quick_include_seed`）。这种运行可以验证服务调度和延迟，
-但不能替代真实记忆质量测试。
-
-- **套件执行**（`orchestrator/runner.py`）：按 case 逐场景进程内执行
-  （`complete` 26 例 / `4u8g` 22 例），灌种后运行并把 records 汇总成
-  `evaluate` 验收门禁（8 个 gate：search 成功率 / report6 质量 / 隔离 /
-  公平 / commit 完成 / 拒绝 / hot tenant / 容量阶梯）消费的契约摘要，
-  产出 `suite.json` / `acceptance.json`。只有每次运行都用独立租户凭据才允许
-  做出上线结论。
-- **故障 / 恢复 / 限流 / 对账探针**（`probes/`）：编排器按 profile 配置段
-  （`capability_probe` / `commit_recovery` / `fault_plan` / `missing_cases` /
-  `concurrent_commit` / `limit_failure_sweep`）调用，直接以真实 HTTP 访问
-  EchoMem；只在部署方显式提供故障/恢复控制时才执行真实操作，否则如实上报
-  `INCONCLUSIVE`，显式 404 是「未实现」的唯一证据。
-
-`--quick` 在 4U8G profile 上走 `4u8g` bounded 目录（22 例，
-capacity-2/4/8 强置 `quick_commit_rpm=0`，公平性/优先级等场景 barrier ≤32）；
-不传 `--scenarios` 时只跑默认 7 例 quick 子集（baseline /
-fairness-bounded / search-priority-blackbox / saturation / capacity-2 /
-capacity-4 / capacity-8）。正式模式（去掉 `--quick`）按 `complete` 目录
-（26 例）执行，包含 7 小时 `soak` 等长时场景；单台 4U8G 不想等 `soak` 时，
-用 `--scenarios` 显式挑选 bounded 场景。两种模式都不会伪造 kill-9 或依赖
-未提供的故障控制结果。
-
-`--quick` 只缩短测试窗口，不改变验收口径：没有真实 Search/Commit
-样本、第二种实例规格、真实重启/故障控制或服务端指标时，结果仍明确记为
-`INCONCLUSIVE`，并在 `suite.json` / `acceptance.json` 记录缺失证据及归属
-（测试平台、部署配置或 EchoMem 服务端）。因此“无法测试”不等同于
-“EchoMem 功能失败”。
+### 3. 运行前三项或指定指标
 
 ```bash
-# 正式验收（去掉 --quick；complete 26 例）
-python -m performance.run --target echomem \
-  --profiles performance/targets/echomem/profiles/instance-profiles.example.json \
-  --profile 4U8G \
-  --out-dir performance/targets/echomem/results/objective-suite-$(date +%Y%m%d_%H%M%S)
+.venv/bin/python -m performance.targets.echomem.observation_run \
+  --profiles PROFILE_JSON \
+  --env-file ENV_FILE \
+  --out-dir OUTPUT_DIR
 ```
 
-种子数据准备默认按最多 4 个租户并行执行，以缩短真实模型 commit 的准备时间；
-种子阶段不计入压测窗口。种子并发在 `acceptance/seed.TenantPreparer` 的
-`seed_concurrency` 配置，正式负载阶段仍按场景配置独立控制并发。
+不填写 `--metrics` 时默认只运行 `M1,M2,M3`。需要指定其他范围时，可显式添加
+`--metrics` 并填写 `M1` 到 `M6` 的任意逗号分隔组合。M4 会执行租户故障注入，M5 会
+重启指定的压测专用容器；执行这两项前必须确认目标不是共享或生产实例。
 
-单实例 4U8G 的正式验收即上述命令（complete 26 例，含 `soak`）；不想等
-`soak` 时用 `--scenarios` 排除它。在服务器上以后台方式运行并跟踪日志（先按
-「服务器测试指南」第 5 步把示例 profile 复制为实际配置）：
+### 4. 运行完整六项
 
 ```bash
-cd /opt/Memory-System-Eval-Harness
-export STRESS_OUTPUT_DIR=/opt/Memory-System-Eval-Harness/performance/targets/echomem/results/objective-suite-$(date +%Y%m%d_%H%M%S)
-nohup python -m performance.run --target echomem \
-  --profiles /opt/echomem-stress/instance-profiles.json \
-  --profile 4U8G \
-  --out-dir "$STRESS_OUTPUT_DIR" \
-  >"$STRESS_OUTPUT_DIR/launcher.log" 2>&1 &
+performance/targets/echomem/run_six_metrics.sh full \
+  PROFILE_JSON OUTPUT_DIR ENV_FILE
 ```
 
-结果写入 `objective-suite-<ts>/`：`objective-suite.json`（逐 profile 的
-suite 摘要 + 探针制品 + O1-O7 汇总）与 `objective-suite.html`（自包含报告）；
-每个 profile 目录下是 `suite.json` / `acceptance.json`，每个 case 目录保留该
-场景的 `summary.json` / `records.csv` / `commit_results.csv` /
-`search_results.csv`。
+默认不运行 soak。正式运行保留超时、拒绝、Provider 异常、pending、空召回和质量失败的
+完整分母，不会因为 EchoMem 内部并发配置较小而自动降低客户端负载。
 
-| 参数 | 说明 | 默认 |
-|---|---|---|
-| `--profiles` | instance-profiles JSON（`{"profiles":[...]}`） | 必填 |
-| `--profile` | 只运行指定 name 的 profile | 全部 |
-| `--out-dir` | 输出目录（objective-suite.json / html） | 必填 |
-| `--quick` | bounded smoke：每场景 ≤30s、barrier ≤32、容量档关 Commit、灌种降到每租户 1 会话 | 关 |
-| `--scenarios` | 覆盖场景列表（逗号分隔，按 case label 过滤） | quick 默认 7 例子集，正式默认全量 |
-| `--quick-duration-cap-s` | quick 每场景时长上限 | 30 |
-| `--quick-case-timeout-s` | quick 单 case 超时 | 120 |
-| `--quick-barrier-count-cap` | quick barrier Commit 上限（<32 不能验收严格优先级） | 32 |
-| `--quick-include-seed` | quick 也保留真实模型灌种 | 关 |
-| `--timeout-s` | 正式单 case 超时 | 7200 |
-| `--skip-run` | 只读已有 suite.json 重新生成总报告（审计） | 关 |
-| `--suite-path` | 配合 `--skip-run` 指定 suite.json | profile 目录 |
-| `--env-file` | 加载 KEY=VALUE 环境文件供探针使用（密钥不写报告） | 无 |
+### 5. 续跑
 
-## 服务器测试指南
-
-本节用于团队成员在 Linux 服务器上测试已经启动的 EchoMem。推荐把 EchoMem
-和 Harness 放在同一台机器上：EchoMem 只监听 `127.0.0.1:8010`，Harness
-通过本机或 Docker host network 访问，不需要把 EchoMem API 暴露到公网。
-
-### 1. 拉取测试平台
-
-以下为既有 `v3` 套件入口；基于 PR31 的无性能门槛观测请使用文首运行手册中的新 PR 分支：
+只有 EchoMem 版本、配置、模型、租户和请求计划均未变化时，才能复用原目录：
 
 ```bash
-git clone -b v3 git@github.com:noi031/Memory-System-Eval-Harness.git
-cd Memory-System-Eval-Harness
-git rev-parse --short HEAD
+.venv/bin/python -m performance.targets.echomem.observation_run \
+  --profiles PROFILE_JSON \
+  --env-file ENV_FILE \
+  --out-dir OUTPUT_DIR \
+  --resume
 ```
 
-已有目录执行：
+修改服务版本或并发参数后必须创建新目录，不能混合成同一次测试。
 
-```bash
-git fetch origin
-git checkout v3
-git pull --ff-only origin v3
-```
+### 6. 查看结果
 
-测试代码不要在服务器上临时修改；需要修改时先提交到测试平台 PR。
-
-### 2. 启动并检查 EchoMem
-
-EchoMem 必须先启动，Harness 不负责拉起被测服务：
-
-```bash
-cd /opt/echomem
-export ECHOMEM_AUTO_COMMIT_THRESHOLD=20000
-echomem server \
-  --workspace /opt/echomem-stress/workspace \
-  --host 127.0.0.1 \
-  --port 8010
-```
-
-另开终端检查：
-
-```bash
-curl -fsS http://127.0.0.1:8010/health
-curl -fsS http://127.0.0.1:8010/metrics >/dev/null
-```
-
-如果这里失败，先查看 EchoMem 日志，不要直接启动压测。
-
-### 3. 配置真实模型
-
-正式压测禁止使用 `fake-llm` 或 `fake-embedding`。模型 endpoint、模型名和
-API Key 环境变量必须与 EchoMem 的 `config.json` 一致：
+当前六项主报告始终生成在：
 
 ```text
-LLM endpoint:       https://dashscope.aliyuncs.com/compatible-mode/v1
-LLM model:          deepseek-v4-flash-0731
-Embedding endpoint: https://dashscope.aliyuncs.com/compatible-mode/v1
-Embedding model:    text-embedding-v3
-MCP:                关闭
-Rerank:             关闭，除非本轮测试明确要求开启
+OUTPUT_DIR/report.html
 ```
 
-示例环境变量如下，实际变量名以 `config.json` 中的 `api_key_env` 为准：
+同时保留：
+
+- `execution-manifest.json`：代码版本、配置指纹和模型预检；
+- `summary.json`：M1-M6 结构化结果与完整分母；
+- `suite.json`：场景和探针索引；
+- `records.csv`、`metrics_samples.csv`：逐请求与资源证据。
+
+运行结束后执行：
 
 ```bash
-export ECHOMEM_LLM_API_KEY='你的模型 key'
-export ECHOMEM_EMBEDDING_API_KEY='你的模型 key'
-export ECHOMEM_ATOMIC_ENGINE_LLM_API_KEY="$ECHOMEM_LLM_API_KEY"
-export ECHOMEM_EPISODE_ENGINE_LLM_API_KEY="$ECHOMEM_LLM_API_KEY"
-export ECHOMEM_BASE_ENGINE_LLM_API_KEY="$ECHOMEM_LLM_API_KEY"
-export ECHOMEM_MEMORY_UNIT_ENGINE_LLM_API_KEY="$ECHOMEM_LLM_API_KEY"
-export ECHOMEM_INTENT_LLM_API_KEY="$ECHOMEM_LLM_API_KEY"
-export ECHOMEM_MEMROUTER_LLM_API_KEY="$ECHOMEM_LLM_API_KEY"
+test -f "OUTPUT_DIR/report.html"
 ```
 
-不要把真实 API Key 写入 Git、README、日志或结果报告。
-
-### 4. 准备独立租户凭据
-
-公平性和隔离测试必须使用不同租户凭据，不能让所有租户共用一个 Key：
-
-```bash
-cp performance/targets/echomem/profiles/tenants.example.json /opt/echomem-stress/tenants.json
-export ECHOMEM_TENANT_A_KEY='tenant-a 的 key'
-export ECHOMEM_TENANT_B_KEY='tenant-b 的 key'
-export ECHOMEM_TENANT_C_KEY='tenant-c 的 key'
-export ECHOMEM_TENANT_D_KEY='tenant-d 的 key'
-```
-
-`tenants.json` 中的 `auth_key_env` 必须和当前 shell 中的变量对应。缺少独立
-凭据时可以做单租户诊断，但不能据此下多租户公平性或隔离结论。
-
-### 5. 先跑短检查
-
-在完整测试前先跑一个 quick bounded smoke（单场景 `baseline`），确认地址、
-租户凭据、模型环境和工作目录都正确。先把示例 profile 复制为实际配置，填写
-真实 `tenant_config` / `preflight_config`，并按需删除或调整 `prepare_command`
-（示例里的 `/usr/local/bin/echomem-select-profile` 是部署专用命令）：
-
-```bash
-cd /opt/Memory-System-Eval-Harness
-cp performance/targets/echomem/profiles/instance-profiles.example.json \
-  /opt/echomem-stress/instance-profiles.json
-# 编辑 /opt/echomem-stress/instance-profiles.json：
-#   tenant_config  -> 你复制出的 tenants.json
-#   preflight_config -> /etc/echomem/4u8g/config.json（或删除该键跳过模型门禁）
-#   prepare_command -> 删除或改为真实命令
-
-export STRESS_OUTPUT_DIR=/opt/Memory-System-Eval-Harness/performance/targets/echomem/results/smoke-$(date +%Y%m%d_%H%M%S)
-
-python3 -m performance.run --target echomem \
-  --profiles /opt/echomem-stress/instance-profiles.json \
-  --profile 4U8G \
-  --scenarios baseline \
-  --quick \
-  --out-dir "$STRESS_OUTPUT_DIR"
-```
-
-必须看到 `objective-suite.json` 中该 profile 的
-`profile_execution_status=completed`，且 `$STRESS_OUTPUT_DIR/4U8G/` 下生成了
-`suite.json` 和 `baseline/summary.json`。
-
-### 6. 执行 4U8G 完整测试
-
-正式验收执行 `complete` 目录（26 例，含 7 小时 `soak`）。在服务器上以后台
-方式运行并跟踪日志：
-
-```bash
-cd /opt/Memory-System-Eval-Harness
-export STRESS_OUTPUT_DIR=/opt/Memory-System-Eval-Harness/performance/targets/echomem/results/4u8g-$(date +%Y%m%d_%H%M%S)
-
-nohup python3 -m performance.run --target echomem \
-  --profiles /opt/echomem-stress/instance-profiles.json \
-  --profile 4U8G \
-  --env-file /opt/echomem-stress/formal-run-4u8g.env \
-  --timeout-s 7200 \
-  --out-dir "$STRESS_OUTPUT_DIR" \
-  >"$STRESS_OUTPUT_DIR/launcher.log" 2>&1 &
-echo $! >"$STRESS_OUTPUT_DIR/launcher.pid"
-```
-
-不想等 7 小时 `soak` 时，用 `--scenarios` 显式挑选场景（例如只跑
-`baseline,mixed,commit-barrier,saturation,tenant-skew,search-priority-blackbox,
-capacity-2,capacity-4,capacity-8`）。`tenant-skew` 会一次提交 260 个 Commit，
-单场景可能明显慢于普通场景；平台默认限制 barrier 同时在途数为 32，因此总样本
-仍是 260 个，但不会把 260 个真实任务一次性压入 EchoMem。`--timeout-s` 是单个
-case 的超时（默认 7200s），超时会记录为 `TIMEOUT`，不会伪装成 EchoMem 的业务
-失败。
-
-模型凭据如果放在 Docker env 文件中，用 `--env-file` 加载同一份文件（支持
-`KEY=VALUE` 与 `export KEY=VALUE` 行，密钥不写入报告）。进入正式压测前会先
-执行 `preflight_config` 对应的模型/配置门禁，再在灌种阶段用每个租户的真实
-凭据调用 `POST /api/sessions/open`；任一租户失败都会提前停止本轮（见
-`suite.json` 的 `preflight` / `seed` 段），不会输出「0 请求」的伪压测数据。
-
-### 7. 查看进度和结果
-
-```bash
-tail -f "$STRESS_OUTPUT_DIR/launcher.log"
-cat "$STRESS_OUTPUT_DIR/objective-suite.json"
-cat "$STRESS_OUTPUT_DIR/4U8G/suite.json"
-cat "$STRESS_OUTPUT_DIR/4U8G/acceptance.json"
-find "$STRESS_OUTPUT_DIR" -name summary.json -type f | sort
-```
-
-最终应确认 `objective-suite.json` 中该 profile 的 `profile_execution_status`
-为 `completed`；`4U8G/acceptance.json` 中的 `PASS`、`FAIL`、`INCONCLUSIVE`
-要逐项查看，不能只看总准确率或退出码。
-
-### 七项目标统一自动化入口
-
-按实例规格逐个执行容量、稳定性、公平性、Search 优先级、Commit 恢复和
-`/metrics` 可观测性检查、汇总 O1-O7 的入口就是上面的编排器
-（`python -m performance.run --target echomem`），完整用法见
-「性能压测」章节。服务器上先把
-`performance/targets/echomem/profiles/instance-profiles.example.json` 复制为
-实际 profile 配置，填写真实 `tenant_config`、`preflight_config` 和可选
-`prepare_command`（示例里的 `/usr/local/bin/echomem-select-profile` 是部署
-专用命令，普通环境应删除）。EchoMem 的真实模型凭据放在 Docker env 文件中时，
-用 `--env-file` 加载同一份 env 文件（支持 `KEY=VALUE` 与 `export KEY=VALUE`
-行，密钥不写入 `objective-suite.json`、HTML 或命令记录）。
-`commit_recovery.tenant` 如果已经不在当前 `tenant_config` 中，入口会自动选用
-该配置中的第一个租户，避免动态租户 ID 更新后仍因旧 profile 名称导致恢复探针
-在启动阶段失败。
-
-`--quick` 只做 bounded smoke（默认 7 例场景，barrier ≤32、容量档 Commit 置 0、
-灌种降到每租户 1 会话），专门快速验证调度、延迟和可观测性链路，不能证明记忆
-质量；`--quick-include-seed` 可把已有租户记忆纳入测试。少于 32 个真实 Commit
-只能作为 smoke 数据，不能验收 O5 严格优先级；PR397 的完整 A/B/C/D 矩阵以及
-大规模 barrier 不属于 quick，不能用 quick 结果替代完整验收。
-
-正式数据去掉 `--quick`。O1 按活跃用户的 Search SLO 评估容量，Commit 洪泛由
-O5 单独验收；容量档位超时只有在超时前已实际发出 Search 请求时才算边界，准备
-阶段或 Commit 阶段卡住不能冒充 Search 容量上限。O1 只有在「Search 成功容量
-档位 + 更高一档真实失败/超时/资源边界」同时存在时才会判定为 PASS；如果所有
-已跑档位都成功，报告只给出「至少支持到 N」的容量下界并标记 `INCONCLUSIVE`，
-不会把最后一个成功档位冒充最大用户量。O1 的「最大用户量」是压测窗口内完成的
-容量阶梯上限，不直接等同于业务 DAU；O6 必须额外提供真实 container 重启和
-cursor/message-set 对账配置，并在 `commit_recovery` 中设置
-`"require_accepted_202": true`，否则没有在崩溃前明确收到 HTTP 202 的操作不能
-进入恢复验收；O7 必须实际抓到服务端 `/metrics` 四元组。O4 会在
-`search-priority-blackbox`、`tenant-skew` 等候选负载中选择租户覆盖最完整的一轮
-计算公平性，避免 quick 模式的小 barrier 结果遮蔽更完整的真实证据；如果该轮
-仍有租户没有 Commit 或 Search 样本，结果仍会保留为 `FAIL` 或 `INCONCLUSIVE`。
-
-报告输出 `objective-suite.json` 和 `objective-suite.html`，不会把缺失证据算成
-通过。profile 中配置 `capability_probe`、`commit_recovery`、`fault_plan` 后，
-入口会自动执行真实 HTTP 能力探针、Commit 中途 kill-9 恢复探针和故障套件，并
-把每个检查项写入 HTML 明细；`missing_cases` 和 `concurrent_commit` 会执行
-PR397 的写后可见性/持久化对账、Commit 状态机、冷暖 Search 与并发 Commit 探针。
-没有真实故障控制端点时，故障项必须显示 `INCONCLUSIVE`，不能用测试平台自身
-缺少适配器来判定 EchoMem 未实现。如果只想重新审计已有结果而不重新发请求，
-可在 profile 中填写 `suite_path`，然后执行
-`python -m performance.run --target echomem --skip-run`；该模式只读取
-已有 `suite.json` 和探针制品。
-
-quick 的容量场景 Commit 负载置 0（`quick_commit_rpm=0`，只启动 Search
-worker），保证容量档位测的是活跃用户的 Search 边界，而不是异步 Commit 的
-完成时间。快速运行仍显示 `INCONCLUSIVE` 的常见原因不是 EchoMem 一定失败：
-
-| 目标 | 还需要的真实证据 | 归属 |
-|---|---|---|
-| O1 | 至少一档成功的 `capacity-*`，再逐步增加租户直到 SLO 失败 | 测试平台场景与机器资源 |
-| O2 | 至少两种规格实际启动并各自完成同一组场景 | 部署调度与测试平台 profile |
-| O3 | 故障期间旁观租户的前后 Search P95 配对 | EchoMem/部署必须提供真实故障控制，平台负责采集 |
-| O4 | 同一稳态窗口内至少两个租户同时有 Commit 吞吐和 Search P95 | 测试平台负载与独立租户凭据 |
-| O5 | `search-priority-blackbox` 中同时存在 Commit 洪泛和 Search P95 | 测试平台场景，服务端负责实际调度 |
-| O6 | 202 Commit、真实 kill/restart、history/archive/cursor/幂等重放对账 | 部署提供 kill/restart 权限，EchoMem提供既有读接口 |
-| O7 | 每个实际 lane 都采到 queued/wait/exec/rejected 四元组，并有 engine fan-out 的 exec/skipped 证据；不要求把 `tenant_id` 放进指标标签 | EchoMem `/metrics` 暴露 bounded-label 指标，测试平台负责按 lane/fan-out 对账 |
-
-公平性计算还要求被选中的同一负载窗口覆盖所有参与租户：每个租户都必须有
-Search 样本和 Commit 提交样本。缺少某个租户时只报告 `INCONCLUSIVE`，不会把
-没有到达或没有完成的租户从 Jain 分母中删除。
-
-故障计划中的 `${BASE_URL}` 会被替换为 profile 当前地址，并写入运行目录的
-`fault-plan.resolved.json`；不要再把旧服务器端口直接复制到通用示例中。
-
-### 8. 常见问题
-
-| 现象 | 原因 | 处理 |
-|---|---|---|
-| `Connection refused :8010` | EchoMem 已退出或端口未监听 | 检查 `docker ps` 和 `/health` |
-| `ModuleNotFoundError: performance` | 当前目录不是 Harness 根目录 | 先 `cd /opt/Memory-System-Eval-Harness` 再执行 `python -m performance...` |
-| `suite.json` 的 `preflight` 段失败 | EchoMem 配置仍指向 fake 模型或模型凭据缺失 | 修正 `config.json` 和 `*_API_KEY`，或用 `--env-file` 加载真实凭据 |
-| `suite.json` 的 `seed` 段 `ENV_ERROR` | 租户凭据错误（401）、接口错误或网络超时 | 检查 `tenants.json` 与 `ECHOMEM_TENANT_*_KEY` 环境变量，查看错误信息 |
-| 长时间停在 `tenant-skew` | 260 个 Commit 屏障等待或服务异常 | 停止本轮，查看场景 `summary.json`，缩短 case timeout 后重跑 |
-| 只有 `suite.json` 没有场景结果 | 首个场景前退出或目标服务不可达 | 查看 `launcher.log` 和 `4U8G/*/summary.json` |
-
-结果建议只保留 3 天：
-
-```bash
-find /opt/echomem-stress/results -mindepth 1 -maxdepth 1 \
-  -type d -mtime +3 -exec rm -rf -- {} +
-```
+若该文件不存在，本轮没有生成当前 M1-M6 报告，应查看命令和进程退出信息后修复，不能用
+其他 HTML 文件替代。
 
 ## 扩展指南
 
