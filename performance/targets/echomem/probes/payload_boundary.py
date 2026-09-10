@@ -143,6 +143,7 @@ def run(ctx: Ctx) -> None:
         "sizes_bytes", [0, 1, 1024, 65536, 262144, 524288, 1048576]
     )})
     rows: list[dict[str, Any]] = []
+    pending_searches = []
 
     for size in sizes:
         try:
@@ -191,26 +192,26 @@ def run(ctx: Ctx) -> None:
             rows.append({"api": api, "encoding": "binary", "content_bytes": size,
                          "wire_bytes": size, **_safe_result(binary)})
 
-        # Run the potentially expensive model path last, preserving input-validation evidence.
-        search = client.request_bytes(
-            "POST", "/api/retrieval/search", search_raw,
-            content_type="application/json", timeout_s=timeout_s,
-        )
-        rows.append({"api": "search", "encoding": "text", "content_bytes": size,
-                     "wire_bytes": len(search_raw), **_safe_result(search)})
+        pending_searches.append((size, search_raw))
 
     commit_chars = max(1, int(params.get("commit_content_chars", 1048576)))
     chunk_chars = max(1, int(params.get("commit_chunk_chars", 262144)))
     skip_commit = bool(params.get("skip_long_commit", False))
     skip_mcp = bool(params.get("skip_mcp", False))
+    mcp_chars = max(1, int(params.get("mcp_add_memory_chars", 1048576)))
+    mcp = {"status": "NOT_SELECTED"} if skip_mcp else _mcp_add_memory(params, tenant, "m" * mcp_chars, verifier=client)
     long_commit = ({"status": "NOT_SELECTED"} if skip_commit else
                    _long_commit(client, tenant.tenant_id, commit_chars, chunk_chars,
                                 float(params.get("commit_timeout_s", 600))))
     accepted_chars = long_commit.get("accepted_chars", 0)
     terminal = long_commit.get("terminal", {})
 
-    mcp_chars = max(1, int(params.get("mcp_add_memory_chars", 1048576)))
-    mcp = {"status": "NOT_SELECTED"} if skip_mcp else _mcp_add_memory(params, tenant, "m" * mcp_chars, verifier=client)
+    # Finish protocol checks and write evidence before a long Search can stall the instance.
+    for size, search_raw in pending_searches:
+        search = client.request_bytes("POST", "/api/retrieval/search", search_raw,
+                                      content_type="application/json", timeout_s=timeout_s)
+        rows.append({"api": "search", "encoding": "text", "content_bytes": size,
+                     "wire_bytes": len(search_raw), **_safe_result(search)})
     for row in rows:
         row["outcome"] = _case_outcome(row)
     detail = {

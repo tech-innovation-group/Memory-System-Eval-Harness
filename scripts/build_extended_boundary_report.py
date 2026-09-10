@@ -9,6 +9,8 @@ from performance.targets.echomem.orchestrator.report import write_objective_suit
 
 def build(root):
     profiles, overview = [], []
+    dispatched_cases = set()
+    slow_search_sizes = set()
     for name in ('api', 'mcp', 'isolated-262144', 'isolated-524288', 'isolated-1048576'):
         folder = root / name
         source = folder / 'payload-boundary.json'
@@ -21,6 +23,11 @@ def build(root):
         checks = payload.get('checks', [])
         detail = json.loads(checks[-1].get('detail') or '{}') if checks else {}
         counts = detail.get('outcome_counts', {})
+        for row in detail.get('cases', []):
+            if row.get('dispatched', True):
+                dispatched_cases.add((row['content_bytes'], row['api'], row['encoding']))
+            if row['api'] == 'search' and row['encoding'] == 'text' and row.get('dispatched', True) and row.get('http_status') is None:
+                slow_search_sizes.add(row['content_bytes'])
         result = (f"计划{detail.get('cases_total')}项，发出{detail.get('cases_dispatched')}项；"
                   f"输入拒绝{counts.get('INPUT_REJECTED', 0)}，受理{counts.get('ACCEPTED_NOT_PERSISTENCE_PROOF', 0)}，"
                   f"服务错误{counts.get('SERVER_ERROR', 0)}，传输失败{counts.get('TRANSPORT_FAILED', 0)}，"
@@ -53,7 +60,9 @@ def build(root):
             'created_at':datetime.now(timezone.utc).isoformat(),
             'model_evidence_note':'MCP全文回读只验证会话历史保存，不要求模型抽取。长Commit有真实阶段日志及Embedding 429证据；不将接口200或未启用mock当作成功模型调用证明。',
             'scope':'42项离散API边界、1MiB MCP全文回读、独立自然语言长Commit。不是M1-M3完整验收报告。',
-            'summary':'输入拒绝、服务错误、受理与后台完成分别统计。不同实验保留独立来源和配置指纹；没有数据不记通过。',
+            'summary':f'跨连续及独立实例，实际发出的不同API/长度/编码组合共{len(dispatched_cases)}/42项。'
+                      f'文本Search在以下字节长度发生传输失败/超时：{sorted(slow_search_sizes)}。'
+                      '发出不等于通过；独立补测不覆盖原连续实例阻塞记录。各实验配置指纹与来源分别保留。',
             'overview_title':'边界与超长写入结果总览',
             'method':'API：7个长度档×Message/Commit/Search×文本/二进制。Commit的原始文本请求测试协议边界，真正长Commit先写入Session再提交。MCP使用add_memory写入1MiB字符，再用同一租户history读取全文逐字对账；它不触发或证明模型抽取完成。长Commit使用独立自然语言事实，在首段、中段、尾段检查召回，保留模型依赖失败。',
             'overview':{'headers':['场景','状态','证据'], 'rows':overview}, 'profiles':profiles}

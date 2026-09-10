@@ -9,6 +9,26 @@ from performance.targets.echomem.orchestrator.report import render_objective_sui
 
 
 class ScopedProbeReportTest(unittest.TestCase):
+    def test_protocol_and_mcp_checks_precede_expensive_searches(self):
+        from performance.targets.echomem.probes import payload_boundary as probe
+        events = []
+        response = SimpleNamespace(status_code=200, elapsed_s=.1, reason_code='', transport_error_type='', payload={})
+        tenant = SimpleNamespace(auth_key='test', tenant_id='t', user_id='u', account_id='a', agent_id='g')
+        def request(_method, path, _body, **kwargs):
+            events.append('search' if path.endswith('/search') and kwargs['content_type']=='application/json' else 'protocol')
+            return response
+        ctx = SimpleNamespace(base_url='http://test', params={'sizes_bytes':[0, 1048576], 'skip_long_commit':True}, check=Mock())
+        with patch.object(probe, 'load_tenant_specs', return_value=[tenant]), \
+             patch.object(probe, 'EchoMemHTTP') as client, \
+             patch.object(probe, '_mcp_add_memory', side_effect=lambda *a, **k: (events.append('mcp') or {'status':'PASS'})):
+            client.return_value.open_session.return_value = ('session', {})
+            client.return_value.request_bytes.side_effect = request
+            probe.run(ctx)
+        self.assertEqual(events[-3:], ['mcp', 'search', 'search'])
+        detail = json.loads(ctx.check.call_args.kwargs['detail'])
+        self.assertEqual(detail['cases_total'], 12)
+        self.assertEqual(detail['cases_dispatched'], 12)
+
     def test_extended_report_does_not_claim_missing_cases_complete(self):
         from scripts.build_extended_boundary_report import build
         with tempfile.TemporaryDirectory() as tmp:
