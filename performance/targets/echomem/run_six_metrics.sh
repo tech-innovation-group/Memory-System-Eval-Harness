@@ -37,6 +37,7 @@ case "$mode" in
     command+=(--quick)
     ;;
   full)
+    command+=(--metrics M1,M2,M3,M4,M5,M6)
     ;;
   m6)
     command+=(--metrics M6)

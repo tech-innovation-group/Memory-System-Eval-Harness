@@ -446,12 +446,12 @@ Search、Commit 和报告链路能够执行。它的结论是 `PARTIAL`，不能
 ```bash
 .venv/bin/python -m performance.targets.echomem.observation_run \
   --profiles PROFILE_JSON \
-  --metrics M1,M2,M3 \
   --env-file ENV_FILE \
   --out-dir OUTPUT_DIR
 ```
 
-`--metrics` 可填写 `M1` 到 `M6` 的任意逗号分隔组合。M4 会执行租户故障注入，M5 会
+不填写 `--metrics` 时默认只运行 `M1,M2,M3`。需要指定其他范围时，可显式添加
+`--metrics` 并填写 `M1` 到 `M6` 的任意逗号分隔组合。M4 会执行租户故障注入，M5 会
 重启指定的压测专用容器；执行这两项前必须确认目标不是共享或生产实例。
 
 ### 4. 运行完整六项

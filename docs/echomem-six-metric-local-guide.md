@@ -745,10 +745,12 @@ performance/targets/echomem/run_six_metrics.sh full \
 ```bash
 .venv/bin/python -m performance.targets.echomem.observation_run \
   --profiles .local-stress/six-metrics.profile.json \
-  --metrics M1,M2,M3 \
   --env-file .local-stress/test.env \
   --out-dir results/local-m1-m3-tuned
 ```
+
+不填写 `--metrics` 时默认只运行 `M1,M2,M3`。这是常规压测默认范围，不会注入租户
+故障，也不会重启 EchoMem 容器。
 
 执行顺序为 `M1 → M2 → M3 → M4 → M5`，M6 从开始到结束持续采样。默认不运行 soak。
 机器速度、模型限流和容量边界不同会影响总时长，M1 的逐档容量测试通常最耗时。

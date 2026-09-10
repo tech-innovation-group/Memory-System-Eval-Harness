@@ -569,7 +569,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--profiles", required=True, type=Path)
     parser.add_argument("--profile", help="profile name; optional when the file contains exactly one profile")
     parser.add_argument("--out-dir", required=True, type=Path)
-    parser.add_argument("--metrics", default="M1,M2,M3,M4,M5,M6")
+    parser.add_argument("--metrics", default="M1,M2,M3")
     parser.add_argument("--env-file", type=Path)
     parser.add_argument("--quick", action="store_true")
     parser.add_argument("--resume", action="store_true")
