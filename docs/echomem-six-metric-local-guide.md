@@ -7,12 +7,11 @@
 > **当前代码位置**：六项观测入口已通过
 > [PR32](https://github.com/tech-innovation-group/Memory-System-Eval-Harness/pull/32)
 > 合入 `performance_refactor`。请直接检出并更新 `performance_refactor`，再执行文中的
-> `observation_run.py` 和 `run_six_metrics.sh`。原有的历史
-> `python -m performance --target echomem --six-metrics` 不是本手册对应的观测入口。
+> `observation_run.py` 和 `run_six_metrics.sh`。这是当前 M1-M6 仅有的两个启动入口。
 
 > **报告出口自检**：当前入口无论完成、阻塞还是执行异常，都会在指定
-> `OUTPUT_DIR` 写出 `report.html`。如果运行结束后只有 `objective-suite.html`，
-> 说明误用了旧 O1-O7 编排器；该文件不能作为当前六项结果，应使用本文命令重跑。
+> `OUTPUT_DIR` 写出 `report.html`。如果运行结束后没有该文件，本轮不能作为当前
+> 六项结果，应核对实际命令并使用本文入口重跑。
 
 ## 开始前先确认版本与配置
 
@@ -796,8 +795,7 @@ results/local-six-metrics-tuned/report.html
 
 ```bash
 test -f "$OUTPUT_DIR/report.html" || {
-  test -f "$OUTPUT_DIR/objective-suite.html" && \
-    echo "错误：运行了旧 O1-O7 编排器，请改用 observation_run"
+  echo "错误：没有生成 M1-M6 report.html，请使用本文入口重跑"
   exit 2
 }
 ```

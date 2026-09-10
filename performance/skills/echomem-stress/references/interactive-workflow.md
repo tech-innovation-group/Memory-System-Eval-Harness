@@ -114,9 +114,9 @@ After the command exits, verify the report contract:
 test -f "OUTPUT/report.html"
 ```
 
-If only `OUTPUT/objective-suite.html` exists, the operator ran the legacy O1-O7
-entry point. Classify this as `WRONG_ENTRYPOINT` and rerun with the commands in
-section 5; do not reinterpret or rename the legacy report.
+If `OUTPUT/report.html` does not exist, classify the run as `WRONG_ENTRYPOINT`
+and rerun with the commands in section 5; do not reinterpret or rename another
+HTML artifact as the current M1-M6 report.
 
 ## 4. Six metric test cases
 

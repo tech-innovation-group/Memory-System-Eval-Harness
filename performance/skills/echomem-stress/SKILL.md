@@ -40,9 +40,8 @@ Run the repository's real HTTP six-metric suite as a guided product flow. Read
   Provider metrics contain real samples; otherwise mark it unverified.
 - Use only `performance.targets.echomem.observation_run` or
   `performance/targets/echomem/run_six_metrics.sh` for the current M1-M6 flow.
-  `performance.run --target echomem` is the legacy O1-O7 flow. If an output has
-  `objective-suite.html` but no `report.html`, stop and report `WRONG_ENTRYPOINT`;
-  never present that legacy report as the current six-metric result.
+  If an output has no `report.html`, stop and report `WRONG_ENTRYPOINT`; never
+  present another HTML artifact as the current six-metric result.
 
 ## Interactive flow
 
@@ -66,9 +65,8 @@ Run the repository's real HTTP six-metric suite as a guided product flow. Read
 6. On completion, inspect `execution-manifest.json`, `summary.json`, `suite.json`,
    and `report.html`. Open the HTML report and summarize every selected metric's
    status, denominator, primary number, and responsible module.
-   Before interpreting results, verify `<OUTPUT>/report.html` exists. The mere
-   presence of `objective-suite.html` proves the legacy report renderer ran, not
-   that the current M1-M6 report was generated.
+   Before interpreting results, verify `<OUTPUT>/report.html` exists. No other
+   HTML filename is a valid substitute for the current M1-M6 report.
 
 ## Product conversation
 
