@@ -20,6 +20,9 @@ def diagnose(out: Path, base: str):
     options_file = out / "diagnostic-options.json"
     options = json.loads(options_file.read_text()) if options_file.exists() else {}
     commit_chars = int(options.get("commit_chars", 65536))
+    concurrency = int(options.get("concurrency", 16))
+    if not 1 <= concurrency <= 1024:
+        raise ValueError("concurrency must be between 1 and 1024")
     if not 1 <= commit_chars <= 1048576:
         raise ValueError("commit_chars must be between 1 and 1048576")
     preflight = run_preflight(out / "config.json", timeout_s=40, retry_attempts=1,
@@ -30,7 +33,8 @@ def diagnose(out: Path, base: str):
     preflight["error"] = "MODEL_PREFLIGHT_FAILED" if not preflight.get("ok") else ""
     save(out / "model-preflight.json", preflight)
     result = {"status": "RUNNING", "stage": "model-preflight", "burst_started": False,
-              "smoke": [], "serial_large": [], "seeds": [], "commit_chars": commit_chars}
+              "smoke": [], "serial_large": [], "seeds": [], "commit_chars": commit_chars,
+              "concurrency": concurrency}
     save(out / "diagnostic.json", result)
     if not preflight.get("ok"):
         result.update(status="BLOCKED", reason="MODEL_PREFLIGHT_FAILED")
@@ -72,10 +76,10 @@ def diagnose(out: Path, base: str):
             result.update(status="BLOCKED", reason="SEED_FACT_NOT_FOUND")
             save(out / "diagnostic.json", result)
             return
-        result.update(stage="16-way-mixed", burst_started=True)
+        result.update(stage=f"{concurrency}-way-mixed", burst_started=True)
         save(out / "diagnostic.json", result)
-        params = {"tenant_config": str(out / "tenants.json"), "levels": [16],
-                  "topologies": ["heterogeneous-users"], "requests_per_level": 32,
+        params = {"tenant_config": str(out / "tenants.json"), "levels": [concurrency],
+                  "topologies": ["heterogeneous-users"], "requests_per_level": concurrency * 2,
                   "large_commit_chars": commit_chars, "commit_poll_timeout_s": 90,
                   "timeout_s": 20, "stop_after_boundary": True,
                   "queries": {t.tenant_id: sample for t in tenants}}

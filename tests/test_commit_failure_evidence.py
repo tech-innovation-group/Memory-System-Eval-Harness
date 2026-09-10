@@ -16,10 +16,11 @@ class EvidenceTests(unittest.TestCase):
     def test_diagnostic_records_configured_length(self):
         with tempfile.TemporaryDirectory() as directory:
             out = Path(directory)
-            (out / "diagnostic-options.json").write_text('{"commit_chars":4096}')
+            (out / "diagnostic-options.json").write_text('{"commit_chars":4096,"concurrency":64}')
             with patch("scripts.run_commit_diagnostic.run_preflight", return_value={"ok":False}):
                 diagnose(out, "http://unused.invalid")
             self.assertEqual(json.loads((out / "diagnostic.json").read_text())["commit_chars"], 4096)
+            self.assertEqual(json.loads((out / "diagnostic.json").read_text())["concurrency"], 64)
             (out / "diagnostic-options.json").write_text('{"commit_chars":0}')
             self.assertRaises(ValueError, diagnose, out, "http://unused.invalid")
 
