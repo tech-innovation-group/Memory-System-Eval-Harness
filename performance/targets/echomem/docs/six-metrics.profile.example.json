@@ -11,6 +11,28 @@
       "required_concurrency": 32,
       "required_embedding_model": "qwen3.7-text-embedding-flash",
       "require_stage_observability": true,
+      "concurrency_topology": {
+        "enabled": true,
+        "levels": [16, 32, 64, 128],
+        "requests_per_level": 128,
+        "sessions_per_user": 2,
+        "within_session_concurrency": 4,
+        "timeout_s": 60,
+        "commit_poll_timeout_s": 120,
+        "max_concurrency": 128,
+        "stop_after_boundary": true,
+        "require_recall_quality": true
+      },
+      "payload_boundary": {
+        "enabled": true,
+        "sizes_bytes": [0, 1, 1024, 65536, 262144, 524288, 1048576],
+        "commit_content_chars": 1048576,
+        "commit_chunk_chars": 262144,
+        "commit_timeout_s": 600,
+        "mcp_base_url": "http://127.0.0.1:8001",
+        "mcp_add_memory_tool": "add_memory",
+        "mcp_add_memory_chars": 1048576
+      },
       "m1_duration_s": 300,
       "m1_search_rps_per_user": 1,
       "dau_scenarios": [

@@ -13,15 +13,124 @@ from pathlib import Path
 from typing import Any
 
 _PROBE_LABELS = (
+    ("commit_diagnostic", "Commit 终态与失败归因"),
     ("capability_probe", "能力探针"),
     ("blackbox_contract_probe", "黑盒契约探针"),
     ("missing_cases", "PR397 黑盒一致性探针"),
     ("concurrent_commit", "并发 Commit 探针"),
+    ("concurrency_topology", "用户与 Session 并发拓扑矩阵"),
+    ("payload_boundary", "API/MCP 请求体与超长 Commit 边界"),
     ("fault_isolation", "单租户故障隔离探针"),
     ("limit_failure_sweep", "真实限流阶梯"),
     ("commit_recovery", "Commit 崩溃恢复探针"),
     ("fault_suite", "故障套件"),
 )
+
+
+def _check_detail(payload: dict[str, Any]) -> dict[str, Any]:
+    checks = payload.get("checks")
+    if not isinstance(checks, list) or not checks:
+        return {}
+    detail = checks[-1].get("detail") if isinstance(checks[-1], dict) else None
+    if isinstance(detail, dict):
+        return detail
+    if isinstance(detail, str):
+        try:
+            parsed = json.loads(detail)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def _probe_visual(key: str, payload: dict[str, Any]) -> str:
+    detail = _check_detail(payload)
+    if key == "commit_diagnostic":
+        rows = []
+        for row in detail.get("rows", []):
+            evidence = row.get("terminal_evidence", {})
+            source = "终态接口"
+            if not evidence.get("error_present") and row.get("service_failure_evidence"):
+                evidence = row["service_failure_evidence"]
+                source = "服务日志（任务标识匹配）"
+            rows.append("<tr>" + "".join(f"<td>{html.escape(str(value))}</td>" for value in (
+                row.get("phase"), row.get("archive_ref"), row.get("http_status"),
+                row.get("terminal_state"), row.get("elapsed_ms"), evidence.get("stage"),
+                evidence.get("error_type"), evidence.get("fault_domain"),
+                ", ".join(evidence.get("categories", []) + evidence.get("provider_codes", [])),
+                evidence.get("error_signature"), source)) + "</tr>")
+        return ("<table><thead><tr><th>阶段</th><th>任务脱敏标识</th><th>提交HTTP</th><th>终态</th><th>耗时ms</th>"
+                "<th>服务阶段</th><th>错误类型</th><th>故障域</th><th>原因分类/供应商代码</th><th>错误指纹</th><th>证据来源</th></tr></thead><tbody>"
+                + "".join(rows) + "</tbody></table>")
+    if key == "concurrency_topology":
+        matrix = detail.get("matrix") if isinstance(detail.get("matrix"), list) else []
+        rows = []
+        maximum = max(1.0, max((float(row.get("p95_ms") or 0) for row in matrix), default=1.0))
+        for row in matrix:
+            width = min(100.0, 100.0 * float(row.get("p95_ms") or 0) / maximum)
+            rows.append(
+                "<tr>"
+                f"<td>{html.escape(str(row.get('requested_concurrency') or row.get('level')))}</td>"
+                f"<td>{html.escape(str(row.get('topology')))}</td>"
+                f"<td>{html.escape(str(row.get('actual_users')))} / {html.escape(str(row.get('requested_users')))}</td>"
+                f"<td>{html.escape(str(row.get('peak_active_operations', '-')))}</td>"
+                f"<td>{html.escape(str(row.get('completed_2xx')))} / {html.escape(str(row.get('offered')))}</td>"
+                f"<td><div class='bar' style='width:{width:.1f}%'></div>{html.escape(str(row.get('p95_ms')))} ms</td>"
+                f"<td>{html.escape(str(row.get('throughput_rps_2xx')))}</td>"
+                f"<td>{html.escape(str(row.get('tenant_throughput_jain')))}</td>"
+                f"<td><code>{html.escape(json.dumps(row.get('http_counts') or {}, ensure_ascii=False))}</code></td>"
+                f"<td><code>{html.escape(json.dumps(row.get('drain') or {'reason': row.get('reason')}, ensure_ascii=False))}</code></td>"
+                "</tr>"
+            )
+        if rows:
+            operation_rows = []
+            for row in matrix:
+                for op, values in (row.get("operations") or {}).items():
+                    operation_rows.append("<tr>" + "".join(
+                        f"<td>{html.escape(str(value))}</td>" for value in (
+                            row.get("level"), row.get("topology"), op,
+                            values.get("offered"), values.get("p50_ms"), values.get("p95_ms"), values.get("p99_ms"),
+                            values.get("search_quality_ok") if op == "search" else values.get("commit_completed"),
+                            values.get("search_strict_throughput_jain") if op == "search" else values.get("commit_completion_throughput_jain"),
+                            json.dumps(values.get("boundary_reasons") or {}, ensure_ascii=False),
+                        )) + "</tr>")
+            return ("<table><thead><tr><th>并发档</th><th>拓扑</th><th>实际/请求用户</th>"
+                    "<th>峰值在途操作</th><th>2xx/总请求</th><th>操作 P95（含超时）</th><th>2xx受理吞吐</th>"
+                    "<th>受理 Jain（非完成公平性）</th><th>HTTP/传输分布</th><th>Commit 排空</th></tr></thead><tbody>"
+                    + "".join(rows) + "</tbody></table>"
+                    "<h4>按操作拆分（延迟单位 ms）</h4><p>Search 成功要求真实召回命中；Commit 成功要求最终 completed。"
+                    "Jain 仅在有可比较的完成吞吐时展示，受理公平性不等于完成公平性。</p>"
+                    "<table><thead><tr><th>档位</th><th>拓扑</th><th>操作</th><th>分母</th><th>P50</th><th>P95</th><th>P99</th>"
+                    "<th>严格成功</th><th>完成吞吐 Jain</th><th>错误分类</th></tr></thead><tbody>"
+                    + "".join(operation_rows) + "</tbody></table>")
+    if key == "payload_boundary":
+        cases = detail.get("cases") if isinstance(detail.get("cases"), list) else []
+        rows = []
+        for row in cases:
+            rows.append(
+                "<tr>"
+                f"<td>{html.escape(str(row.get('api')))}</td>"
+                f"<td>{html.escape(str(row.get('encoding')))}</td>"
+                f"<td>{html.escape(str(row.get('content_bytes')))}</td>"
+                f"<td>{html.escape(str(row.get('wire_bytes')))}</td>"
+                f"<td>{'未发出' if row.get('dispatched') is False else '已发出'}</td>"
+                f"<td>{html.escape(str(row.get('http_status') or row.get('transport_error_type') or '-'))}</td>"
+                f"<td>{html.escape(str(row.get('reason_code') or '-'))}</td>"
+                f"<td>{html.escape(str(row.get('outcome') or '未分类'))}</td>"
+                f"<td>{html.escape(str(row.get('elapsed_ms')))} ms</td>"
+                "</tr>"
+            )
+        if rows or detail.get("long_commit") or detail.get("mcp_add_memory"):
+            counts = detail.get('outcome_counts') or {}
+            maximum = max(list(counts.values()) + [1])
+            chart = '<h4>边界结果分布（项）</h4>' + ''.join(
+                f"<p>{html.escape(str(label))}：{count}</p><div class='bar' style='width:{100*count/maximum:.2f}%'></div>"
+                for label, count in counts.items()) if counts else ''
+            return (chart + "<table><thead><tr><th>API</th><th>编码</th><th>内容字节</th>"
+                    "<th>Wire 字节</th><th>发送状态</th><th>结果</th><th>原因类型</th><th>边界判定</th><th>耗时</th>"
+                    "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+                    f"<pre>{html.escape(json.dumps({'long_commit': detail.get('long_commit'), 'mcp_add_memory': detail.get('mcp_add_memory')}, ensure_ascii=False, indent=2))}</pre>")
+    return ""
 
 
 def _model_evidence(profile: dict[str, Any]) -> dict[str, Any]:
@@ -46,6 +155,17 @@ def _model_evidence(profile: dict[str, Any]) -> dict[str, Any]:
 
 def render_objective_suite_html(result: dict[str, Any]) -> str:
     """把 objective-suite.json 渲染为自包含 HTML 字符串。"""
+    title = html.escape(str(result.get("title") or "EchoMem 七项目标自动化验收"))
+    scope = html.escape(str(result.get("scope") or ""))
+    run_summary = html.escape(str(result.get("summary") or ""))
+    def summary_table(key, heading):
+        table = result.get(key)
+        if not isinstance(table, dict):
+            return ""
+        headers = "".join(f"<th>{html.escape(str(v))}</th>" for v in table.get("headers", []))
+        body = "".join("<tr>" + "".join(f"<td>{html.escape(str(v if v is not None else '未采集'))}</td>" for v in row) + "</tr>"
+                       for row in table.get("rows", []))
+        return f'<section class="scroll"><h2>{heading}</h2><table><thead><tr>{headers}</tr></thead><tbody>{body}</tbody></table></section>'
     rows = []
     for profile in result.get("profiles") or []:
         for objective in profile.get("objectives") or []:
@@ -121,6 +241,9 @@ def render_objective_suite_html(result: dict[str, Any]) -> str:
                         "</tr>"
                     )
                 details.append("</tbody></table>")
+            visual = _probe_visual(key, payload)
+            if visual:
+                details.append(visual)
             details.append(
                 f"<p class='muted'>制品：<code>{html.escape(str(payload.get('path', '')))}</code></p></details>"
             )
@@ -133,28 +256,35 @@ def render_objective_suite_html(result: dict[str, Any]) -> str:
         if all_models_verified else
         "未证明真实模型可用或被调用，本报告不能宣称使用了真实模型。"
     )
+    if result.get("model_evidence_note"):
+        model_banner = str(result["model_evidence_note"])
     return f"""<!doctype html>
 <html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>EchoMem 七项目标自动化验收</title>
+<title>{title}</title>
 <style>
 body{{font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#17212b;background:#f5f7f8;margin:0}}
 main{{max-width:1280px;margin:auto;padding:28px 18px 56px}}section{{background:#fff;border:1px solid #dfe6ea;padding:18px;margin-top:14px}}
 h1{{margin:0 0 6px;font-size:25px}}.muted{{color:#687784}}table{{border-collapse:collapse;width:100%}}
 th,td{{border-bottom:1px solid #e7ecef;padding:9px;text-align:left;vertical-align:top}}th{{background:#f7f9fa}}
 .pass{{color:#197c62;font-weight:700}}.fail,.timeout{{color:#b6403b;font-weight:700}}.inconclusive{{color:#9a6a00;font-weight:700}}
-code{{background:#f0f3f5;padding:2px 4px}}.scroll{{overflow:auto}}
+code{{background:#f0f3f5;padding:2px 4px}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;background:#f7f9fa;padding:10px}}
+.bar{{height:6px;background:#247a68;margin:2px 0 4px;min-width:2px}}.scroll{{overflow:auto}}
 </style><main>
-<section><h1>EchoMem 七项目标自动化验收</h1>
+<section><h1>{title}</h1><p>{scope}</p><p>{run_summary}</p>
 <div class="muted">生成时间：{html.escape(str(result.get("created_at", "")))} · 真实 HTTP：是</div>
 <p class="{model_banner_class}">{html.escape(model_banner)}</p>
 <p>报告只依据实际运行证据判定；缺少部署控制或服务端指标时标记为 INCONCLUSIVE，不推断为通过。</p></section>
+{summary_table('overview', result.get('overview_title', '并发结果总览'))}
+{summary_table('parameter_table', 'EchoMem 实际配置文件参数')}
+{summary_table('boundary_overview', '请求长度覆盖（原始与独立补测分别保留；同一用例采用最新证据）')}
+{('<section><h2>测试方式与解释边界</h2><p>' + html.escape(str(result['method'])) + '</p></section>') if result.get('method') else ''}
 <section class="scroll"><h2>模型可用性预检（不是负载调用证明）</h2>
 <p class="muted">“没有启用 mock”不等于调用了真实模型。下表只证明独立的 Provider 预检；负载期间调用需另有阶段日志或 Provider 指标。</p>
 {"".join(model_sections)}</section>
 <section class="scroll"><h2>逐 profile 目标状态</h2>
 <table><thead><tr><th>Profile</th><th>目标</th><th>状态</th><th>说明</th><th>归属</th><th>证据</th></tr></thead>
 <tbody>{"".join(rows)}</tbody></table></section>
-<section class="scroll"><h2>内存泄漏诊断</h2>{"".join(_leak_sections(result))}</section>
+{('<section class="scroll"><h2>内存泄漏诊断</h2>' + ''.join(_leak_sections(result)) + '</section>') if any(p.get('memory_leak') for p in result.get('profiles', [])) else ''}
 <section class="scroll"><h2>探针与黑盒证据明细</h2>
 <p class="muted">这里显示真实 HTTP 探针实际检查到的内容。没有真实输入、控制能力或服务端观测时，状态保持 INCONCLUSIVE。</p>
 {"".join(details)}</section>

@@ -109,6 +109,28 @@ def test_missing_log_duration_and_wait_are_not_zero() -> None:
     assert row["queue_wait_p95_ms"] is None
 
 
+def test_diagnostic_request_join_requires_unambiguous_trace_evidence():
+    events = [
+        {'event': 'prototype_multiply_started', 'request_id': 'private-http', 'duration_ms': 0},
+        {'event': 'prototype_multiply_completed', 'request_id': 'private-http',
+         'duration_ms': 1200, 'caller_thread_cpu_ms': 10, 'query_vector': ['private-vector']},
+        {'event': 'recall_stage_completed', 'request_id': 'private-http',
+         'trace_id': 'private-trace', 'stage': 'semantic', 'duration_ms': 1300},
+    ]
+    rows = parse_structured_logs('\n'.join(json.dumps(row) for row in events))
+    assert rows[0]['duration_ms'] is None
+    assert rows[1]['caller_thread_cpu_ms'] == 10
+    assert rows[1]['trace_ref'] == trace_ref('private-trace')
+    assert rows[1]['trace_link_source'] == 'explicit_request_trace_pair'
+    assert 'private-' not in json.dumps(rows)
+    stats = summarize_log_stages(rows)
+    matrix = next(row for row in stats if row['module'] == 'recall/prototype_multiply')
+    assert matrix['observations'] == 1
+    events.append({**events[-1], 'trace_id': 'second-trace'})
+    ambiguous = parse_structured_logs('\n'.join(json.dumps(row) for row in events))
+    assert ambiguous[1]['trace_ref'] == ''
+
+
 def test_response_trace_reference_preserves_supported_envelopes_only() -> None:
     expected = trace_ref("private-trace")
     for payload in ({"trace_id": "private-trace"},

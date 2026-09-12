@@ -204,6 +204,8 @@ def _validate_stage_observability_config(
 
 
 def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> dict[str, Any]:
+    from performance.targets.echomem.extended_profile import expand_extended_profile
+    profile = expand_extended_profile(profile, selected)
     needs_m6_behaviors = "M6" in selected
     m6_only = set(selected) == {"M6"}
     needs_fault = "M4" in selected or needs_m6_behaviors
@@ -253,6 +255,11 @@ def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> 
         if not env_name or not os.environ.get(env_name, ""):
             raise ValueError("Every observation tenant requires a non-empty auth_key_env")
     specs = load_tenant_specs(profile["tenant_config"])
+    if profile.get("extended_load_tests"):
+        required_extended = max(max(profile["concurrency_topology"]["levels"]),
+                                profile["concurrency_topology"].get("max_concurrency", 0))
+        if len(specs) < required_extended or len({spec.auth_key for spec in specs[:required_extended]}) != required_extended:
+            raise ValueError(f"extended_load_tests requires {required_extended} independently authenticated tenants")
     required = 8 if "M2" in selected else 4
     if len(specs) < required or len({spec.auth_key for spec in specs[:required]}) != required:
         raise ValueError(f"{required} independently authenticated tenants are required")
@@ -477,6 +484,10 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
         probe_queries = (suite.get("seed") or {}).get("probe_queries")
         if probe_queries and isinstance(profile.get("fault_isolation"), dict):
             profile["fault_isolation"] = {**profile["fault_isolation"], "queries": probe_queries}
+        if probe_queries and isinstance(profile.get("concurrency_topology"), dict):
+            profile["concurrency_topology"] = {
+                **profile["concurrency_topology"], "queries": probe_queries,
+            }
         elif visibility and isinstance(profile.get("fault_isolation"), dict):
             profile["fault_isolation"] = {
                 **profile["fault_isolation"],
@@ -569,7 +580,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--profiles", required=True, type=Path)
     parser.add_argument("--profile", help="profile name; optional when the file contains exactly one profile")
     parser.add_argument("--out-dir", required=True, type=Path)
-    parser.add_argument("--metrics", default="M1,M2,M3,M4,M5,M6")
+    parser.add_argument("--metrics", default="M1,M2,M3")
     parser.add_argument("--env-file", type=Path)
     parser.add_argument("--quick", action="store_true")
     parser.add_argument("--resume", action="store_true")
