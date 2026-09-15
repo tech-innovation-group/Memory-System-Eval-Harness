@@ -1,4 +1,6 @@
 """Report scope must not confuse unselected metrics with failed tests."""
+import json
+
 from performance.targets.echomem.acceptance.observation import METRIC_NAMES, write_observation_report
 
 
@@ -86,6 +88,55 @@ def test_m1_report_keeps_failure_domains_and_provider_evidence(tmp_path):
     assert "retrieval_inflight_full" in page
     assert "atomic_engine" in page
     assert "Provider 证据未采集时" in page
+
+
+def test_m1_stage_chart_uses_trace_paired_measurements(tmp_path):
+    stage_path = tmp_path / "structured-stage-events.jsonl"
+    stage_rows = [
+        {"trace_ref": "trace-a", "module": "recall/recall_total", "duration_ms": 80},
+        {"trace_ref": "trace-a", "module": "recall/semantic", "duration_ms": 20},
+        {"trace_ref": "trace-b", "module": "recall/recall_total", "duration_ms": 160},
+        {"trace_ref": "trace-b", "module": "recall/semantic", "duration_ms": 40},
+    ]
+    stage_path.write_text(
+        "".join(json.dumps(row) + "\n" for row in stage_rows), encoding="utf-8"
+    )
+    measurement_dir = tmp_path / "M1" / "concurrency"
+    measurement_dir.mkdir(parents=True)
+    (measurement_dir / "level-1-search-measurement.json").write_text(
+        json.dumps({"rows": [
+            {"sent": True, "trace_ref": "trace-a", "elapsed_s": 0.1},
+            {"sent": True, "trace_ref": "trace-b", "elapsed_s": 0.2},
+        ]}),
+        encoding="utf-8",
+    )
+    data = result(["M1"])
+    data["timing_evidence"] = {"stage_collection": {"path": str(stage_path)}}
+    data["metrics"]["M1"]["levels"] = [{
+        "topology": "concurrency",
+        "target_concurrency": 1,
+        "measurement_file": "level-1-search-measurement.json",
+        "search": {
+            "sent": 2,
+            "p95_s": 99,
+            "p99_s": 99,
+            "latency_observations": 2,
+            "peak_inflight_requests": 1,
+            "http_status_counts": {"200": 2},
+            "recall_served": 2,
+        },
+    }]
+
+    path = tmp_path / "report.html"
+    write_observation_report(data, path)
+    page = path.read_text()
+
+    assert "trace_id 配对结构化日志" in page
+    assert "200 ms" in page
+    assert "40 ms" in page
+    assert "99000.0 ms" not in page
+    assert "本图所有展示档位均使用" in page
+    assert "部分档位缺少完整 trace_id 配对" not in page
 
 
 def test_m4_report_explains_fault_injection_and_worst_bystander(tmp_path):

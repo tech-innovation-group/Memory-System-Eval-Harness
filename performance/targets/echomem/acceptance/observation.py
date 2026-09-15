@@ -1679,6 +1679,130 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
         )
         return f"<h3>{esc(title)}</h3>{body or '<p>暂无数据</p>'}"
 
+    def grouped_bars(title: str, groups: list[tuple[str, list[tuple[str, float | None]]]]) -> str:
+        normalized = [
+            (group, [(label, _number(value)) for label, value in points])
+            for group, points in groups
+        ]
+        maximum = max((value for _, points in normalized for _, value in points
+                       if value is not None), default=0) or 1
+        group_html = "".join(
+            "<div class='tree-group'><div class='tree-root'><b>" + esc(group) + "</b>"
+            "<span>并发档位</span></div><div class='tree-children'>" + "".join(
+                f"<div class='tree-node'><span class='tree-label'>{esc(label)}</span>"
+                f"<i><b style='width:{min(100, 100 * value / maximum):.2f}%'></b></i>"
+                f"<strong>{esc(round(value, 2))} ms</strong></div>"
+                for label, value in points if value is not None
+            ) + "</div></div>"
+            for group, points in normalized
+        )
+        return f"<h3>{esc(title)}</h3><div class='tree-chart'>{group_html}</div>"
+
+    def hierarchy_bars(title: str, groups: list[tuple[str, list[tuple[int, str, float | None]]]]) -> str:
+        normalized = [
+            (group, [(depth, label, _number(value)) for depth, label, value in nodes])
+            for group, nodes in groups
+        ]
+        maximum = max((value for _, nodes in normalized for _, _, value in nodes
+                       if value is not None), default=0) or 1
+        group_html = "".join(
+            "<div class='hierarchy-group' style='background:#f3f7f7;border-left:3px solid #17746a'>"
+            "<div class='tree-root'><b>" + esc(group)
+            + "</b><span>同一批请求</span></div><div class='hierarchy-children' style='padding:5px 10px 5px 14px'>" + "".join(
+                f"<div class='hierarchy-node' style='margin-left:{depth * 24}px;display:grid;grid-template-columns:1fr 1.2fr;gap:3px 8px;padding:7px 0 4px'>"
+                f"<span class='hierarchy-label' style='font-size:12px;color:#40565f;grid-column:1/-1'>{esc(label)}</span>"
+                f"<i style='display:block;height:8px;background:#dde6e7'><b style='display:block;height:100%;background:#17746a;width:{min(100, 100 * value / maximum):.2f}%'></b></i>"
+                f"<strong style='font-size:12px;text-align:right'>{esc(round(value, 2))} ms</strong></div>"
+                for depth, label, value in nodes if value is not None
+            ) + "</div></div>"
+            for group, nodes in normalized
+        )
+        return f"<h3>{esc(title)}</h3><div class='hierarchy-chart' style='display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px'>{group_html}</div>"
+
+    def outcome_bars(title: str, rows: list[dict[str, Any]]) -> str:
+        body = "".join(
+            f"<div class='outcome-row'><b>{esc(row.get('label'))}</b>"
+            "<div class='outcome-track'>"
+            f"<i class='served' style='width:{row.get('served_rate', 0):.3f}%'></i>"
+            f"<i class='empty' style='width:{row.get('empty_rate', 0):.3f}%'></i>"
+            f"<i class='failed' style='width:{row.get('failed_rate', 0):.3f}%'></i>"
+            "</div>"
+            f"<span>非空 {esc(round(row.get('served_rate', 0), 2))}% · "
+            f"空召回 {esc(round(row.get('empty_rate', 0), 2))}% · "
+            f"异常 {esc(round(row.get('failed_rate', 0), 2))}% "
+            f"（{esc(row.get('served'))}/{esc(row.get('sent'))} 非空）</span></div>"
+            for row in rows
+        )
+        return (
+            f"<h3>{esc(title)}</h3><div class='outcome-legend'>"
+            "<span class='served'>非空召回</span><span class='empty'>空召回</span>"
+            "<span class='failed'>HTTP/传输/超时异常</span></div>"
+            f"{body or '<p>暂无数据</p>'}"
+        )
+
+    def paired_m1_stage_timings(metric: dict[str, Any]) -> dict[int, dict[str, Any]]:
+        """Build per-concurrency stage percentiles from the same trace set."""
+        stage_path = Path(str(
+            ((result.get("timing_evidence") or {}).get("stage_collection") or {}).get("path") or ""
+        ))
+        if not stage_path.is_file():
+            return {}
+        by_trace: dict[str, dict[str, float]] = {}
+        for event in read_stage_events(stage_path):
+            trace_ref = str(event.get("trace_ref") or "")
+            module = str(event.get("module") or "")
+            duration_ms = _number(event.get("duration_ms"))
+            if trace_ref and module.startswith("recall/") and duration_ms is not None:
+                by_trace.setdefault(trace_ref, {})[module] = duration_ms
+        result_rows: dict[int, dict[str, Any]] = {}
+        for level in metric.get("levels", []):
+            if level.get("topology") != "concurrency" or level.get("target_concurrency") is None:
+                continue
+            name = str(level.get("measurement_file") or "")
+            if not name or Path(name).name != name:
+                continue
+            candidates = [
+                path.parent / "M1" / "concurrency" / name,
+                stage_path.parent / "M1" / "concurrency" / name,
+            ]
+            measurement_path = next((candidate for candidate in candidates if candidate.is_file()), None)
+            if measurement_path is None:
+                continue
+            try:
+                measurement = json.loads(measurement_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            samples = [
+                row for row in measurement.get("rows", [])
+                if isinstance(row, dict) and row.get("sent") is not False and row.get("trace_ref")
+            ]
+            traces = [str(row["trace_ref"]) for row in samples]
+            stage_stats: dict[str, Any] = {
+                "trace_count": len(traces),
+                "client_p95_ms": percentile([
+                    float(row["elapsed_s"]) * 1000 for row in samples
+                    if _number(row.get("elapsed_s")) is not None
+                ], 95),
+                "client_p99_ms": percentile([
+                    float(row["elapsed_s"]) * 1000 for row in samples
+                    if _number(row.get("elapsed_s")) is not None
+                ], 99),
+                "source": "trace_id 配对结构化日志",
+            }
+            for module in (
+                "recall/recall_total", "recall/semantic", "recall/query_embedding",
+                "recall/engine_execution", "recall/memory_profile",
+            ):
+                values = [by_trace[trace][module] for trace in traces
+                          if trace in by_trace and module in by_trace[trace]]
+                stage_stats[module] = {
+                    "observations": len(values),
+                    "p95_ms": percentile(values, 95),
+                    "p99_ms": percentile(values, 99),
+                }
+            result_rows[int(level["target_concurrency"])] = stage_stats
+        return result_rows
+
     selected = set(result.get("selected_metrics", result["metrics"]))
     included = [code for code in METRIC_ORDER if code in selected]
     excluded = [code for code in METRIC_ORDER if code not in selected]
@@ -1741,6 +1865,7 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
         if code not in selected:
             continue
         visual = ""
+        headline_visual = ""
         if code == "M1":
             def milliseconds(value: Any) -> float | None:
                 value = _number(value)
@@ -1770,6 +1895,7 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                     ("status", "状态"),
                 ], min_width_px=1200))
             comparison = metric.get("memory_profile_comparison") or {}
+            paired_stage_rows = paired_m1_stage_timings(metric)
 
             def stage_stat(level: dict[str, Any], metric_name: str, stage_name: str, field: str = "p95_s") -> Any:
                 for sample in ((level.get("server_stage_timings") or {}).get("prometheus_histograms") or []):
@@ -1783,18 +1909,23 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                 status_counts = search.get("http_status_counts") or {}
                 route = search.get("route_path_timings") or {}
                 intent = route.get("intent_llm") or {}
+                paired = paired_stage_rows.get(int(level.get("target_concurrency") or 0), {})
+                paired_module = lambda name: (paired.get(name) or {}).get("p95_ms")
                 concurrency_rows.append({
                     "concurrency": level.get("target_concurrency"),
                     "peak_inflight": search.get("peak_inflight_requests"),
                     "observations": search.get("latency_observations"),
                     "p50_ms": milliseconds(search.get("p50_s")),
-                    "p95_ms": milliseconds(search.get("p95_s")),
-                    "p99_ms": milliseconds(search.get("p99_s")),
+                    "p95_ms": paired.get("client_p95_ms") or milliseconds(search.get("p95_s")),
+                    "p99_ms": paired.get("client_p99_ms") or milliseconds(search.get("p99_s")),
                     "intent_llm_p95_ms": milliseconds(intent.get("p95_s")),
-                    "query_embedding_p95_ms": stage_stat(level, "echomem_memrouter_stage_duration_seconds", "query_embedding"),
-                    "semantic_p95_ms": stage_stat(level, "echomem_memrouter_stage_duration_seconds", "semantic"),
-                    "engine_execution_p95_ms": stage_stat(level, "echomem_memrouter_stage_duration_seconds", "engine_execution"),
-                    "memory_profile_p95_ms": stage_stat(level, "echomem_memrouter_stage_duration_seconds", "memory_profile"),
+                    "recall_total_p95_ms": paired_module("recall/recall_total"),
+                    "query_embedding_p95_ms": paired_module("recall/query_embedding") or stage_stat(level, "echomem_memrouter_stage_duration_seconds", "query_embedding"),
+                    "semantic_p95_ms": paired_module("recall/semantic") or stage_stat(level, "echomem_memrouter_stage_duration_seconds", "semantic"),
+                    "engine_execution_p95_ms": paired_module("recall/engine_execution") or stage_stat(level, "echomem_memrouter_stage_duration_seconds", "engine_execution"),
+                    "memory_profile_p95_ms": paired_module("recall/memory_profile") or stage_stat(level, "echomem_memrouter_stage_duration_seconds", "memory_profile"),
+                    "stage_timing_source": paired.get("source") or "Prometheus Histogram fallback",
+                    "paired_trace_count": paired.get("trace_count", 0),
                     "query_embedding_queue_p95_ms": stage_stat(level, "echomem_memrouter_stage_queue_wait_seconds", "query_embedding"),
                     "engine_queue_p95_ms": stage_stat(level, "echomem_memrouter_stage_queue_wait_seconds", "engine_execution"),
                     "llm_queue_p95_ms": stage_stat(level, "echomem_memrouter_stage_queue_wait_seconds", "llm"),
@@ -1802,6 +1933,10 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                     "http_503": status_counts.get("503", 0),
                     "http_429": status_counts.get("429", 0),
                     "timeouts": (search.get("error_breakdown") or {}).get("timeout_censored", search.get("timeout_censored", 0)),
+                    "sent": search.get("sent", 0),
+                    "recall_served": search.get("recall_served", search.get("nonempty_results", 0)),
+                    "empty_recall": search.get("empty_results", 0),
+                    "request_errors": search.get("transport_or_http_errors", search.get("errors", 0)),
                 })
             concurrency_rows = [row for row in concurrency_rows if row.get("concurrency") is not None]
             visual += details(
@@ -1812,6 +1947,7 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                     ("observations", "端到端样本"), ("p50_ms", "端到端 P50(ms)"),
                     ("p95_ms", "端到端 P95(ms)"), ("p99_ms", "端到端 P99(ms)"),
                     ("intent_llm_p95_ms", "Intent LLM P95(ms)"),
+                    ("recall_total_p95_ms", "Recall Total P95(ms)"),
                     ("query_embedding_p95_ms", "Query Embedding P95(ms)"),
                     ("semantic_p95_ms", "Semantic P95(ms)"),
                     ("engine_execution_p95_ms", "Engine Execution P95(ms)"),
@@ -1821,6 +1957,8 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                     ("llm_queue_p95_ms", "LLM Queue P95(ms)"),
                     ("http_200", "HTTP 200"), ("http_503", "HTTP 503"),
                     ("http_429", "HTTP 429"), ("timeouts", "超时"),
+                    ("stage_timing_source", "阶段耗时来源"),
+                    ("paired_trace_count", "配对 Trace 数"),
                 ], min_width_px=2200)
             )
             stage_bars = []
@@ -1916,6 +2054,67 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                               "load_mode": level.get("load_mode"), **sample}
                              for level in metric.get("levels", []) for sample in level.get("resources", [])]
             visual += details("查看 CPU、内存逐点采样", table(resource_rows, [("topology", "拓扑"), ("hot_users", "热用户"), ("load_mode", "负载"), ("at_epoch_s", "时间"), ("cpu_percent_one_core_100", "CPU% (100%=1核)"), ("rss_bytes", "RSS bytes"), ("phase", "阶段")]))
+            outcome_rows = []
+            for row in concurrency_rows:
+                sent = max(1, int(row.get("sent") or 0))
+                served = int(row.get("recall_served") or 0)
+                empty = int(row.get("empty_recall") or 0)
+                failed = int(row.get("request_errors") or 0)
+                outcome_rows.append({
+                    "label": f"C={row.get('concurrency')}", "sent": row.get("sent"),
+                    "served": served, "served_rate": 100 * served / sent,
+                    "empty_rate": 100 * empty / sent, "failed_rate": 100 * failed / sent,
+                })
+            concurrency_baseline = concurrency_rows[0] if concurrency_rows else {}
+            stage_keys = (
+                ("Search 端到端", "p95_ms"),
+                ("Recall Total", "recall_total_p95_ms"),
+                ("Query Embedding", "query_embedding_p95_ms"),
+                ("Semantic（含 Embedding）", "semantic_p95_ms"),
+                ("Engine Execution", "engine_execution_p95_ms"),
+                ("Memory Profile", "memory_profile_p95_ms"),
+            )
+            stage_groups = []
+            for row in concurrency_rows:
+                points = []
+                for label, key in stage_keys:
+                    value = row.get(key)
+                    baseline_value = concurrency_baseline.get(key)
+                    ratio = (
+                        value / baseline_value
+                        if value is not None and baseline_value not in (None, 0)
+                        else None
+                    )
+                    ratio_label = f"{label} · {ratio:.2f}x" if ratio is not None else label
+                    points.append((ratio_label, value))
+                stage_groups.append((f"C={row.get('concurrency')}", [
+                    (0, points[0][0], points[0][1]),
+                    (1, points[1][0], points[1][1]),
+                    (2, points[2][0], points[2][1]),
+                    (3, points[3][0], points[3][1]),
+                    (2, points[4][0], points[4][1]),
+                    (2, points[5][0], points[5][1]),
+                ]))
+            paired_complete = bool(concurrency_rows) and all(
+                int(row.get("paired_trace_count") or 0) == int(row.get("sent") or 0)
+                for row in concurrency_rows
+            )
+            pairing_message = (
+                "本图所有展示档位均使用 measurement 与结构化日志中相同 trace_id 的完整配对样本；"
+                "Semantic 是 Recall Total 的子阶段，可以直接检查单请求包含关系。"
+                if paired_complete else
+                "部分档位缺少完整 trace_id 配对，缺失档位回退为 Prometheus Histogram；"
+                "回退值只用于趋势观察，不能与客户端端到端 P95 做包含关系判断。"
+            )
+            headline_visual = (
+                "<div class='primary-charts'>"
+                "<figure>" + hierarchy_bars("不同并发下 Query / Recall 阶段 P95（ms，括号为相对 C=1 放大倍数）", stage_groups)
+                + f"<p class='chart-warning'><b>配对口径：</b>{esc(pairing_message)}</p>"
+                + "<p class='chart-note'>包含关系：Search 端到端 → Recall Total → Semantic → Query Embedding；Memory Profile 和 Engine Execution 是 Recall Total 下的并行阶段。放大倍数 = 当前并发档 P95 ÷ C=1 P95；C=1 固定为 1.00x。阶段不可相加；Search 端到端还包含 Recall 外层编排和网络开销。</p></figure>"
+                "<figure>" + outcome_bars("不同并发下空召回率与请求结果", outcome_rows)
+                + "<p class='chart-note'>空召回指 HTTP 成功但返回结果为空；异常包含 HTTP 非 2xx、传输错误和超时。每个档位的比例以本轮实际已发请求为分母。</p></figure>"
+                "</div>"
+            )
         elif code == "M4":
             points = []
             worst_rows = []
@@ -2050,6 +2249,20 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                             for row in tenant_rows for task, values in row.get("arrivals", {}).items()]
             visual += details("查看计划到达与实际发压", table(arrival_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("task", "路径"), ("planned", "计划启动"), ("started_in_window", "窗口内启动"), ("missing_starts", "未启动"), ("duplicate_starts", "重复"), ("start_lag_p95_ms", "发压延迟 P95 ms")]))
             visual += details("查看证据完整性", table(metric.get("windows", []), [("scenario", "场景"), ("evidence_complete", "完整"), ("evidence_issues", "缺口")]))
+            headline_visual = (
+                "<div class='chart-grid'>"
+                "<figure>" + bars("不同租户之间的 Jain 公平指数", [
+                    (f"{window.get('tenant_count')}租户 Commit", window.get("commit_throughput_jain"))
+                    for window in metric.get("windows", [])
+                ] + [
+                    (f"{window.get('tenant_count')}租户 Search", window.get("search_inverse_p95_jain"))
+                    for window in metric.get("windows", [])
+                ], axis_max=1) + "</figure>"
+                "<figure>" + bars("各租户非空 Recall P95（ms）", [
+                    (f"{row.get('scenario')} / T{row.get('tenant_index')}", row.get("search_recall_p95_ms"))
+                    for row in tenant_rows
+                ]) + "</figure></div>"
+            )
         elif code == "M3":
             baseline_health = metric.get("baseline_health") or {}
             visual = details("M3 基线健康门禁", table([baseline_health], [
@@ -2143,6 +2356,26 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                 ("commit_weight", "Commit 权重"), ("planned_commit_rpm", "计划 Commit RPM"),
                 ("commit_arrivals", "Commit 到达"), ("commit_completed", "Commit 完成")
             ], min_width_px=1200))
+            headline_visual = (
+                "<div class='chart-grid'>"
+                "<figure>" + bars("基线与 Commit 洪泛：非空 Recall P95（ms）", [
+                    ("无 Commit 基线", (metric.get("baseline") or {}).get("served_p95_ms"))
+                ] + [
+                    (str(window.get("scenario")), (window.get("confirmed_overlap") or {}).get("served_p95_ms"))
+                    for window in metric.get("windows", [])
+                ]) + "</figure>"
+                "<figure>" + bars("基线与 Commit 洪泛：Recall 服务率（%）", [
+                    ("无 Commit 基线", 100 * (metric.get("baseline") or {}).get("recall_service_rate"))
+                    if (metric.get("baseline") or {}).get("recall_service_rate") is not None
+                    else ("无 Commit 基线", None)
+                ] + [
+                    (str(window.get("scenario")),
+                     100 * (window.get("confirmed_overlap") or {}).get("recall_service_rate"))
+                    if (window.get("confirmed_overlap") or {}).get("recall_service_rate") is not None
+                    else (str(window.get("scenario")), None)
+                    for window in metric.get("windows", [])
+                ], axis_max=100) + "</figure></div>"
+            )
         elif code == "M5":
             visual = bars("完整恢复样本 / %", [("完成 / 期望",
                 100 * metric["complete_samples"] / metric["expected_samples"]
@@ -2172,11 +2405,19 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                 ("tenant", "租户"), ("lane", "层"), ("counter", "计数"),
                 ("before_index", "前序号"), ("after_index", "后序号"),
                 ("before", "之前"), ("after", "之后"), ("classification", "归类")]))
+        metric_body = visual + details(
+            "原始汇总与完整分母",
+            "<pre>" + esc(json.dumps(metric, ensure_ascii=False, indent=2)) + "</pre>",
+        )
+        if code in {"M1", "M2", "M3"}:
+            metric_body = headline_visual + details("展开测试明细、诊断图与完整证据", metric_body)
+        else:
+            metric_body = details("展开本项全部结果", metric_body)
         sections.append(
             f"<section><h2>{code} {esc(METRIC_NAMES[code])}</h2>"
             f"<p class='purpose'><b>反映什么：</b>{esc(METRIC_PURPOSES[code])}</p>"
             f"<p class='method'><b>测试方式：</b>{esc(METRIC_METHODS[code])}</p>"
-            f"{visual}{details('原始汇总与完整分母', '<pre>' + esc(json.dumps(metric, ensure_ascii=False, indent=2)) + '</pre>')}</section>"
+            f"<div class='metric-body metric-{code.lower()}'>{metric_body}</div></section>"
         )
     recommendations = derive_observation_recommendations(result)
     setup = result.get("setup_evidence") or {}
@@ -2416,12 +2657,44 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
     if result.get("pending_metrics"):
         label = "阶段性结果，尚未完成" if result.get("checkpoint") else "运行中断，以下指标未完成"
         stage_notice = f"<p class='PARTIAL'><b>{label}：{esc(', '.join(result['pending_metrics']))}</b>。本页不是完整六项结论。</p>"
+    setup_section = (
+        "<section><h2>准备阶段证据</h2><p>没有完成负载场景时不能给出性能结论。"
+        "裸编号未命中不等于语义事实没有写入；需分别验证实际返回的记忆内容、路由和降级。</p>"
+        + table([result.get("setup_evidence") or {}], [
+            ("seed_status", "种子状态"), ("seed_contract", "校验方式"),
+            ("healthy_actors", "验证通过租户"), ("expected_actors", "验证租户总数"),
+            ("validated_queries_per_tenant", "每租户预检问题数"),
+            ("bare_marker_gate_failed", "裸编号前置校验失败"),
+            ("load_cases_completed", "已有负载场景"),
+        ]) + "</section>"
+    )
+    recommendation_section = (
+        "<section><h2>EchoMem 模块改进建议</h2>"
+        "<p class='purpose'>建议只由本轮可见证据推导；无法从黑盒区分的阶段明确写为需补观测，"
+        "不把端到端延迟武断归因给原子引擎。</p>" + recommendation_table
+        + details("查看责任边界与技术证据", table(result.get("issue_categories", []), [
+            ("category", "类别"), ("note", "观测/下一步"), ("evidence", "证据"),
+        ])) + "</section>"
+    )
+    artifact_section = (
+        "<section><h2>原始产物</h2><p><a href='summary.json'>summary.json</a> · "
+        "<a href='combined-sources.json'>combined-sources.json</a></p></section>"
+        if combined else
+        "<section><h2>原始产物</h2><p><a href='summary.json'>summary.json</a> · "
+        "<a href='suite.json'>suite.json</a> · <a href='records.csv'>records.csv</a> · "
+        "<a href='metrics_samples.csv'>metrics_samples.csv</a> · "
+        "<a href='structured-stage-events.jsonl'>structured-stage-events.jsonl</a> · "
+        "<a href='execution-manifest.json'>execution-manifest.json</a></p></section>"
+    )
+    supporting_content = (
+        model_section + setup_section + recommendation_section + combined_section + api_section
+        + timing_section + concurrency_section + supplemental_section + seed_source + seed_diagnosis
+        + render_platform_provenance(result.get("platform_provenance")) + artifact_section
+    )
     path.write_text("""<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>""" + esc(title) + """</title><style>
-body{margin:0;color:#18242b;background:#f4f7f8;font:14px/1.6 system-ui;letter-spacing:0}main{max-width:1320px;margin:auto;padding:24px}h1{font-size:28px}h2{font-size:20px}.lead{border-left:4px solid #17746a;padding:10px 14px;background:#fff}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 0}.cards article{background:#fff;border:1px solid #d5dfe3;padding:14px;border-radius:4px}.cards h2{font-size:16px;margin:6px 0}.cards small{display:block;color:#60727a}.MEASURED{color:#08745d}.PARTIAL{color:#946200}.BLOCKED,.EXECUTION_ERROR{color:#b1372e}section{background:#fff;border-top:1px solid #cbd6da;padding:18px;margin-top:12px}.purpose,.method{color:#40565f;font-size:15px}.method{background:#f0f5f6;border-left:3px solid #4d8791;padding:8px 12px}.scroll{overflow:auto}table{width:100%;border-collapse:collapse}th,td{text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid #dde4e7}th{background:#edf2f4;white-space:nowrap}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f1f4f5;padding:12px}details{border-top:1px solid #e0e6e8;margin-top:12px;padding-top:8px}summary{cursor:pointer;color:#176d75;font-weight:650}.bar{display:grid;grid-template-columns:260px minmax(120px,1fr) 90px;gap:10px;align-items:center;margin:7px 0}.bar i{display:block;height:12px;background:#e0e7e9}.bar i b{display:block;height:100%;background:#17746a}.bar i b.worse{background:#c05a45}.bar i b.better{background:#278575}.bar strong{text-align:right}@media(max-width:760px){.cards{grid-template-columns:1fr}main{padding:12px}.bar{grid-template-columns:1fr}.bar strong{text-align:left}}</style></head><body><main>""" +
+body{margin:0;color:#18242b;background:#f4f7f8;font:14px/1.6 system-ui;letter-spacing:0}main{max-width:1320px;margin:auto;padding:24px}h1{font-size:28px}h2{font-size:20px}.lead{border-left:4px solid #17746a;padding:10px 14px;background:#fff}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 0}.cards article{background:#fff;border:1px solid #d5dfe3;padding:14px;border-radius:4px}.cards h2{font-size:16px;margin:6px 0}.cards small{display:block;color:#60727a}.MEASURED{color:#08745d}.PARTIAL{color:#946200}.BLOCKED,.EXECUTION_ERROR{color:#b1372e}section{background:#fff;border-top:1px solid #cbd6da;padding:18px;margin-top:12px}.metric-body{border-top:3px solid #17746a;padding-top:2px}.purpose,.method{color:#40565f;font-size:15px}.method{background:#f0f5f6;border-left:3px solid #4d8791;padding:8px 12px}.chart-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:16px 0}.chart-grid figure,.primary-charts figure{margin:0;padding:14px;border:1px solid #d7e1e4;border-radius:4px;background:#fbfcfc}.chart-grid h3,.primary-charts h3{margin:0 0 12px;font-size:16px}.primary-charts{display:grid;gap:16px;margin:16px 0}.tree-chart{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.tree-group{padding:0 0 10px;background:#f3f7f7;border-left:3px solid #7aa7a2}.tree-root{display:flex;justify-content:space-between;align-items:baseline;padding:10px;background:#e7f0ef;border-bottom:1px solid #c8dcda}.tree-root span{font-size:12px;color:#60727a}.tree-children{padding:4px 10px 0 18px;position:relative}.tree-children:before{content:'';position:absolute;left:8px;top:0;bottom:13px;border-left:1px solid #9bb8b4}.tree-node{position:relative;display:grid;grid-template-columns:1fr 1.4fr;gap:4px 8px;padding:7px 0 3px}.tree-node:before{content:'';position:absolute;left:-10px;top:17px;width:8px;border-top:1px solid #9bb8b4}.tree-label{font-size:12px;color:#40565f;grid-column:1/-1}.tree-node i{display:block;height:8px;background:#dde6e7}.tree-node i b{display:block;height:100%;background:#17746a}.tree-node strong{font-size:12px;grid-column:2;text-align:right}.outcome-legend{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px}.outcome-legend span:before{content:'';display:inline-block;width:10px;height:10px;margin-right:6px}.outcome-legend .served:before,.outcome-track .served{background:#17746a}.outcome-legend .empty:before,.outcome-track .empty{background:#d39a38}.outcome-legend .failed:before,.outcome-track .failed{background:#b84a3b}.outcome-row{display:grid;grid-template-columns:55px minmax(160px,1fr) 360px;gap:12px;align-items:center;margin:10px 0}.outcome-track{display:flex;height:16px;background:#e2e8ea;overflow:hidden}.outcome-track i{display:block;height:100%}.chart-note{color:#60727a;font-size:12px;margin:12px 0 0}.scroll{overflow:auto}table{width:100%;border-collapse:collapse}th,td{text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid #dde4e7}th{background:#edf2f4;white-space:nowrap}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f1f4f5;padding:12px}details{border-top:1px solid #e0e6e8;margin-top:12px;padding-top:8px}summary{cursor:pointer;color:#176d75;font-weight:650}.supporting>summary{font-size:18px;background:#fff;padding:14px;border:1px solid #cbd6da}.bar{display:grid;grid-template-columns:minmax(150px,220px) minmax(100px,1fr) 78px;gap:10px;align-items:center;margin:7px 0}.bar i{display:block;height:12px;background:#e0e7e9}.bar i b{display:block;height:100%;background:#17746a}.bar i b.worse{background:#c05a45}.bar i b.better{background:#278575}.bar strong{text-align:right}@media(max-width:900px){.chart-grid{grid-template-columns:1fr}.tree-chart{grid-template-columns:repeat(2,minmax(0,1fr))}.outcome-row{grid-template-columns:50px 1fr}.outcome-row span{grid-column:1/-1}}@media(max-width:760px){.cards{grid-template-columns:1fr}main{padding:12px}.bar{grid-template-columns:1fr}.bar strong{text-align:left}.tree-chart{grid-template-columns:1fr}}</style></head><body><main>""" +
         f"<h1>{esc(title)}</h1><div class='lead'><b>本次所选指标结论：{esc(result['status'])}</b><p>这是观测报告，不是性能准入验收；没有 P95、准确率、Jain、吞吐或劣化比例 PASS/FAIL 门槛。错误、超时、空召回与 pending/failed Commit 均保留在分母。采样模式：{esc(result['sampling_mode'])}。</p>{scope_notice}</div><div class='cards'>{cards}</div>" +
-        stage_notice + model_section + "<section><h2>准备阶段证据</h2><p>没有完成负载场景时不能给出性能结论。裸编号未命中不等于语义事实没有写入；需分别验证实际返回的记忆内容、路由和降级。</p>" + table([result.get("setup_evidence") or {}], [("seed_status", "种子状态"), ("seed_contract", "校验方式"), ("healthy_actors", "验证通过租户"), ("expected_actors", "验证租户总数"), ("validated_queries_per_tenant", "每租户预检问题数"), ("bare_marker_gate_failed", "裸编号前置校验失败"), ("load_cases_completed", "已有负载场景")]) + "</section>" +
-        "<section><h2>EchoMem 模块改进建议</h2><p class='purpose'>建议只由本轮可见证据推导；无法从黑盒区分的阶段明确写为需补观测，不把端到端延迟武断归因给原子引擎。</p>" + recommendation_table + details("查看责任边界与技术证据", table(result.get("issue_categories", []), [("category", "类别"), ("note", "观测/下一步"), ("evidence", "证据")])) + "</section>" +
-        combined_section + api_section + timing_section + concurrency_section + supplemental_section + seed_source + seed_diagnosis + render_platform_provenance(result.get("platform_provenance")) +
-        "".join(sections) + ("<section><h2>原始产物</h2><p><a href='summary.json'>summary.json</a> · <a href='combined-sources.json'>combined-sources.json</a></p></section>"
-                              if combined else "<section><h2>原始产物</h2><p><a href='summary.json'>summary.json</a> · <a href='suite.json'>suite.json</a> · <a href='records.csv'>records.csv</a> · <a href='metrics_samples.csv'>metrics_samples.csv</a> · <a href='structured-stage-events.jsonl'>structured-stage-events.jsonl</a> · <a href='execution-manifest.json'>execution-manifest.json</a></p></section>") +
+        stage_notice + "".join(sections)
+        + "<details class='supporting'><summary>展开模型、准备、模块耗时、接口与原始证据</summary>"
+        + supporting_content + "</details>" +
         "</main></body></html>", encoding="utf-8")
