@@ -93,6 +93,15 @@ def _public_profile(profile: dict[str, Any]) -> dict[str, Any]:
     return {key: profile.get(key) for key in allowed if profile.get(key) not in (None, "")}
 
 
+def _reuse_m1_seed_for_m2m3(profile: dict[str, Any], output: Path) -> None:
+    """Reuse M1's validated cross-tenant actors for the shared M2/M3 seed."""
+    if profile.get("semantic_seed_identity_cache"):
+        return
+    cache = output / "M1" / "cross-tenant"
+    if (cache / "identities.private.json").is_file() and (cache / "seed-evidence.json").is_file():
+        profile["semantic_seed_identity_cache"] = str(cache)
+
+
 def _combine_csv(suite: dict[str, Any], output: Path, filename: str) -> None:
     sources = []
     for run in suite.get("runs", []):
@@ -543,6 +552,7 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
             except Exception as exc:
                 result = publish_stage(selected, exc)
                 raise PublishedObservationError(str(exc), result) from exc
+            _reuse_m1_seed_for_m2m3(profile, output)
             publish_stage([code for code in selected if code != "M1"])
 
         load_metrics = [name for name in selected if name in {"M2", "M3"}]

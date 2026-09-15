@@ -53,6 +53,53 @@ def test_publish_checkpoint_before_capacity(tmp_path, monkeypatch):
     assert not result.get("checkpoint")
 
 
+def test_m2m3_reuses_validated_m1_cross_tenant_seed(tmp_path, monkeypatch):
+    args, _ = setup_run(tmp_path, monkeypatch)
+    captured = {}
+
+    def capacity(profile, options, output):
+        cache = output / "M1" / "cross-tenant"
+        cache.mkdir(parents=True)
+        (cache / "identities.private.json").write_text("{}")
+        (cache / "seed-evidence.json").write_text("{}")
+        return []
+
+    def load(profile, *unused_args, **unused_kwargs):
+        captured.update(profile)
+        return {"runs": []}
+
+    monkeypatch.setattr(module, "_run_m1_profiles", capacity)
+    monkeypatch.setattr(module, "run_suite", load)
+    module.run(args)
+
+    assert captured["semantic_seed_identity_cache"] == str(
+        args.out_dir / "M1" / "cross-tenant"
+    )
+
+
+def test_explicit_m2m3_identity_cache_is_not_replaced(tmp_path, monkeypatch):
+    args, _ = setup_run(tmp_path, monkeypatch)
+    profiles = json.loads(args.profiles.read_text())
+    profiles["profiles"][0]["semantic_seed_identity_cache"] = "/explicit/cache"
+    args.profiles.write_text(json.dumps(profiles))
+    captured = {}
+
+    def capacity(profile, options, output):
+        cache = output / "M1" / "cross-tenant"
+        cache.mkdir(parents=True)
+        (cache / "identities.private.json").write_text("{}")
+        (cache / "seed-evidence.json").write_text("{}")
+        return []
+
+    monkeypatch.setattr(module, "_run_m1_profiles", capacity)
+    monkeypatch.setattr(
+        module, "run_suite", lambda profile, *a, **k: captured.update(profile) or {"runs": []}
+    )
+    module.run(args)
+
+    assert captured["semantic_seed_identity_cache"] == "/explicit/cache"
+
+
 @pytest.mark.parametrize("probe_failure", [False, True])
 def test_bounded_data_published_before_long_probes(tmp_path, monkeypatch, probe_failure):
     args, _ = setup_run(tmp_path, monkeypatch)

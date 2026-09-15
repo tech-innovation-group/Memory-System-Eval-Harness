@@ -1516,7 +1516,7 @@ def evaluate_observation(suite: dict[str, Any], profile: dict[str, Any],
                 "artifact": artifact,
                 **_probe_detail(payload, check_name),
             }
-    return {"schema_version": 2,
+    result = {"schema_version": 2,
             "metric_numbering": "capacity-fairness-priority-isolation-recovery-observability-v2",
             "assessment": "observation-only",
             "instance_profile": suite.get("instance_profile") or profile.get("name") or "local",
@@ -1532,7 +1532,9 @@ def evaluate_observation(suite: dict[str, Any], profile: dict[str, Any],
         "timing_evidence": summarize_timing_evidence(suite, m1_reports or []),
         "concurrency_configuration": summarize_concurrency_configuration(profile),
         "supplemental_probes": supplemental_probes,
-        "raw_suite": "suite.json"}
+            "raw_suite": "suite.json"}
+    result["new_findings"] = derive_new_findings(result)
+    return result
 
 
 def derive_observation_recommendations(result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1652,7 +1654,69 @@ def derive_observation_recommendations(result: dict[str, Any]) -> list[dict[str,
             if selected.intersection(part.strip() for part in item["metrics"].split("/"))]
 
 
+def derive_new_findings(result: dict[str, Any]) -> list[dict[str, Any]]:
+    """Surface concrete findings from this run, separate from known PR issues."""
+    metrics = result.get("metrics", {})
+    findings: list[dict[str, Any]] = []
+    m1 = metrics.get("M1") or {}
+    invalid_output = sum(
+        int(((level.get("search") or {}).get("degraded_reason_counts") or {}).get("invalid_output") or 0)
+        for level in m1.get("levels", [])
+    )
+    m1_sent = sum(int((level.get("search") or {}).get("sent") or 0)
+                  for level in m1.get("levels", []))
+    if invalid_output:
+        findings.append({
+            "id": "N1", "priority": "P0", "module": "MemRouter / intent",
+            "metrics": "M1 / M2 / M3",
+            "phenomenon": "Intent LLM 返回 invalid_output 后仍以 HTTP 200 降级继续处理",
+            "evidence": f"M1 记录 {invalid_output}/{m1_sent} 个请求带 invalid_output；该字段来自真实服务响应。",
+            "impact": "增加无效路由、空召回和额外模型等待；业务成功不能只看 HTTP 200。",
+            "action": "对 Intent 输出做结构化校验、有限重试和确定性回退；把降级原因透传到响应及日志，并按租户/路由统计。",
+            "relation": "不是 PR534 已列的 intent 缓存缺口；缓存不能修复非法输出。",
+        })
+    m3 = metrics.get("M3") or {}
+    health = m3.get("baseline_health") or {}
+    baseline = m3.get("baseline") or {}
+    if health.get("status") == "INVALID" and (baseline.get("empty_recall") or 0):
+        findings.append({
+            "id": "N2", "priority": "P0", "module": "MemRouter / 租户 Recall 可见性",
+            "metrics": "M2 / M3",
+            "phenomenon": "健康基线自身出现租户级空召回，洪泛前已不具备严格优先级比较资格",
+            "evidence": f"基线 Search {baseline.get('planned_or_recorded')} 次，HTTP 错误 {baseline.get('errors')}，空召回 {baseline.get('empty_recall')}，Recall 服务率 {baseline.get('recall_service_rate'):.3f}。",
+            "impact": "不能把洪泛前后 P95 差值解释成 Search 优先级；公平性数字即使可计算，业务 Recall 仍不健康。",
+            "action": "按 tenant_id、user/session、query、engine_origin 追踪记忆可见性；核对写入完成、索引发布和路由过滤是否一致，再复测健康基线。",
+            "relation": "区别于 PR534 的 per-tenant admission 配额缺口：本轮在无 429/503 的基线就出现。",
+        })
+    correlation = (result.get("timing_evidence") or {}).get("trace_correlation") or {}
+    missing_trace = int(correlation.get("requests_missing_trace") or 0)
+    eligible = int(correlation.get("eligible_requests") or 0)
+    if missing_trace:
+        findings.append({
+            "id": "N3", "priority": "P1", "module": "入口日志 / 可观测性",
+            "metrics": "M1 / M2 / M3",
+            "phenomenon": "部分 HTTP 完成事件没有 trace_id，无法逐请求关联内部阶段",
+            "evidence": f"{missing_trace}/{eligible} 个可关联请求缺 Trace；其余请求已关联到内部阶段。",
+            "impact": "阶段 P95 可以独立统计，但无法对缺 Trace 的请求核验端到端与内部阶段的对应关系。",
+            "action": "在 HTTP 入口生成并向下游透传稳定 trace_id；http_request_completed 必须记录同一 trace_id，并增加缺失率门禁。",
+            "relation": "不是 PR534 的 lane 四元组缺口；这是请求级关联链路缺失。",
+        })
+    startup = result.get("startup_cache_diagnostics") or {}
+    if startup.get("requested_positions") and startup.get("unique_texts"):
+        findings.append({
+            "id": "N4", "priority": "P1", "module": "MemRouter / 启动缓存",
+            "metrics": "M1-M3 准备阶段",
+            "phenomenon": "静态路由模板启动缓存按位置重复请求 Embedding，种子指纹变化时启动预热被放大",
+            "evidence": f"本次 develop 指纹变化时请求位置 {startup.get('requested_positions')} 个，规范化后唯一文本 {startup.get('unique_texts')} 个；默认路径约 {startup.get('default_batches')} 批。",
+            "impact": "服务启动和首轮压测前置时间显著增加，容易被误认为压测本身挂起；重复文本也放大 Provider 调用。",
+            "action": "按规范化文本去重后批量生成并原子写入缓存；缓存指纹变化时输出命中/缺失/唯一文本数，并允许受控并行预热。",
+            "relation": "不在 PR534 的 443/514 模块问题清单中；这是本次最新 develop 启动路径核验发现。",
+        })
+    return findings
+
+
 def write_observation_report(result: dict[str, Any], path: Path) -> None:
+    result.setdefault("new_findings", derive_new_findings(result))
     def esc(value: Any) -> str:
         if isinstance(value, float):
             value = f"{value:.6g}"
@@ -2441,6 +2505,16 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
         ("metrics", "关联指标"), ("evidence", "本次证据"),
         ("action", "改进建议"),
     ], min_width_px=900)
+    findings_section = (
+        "<section><h2>本轮新增问题（已排除 PR534 已知项）</h2>"
+        "<p class='purpose'>只列本轮运行证据直接支持的新现象；PR534 已覆盖的 Atomic 锁、Commit gate、"
+        "per-tenant 配额和 4U8G squeeze 不在此表重复列为新问题。</p>"
+        + table(result.get("new_findings", []), [
+            ("id", "编号"), ("priority", "优先级"), ("module", "EchoMem 模块"),
+            ("metrics", "指标"), ("phenomenon", "现象"), ("evidence", "数据证据"),
+            ("impact", "影响"), ("action", "修改建议"), ("relation", "与 PR534 的关系"),
+        ], min_width_px=1900) + "</section>"
+    )
     api_coverage = result.get("api_coverage") or {}
     api_section = (
         "<section><h2>关键接口调用账本与边界输入</h2>"
@@ -2687,7 +2761,7 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
         "<a href='execution-manifest.json'>execution-manifest.json</a></p></section>"
     )
     supporting_content = (
-        model_section + setup_section + recommendation_section + combined_section + api_section
+        model_section + setup_section + findings_section + recommendation_section + combined_section + api_section
         + timing_section + concurrency_section + supplemental_section + seed_source + seed_diagnosis
         + render_platform_provenance(result.get("platform_provenance")) + artifact_section
     )

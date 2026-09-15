@@ -374,6 +374,63 @@ Recall 队列。这些值可能在默认 32 客户端并发前先形成排队，
 `http.max_workers=128` 与 `retrieval.admission_permits=32` 满足 EchoMem 的 4:1 约束；
 Commit executor+gate 为 `5+3=8`，不超过 4 核的 2 倍约束。
 
+本项目在 64 个客户端在途 Search 的诊断复测中，还使用过下面这组 **4U8G 高并发
+放开值**。它用于排除 EchoMem 本地 admission、worker 和队列先于被测链路截断请求，
+不是默认部署基线，也不证明外部模型 Provider 支持同样并发。复现时只把这些字段合并到
+被测 EchoMem 自带的完整 `config.json`：
+
+```json
+{
+  "instance": {"profile": "small", "cpu_cores": 4, "memory_gb": 8},
+  "runtime": {"log_level": "DEBUG"},
+  "logging": {"level": "debug", "format": "json"},
+  "scheduling": {
+    "http": {"max_workers": 256},
+    "retrieval": {"admission_permits": 64, "deadline_s": 40},
+    "tenant": {"qps": 512, "concurrency": 128},
+    "llm_gateway": {
+      "llm_max_concurrent": 256,
+      "embed_max_concurrent": 192,
+      "recall_llm_max_concurrent": 64,
+      "recall_embed_max_concurrent": 96,
+      "episode_llm_max_concurrent": 4,
+      "episode_embed_max_concurrent": 4,
+      "provider_budget_llm": 512,
+      "provider_budget_embed": 512,
+      "tenant_max_share_pct": 100
+    },
+    "fanout": {"executor_workers": 192, "engine_max_inflight": 96, "straggler_cap_s": 60},
+    "commit": {
+      "queue_max": 512, "tenant_quota": 0,
+      "executor_workers": 4, "gate_workers": 4,
+      "tenant_inflight_max": 4, "slow_task_threshold_s": 120
+    },
+    "tenant_cache": {
+      "max_cached_tenants": 12, "active_overshoot": 3,
+      "hard_cap": 15, "cache_reaper_interval_seconds": 30
+    }
+  },
+  "model": {"max_concurrent": 256},
+  "commit_pipeline": {"engine_timeout_seconds": 900, "queue_max": 512, "tenant_quota": 0},
+  "session": {"auto_commit_threshold": 1000000},
+  "recall": {
+    "max_inflight": 0,
+    "timeout_seconds": 40,
+    "concurrency": {
+      "engine": {"max_concurrent": 96, "queue_capacity": 512, "max_queued_per_tenant": 96},
+      "intent_llm": {"max_concurrent": 96, "queue_capacity": 512, "max_queued_per_tenant": 96},
+      "query_embedding": {"max_concurrent": 96, "queue_capacity": 512, "max_queued_per_tenant": 96},
+      "rerank": {"max_concurrent": 96, "queue_capacity": 512, "max_queued_per_tenant": 96}
+    }
+  }
+}
+```
+
+这组值分别放开 HTTP 入口、Retrieval admission、租户 QPS/在途配额、模型网关预算、
+Recall fanout/各阶段队列和 Commit 队列。报告仍须保留 429、503、超时、空召回、实际峰值
+在途及 Provider 错误。`tenant_cache.hard_cap=15` 是同时常驻 runtime 的上限，不等于系统
+最多支持 15 个租户；测试更多活跃租户时应另做更高 hard cap 对照并记录配置指纹。
+
 不要为了展示“32 热租户”把租户常驻缓存硬改成 32。4U8G 的租户缓存有真实内存预算，
 启动校验拒绝超出预算的配置也属于有效容量证据。32 个独立凭据表示测试平台会产生
 最多 32 租户流量，不代表 32 个租户必须同时常驻；报告要分别展示活动租户、峰值在途请求、

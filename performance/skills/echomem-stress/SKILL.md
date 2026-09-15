@@ -65,6 +65,10 @@ just a prose summary or raw JSON.
   not selected; never wait until the entire run ends before publishing the first
   report. After each checkpoint, tell the user the report path, update time, and
   newest measured denominator without flooding chat with per-request messages.
+- When one run selects M1 together with M2/M3, reuse M1 cross-tenant actors whose
+  Commit and recall validation completed. The shared seed must report
+  `seed_source=validated-identity-cache`; treating the same identities as a new
+  seed is a harness orchestration defect, not useful additional coverage.
 - Treat the repository report generator as the single implementation of visual
   layout. Do not hand-build a second HTML report in chat or with an ad-hoc
   script. Read `references/interactive-workflow.md#8-report-display-contract`
