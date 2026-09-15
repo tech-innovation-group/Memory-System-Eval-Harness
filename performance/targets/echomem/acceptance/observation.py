@@ -18,6 +18,7 @@ from performance.targets.echomem.acceptance.stage_observability import (
     correlate_requests,
     cross_check,
     read_stage_events,
+    summarize_cache_diagnostics,
     summarize_log_stages,
     summarize_http_calls,
     summarize_prometheus_histograms,
@@ -91,6 +92,11 @@ def _request_stats(rows: list[dict[str, Any]], op: str = "read") -> dict[str, An
     selected = [row for row in rows if row.get("op") == op]
     latencies = [value for row in selected if (value := _number(row.get("stage_ms"))) is not None and value >= 0]
     ok = [row for row in selected if row.get("status") == "ok"]
+    recall_observed = any(row.get("recall_served") not in (None, "") for row in selected)
+    served = ([row for row in ok if _truth(row.get("recall_served"))]
+              if recall_observed else list(ok))
+    served_latencies = [value for row in served
+                        if (value := _number(row.get("stage_ms"))) is not None and value >= 0]
     quality_observed = [row for row in selected if str(row.get("quality_ok", "")).lower() in {"true", "false"}]
     quality_ok = [row for row in quality_observed if row.get("status") == "ok"
                   and _truth(row.get("quality_ok")) and not _truth(row.get("degraded"))]
@@ -99,11 +105,17 @@ def _request_stats(rows: list[dict[str, Any]], op: str = "read") -> dict[str, An
         "completed": len(selected),
         "ok": len(ok),
         "errors": len(selected) - len(ok),
+        "recall_served": len(served),
+        "recall_service_errors": len(selected) - len(served),
+        "recall_service_rate": len(served) / len(selected) if selected else None,
         "timeouts": sum("timeout" in str(row.get("error_type") or "").lower() for row in selected),
         "p50_ms": percentile(latencies, 50),
         "mean_ms": sum(latencies) / len(latencies) if latencies else None,
         "p95_ms": percentile(latencies, 95),
         "p99_ms": percentile(latencies, 99),
+        "served_p50_ms": percentile(served_latencies, 50),
+        "served_p95_ms": percentile(served_latencies, 95),
+        "served_p99_ms": percentile(served_latencies, 99),
         "latency_observations": len(latencies),
         "latency_missing_or_invalid": len(selected) - len(latencies),
         "quality_observed": len(quality_observed),
@@ -111,7 +123,8 @@ def _request_stats(rows: list[dict[str, Any]], op: str = "read") -> dict[str, An
         "recall_queries": sum(row.get("query_type") == "recall" for row in selected),
         "quality_ok": len(quality_ok),
         "quality_rate": len(quality_ok) / len(selected) if selected else None,
-        "empty_recall": sum((_number(row.get("hit_count")) or 0) == 0 for row in selected),
+        "empty_recall": sum(row.get("status") == "ok"
+                            and (_number(row.get("hit_count")) or 0) == 0 for row in selected),
         "http_status": dict(Counter(str(row.get("http_status") or "none") for row in selected)),
         "error_types": dict(Counter(str(row.get("error_type") or "none") for row in selected)),
     }
@@ -267,6 +280,80 @@ def _m1_trace_records(suite: dict[str, Any]) -> tuple[list[dict], list[str]]:
     return rows, missing
 
 
+def _m1_timing_rows(m1_reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Read the capacity runner's own elapsed/drain measurements.
+
+    M1 is executed outside the regular case runner, so its timing evidence is
+    stored next to each level measurement rather than in ``suite.json``.
+    """
+    rows: list[dict[str, Any]] = []
+    for report in m1_reports:
+        report_path = Path(str(report.get("manifest", {}).get("report_path") or ""))
+        if not report_path.is_file():
+            # The observation runner does not currently put report_path in the
+            # JSON; callers pass report objects loaded from the known output
+            # location, so fall back to the level's relative evidence path.
+            report_path = Path(str(report.get("_report_path") or ""))
+        for level in report.get("levels", []):
+            name = str(level.get("measurement_file") or "")
+            measurement = {}
+            if name and Path(name).name == name:
+                candidate = report_path.parent / name if report_path.is_file() else None
+                if candidate and candidate.is_file():
+                    try:
+                        measurement = json.loads(candidate.read_text(encoding="utf-8"))
+                    except (OSError, ValueError):
+                        measurement = {}
+            duration = _number(measurement.get("duration_s"))
+            elapsed = _number(measurement.get("elapsed_with_drain_s"))
+            level_rows = measurement.get("rows") if isinstance(measurement, dict) else []
+            level_rows = level_rows if isinstance(level_rows, list) else []
+            sent = [row for row in level_rows if isinstance(row, dict) and row.get("sent") is not False]
+            rows.append({
+                "scenario": f"M1/{report.get('topology')}/H={level.get('hot_users')}/{level.get('load_mode')}",
+                "status": level.get("status"),
+                "target_concurrency": level.get("target_concurrency"),
+                "peak_inflight_requests": (level.get("search") or {}).get("peak_inflight_requests"),
+                "memory_profile": (level.get("server_stage_timings") or {}).get("memory_profile"),
+                "planned_load_s": duration,
+                "actual_elapsed_s": elapsed,
+                "drain_s": max(0.0, elapsed - duration) if duration is not None and elapsed is not None else None,
+                "requests": len(sent),
+                "search_requests": sum(row.get("op") == "read" for row in sent),
+                "commit_requests": sum(row.get("op") in {"add", "commit_submit", "commit_done"} for row in sent),
+                "source": "M1 measurement JSON",
+            })
+    return rows
+
+
+def _scenario_timing_rows(suite: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for run in suite.get("runs", []):
+        summary = run.get("summary") or {}
+        clock = summary.get("run_clock") or {}
+        records = _records(run)
+        planned = _number(clock.get("load_duration_s"))
+        actual = _number(clock.get("wall_elapsed_s"))
+        engine = _number(clock.get("engine_elapsed_s"))
+        if actual is None:
+            actual = _number(run.get("wall_elapsed_s"))
+        if engine is None:
+            engine = _number(run.get("engine_elapsed_s"))
+        rows.append({
+            "scenario": run.get("scenario"),
+            "status": run.get("status"),
+            "planned_load_s": planned,
+            "actual_elapsed_s": actual,
+            "engine_elapsed_s": engine,
+            "drain_s": max(0.0, actual - planned) if actual is not None and planned is not None else None,
+            "requests": len(records),
+            "search_requests": sum(row.get("op") == "read" for row in records),
+            "commit_requests": sum(row.get("op") in {"open", "add", "commit_submit", "commit_done"} for row in records),
+            "source": "case summary/run_clock",
+        })
+    return rows
+
+
 def summarize_timing_evidence(suite: dict[str, Any], m1_reports: list[dict[str, Any]]) -> dict[str, Any]:
     rows = [row for run in suite.get("runs", []) for row in _records(run)]
     operation_rows = []
@@ -288,6 +375,30 @@ def summarize_timing_evidence(suite: dict[str, Any], m1_reports: list[dict[str, 
                 response_rows.append({"module": f"{prefix}/engine:{engine}", "source": "服务响应", **values})
             for route, values in (search.get("route_path_timings") or {}).items():
                 response_rows.append({"module": f"{prefix}/route:{route}", "source": "服务响应", **values})
+            for stage, values in (level.get("server_stage_timings") or {}).items():
+                if stage == "prometheus_histograms":
+                    for row in values if isinstance(values, list) else []:
+                        response_rows.append({
+                            "module": f"{prefix}/prometheus:{row.get('module')}",
+                            "source": row.get("source", "Prometheus histogram delta"),
+                            "observations": row.get("observations"),
+                            "mean_s": row.get("mean_s"),
+                            "p50_s": row.get("p50_s"),
+                            "p95_s": row.get("p95_s"),
+                            "p99_s": row.get("p99_s"),
+                        })
+                    continue
+                if not isinstance(values, dict):
+                    continue
+                response_rows.append({
+                    "module": f"{prefix}/stage:{stage}",
+                    "source": values.get("source", "Prometheus histogram delta"),
+                    "observations": values.get("observations"),
+                    "mean_s": values.get("mean_s"),
+                    "p50_s": values.get("p50_s"),
+                    "p95_s": values.get("p95_s"),
+                    "p99_s": values.get("p99_s"),
+                })
     stage_evidence = suite.get("stage_observability") or {}
     events = stage_evidence.get("events") or read_stage_events(
         Path(str(stage_evidence.get("path") or ""))
@@ -298,6 +409,16 @@ def summarize_timing_evidence(suite: dict[str, Any], m1_reports: list[dict[str, 
         for run in suite.get("runs", [])
     ]
     metric_rows = summarize_prometheus_histograms(metric_paths)
+    cache_diagnostics = summarize_cache_diagnostics(events)
+    scenario_timings = _scenario_timing_rows(suite)
+    m1_timings = _m1_timing_rows(m1_reports)
+    timing_rows = [*scenario_timings, *m1_timings]
+    elapsed_values = [value for row in timing_rows
+                      if (value := _number(row.get("actual_elapsed_s"))) is not None]
+    planned_values = [value for row in timing_rows
+                      if (value := _number(row.get("planned_load_s"))) is not None]
+    drain_values = [value for row in timing_rows
+                    if (value := _number(row.get("drain_s"))) is not None]
     expected = [
         "recall/rule", "recall/semantic", "recall/llm", "recall/query_embedding",
         "recall/memory_profile", "recall/engine_execution",
@@ -331,9 +452,18 @@ def summarize_timing_evidence(suite: dict[str, Any], m1_reports: list[dict[str, 
         correlation["status"] = "PARTIAL"
     return {
         "operation_timings": operation_rows,
+        "scenario_timings": timing_rows,
+        "timing_totals": {
+            "scenario_count": len(timing_rows),
+            "planned_load_s": sum(planned_values) if planned_values else None,
+            "actual_elapsed_s": sum(elapsed_values) if elapsed_values else None,
+            "drain_s": sum(drain_values) if drain_values else None,
+            "note": "M1 使用 measurement JSON；M2/M3 使用每个 case 的 run_clock。种子、预检和报告生成时间另列。",
+        },
         "module_timings": [*response_rows, *log_rows],
         "structured_log_timings": log_rows,
         "prometheus_timings": metric_rows,
+        "cache_diagnostics": cache_diagnostics,
         "trace_correlation": correlation,
         "cross_check": cross_check(log_rows, metric_rows),
         "stage_collection": {key: value for key, value in stage_evidence.items() if key != "events"},
@@ -355,9 +485,21 @@ def summarize_concurrency_configuration(profile: dict[str, Any]) -> dict[str, An
     target = int(profile.get("required_concurrency") or 0)
     path = Path(str(profile.get("preflight_config") or ""))
     relevant = {
-        "max_concurrency", "queue_capacity", "max_queued_per_tenant",
+        "max_workers", "max_concurrency", "queue_capacity", "max_queued_per_tenant",
         "queue_max", "max_inflight", "max_in_flight", "max_pending",
-        "worker_count", "workers",
+        "worker_count", "workers", "executor_workers", "gate_workers",
+        "tenant_inflight_max", "admission_permits", "qps",
+        "llm_max_concurrent", "embed_max_concurrent",
+        "recall_llm_max_concurrent", "recall_embed_max_concurrent",
+        "provider_budget_llm", "provider_budget_embed",
+        "max_cached_tenants", "active_overshoot", "hard_cap",
+        "deadline_s", "timeout_seconds",
+    }
+    concurrency_keys = {
+        "max_workers", "max_concurrency", "queue_capacity", "max_queued_per_tenant",
+        "queue_max", "max_inflight", "max_in_flight", "max_pending",
+        "worker_count", "workers", "executor_workers", "gate_workers",
+        "tenant_inflight_max", "admission_permits",
     }
     rows: list[dict[str, Any]] = []
     if path.is_file():
@@ -371,10 +513,15 @@ def summarize_concurrency_configuration(profile: dict[str, Any]) -> dict[str, An
                 for key, child in value.items():
                     current = (*parts, str(key))
                     if key in relevant and isinstance(child, (int, float)) and not isinstance(child, bool):
+                        disabled_or_unbounded = key == "max_inflight" and child == 0
                         rows.append({
                             "config_path": ".".join(current),
                             "value": child,
-                            "below_requested_concurrency": bool(target and child < target),
+                            "comparison_applies": key in concurrency_keys,
+                            "disabled_or_unbounded": disabled_or_unbounded,
+                            "below_requested_concurrency": bool(
+                                target and key in concurrency_keys and not disabled_or_unbounded and child < target
+                            ),
                         })
                     visit(child, current)
             elif isinstance(value, list):
@@ -391,7 +538,7 @@ def summarize_concurrency_configuration(profile: dict[str, Any]) -> dict[str, An
         "limits_below_target": sum(row["below_requested_concurrency"] for row in rows),
         "note": (
             "测试平台不会读取 EchoMem 并发/队列上限后自动降载；这些值属于被测系统。"
-            "若 128 级客户端负载触发拒绝或排队，应作为容量结果保留，而不是改小分母。"
+            f"若 {target or '目标'} 级客户端负载触发拒绝或排队，应作为容量结果保留，而不是改小分母。"
         ),
     }
 
@@ -436,6 +583,84 @@ def summarize_m1(reports: list[dict[str, Any]], profile: dict[str, Any]) -> dict
     status = _status(expected=requested, observed=len(measured), blocked=not reports)
     if status == "MEASURED" and required_concurrency and peak_inflight < required_concurrency:
         status = "PARTIAL"
+    concurrency_levels = [
+        level for level in levels
+        if level.get("topology") == "concurrency" and level.get("target_concurrency") is not None
+    ]
+    concurrency_rows = []
+    for level in concurrency_levels:
+        search = level.get("search") or {}
+        stage = (level.get("server_stage_timings") or {}).get("memory_profile") or {}
+        concurrency_rows.append({
+            "target_concurrency": level.get("target_concurrency"),
+            "peak_inflight_requests": search.get("peak_inflight_requests"),
+            "planned_search": search.get("planned"),
+            "search_sent": search.get("sent"),
+            "search_p50_s": search.get("p50_s"),
+            "search_p95_s": search.get("p95_s"),
+            "search_p99_s": search.get("p99_s"),
+            "search_errors": search.get("errors"),
+            "search_http_status_counts": search.get("http_status_counts"),
+            "quality_rate": search.get("quality_rate"),
+            "memory_profile_observations": stage.get("observations", 0),
+            "memory_profile_mean_s": stage.get("mean_s"),
+            "memory_profile_p50_s": stage.get("p50_s"),
+            "memory_profile_p95_s": stage.get("p95_s"),
+            "memory_profile_p99_s": stage.get("p99_s"),
+            "memory_profile_sampled": stage.get("sampled", False),
+        })
+    by_target = {row["target_concurrency"]: row for row in concurrency_rows}
+    row16 = by_target.get(16) or {}
+    row64 = by_target.get(64) or {}
+    p95_16 = row16.get("memory_profile_p95_s")
+    p95_64 = row64.get("memory_profile_p95_s")
+    memory_profile_comparison = {
+        "baseline_concurrency": 16 if row16 else None,
+        "comparison_concurrency": 64 if row64 else None,
+        "p95_16_s": p95_16,
+        "p95_64_s": p95_64,
+        "p95_amplification": (p95_64 / p95_16 if p95_16 and p95_64 is not None else None),
+        "comparison_ready": bool(p95_16 is not None and p95_64 is not None),
+        "reason": (
+            "同一轮 16/64 档位均有 memory_profile Prometheus 增量样本"
+            if p95_16 is not None and p95_64 is not None
+            else "需要两个档位都采到 memory_profile 直方图样本；端到端耗时不能替代阶段数据"
+        ),
+    }
+    seed_rows = []
+    seed_statuses = []
+    seed_documents = 0
+    seed_characters = 0
+    for report in reports:
+        seed = report.get("seed") or {}
+        if seed.get("status"):
+            seed_statuses.append(seed.get("status"))
+        seed_documents += int(seed.get("total_documents") or 0)
+        seed_characters += int(seed.get("total_input_characters") or 0)
+        for actor in seed.get("actors") or []:
+            if not isinstance(actor, dict):
+                continue
+            source = actor.get("corpus_source") or {}
+            seed_rows.append({
+                "tenant_index": actor.get("tenant_index"),
+                "user_index": actor.get("user_index"),
+                "sample_id": source.get("assigned_sample_id") or source.get("sample_id"),
+                "session_key": source.get("assigned_session_key") or source.get("session_key"),
+                "session_messages": source.get("session_messages"),
+                "input_documents": actor.get("input_documents"),
+                "input_characters": actor.get("input_characters"),
+                "semantic_queries": actor.get("semantic_queries"),
+                "commit_http_status": actor.get("commit_http_status"),
+                "commit_state": actor.get("commit_state"),
+                "status": actor.get("status"),
+                "elapsed_s": actor.get("elapsed_s"),
+            })
+    # Older evidence files may contain only per-actor seed rows. Recover the
+    # totals from those rows so a report update does not erase valid evidence.
+    if seed_documents == 0:
+        seed_documents = sum(int(row.get("input_documents") or 0) for row in seed_rows)
+    if seed_characters == 0:
+        seed_characters = sum(int(row.get("input_characters") or 0) for row in seed_rows)
     return {
         "status": status,
         "reason": "容量与 DAU 仅作观测和情景换算，不使用性能门槛",
@@ -449,6 +674,17 @@ def summarize_m1(reports: list[dict[str, Any]], profile: dict[str, Any]) -> dict
         "first_operational_anomaly": boundary[0] if boundary else None,
         "unmeasured_ranges": [r.get("levels_requested", []) for r in reports if len(r.get("levels", [])) < len(r.get("levels_requested", []))],
         "levels": levels,
+        "concurrency_rows": concurrency_rows,
+        "memory_profile_comparison": memory_profile_comparison,
+        "seed_contract": "每租户一个完整 LoCoMo session；Search 只取该 session 的真实 QA 子集",
+        "seed_memory_policy": next((report.get("seed_memory_policy") for report in reports
+                                     if report.get("seed_memory_policy")), None),
+        "seed_status": ("PASS" if seed_statuses and all(value == "PASS" for value in seed_statuses)
+                         else seed_statuses[0] if seed_statuses else "NOT_MEASURED"),
+        "seed_session_count": len(seed_rows),
+        "seed_total_documents": seed_documents,
+        "seed_total_input_characters": seed_characters,
+        "seed_assignments": seed_rows,
         "dau_scenarios": estimates,
         "expected_windows": requested,
         "measured_windows": len(measured),
@@ -590,14 +826,37 @@ def _fairness_window(run: dict[str, Any], tenant_count: int) -> dict[str, Any]:
                         "longest_no_completion_s": longest_gap,
                         "search": _request_stats(search_rows)})
     commit_values = [float(row["commit_completed_per_s"] or 0) for row in tenants]
-    inverse_p95 = [1000 / row["search"]["p95_ms"] if row["search"]["p95_ms"] else 0 for row in tenants]
+    inverse_p95 = [
+        1000 / value if value else 0
+        for row in tenants
+        for value in [row["search"].get("served_p95_ms") or row["search"].get("p95_ms")]
+    ]
+    commit_throughput_jain = jain(commit_values)
+    search_inverse_p95_jain = jain(inverse_p95)
+    search_health = _request_stats([row for row in rows if row.get("op") == "read"])
+    search_health["status"] = "PASS" if not any(
+        (search_health.get(key) or 0) for key in ("errors", "timeouts", "empty_recall")
+    ) and search_health.get("recall_service_rate") == 1 else "INVALID"
+    search_health["reason"] = (
+        "所有 Search 都返回非空 Recall，且无 HTTP/传输错误"
+        if search_health["status"] == "PASS" else
+        "公平指数保留，但 Search 存在错误、超时或空召回，不能把 Jain 解释成健康度"
+    )
     return {"scenario": run.get("scenario"), "duration_s": duration,
             "window_start_ms": window_start, "window_end_ms": window_end,
             "evidence_complete": not issues and run.get("status") == "completed",
+            "fairness_result_available": (commit_throughput_jain is not None
+                                           and search_inverse_p95_jain is not None),
+            "fairness_result_reason": (
+                "窗口内至少有一个已完成 Commit，两个 Jain 均可计算"
+                if commit_throughput_jain is not None and search_inverse_p95_jain is not None
+                else "测量窗口内所有租户 Commit 吞吐均为 0，Commit Jain 无定义；排空完成不能替代窗口吞吐"
+            ),
             "evidence_issues": issues,
             "tenant_count": tenant_count, "tenants": tenants,
-            "commit_throughput_jain": jain(commit_values),
-            "search_inverse_p95_jain": jain(inverse_p95)}
+            "search_health": search_health,
+            "commit_throughput_jain": commit_throughput_jain,
+            "search_inverse_p95_jain": search_inverse_p95_jain}
 
 
 def summarize_m2(runs: dict[str, dict[str, Any]], *, quick: bool) -> dict[str, Any]:
@@ -607,10 +866,18 @@ def summarize_m2(runs: dict[str, dict[str, Any]], *, quick: bool) -> dict[str, A
                or runs.get(f"m3-fairness-{count}t"))
         if run and _records(run):
             windows.append(_fairness_window(run, count))
-    complete = sum(window["evidence_complete"] for window in windows)
+    complete = sum(window["evidence_complete"] and window["fairness_result_available"]
+                   for window in windows)
+    missing_result = [window["scenario"] for window in windows
+                      if window["evidence_complete"] and not window["fairness_result_available"]]
+    reason = ("独立周期发压；仅窗口内完成计算吞吐，排空另列。零完成租户保留；"
+              "短窗口不证明长期稳态")
+    if missing_result:
+        reason += "；以下场景窗口内没有已完成 Commit，不能计算 Commit Jain：" + ", ".join(missing_result)
     return {"status": "MEASURED" if not quick and complete == 2 else "PARTIAL" if windows else "BLOCKED",
-            "reason": "独立周期发压；仅窗口内完成计算吞吐，排空另列。零完成租户保留；短窗口不证明长期稳态",
-            "expected_windows": 2, "observed_windows": len(windows), "windows": windows}
+            "reason": reason,
+            "expected_windows": 2, "observed_windows": len(windows),
+            "complete_windows": complete, "windows": windows}
 
 
 def _commit_window_evidence(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -707,9 +974,15 @@ def _flood_window(baseline_rows: list[dict[str, Any]], run: dict[str, Any], tena
     for tenant in range(tenant_count):
         before = _request_stats([row for row in baseline_rows if str(row.get("tenant_idx")) == str(tenant)])
         during = _request_stats([row for row in confirmed if str(row.get("tenant_idx")) == str(tenant)])
-        ratio = during["p95_ms"] / before["p95_ms"] if before["p95_ms"] and during["p95_ms"] else None
+        # Compare only successfully served, non-empty Recall requests.  The
+        # all-request P95 is retained separately because timeout samples can
+        # pin both sides to the client deadline and hide real degradation.
+        ratio = (during["served_p95_ms"] / before["served_p95_ms"]
+                 if before["served_p95_ms"] and during["served_p95_ms"] else None)
         by_tenant.append({"tenant_index": tenant, "baseline": before, "overlap": during,
-                          "p95_delta_ms": during["p95_ms"] - before["p95_ms"] if before["p95_ms"] is not None and during["p95_ms"] is not None else None,
+                          "p95_delta_ms": (during["served_p95_ms"] - before["served_p95_ms"]
+                                           if before["served_p95_ms"] is not None and during["served_p95_ms"] is not None
+                                           else None),
                           "p95_ratio": ratio})
     completed = sum(row.get("status") == "ok" for row in done.values())
     failed = sum(row.get("status") != "ok" for row in done.values())
@@ -855,8 +1128,34 @@ def summarize_m3(runs: dict[str, dict[str, Any]], *, quick: bool) -> dict[str, A
     )
     issues = []
     baseline = _request_stats(baseline_rows)
+    baseline_health_reasons = []
+    if not baseline_rows:
+        baseline_health_reasons.append("no_search_samples")
+    if baseline["errors"]:
+        baseline_health_reasons.append(f"http_or_transport_errors={baseline['errors']}")
+    if baseline["timeouts"]:
+        baseline_health_reasons.append(f"timeouts={baseline['timeouts']}")
+    if baseline["empty_recall"]:
+        baseline_health_reasons.append(f"empty_recall={baseline['empty_recall']}")
+    if baseline["recall_service_rate"] is not None and baseline["recall_service_rate"] < 1:
+        baseline_health_reasons.append(
+            f"recall_service_rate={baseline['recall_service_rate']:.6f}"
+        )
+    baseline_health = {
+        "status": "PASS" if not baseline_health_reasons else "INVALID",
+        "eligible_for_priority_comparison": not baseline_health_reasons,
+        "reasons": baseline_health_reasons,
+        "planned_or_recorded": baseline["planned_or_recorded"],
+        "recall_served": baseline["recall_served"],
+        "errors": baseline["errors"],
+        "timeouts": baseline["timeouts"],
+        "empty_recall": baseline["empty_recall"],
+        "recall_service_rate": baseline["recall_service_rate"],
+    }
     if baseline_run.get("status") != "completed" or baseline_run.get("runner_timeout"):
         issues.append("baseline_execution_not_complete")
+    if not baseline_health["eligible_for_priority_comparison"]:
+        issues.append("baseline_health_gate_failed")
     baseline_tenants = []
     for tenant in range(4):
         tenant_rows = [r for r in baseline_rows if r.get("op") == "read" and str(r.get("tenant_idx")) == str(tenant)]
@@ -882,7 +1181,8 @@ def summarize_m3(runs: dict[str, dict[str, Any]], *, quick: bool) -> dict[str, A
         planned = (int(count * waves) if count is not None and waves is not None
                    and count > 0 and waves > 0 and count.is_integer() and waves.is_integer() else None)
         window["commit_planned"] = planned
-        if (contract.get("version") != "echomem-case-v1" or contract.get("tenant_count") != 4
+        if (contract.get("version") not in {"echomem-case-v1", "echomem-case-v2"}
+                or contract.get("tenant_count") != 4
                 or contract.get("query_mode") != "recall" or planned is None):
             gaps.append("effective_workload_contract_missing_or_invalid")
         preparation = window["preparation"]
@@ -926,9 +1226,15 @@ def summarize_m3(runs: dict[str, dict[str, Any]], *, quick: bool) -> dict[str, A
     )
     if heterogeneous["status"] == "BLOCKED":
         issues.append("heterogeneous_tenant_window_missing")
+    status_reason = (
+        "基线健康门禁通过；非终态轮询确认的重叠与宽观察窗口分别展示。"
+        if baseline_health["eligible_for_priority_comparison"]
+        else "基线自身已有错误、超时或空召回，保留全部异常但不把本轮洪泛结果作为可信退化对比；需先复测健康基线。"
+    )
     return {"status": "MEASURED" if observed == 4 and not issues and not quick else "PARTIAL" if observed else "BLOCKED",
-            "reason": "非终态轮询确认的重叠与宽观察窗口分别展示；服务拒绝和截止未终态是测量结果，不是证据缺口。MEASURED 不代表性能达标或严格内部优先级",
-            "evidence_issues": issues, "baseline": baseline, "baseline_tenants": baseline_tenants,
+            "reason": status_reason + "服务拒绝和截止未终态是测量结果；MEASURED 不代表性能达标或严格内部优先级",
+            "evidence_issues": issues, "baseline": baseline, "baseline_health": baseline_health,
+            "baseline_tenants": baseline_tenants,
             "expected_windows": 4, "observed_windows": observed, "windows": windows,
             "heterogeneous_tenants": heterogeneous,
             "internal_order_observation": "内部顺序未观测"}
@@ -1141,6 +1447,21 @@ def evaluate_observation(suite: dict[str, Any], profile: dict[str, Any],
             metric["reason"] = "quick 仅为非完整采样；" + str(metric.get("reason") or "")
     statuses = [metrics[code]["status"] for code in selected]
     seed = suite.get("seed") or {}
+    # M1 seed preparation is stored in per-topology reports rather than the
+    # shared suite seed. Surface that evidence in the top-level report so a
+    # reused-seed run is auditable and blocked auth preflights are explicit.
+    if not seed and m1_reports:
+        reused = [row for row in m1_reports if row.get("seed_reused")]
+        blocked = [row for row in m1_reports if row.get("status") == "BLOCKED"]
+        seed = {
+            "status": "REUSED_PRECHECK_BLOCKED" if blocked else ("REUSED" if reused else None),
+            "seed_source": "reused-seed" if reused else None,
+            "seed_actor_count": sum(int(row.get("seed_actor_count") or 0) for row in m1_reports),
+            "reuse_seed_preflight": [row.get("reuse_seed_preflight") for row in m1_reports
+                                      if row.get("reuse_seed_preflight")],
+            "error": "; ".join(str(row.get("stop_reason")) for row in blocked
+                                  if row.get("stop_reason")),
+        }
     seed_evidence = seed.get("seed_evidence") or seed.get("evidence") or {}
     setup_evidence = {
         "seed_status": seed.get("status"), "seed_contract": seed.get("seed_contract"),
@@ -1149,8 +1470,9 @@ def evaluate_observation(suite: dict[str, Any], profile: dict[str, Any],
         "facts_per_tenant": seed.get("facts_per_tenant"),
         "query_variants_per_tenant": seed.get("query_variants_per_tenant"),
         "healthy_actors": seed_evidence.get("healthy_actors"),
-        "expected_actors": seed_evidence.get("actor_count"),
+        "expected_actors": seed_evidence.get("actor_count") or seed.get("seed_actor_count"),
         "validated_queries_per_tenant": seed.get("validated_queries_per_tenant"),
+        "reuse_seed_preflight": seed.get("reuse_seed_preflight"),
         "bare_marker_gate_failed": str(seed.get("error") or "").startswith("Seed marker not found"),
         "load_cases_completed": len(runs),
     }
@@ -1241,23 +1563,78 @@ def derive_observation_recommendations(result: dict[str, Any]) -> list[dict[str,
         for tenant in window.get("tenants", [])
         if tenant.get("p95_ratio") is not None
     ]
+    m3_overlaps = [
+        window.get("confirmed_overlap") or window.get("overlap") or {}
+        for window in m3.get("windows", [])
+    ]
+    m3_baseline = m3.get("baseline") or {}
+    m3_worst_service_rate = min(
+        (float(row["recall_service_rate"]) for row in m3_overlaps
+         if _number(row.get("recall_service_rate")) is not None),
+        default=None,
+    )
+    m3_503 = sum(int((row.get("http_status") or {}).get("503") or 0) for row in m3_overlaps)
+    m3_timeouts = sum(int(row.get("timeouts") or 0) for row in m3_overlaps)
+    m3_empty = sum(int(row.get("empty_recall") or 0) for row in m3_overlaps)
+    timing_rows = (result.get("timing_evidence") or {}).get("module_timings", [])
+
+    def stage_p95(module: str) -> float | None:
+        return next((row.get("p95_ms") for row in timing_rows
+                     if row.get("module") == module and row.get("observations")), None)
+
+    atomic_p95 = stage_p95("recall_engine/atomic_engine")
+    embedding_p95 = stage_p95("recall/query_embedding")
+    recall_total_p95 = stage_p95("recall/recall_total")
     levels = m1.get("levels", [])
+    concurrency_rows = m1.get("concurrency_rows", [])
     highest = max((int(level.get("hot_users") or 0) for level in levels), default=None)
+    highest_concurrency = max(
+        (int(row.get("target_concurrency") or 0) for row in concurrency_rows),
+        default=None,
+    )
+    measured_concurrency = [row for row in concurrency_rows if row.get("target_concurrency") is not None]
+    if measured_concurrency:
+        m1_evidence = (
+            f"并发档 C={','.join(str(row.get('target_concurrency')) for row in measured_concurrency)}；"
+            f"最高实际在途={max(int(row.get('peak_inflight_requests') or 0) for row in measured_concurrency)}；"
+            f"最高 C={highest_concurrency}。这是并发观测，不等于热用户容量边界。"
+        )
+    else:
+        m1_evidence = (
+            f"最高已测热用户档 H={highest}；首个运行异常="
+            f"{m1.get('first_operational_anomaly') or '尚未观测'}。"
+        )
+    if not levels and m3.get("status") != "BLOCKED":
+        m1_evidence = (
+            f"M3 基线 Recall 服务率={m3_baseline.get('recall_service_rate')}；"
+            f"洪泛重叠窗口最低={m3_worst_service_rate}；503={m3_503}，超时={m3_timeouts}。"
+        )
+    quality_rows = [level.get("search") or {} for level in levels]
+    quality_failures = sum(int(row.get("errors") or 0) for row in quality_rows)
+    degraded = sum(int(row.get("degraded") or 0) for row in quality_rows)
+    fact_hits = sum(int(row.get("fact_hits") or 0) for row in quality_rows)
+    fact_observations = sum(int(row.get("fact_hit_observations") or 0) for row in quality_rows)
     recommendations = [
         {"priority": "P0", "module": "Admission 与容量保护", "metrics": "M1 / M3",
-         "evidence": (f"最高已测热用户档 H={highest}；首个运行异常="
-                      f"{m1.get('first_operational_anomaly') or '尚未观测'}。"),
+         "evidence": m1_evidence,
          "action": "区分 Search 与 Commit 配额，拒绝时返回 tenant、lane、reason_code 和 retry_after；继续升档直到取得真实边界。"},
         {"priority": "P0", "module": "多租户调度", "metrics": "M2 / M3",
-         "evidence": (f"已测 Jain 最低={min(m2_jain) if m2_jain else None}；"
-                      f"Commit 洪泛下 Search P95 最大倍率={max(m3_ratios) if m3_ratios else None}。"),
+         "evidence": (f"已测 Jain 最低={min(m2_jain) if m2_jain else '本轮未测'}；"
+                      f"Commit 洪泛重叠窗口 Recall 服务率最低={m3_worst_service_rate}；"
+                      f"非空 Recall P95 比率最大={max(m3_ratios) if m3_ratios else '无可比样本'}。"),
          "action": "Commit 按租户轮询或 DRR，并限制单租户在途数；Search 使用独立 lane、worker 和 admission 预算。"},
         {"priority": "P0", "module": "路由与 Search 编排", "metrics": "M1 / M3",
-         "evidence": f"M3 已取得 {m3.get('observed_windows', 0)}/{m3.get('expected_windows', 0)} 个配对窗口。",
-         "action": "为 intent/router、embedding、fanout、merge 分别记录排队和执行耗时，并为确定性记忆查询提供有质量校验的快速路径。"},
+         "evidence": (
+             f"M1 观察到 HTTP 200 质量失败 {quality_failures} 次，其中降级 {degraded} 次；"
+             f"固定事实命中 {fact_hits}/{fact_observations}。"
+             + (f"本轮未选择 M3，未生成洪泛配对窗口。" if m3.get("status") == "BLOCKED"
+                else f"M3 洪泛重叠窗口 HTTP 200 空召回={m3_empty}，503={m3_503}，超时={m3_timeouts}。")
+         ),
+         "action": "为 intent/router、embedding、fanout、merge 分别记录排队和执行耗时；对 intent LLM 非法输出增加结构化重试或确定性回退，不能以 HTTP 200 返回空召回并继续占用下游资源。"},
         {"priority": "P1", "module": "原子引擎 Atomic Engine", "metrics": "M1 / M3 / M6",
-         "evidence": "当前黑盒报告尚不能把端到端尾延迟单独归因到索引读取、向量检索或候选合并。",
-         "action": "暴露 embedding、索引读取、候选合并的阶段耗时和队列；避免 Commit 建索引持有 Search 所需的全局锁。"},
+         "evidence": (f"本轮结构化日志：Recall Atomic Engine P95={atomic_p95} ms；"
+                      f"Query Embedding P95={embedding_p95} ms；Recall Total P95={recall_total_p95} ms。"),
+         "action": "继续细分索引读取、候选合并和原子引擎排队；避免 Commit 建索引持有 Search 所需的全局锁，并将阶段指标按 trace_id 与请求关联。"},
         {"priority": "P1", "module": "租户故障隔离", "metrics": "M4",
          "evidence": (f"完整故障用例 {m4.get('complete_cases', 0)}/{m4.get('expected_cases', 0)}；"
                       f"旁观租户最差 P95 变化={max(m4_changes) if m4_changes else None}%。"),
@@ -1365,12 +1742,110 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             continue
         visual = ""
         if code == "M1":
+            def milliseconds(value: Any) -> float | None:
+                value = _number(value)
+                return round(value * 1000, 3) if value is not None else None
+
             visual = (
                 f"<p><b>客户端并发目标：</b>{esc(metric.get('required_concurrency'))}；"
                 f"<b>实测 Search 在途峰值：</b>{esc(metric.get('peak_inflight_requests'))}；"
                 f"<b>是否真正达到目标：</b>{esc(metric.get('concurrency_target_observed'))}。"
                 "热用户数和同时在途请求不是同一个概念，报告分别保留。</p>"
             )
+            visual += (
+                f"<p><b>记忆准备：</b>{esc(metric.get('seed_contract'))}；"
+                f"策略={esc(metric.get('seed_memory_policy'))}，"
+                f"状态={esc(metric.get('seed_status'))}，"
+                f"session={esc(metric.get('seed_session_count'))}，"
+                f"消息/文档={esc(metric.get('seed_total_documents'))}，"
+                f"字符={esc(metric.get('seed_total_input_characters'))}。</p>"
+            )
+            visual += details("查看每个租户的完整 LoCoMo session 与 Commit 结果", table(
+                metric.get("seed_assignments", []), [
+                    ("tenant_index", "租户序号"), ("sample_id", "LoCoMo sample"),
+                    ("session_key", "完整 session"), ("session_messages", "原始消息数"),
+                    ("input_documents", "注入文档数"), ("input_characters", "字符数"),
+                    ("semantic_queries", "Search题数"), ("commit_http_status", "Commit HTTP"),
+                    ("commit_state", "Commit终态"), ("elapsed_s", "注入耗时秒"),
+                    ("status", "状态"),
+                ], min_width_px=1200))
+            comparison = metric.get("memory_profile_comparison") or {}
+
+            def stage_stat(level: dict[str, Any], metric_name: str, stage_name: str, field: str = "p95_s") -> Any:
+                for sample in ((level.get("server_stage_timings") or {}).get("prometheus_histograms") or []):
+                    if sample.get("metric") == metric_name and (sample.get("labels") or {}).get("stage") == stage_name:
+                        return milliseconds(sample.get(field))
+                return None
+
+            concurrency_rows = []
+            for level in metric.get("levels", []):
+                search = level.get("search") or {}
+                status_counts = search.get("http_status_counts") or {}
+                route = search.get("route_path_timings") or {}
+                intent = route.get("intent_llm") or {}
+                concurrency_rows.append({
+                    "concurrency": level.get("target_concurrency"),
+                    "peak_inflight": search.get("peak_inflight_requests"),
+                    "observations": search.get("latency_observations"),
+                    "p50_ms": milliseconds(search.get("p50_s")),
+                    "p95_ms": milliseconds(search.get("p95_s")),
+                    "p99_ms": milliseconds(search.get("p99_s")),
+                    "intent_llm_p95_ms": milliseconds(intent.get("p95_s")),
+                    "query_embedding_p95_ms": stage_stat(level, "echomem_memrouter_stage_duration_seconds", "query_embedding"),
+                    "semantic_p95_ms": stage_stat(level, "echomem_memrouter_stage_duration_seconds", "semantic"),
+                    "engine_execution_p95_ms": stage_stat(level, "echomem_memrouter_stage_duration_seconds", "engine_execution"),
+                    "memory_profile_p95_ms": stage_stat(level, "echomem_memrouter_stage_duration_seconds", "memory_profile"),
+                    "query_embedding_queue_p95_ms": stage_stat(level, "echomem_memrouter_stage_queue_wait_seconds", "query_embedding"),
+                    "engine_queue_p95_ms": stage_stat(level, "echomem_memrouter_stage_queue_wait_seconds", "engine_execution"),
+                    "llm_queue_p95_ms": stage_stat(level, "echomem_memrouter_stage_queue_wait_seconds", "llm"),
+                    "http_200": status_counts.get("200", 0),
+                    "http_503": status_counts.get("503", 0),
+                    "http_429": status_counts.get("429", 0),
+                    "timeouts": (search.get("error_breakdown") or {}).get("timeout_censored", search.get("timeout_censored", 0)),
+                })
+            concurrency_rows = [row for row in concurrency_rows if row.get("concurrency") is not None]
+            visual += details(
+                "并发档位端到端与模块耗时对比",
+                "<p>端到端 P95 是客户端观测；模块 P95 和 queue wait P95 均来自该档位的 Prometheus 直方图窗口增量，不能把端到端耗时减去某阶段来推算其他模块。HTTP 200/503/429 和超时单独列出。</p>" +
+                table(concurrency_rows, [
+                    ("concurrency", "目标并发"), ("peak_inflight", "实际峰值在途"),
+                    ("observations", "端到端样本"), ("p50_ms", "端到端 P50(ms)"),
+                    ("p95_ms", "端到端 P95(ms)"), ("p99_ms", "端到端 P99(ms)"),
+                    ("intent_llm_p95_ms", "Intent LLM P95(ms)"),
+                    ("query_embedding_p95_ms", "Query Embedding P95(ms)"),
+                    ("semantic_p95_ms", "Semantic P95(ms)"),
+                    ("engine_execution_p95_ms", "Engine Execution P95(ms)"),
+                    ("memory_profile_p95_ms", "Memory Profile P95(ms)"),
+                    ("query_embedding_queue_p95_ms", "Query Embedding Queue P95(ms)"),
+                    ("engine_queue_p95_ms", "Engine Queue P95(ms)"),
+                    ("llm_queue_p95_ms", "LLM Queue P95(ms)"),
+                    ("http_200", "HTTP 200"), ("http_503", "HTTP 503"),
+                    ("http_429", "HTTP 429"), ("timeouts", "超时"),
+                ], min_width_px=2200)
+            )
+            stage_bars = []
+            for row in concurrency_rows:
+                for key, label in (
+                    ("p95_ms", "端到端"),
+                    ("intent_llm_p95_ms", "Intent LLM"),
+                    ("query_embedding_p95_ms", "Query Embedding"),
+                    ("engine_execution_p95_ms", "Engine Execution"),
+                    ("memory_profile_p95_ms", "Memory Profile"),
+                ):
+                    if row.get(key) is not None:
+                        stage_bars.append((f"C={row.get('concurrency')} {label}", row[key]))
+            visual += bars("各并发档位模块 P95 对比（ms）", stage_bars)
+            if concurrency_rows:
+                slowest = max(concurrency_rows, key=lambda row: row.get("p95_ms") or -1)
+                dominant = max(
+                    (("Intent LLM", slowest.get("intent_llm_p95_ms")),
+                     ("Query Embedding/Semantic", slowest.get("semantic_p95_ms")),
+                     ("Engine Execution", slowest.get("engine_execution_p95_ms"))),
+                    key=lambda item: item[1] if item[1] is not None else -1,
+                )
+                visual += f"<p><b>耗时结论：</b>最高端到端 P95 出现在 {esc(slowest.get('concurrency'))} 并发；在该档位可观测模块中，P95 最大的是 {esc(dominant[0])}（{esc(dominant[1])} ms）。memory_profile 仅表示画像阶段本身，不等于整条 Recall 耗时。</p>"
+            if comparison.get("comparison_ready"):
+                visual += f"<p><b>16→64 memory_profile 放大：</b>{esc(comparison.get('p95_amplification'))}；该结论只在两档都有真实阶段样本时成立。</p>"
             visual += bars("已测负载曲线：Search P95 ms", [
                 (f"{level.get('topology')} H={level.get('hot_users')} {level.get('load_mode')}",
                  (level.get("search") or {}).get("p95_s") * 1000
@@ -1378,6 +1853,29 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                 for level in metric.get("levels", [])
             ])
             visual += details("查看各档吞吐与完成状态", table(metric.get("levels", []), [("topology", "拓扑"), ("hot_users", "热用户"), ("load_mode", "负载"), ("status", "数据状态"), ("sent_search_rps", "Search发送/s"), ("effective_search_rps", "Search完成/s")]))
+            level_stage_rows = []
+            for level in metric.get("levels", []):
+                for stage in ((level.get("server_stage_timings") or {}).get("prometheus_histograms") or []):
+                    level_stage_rows.append({
+                        "topology": level.get("topology"),
+                        "hot_users": level.get("hot_users"),
+                        "load_mode": level.get("load_mode"),
+                        "module": stage.get("module"),
+                        "labels": stage.get("labels"),
+                        "observations": stage.get("observations"),
+                        "p50_ms": (stage.get("p50_s") * 1000
+                                   if stage.get("p50_s") is not None else None),
+                        "p95_ms": (stage.get("p95_s") * 1000
+                                   if stage.get("p95_s") is not None else None),
+                        "p99_ms": (stage.get("p99_s") * 1000
+                                   if stage.get("p99_s") is not None else None),
+                    })
+            visual += details("查看每个 16/64 档位的模块直方图耗时", table(level_stage_rows, [
+                ("topology", "拓扑"), ("hot_users", "租户数"), ("load_mode", "负载"),
+                ("module", "Prometheus模块"), ("labels", "标签"),
+                ("observations", "样本"), ("p50_ms", "P50 ms"),
+                ("p95_ms", "P95 ms"), ("p99_ms", "P99 ms"),
+            ], min_width_px=1300))
             failure_rows = []
             for level in metric.get("levels", []):
                 search = level.get("search") or {}
@@ -1515,42 +2013,78 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                 (f"{window.get('tenant_count')}租户 Search Jain", window.get("search_inverse_p95_jain"))
                 for window in metric.get("windows", [])
             ], axis_max=1)
-            visual += details("查看公平窗口汇总", table(metric.get("windows", []), [("scenario", "场景"), ("tenant_count", "租户"), ("duration_s", "窗口秒"), ("commit_throughput_jain", "Commit Jain"), ("search_inverse_p95_jain", "Search inverse-P95 Jain")]))
+            fairness_rows = [{"scenario": window.get("scenario"), "tenant_count": window.get("tenant_count"),
+                              "duration_s": window.get("duration_s"),
+                              "commit_throughput_jain": window.get("commit_throughput_jain"),
+                              "search_inverse_p95_jain": window.get("search_inverse_p95_jain"),
+                              "search_health_status": (window.get("search_health") or {}).get("status"),
+                              "search_recall_service_rate": (window.get("search_health") or {}).get("recall_service_rate"),
+                              "search_errors": (window.get("search_health") or {}).get("errors"),
+                              "search_timeouts": (window.get("search_health") or {}).get("timeouts"),
+                              "search_empty_recall": (window.get("search_health") or {}).get("empty_recall"),
+                              "search_health_reason": (window.get("search_health") or {}).get("reason")}
+                             for window in metric.get("windows", [])]
+            visual += details("查看公平窗口汇总", table(fairness_rows, [("scenario", "场景"), ("tenant_count", "租户"), ("duration_s", "窗口秒"), ("commit_throughput_jain", "Commit Jain"), ("search_inverse_p95_jain", "Search inverse-P95 Jain"), ("search_health_status", "Search 健康"), ("search_recall_service_rate", "非空 Recall 服务率"), ("search_errors", "错误"), ("search_timeouts", "超时"), ("search_empty_recall", "空召回"), ("search_health_reason", "解释")]))
             tenant_rows = [{"scenario": window.get("scenario"), **tenant,
-                            "search_p95_ms": tenant.get("search", {}).get("p95_ms"),
+                            "search_attempt_p95_ms": tenant.get("search", {}).get("p95_ms"),
+                            "search_recall_p95_ms": tenant.get("search", {}).get("served_p95_ms"),
                             "search_count": tenant.get("search", {}).get("completed"),
                             "search_errors": tenant.get("search", {}).get("errors"),
+                            "search_recall_served": tenant.get("search", {}).get("recall_served"),
+                            "search_recall_errors": tenant.get("search", {}).get("recall_service_errors"),
+                            "search_recall_service_rate": tenant.get("search", {}).get("recall_service_rate"),
+                            "search_empty": tenant.get("search", {}).get("empty_recall"),
                             "search_quality_ok": tenant.get("search", {}).get("quality_ok"),
                             "search_mean_ms": tenant.get("search", {}).get("mean_ms")}
                            for window in metric.get("windows", []) for tenant in window.get("tenants", [])]
             visual += bars("各租户窗口内 Commit 完成数", [
                 (f"{row['scenario']} / 租户 {row['tenant_index']}", row.get("commit_completed")) for row in tenant_rows])
-            visual += bars("各租户 Search P95 / ms", [
-                (f"{row['scenario']} / 租户 {row['tenant_index']}", row.get("search_p95_ms")) for row in tenant_rows])
-            visual += '<p>Commit 吞吐 = 窗口内完成数 ÷ 窗口秒数；Search 使用 1/P95（越大越快）。两者分别计算 J=(Σx)²/(n×Σx²)，n 包含零完成租户。J 接近 1 只表示均匀，不表示吞吐高、延迟低或长期稳态已得到证明。</p>'
-            visual += details("查看逐租户完成数与延迟", table(tenant_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("commit_submitted", "窗口内提交"), ("commit_accepted", "全程受理"), ("commit_completed", "窗口内完成"), ("commit_completed_after_window", "停压后完成"), ("commit_failed", "全程失败"), ("commit_pending", "观察截止未确认"), ("longest_no_completion_s", "窗口内最长无完成秒"), ("search_p95_ms", "Search P95 ms")]))
+            visual += bars("各租户非空 Recall P95 / ms", [
+                (f"{row['scenario']} / 租户 {row['tenant_index']}", row.get("search_recall_p95_ms")) for row in tenant_rows])
+            visual += '<p>Commit 吞吐 = 窗口内完成数 ÷ 窗口秒数；Search Jain 使用非空 Recall 的 1/P95（越大越快）。两者分别计算 J=(Σx)²/(n×Σx²)，n 包含零完成租户。J 接近 1 只表示幸存请求的延迟较均匀，不表示吞吐高、延迟低、空召回少或长期稳态已得到证明。</p>'
+            visual += details("查看逐租户完成数与延迟", table(tenant_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("commit_submitted", "窗口内提交"), ("commit_accepted", "全程受理"), ("commit_completed", "窗口内完成"), ("commit_completed_after_window", "停压后完成"), ("commit_failed", "全程失败"), ("commit_pending", "观察截止未确认"), ("longest_no_completion_s", "窗口内最长无完成秒"), ("search_attempt_p95_ms", "全部尝试 P95 ms"), ("search_recall_p95_ms", "非空 Recall P95 ms"), ("search_recall_service_rate", "Recall 服务率")]))
             visual += '<p>观察截止未确认不等于永久失败；后续原任务完成不能回填历史窗口吞吐。状态轮询也是服务负载，下面统计整个场景（含排空），不与测量窗口 Search 请求数混用。</p>'
             visual += details("查看状态轮询额外负载", table(tenant_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("commit_poll_count_full_run", "全程状态请求数"), ("commit_poll_http_errors_full_run", "状态 HTTP/传输错误")]))
-            visual += details("查看 Search 错误与召回质量", table(tenant_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("search_count", "请求数"), ("search_errors", "错误数"), ("search_quality_ok", "质量通过数"), ("search_mean_ms", "平均 ms"), ("search_p95_ms", "P95 ms")]))
+            visual += details("查看 Search 错误与召回质量", table(tenant_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("search_count", "请求数"), ("search_errors", "HTTP/传输错误"), ("search_recall_served", "非空 Recall"), ("search_recall_service_rate", "Recall 服务率"), ("search_recall_errors", "Recall 服务失败"), ("search_empty", "HTTP 200空召回"), ("search_quality_ok", "事实质量通过"), ("search_attempt_p95_ms", "全部尝试 P95 ms"), ("search_recall_p95_ms", "非空 Recall P95 ms")]))
             arrival_rows = [{"scenario": row["scenario"], "tenant_index": row["tenant_index"], "task": task, **values}
                             for row in tenant_rows for task, values in row.get("arrivals", {}).items()]
             visual += details("查看计划到达与实际发压", table(arrival_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("task", "路径"), ("planned", "计划启动"), ("started_in_window", "窗口内启动"), ("missing_starts", "未启动"), ("duplicate_starts", "重复"), ("start_lag_p95_ms", "发压延迟 P95 ms")]))
             visual += details("查看证据完整性", table(metric.get("windows", []), [("scenario", "场景"), ("evidence_complete", "完整"), ("evidence_issues", "缺口")]))
         elif code == "M3":
-            visual = bars("有非终态证据的 Search P95 / ms", [
-                ("无 Commit 基线", (metric.get("baseline") or {}).get("p95_ms"))] + [
-                (str(window.get("scenario")), (window.get("confirmed_overlap") or {}).get("p95_ms"))
+            baseline_health = metric.get("baseline_health") or {}
+            visual = details("M3 基线健康门禁", table([baseline_health], [
+                ("status", "状态"), ("eligible_for_priority_comparison", "可用于优先级对比"),
+                ("planned_or_recorded", "Search 样本"), ("recall_served", "非空 Recall"),
+                ("recall_service_rate", "Recall 服务率"), ("errors", "HTTP/传输错误"),
+                ("timeouts", "超时"), ("empty_recall", "空召回"), ("reasons", "阻断原因")
+            ]))
+            visual += bars("非空 Recall P95 / ms", [
+                ("无 Commit 基线", (metric.get("baseline") or {}).get("served_p95_ms"))] + [
+                (str(window.get("scenario")), (window.get("confirmed_overlap") or {}).get("served_p95_ms"))
                 for window in metric.get("windows", [])
             ])
-            visual += "<p>宽观察窗口不等于任务始终未完成；最后一次成功 pending/running 轮询之前才有确认重叠证据。下表错误和质量失败保留在分母，不以延迟或质量阈值判性能失败。未确认终态不等于任务执行失败。</p>"
+            visual += bars("Recall 服务率 / %", [
+                ("无 Commit 基线", 100 * (metric.get("baseline") or {}).get("recall_service_rate"))
+                if (metric.get("baseline") or {}).get("recall_service_rate") is not None else ("无 Commit 基线", None)
+            ] + [
+                (str(window.get("scenario")),
+                 100 * (window.get("confirmed_overlap") or {}).get("recall_service_rate"))
+                if (window.get("confirmed_overlap") or {}).get("recall_service_rate") is not None
+                else (str(window.get("scenario")), None)
+                for window in metric.get("windows", [])
+            ], axis_max=100)
+            visual += "<p>延迟只统计真正返回非空记忆的 Recall；服务率以全部计划 Search 为分母。全部尝试 P95 受客户端超时上限影响，单独列在下表。宽观察窗口不等于任务始终未完成；最后一次成功 pending/running 轮询之前才有确认重叠证据。未确认终态不等于任务执行失败。</p>"
             overlap_rows = ([{"scenario": "无 Commit 基线", "scope": "独立基线", **metric["baseline"]}]
                             if metric.get("baseline") else [])
             overlap_rows += [{"scenario": w.get("scenario"), "scope": scope, **(w.get(key) or {})}
                             for w in metric.get("windows", []) for scope, key in (
                                 ("宽观察窗口", "overlap"), ("非终态确认窗口", "confirmed_overlap"))]
             visual += table(overlap_rows, [("scenario", "场景"), ("scope", "窗口"),
-                ("planned_or_recorded", "Search 样本"), ("mean_ms", "平均 ms"), ("p95_ms", "P95 ms"),
-                ("errors", "错误"), ("quality_ok", "质量有效"), ("quality_missing", "质量未观测")])
+                ("planned_or_recorded", "Search 样本"), ("recall_served", "非空 Recall"),
+                ("recall_service_rate", "Recall 服务率"), ("served_p95_ms", "非空 Recall P95 ms"),
+                ("p95_ms", "全部尝试 P95 ms"), ("errors", "HTTP/传输错误"),
+                ("timeouts", "超时"), ("empty_recall", "HTTP 200空召回"),
+                ("http_status", "HTTP 状态")], min_width_px=1300)
             visual += details("查看基线逐租户召回证据", table(metric.get("baseline_tenants", []), [
                 ("tenant_index", "租户"), ("planned_or_recorded", "样本数"),
                 ("actual_recall_hits", "真实内容命中"), ("quality_ok", "质量有效"),
@@ -1578,9 +2112,22 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             visual += details("查看尚缺证据", "<pre>" + esc(json.dumps(metric.get("evidence_issues", []), ensure_ascii=False, indent=2)) + "</pre>")
             tenant_rows = [{"scenario": window.get("scenario"), **tenant,
                             "baseline_p95_ms": tenant.get("baseline", {}).get("p95_ms"),
-                            "overlap_p95_ms": tenant.get("overlap", {}).get("p95_ms")}
+                            "overlap_p95_ms": tenant.get("overlap", {}).get("p95_ms"),
+                            "baseline_served_p95_ms": tenant.get("baseline", {}).get("served_p95_ms"),
+                            "overlap_served_p95_ms": tenant.get("overlap", {}).get("served_p95_ms"),
+                            "baseline_recall_service_rate": tenant.get("baseline", {}).get("recall_service_rate"),
+                            "overlap_recall_service_rate": tenant.get("overlap", {}).get("recall_service_rate"),
+                            "served_p95_ratio": tenant.get("p95_ratio")}
                            for window in metric.get("windows", []) for tenant in window.get("tenants", [])]
-            visual += details("查看逐租户基线与洪泛对比", table(tenant_rows, [("scenario", "场景"), ("tenant_index", "租户"), ("baseline_p95_ms", "Baseline P95"), ("overlap_p95_ms", "Overlap P95"), ("p95_delta_ms", "差值"), ("p95_ratio", "比值")]))
+            visual += details("查看逐租户基线与洪泛对比", table(tenant_rows, [
+                ("scenario", "场景"), ("tenant_index", "租户"),
+                ("baseline_recall_service_rate", "Baseline Recall率"),
+                ("overlap_recall_service_rate", "Overlap Recall率"),
+                ("baseline_served_p95_ms", "Baseline 非空P95"),
+                ("overlap_served_p95_ms", "Overlap 非空P95"),
+                ("served_p95_ratio", "非空P95劣化倍数"),
+                ("baseline_p95_ms", "Baseline 全尝试P95"),
+                ("overlap_p95_ms", "Overlap 全尝试P95")], min_width_px=1200))
             heterogeneous = metric.get("heterogeneous_tenants") or {}
             heterogeneous_rows = [{**row,
                 "search_count": (row.get("search") or {}).get("planned_or_recorded"),
@@ -1685,8 +2232,27 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
     )
     timing = result.get("timing_evidence") or {}
     correlation = timing.get("trace_correlation") or {}
+    timing_totals = timing.get("timing_totals") or {}
+    timing_rows = timing.get("scenario_timings") or []
+    timing_chart = bars(
+        "各场景实际耗时（秒，包含本场景排空）",
+        [(str(row.get("scenario") or "unknown"), row.get("actual_elapsed_s"))
+         for row in timing_rows],
+    )
     timing_section = (
         "<section><h2>接口与模块耗时</h2><p>" + esc(timing.get("note")) + "</p>" +
+        "<h3>本轮场景耗时总览</h3>" +
+        table([timing_totals], [
+            ("scenario_count", "场景数"), ("planned_load_s", "计划负载秒"),
+            ("actual_elapsed_s", "实际耗时秒"), ("drain_s", "排空耗时秒"),
+            ("note", "口径")]) +
+        timing_chart +
+        details("查看每个 M1/M2/M3 场景耗时与请求量", table(timing_rows, [
+            ("scenario", "场景"), ("status", "状态"),
+            ("planned_load_s", "计划负载秒"), ("actual_elapsed_s", "实际耗时秒"),
+            ("engine_elapsed_s", "引擎耗时秒"), ("drain_s", "排空秒"),
+            ("requests", "请求/记录数"), ("search_requests", "Search记录"),
+            ("commit_requests", "Commit相关记录"), ("source", "证据来源")], min_width_px=1300)) +
         table([correlation], [
             ("status", "Trace 关联状态"), ("eligible_requests", "可关联请求"),
             ("requests_with_trace", "带 Trace"),
@@ -1715,6 +2281,11 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             "<p>分位数缺失不代表 0 ms：没有有限桶，或分位数落在最大有限桶之外时不报告精确值。"
             "计数器重置后按相邻采样累计可见增量，但重置前未采到的请求无法恢复，样本数仅为下界。"
             "Histogram 分位数是桶内估算值，不等同于逐请求日志的精确分位数。</p>") +
+        details("模型与 Embedding 调用/缓存计数", table(timing.get("cache_diagnostics", []), [
+            ("counter", "计数器"), ("observations", "日志样本"),
+            ("total", "总计"), ("p50", "P50"), ("p95", "P95"),
+            ("source", "来源"), ("note", "解释")], min_width_px=1100)) +
+        "<p>Commit 的原子引擎日志会直接提供 LLM/Embedding provider service time、admission wait、cache hit/miss；Search 的阶段时间来自对应结构化日志和 Prometheus。若服务没有暴露 LLM 厂商内部 prompt-cache 命中字段，本报告只写‘未观测’，不把重复 query 的变快解释为缓存命中。</p>" +
         details("日志与 Prometheus 交叉校验", table(timing.get("cross_check", []), [
             ("check", "阶段"), ("log_observations", "日志样本"),
             ("prometheus_metric", "Prometheus 指标"),
@@ -1733,13 +2304,15 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
     )
     concurrency = result.get("concurrency_configuration") or {}
     concurrency_section = (
-        "<section><h2>128 并发与 EchoMem 配置隔离</h2>"
+        f"<section><h2>客户端目标并发与 EchoMem 配置隔离（{esc(concurrency.get('required_client_concurrency'))}）</h2>"
         f"<p>{esc(concurrency.get('note'))}</p>"
         f"<p>客户端目标并发：<b>{esc(concurrency.get('required_client_concurrency'))}</b>；"
         f"测试平台按服务配置自动降载：<b>{esc(concurrency.get('client_load_auto_capped_by_service_config'))}</b>；"
         f"低于目标的服务端上限：<b>{esc(concurrency.get('limits_below_target'))}</b> 项。</p>" +
         table(concurrency.get("observed_service_limits", []), [
             ("config_path", "EchoMem 配置路径"), ("value", "当前值"),
+            ("comparison_applies", "参与并发比较"),
+            ("disabled_or_unbounded", "0=禁用/不设上限"),
             ("below_requested_concurrency", "低于客户端目标")
         ]) + "</section>"
     )
@@ -1810,6 +2383,34 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             }, ensure_ascii=False, indent=2)) + "</pre>")
             + f"<p>原始证据：{artifact_links or '未记录路径'}</p></section>"
         )
+    combined = result.get("combined_evidence") or {}
+    combined_section = ""
+    if combined:
+        source_rows = [
+            {**row, "actual_elapsed_min": round(float(row.get("actual_elapsed_s") or 0) / 60, 2),
+             "drain_min": round(float(row.get("drain_s") or 0) / 60, 2)}
+            for row in combined.get("sources", [])
+        ]
+        combined_section = (
+            "<section><h2>跨运行总览与实际耗时</h2>"
+            f"<p class='purpose'>{esc(combined.get('note'))}</p>"
+            + bars("各指标实际耗时（分钟）", [
+                (str(row.get("label")), float(row.get("actual_elapsed_s") or 0) / 60)
+                for row in combined.get("sources", [])
+            ])
+            + table([combined], [
+                ("status", "汇总状态"), ("planned_load_s", "计划负载秒"),
+                ("active_elapsed_s", "实际场景耗时秒"), ("drain_s", "排空耗时秒"),
+                ("generated_at", "报告生成时间"), ("note", "口径")
+            ])
+            + details("查看各指标来源与耗时", table(source_rows, [
+                ("label", "来源"), ("path", "原始目录"),
+                ("scenario_count", "场景数"), ("planned_load_s", "计划负载秒"),
+                ("actual_elapsed_s", "实际耗时秒"), ("actual_elapsed_min", "实际耗时分钟"),
+                ("drain_s", "排空秒"), ("drain_min", "排空分钟")
+            ], min_width_px=1200))
+            + "</section>"
+        )
     path.parent.mkdir(parents=True, exist_ok=True)
     stage_notice = ""
     if result.get("pending_metrics"):
@@ -1820,5 +2421,7 @@ body{margin:0;color:#18242b;background:#f4f7f8;font:14px/1.6 system-ui;letter-sp
         f"<h1>{esc(title)}</h1><div class='lead'><b>本次所选指标结论：{esc(result['status'])}</b><p>这是观测报告，不是性能准入验收；没有 P95、准确率、Jain、吞吐或劣化比例 PASS/FAIL 门槛。错误、超时、空召回与 pending/failed Commit 均保留在分母。采样模式：{esc(result['sampling_mode'])}。</p>{scope_notice}</div><div class='cards'>{cards}</div>" +
         stage_notice + model_section + "<section><h2>准备阶段证据</h2><p>没有完成负载场景时不能给出性能结论。裸编号未命中不等于语义事实没有写入；需分别验证实际返回的记忆内容、路由和降级。</p>" + table([result.get("setup_evidence") or {}], [("seed_status", "种子状态"), ("seed_contract", "校验方式"), ("healthy_actors", "验证通过租户"), ("expected_actors", "验证租户总数"), ("validated_queries_per_tenant", "每租户预检问题数"), ("bare_marker_gate_failed", "裸编号前置校验失败"), ("load_cases_completed", "已有负载场景")]) + "</section>" +
         "<section><h2>EchoMem 模块改进建议</h2><p class='purpose'>建议只由本轮可见证据推导；无法从黑盒区分的阶段明确写为需补观测，不把端到端延迟武断归因给原子引擎。</p>" + recommendation_table + details("查看责任边界与技术证据", table(result.get("issue_categories", []), [("category", "类别"), ("note", "观测/下一步"), ("evidence", "证据")])) + "</section>" +
-        api_section + timing_section + concurrency_section + supplemental_section + seed_source + seed_diagnosis + render_platform_provenance(result.get("platform_provenance")) +
-        "".join(sections) + "<section><h2>原始产物</h2><p><a href='summary.json'>summary.json</a> · <a href='suite.json'>suite.json</a> · <a href='records.csv'>records.csv</a> · <a href='metrics_samples.csv'>metrics_samples.csv</a> · <a href='structured-stage-events.jsonl'>structured-stage-events.jsonl</a> · <a href='execution-manifest.json'>execution-manifest.json</a></p></section></main></body></html>", encoding="utf-8")
+        combined_section + api_section + timing_section + concurrency_section + supplemental_section + seed_source + seed_diagnosis + render_platform_provenance(result.get("platform_provenance")) +
+        "".join(sections) + ("<section><h2>原始产物</h2><p><a href='summary.json'>summary.json</a> · <a href='combined-sources.json'>combined-sources.json</a></p></section>"
+                              if combined else "<section><h2>原始产物</h2><p><a href='summary.json'>summary.json</a> · <a href='suite.json'>suite.json</a> · <a href='records.csv'>records.csv</a> · <a href='metrics_samples.csv'>metrics_samples.csv</a> · <a href='structured-stage-events.jsonl'>structured-stage-events.jsonl</a> · <a href='execution-manifest.json'>execution-manifest.json</a></p></section>") +
+        "</main></body></html>", encoding="utf-8")

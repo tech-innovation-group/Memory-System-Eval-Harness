@@ -86,3 +86,12 @@ def test_locomo_multi_evidence_question_requires_every_source_memory():
     assert partial["matched_evidence_count"] == 1
     assert complete["quality_ok"] is True
     assert complete["matched_evidence_count"] == len(sample["aliases"])
+
+
+def test_locomo_answer_match_survives_extraction_marker_rewrite():
+    sample = build_locomo_session_corpus("tenant-a")["recall_queries"][0]
+    answer = sample["expected_answer"]
+    result = assess_retrieval({"items": [{"content": answer}]}, sample)
+    assert result["marker_match"] is False
+    assert result["answer_match"] is True
+    assert result["matched_expected_fact"] is True

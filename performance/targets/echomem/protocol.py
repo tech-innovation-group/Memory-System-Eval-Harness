@@ -65,6 +65,7 @@ def recall_quality(payload: Any, marker: str = "", query_type: str = "recall") -
     return {
         "hit_count": len(items), "degraded": degraded,
         "real_recall": bool(items),
+        "recall_served": valid and bool(items),
         "quality_ok": bool(valid and not degraded and (
             not items if query_type == "no_recall" else hit if marker else bool(items)
         )),
@@ -103,13 +104,13 @@ def search(ctx: Ctx, query: str, *, top_k: int = 5) -> Response:
     if sample is not None:
         query_type = sample["query_type"]
     if not resp.ok:
-        ctx.note(quality_ok=False, query_type=query_type, expected_marker=marker,
+        ctx.note(recall_served=False, quality_ok=False, query_type=query_type, expected_marker=marker,
                  quality_assertion="fixed-fact-in-items" if sample is not None else "")
         return resp
     if sample is not None:
         from performance.targets.echomem.acceptance.semantic_corpus import assess_retrieval
         check = assess_retrieval(resp.json, sample)
-        ctx.note(quality_ok=check["quality_ok"], query_type=query_type,
+        ctx.note(recall_served=check.get("recall_served", False), quality_ok=check["quality_ok"], query_type=query_type,
                  hit_count=check["hit_count"], real_recall=check["hit_count"] > 0,
                  degraded=check["degraded"], expected_fact_found=check["matched_expected_fact"],
                  intent_rejected=check["intent_rejected"],

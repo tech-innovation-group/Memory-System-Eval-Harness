@@ -107,6 +107,63 @@ def build_locomo_session_corpus(
     return result
 
 
+def build_fixed_fact_corpus(identity: str) -> dict:
+    """Build one small, natural-language memory for bounded load tests.
+
+    Each identity receives a deterministic fact so tenants remain isolated,
+    while one short Commit does not turn LoCoMo ingestion into the dominant
+    test phase. The real extraction, persistence, embedding and Search path
+    is still exercised.
+    """
+    digest = hashlib.sha256(identity.encode("utf-8")).digest()
+    project = f"蓝桥项目-{digest[:4].hex().upper()}"
+    location = PLACES[digest[4] % len(PLACES)]
+    contact = CONTACTS[digest[5] % len(CONTACTS)]
+    month = 9 + digest[6] % 3
+    day = 1 + digest[7] % 25
+    date_text = f"2026年{month}月{day}日"
+    document = (
+        f"这是 {identity} 的个人工作记录。已确认 {date_text} 的 {project} 安排："
+        f"会议地点是{location}，联系人是{contact}。这是一条已经确认的事实，"
+        "后续查询应以这条记录为准，除非另有明确更新。"
+    )
+    facts = [
+        {"id": "fixed-project", "field": "项目代号", "value": project},
+        {"id": "fixed-date", "field": "日期", "value": date_text},
+        {"id": "fixed-location", "field": "会议地点", "value": location},
+        {"id": "fixed-contact", "field": "联系人", "value": contact},
+    ]
+    queries = [
+        {"id": "fixed-project-q", "fact_id": "fixed-project",
+         "query": f"关于{project}的工作记录里，项目代号是什么？",
+         "query_type": "recall", "aliases": [project]},
+        {"id": "fixed-date-q", "fact_id": "fixed-date",
+         "query": f"我想查{project}的已确认安排日期是哪一天？",
+         "query_type": "recall", "aliases": [date_text]},
+        {"id": "fixed-location-q", "fact_id": "fixed-location",
+         "query": f"关于{project}的会议安排，地点在哪里？",
+         "query_type": "recall", "aliases": [location]},
+        {"id": "fixed-contact-q", "fact_id": "fixed-contact",
+         "query": f"关于{project}的会议，联系人是谁？",
+         "query_type": "recall", "aliases": [contact]},
+    ]
+    no_recall = [{"id": f"no-recall-{i}", "query": text,
+                  "query_type": "no_recall", "aliases": []}
+                 for i, text in enumerate(NO_RECALL)]
+    result = {
+        "documents": [document], "facts": facts, "recall_queries": queries,
+        "no_recall_queries": no_recall, "memory_scale": 1,
+        "input_characters": len(document),
+        "query_contract": "fixed-natural-fact-v1",
+        "source": {"kind": "fixed-natural-fact", "identity": identity,
+                    "documents": 1, "facts": len(facts)},
+    }
+    result["fingerprint"] = hashlib.sha256(
+        json.dumps(result, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    return result
+
+
 def build_corpus(identity: str, *, seed: int = 42, memory_scale: int = 1) -> dict:
     if memory_scale not in (1, 10):
         raise ValueError("memory_scale must be 1 or 10")
@@ -168,6 +225,13 @@ def _normalized(text: str) -> str:
     return re.sub(r"\s+", "", unicodedata.normalize("NFKC", text).casefold())
 
 
+def _answer_match(text: str, answer: str) -> bool:
+    """Match a LoCoMo answer after extraction may rewrite evidence markers."""
+    normalized_answer = re.sub(r"[^\w\u4e00-\u9fff]+", "", _normalized(answer))
+    normalized_text = re.sub(r"[^\w\u4e00-\u9fff]+", "", text)
+    return len(normalized_answer) >= 4 and normalized_answer in normalized_text
+
+
 def assess_retrieval(payload, sample: dict) -> dict:
     body = payload.get("result", payload) if isinstance(payload, dict) else {}
     body = body if isinstance(body, dict) else {}
@@ -178,15 +242,21 @@ def assess_retrieval(payload, sample: dict) -> dict:
     text = _normalized(_text(items))
     aliases = [_normalized(alias) for alias in sample.get("aliases", []) if alias]
     alias_matches = [alias in text for alias in aliases]
-    matched = (all(alias_matches) if sample.get("match_policy") == "all"
-               else any(alias_matches))
+    marker_matched = (all(alias_matches) if sample.get("match_policy") == "all"
+                      else any(alias_matches))
+    answer_matched = _answer_match(text, str(sample.get("expected_answer") or ""))
+    # LoCoMo evidence markers are intentionally tenant-specific, but the
+    # extraction pipeline may summarize them away. Accept the benchmark answer
+    # in returned memory text as a second, auditable quality signal.
+    matched = marker_matched or answer_matched
     atomic_items = [item for item in items if isinstance(item, dict) and item.get("engine_id") == "atomic_engine"]
     origin_observed = valid and all(isinstance(item, dict) and item.get("engine_id") for item in items)
     atomic_text = _normalized(_text(atomic_items))
     atomic_matches = [alias in atomic_text for alias in aliases]
-    atomic_matched = (all(atomic_matches) if sample.get("match_policy") == "all"
-                      else any(atomic_matches))
-    expected = not items if sample["query_type"] == "no_recall" else matched
+    atomic_marker_matched = (all(atomic_matches) if sample.get("match_policy") == "all"
+                             else any(atomic_matches))
+    atomic_matched = atomic_marker_matched or _answer_match(
+        atomic_text, str(sample.get("expected_answer") or ""))
     explain = body.get("explain") or {}
     if not isinstance(explain, dict):
         explain = {}
@@ -198,11 +268,20 @@ def assess_retrieval(payload, sample: dict) -> dict:
     intent_rejected = sample["query_type"] == "recall" and any(token in routing_evidence for token in (
         "intentreject", "intent_reject", "norecall", "no_recall", "skiprecall", "skip_recall",
     ))
-    return {"quality_ok": valid and not degraded and expected, "degraded": degraded,
+    # The load test measures whether a recall request actually reached the
+    # retrieval path and returned candidates. Benchmark answer matching is a
+    # separate diagnostic; it must not turn a non-empty real recall into a
+    # transport/capacity failure.
+    recall_served = valid and bool(items) and not intent_rejected
+    expected = not items if sample["query_type"] == "no_recall" else matched
+    return {"quality_ok": valid and not degraded and expected,
+            "recall_served": recall_served, "nonempty_recall": valid and bool(items),
+            "degraded": degraded,
             "result_structure_valid": valid, "engine_origin_observed": origin_observed,
             "atomic_fact_hit": atomic_matched if origin_observed else None,
             "atomic_item_count": len(atomic_items) if origin_observed else None,
             "matched_expected_fact": matched, "hit_count": len(items),
+            "marker_match": marker_matched, "answer_match": answer_matched,
             "intent_rejected": intent_rejected,
             "search_executed": not intent_rejected,
             "query_type": sample["query_type"], "query_id": sample["id"],

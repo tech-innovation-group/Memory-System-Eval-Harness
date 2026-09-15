@@ -16,7 +16,7 @@ def inspect_container(name: str) -> dict:
         raise ValueError("A test container name is required")
     if shutil.which("docker"):
         return json.loads(subprocess.check_output(
-            ["docker", "inspect", name], timeout=15, text=True
+            _docker_command("inspect", name), timeout=15, text=True
         ))[0]
     return _socket_json("/containers/" + quote(name, safe="") + "/json")
 
@@ -25,7 +25,7 @@ def _docker_socket_path() -> str:
     host = os.environ.get("DOCKER_HOST", "")
     if (not host or os.environ.get("DOCKER_CONTEXT")) and shutil.which("docker"):
         contexts = json.loads(subprocess.check_output(
-            ["docker", "context", "inspect"], timeout=15, text=True))
+            _docker_command("context", "inspect"), timeout=15, text=True))
         host = contexts[0].get("Endpoints", {}).get("docker", {}).get("Host", "")
     if not host:
         return "/var/run/docker.sock"
@@ -33,6 +33,22 @@ def _docker_socket_path() -> str:
     if parsed.scheme != "unix" or parsed.netloc or not parsed.path.startswith("/"):
         raise ValueError("Resource sampling requires the selected Docker Unix socket")
     return unquote(parsed.path)
+
+
+def _docker_command(*args: str) -> list[str]:
+    """Build a Docker CLI command while honoring the selected context.
+
+    The CLI already honors ``DOCKER_CONTEXT`` itself.  Keeping the command
+    construction in one place makes that contract explicit and lets callers
+    use a profile-selected context without changing the user's global Docker
+    configuration.
+    """
+    command = ["docker"]
+    context = os.environ.get("ECHOMEM_DOCKER_CONTEXT", "").strip()
+    if context and not os.environ.get("DOCKER_CONTEXT"):
+        command.extend(["--context", context])
+    command.extend(args)
+    return command
 
 
 def _socket_json(path: str) -> dict:
@@ -52,9 +68,50 @@ def _socket_json(path: str) -> dict:
         sock.close()
 
 
+def _docker_http_json(path: str) -> dict:
+    """Read the Docker API over the configured TCP/HTTP endpoint.
+
+    The stress runner may reach a remote or proxied Docker daemon through
+    ``DOCKER_HOST=tcp://...``. Resource sampling used to always open a Unix
+    socket, which turned every sample into ``ValueError`` in that setup even
+    though the container itself was reachable through the Docker CLI.
+    """
+    host = os.environ.get("DOCKER_HOST", "")
+    if not host or os.environ.get("DOCKER_CONTEXT"):
+        if shutil.which("docker"):
+            try:
+                contexts = json.loads(subprocess.check_output(
+                    _docker_command("context", "inspect"), timeout=15, text=True
+                ))
+                host = contexts[0].get("Endpoints", {}).get("docker", {}).get("Host", "")
+            except (OSError, subprocess.SubprocessError, ValueError, IndexError, AttributeError):
+                host = ""
+    host = host or "unix:///var/run/docker.sock"
+    parsed = urlparse(host)
+    if parsed.scheme == "unix":
+        return _socket_json(path)
+    if parsed.scheme not in {"tcp", "http", "https"} or not parsed.hostname:
+        raise ValueError("Resource sampling requires a Docker unix or TCP endpoint")
+    port = parsed.port or (443 if parsed.scheme == "https" else 2375)
+    connection_class = (http.client.HTTPSConnection
+                        if parsed.scheme == "https" else http.client.HTTPConnection)
+    connection = connection_class(parsed.hostname, port, timeout=15)
+    try:
+        connection.request("GET", path)
+        response = connection.getresponse()
+        payload = response.read()
+        if response.status != 200:
+            raise ValueError(f"Docker API returned HTTP {response.status}")
+        return json.loads(payload)
+    finally:
+        connection.close()
+
+
 def resource_sample(name: str) -> dict:
     """Use the same local Docker socket; export no container configuration."""
-    return resource_values(_socket_json("/containers/" + quote(name, safe="") + "/stats?stream=false"))
+    return resource_values(_docker_http_json(
+        "/containers/" + quote(name, safe="") + "/stats?stream=false"
+    ))
 
 
 def resource_values(stats: dict) -> dict:
@@ -85,7 +142,7 @@ def resource_values(stats: dict) -> dict:
 def restart_container(name: str, ready_url: str, *, timeout_s: float = 180) -> dict:
     """Restart a dedicated target via Docker socket and wait for readiness."""
     if shutil.which("docker"):
-        subprocess.check_call(["docker", "restart", "--time", "30", name],
+        subprocess.check_call(_docker_command("restart", "--time", "30", name),
                               stdout=subprocess.DEVNULL)
     else:
         connection = http.client.HTTPConnection("localhost", timeout=40)

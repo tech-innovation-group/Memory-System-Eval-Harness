@@ -5,9 +5,12 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 from performance.targets.echomem.acceptance.capacity_load import arrival_plan
 from performance.targets.echomem.acceptance.observation import (
     STATUSES,
+    _flood_window,
     derive_observation_recommendations,
     evaluate_observation,
     jain,
@@ -15,6 +18,7 @@ from performance.targets.echomem.acceptance.observation import (
     summarize_concurrency_configuration,
     summarize_m5,
     summarize_m6,
+    summarize_m3,
     summarize_timing_evidence,
     write_observation_report,
 )
@@ -131,6 +135,24 @@ def test_arrival_plan_has_four_real_load_shapes() -> None:
     assert hot_reads > normal_reads
 
 
+def test_timing_evidence_contains_actual_scenario_elapsed_and_drain(tmp_path: Path) -> None:
+    run = _run(tmp_path, "m3-baseline", [
+        {"op": "read", "status": "ok", "stage_ms": 12},
+        {"op": "commit_submit", "status": "ok", "stage_ms": 20},
+    ])
+    run["summary"] = {"run_clock": {
+        "load_duration_s": 15.0,
+        "engine_elapsed_s": 15.4,
+        "wall_elapsed_s": 16.1,
+    }}
+    timing = summarize_timing_evidence({"runs": [run]}, [])
+    row = timing["scenario_timings"][0]
+    assert row["actual_elapsed_s"] == pytest.approx(16.1)
+    assert row["engine_elapsed_s"] == pytest.approx(15.4)
+    assert row["drain_s"] == pytest.approx(1.1)
+    assert timing["timing_totals"]["actual_elapsed_s"] == pytest.approx(16.1)
+
+
 def test_jain_all_zero_is_undefined_and_zero_tenant_is_retained() -> None:
     assert jain([0, 0, 0, 0]) is None
     assert jain([8, 8, 8, 0]) == 0.75
@@ -197,6 +219,48 @@ def test_overlap_uses_search_start_not_interval_intersection(tmp_path: Path) -> 
     result = evaluate_observation(suite, {}, quick=False)["metrics"]["M3"]
     assert result["windows"][0]["overlap"]["planned_or_recorded"] == 1
     assert result["windows"][0]["overlap"]["timeouts"] == 1
+
+
+def test_m3_ratio_uses_nonempty_recall_p95_not_deadline_p95(tmp_path: Path) -> None:
+    records = [
+        {"op": "commit_submit", "tenant_idx": "0", "status": "ok", "http_status": "202",
+         "session_id": "s", "archive_id": "a", "accepted_at_ms": "1000", "ts_ms": "1000"},
+        {"op": "commit_done", "tenant_idx": "0", "status": "ok", "http_status": "200",
+         "session_id": "s", "archive_id": "a", "completed_at_ms": "2000", "ts_ms": "2000",
+         "poll_evidence_version": "echomem-poll-v1", "poll_count": "1",
+         "poll_http_errors": "0", "commit_terminal_state": "completed",
+         "terminal_at_ms": "2000", "last_nonterminal_at_ms": "1500"},
+        {"op": "read", "tenant_idx": "0", "status": "ok", "http_status": "200",
+         "stage_ms": "150", "ts_ms": "1500", "recall_served": "true", "hit_count": "1"},
+    ]
+    path = tmp_path / "records.csv"
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=sorted(records[0] | records[1] | records[2]))
+        writer.writeheader()
+        writer.writerows(records)
+    baseline = [{"op": "read", "tenant_idx": "0", "status": "ok", "stage_ms": 100,
+                 "recall_served": True, "hit_count": 1}]
+    result = _flood_window(baseline, {"scenario": "m3-test", "output_dir": str(tmp_path)}, 1)
+    tenant = result["tenants"][0]
+    assert tenant["baseline"]["p95_ms"] == 100
+    assert tenant["overlap"]["p95_ms"] == 150
+    assert tenant["p95_ratio"] == 1.5
+    assert tenant["p95_delta_ms"] == 50
+
+
+def test_m3_invalid_baseline_blocks_priority_comparison(tmp_path: Path) -> None:
+    baseline = _run(tmp_path, "m3-baseline", [
+        {"op": "read", "tenant_idx": "0", "status": "ok", "stage_ms": 100,
+         "recall_served": "true", "hit_count": 1},
+        {"op": "read", "tenant_idx": "0", "status": "ok", "stage_ms": 120,
+         "recall_served": "false", "hit_count": 0},
+        {"op": "read", "tenant_idx": "0", "status": "error", "stage_ms": 300,
+         "error_type": "timeout", "recall_served": "false", "hit_count": 0},
+    ])
+    result = summarize_m3({"m3-baseline": baseline}, quick=False)
+    assert result["baseline_health"]["status"] == "INVALID"
+    assert result["baseline_health"]["eligible_for_priority_comparison"] is False
+    assert "baseline_health_gate_failed" in result["evidence_issues"]
 
 
 def test_m5_preserves_three_sample_denominators() -> None:

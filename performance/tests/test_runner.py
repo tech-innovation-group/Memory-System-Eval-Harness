@@ -136,8 +136,16 @@ def test_run_case(server, tmp_path):
     assert run["repetition"] == 1
     assert run["policy"] == "server-observe"
     assert run["runner_timeout"] is False
+    assert run["wall_elapsed_s"] >= 0
+    assert run["summary"]["run_clock"]["wall_elapsed_s"] >= 0
     contract = run["summary"]["measurement_contract"]
-    assert contract == {"version": "echomem-case-v1", "tenant_count": 1, "query_mode": "recall"}
+    assert contract["version"] == "echomem-case-v2"
+    assert contract["tenant_count"] == 1
+    assert contract["query_mode"] == "recall"
+    assert contract["commit_payload_profile"] == "standard"
+    assert contract["planned_search_count"] > 0
+    assert contract["planned_commit_count"] >= 0
+    assert contract["actual_commit"]["submitted"] >= 0
     assert json.loads((case_dir / "summary.json").read_text())["measurement_contract"] == contract
     for name in ("summary.json", "records.csv", "commit_results.csv", "search_results.csv"):
         assert (case_dir / name).is_file(), name

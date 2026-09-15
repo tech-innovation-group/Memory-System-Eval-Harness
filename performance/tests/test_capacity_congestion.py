@@ -51,3 +51,30 @@ def test_exploration_stops_at_congestion_even_when_it_recovers(tmp_path, monkeyp
     assert result["boundary"]["status"] == "CONGESTION_OBSERVED"
     assert result["operational_boundary"]["recovered_after_load"] == "RECOVERED"
     assert result["max_hot_users"] is None
+
+
+def test_exploration_can_continue_after_congestion_for_comparison(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from performance.targets.echomem.acceptance import capacity_experiment as module
+    actors = [SimpleNamespace(tenant_index=i, user_index=0, client=SimpleNamespace(
+        base_url="unit", auth_key="unit", tenant_id=f"t{i}", user_id=f"u{i}",
+        account_id=f"t{i}", agent_id="unit"), corpus={}, write_session="s") for i in range(4)]
+    monkeypatch.setattr(module, "provision_actors", lambda *a, **k: actors)
+    monkeypatch.setattr(module, "prepare_actors", lambda *a, **k: {"status": "PASS", "actors": []})
+    monkeypatch.setattr(module, "observe_recovery", lambda *a, **k: {"status": "RECOVERED", "reason": "drained"})
+
+    def measure(selected, **kwargs):
+        rows = window(0, 2) + window(10, 2)
+        return {"rows": [{**r, "identity_index": 0, "query_type": "recall", "success": r["http_status"] == 200,
+                           "elapsed_s": 1} for r in rows], "mixed": False,
+                "duration_s": 20, "identity_count": len(selected), "tenant_count": len(selected)}
+
+    monkeypatch.setattr(module, "measure", measure)
+    result = module.run_exploration(base_url="unit", output=tmp_path / "continued",
+        topology="cross-tenant", levels=[1, 2, 4], warmup_s=1, duration_s=20,
+        continue_after_congestion=True)
+    assert len(result["levels"]) == 3
+    assert "stop_reason" not in result
+    assert result["boundary"]["status"] == "CONGESTION_OBSERVED_CONTINUED"
+    assert len(result["operational_anomalies"]) == 3
+    assert all(item["continued_after_detection"] for item in result["operational_anomalies"])

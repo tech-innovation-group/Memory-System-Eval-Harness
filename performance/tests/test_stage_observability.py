@@ -8,10 +8,12 @@ from pathlib import Path
 from performance.targets.echomem.acceptance.stage_observability import (
     correlate_requests,
     cross_check,
+    normalize_log_payload,
     parse_structured_logs,
     read_stage_events,
     summarize_log_stages,
     summarize_prometheus_histograms,
+    summarize_cache_diagnostics,
     trace_ref,
     response_trace_ref,
     _bucket_percentile,
@@ -216,7 +218,8 @@ def test_container_log_collection_preserves_explicit_end_window(tmp_path, monkey
 
     def run(command, **kwargs):
         calls.append(command)
-        return SimpleNamespace(returncode=0, stdout='', stderr='')
+        kwargs['stdout'].write('')
+        return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(module.subprocess, 'run', run)
     result = module.collect_container_stage_events(
@@ -225,6 +228,29 @@ def test_container_log_collection_preserves_explicit_end_window(tmp_path, monkey
     assert calls == [['docker', 'logs', '--since', '2026-09-09T09:00:00Z',
                       '--until', '2026-09-09T10:00:00Z', 'dedicated-test']]
     assert result['until'] == '2026-09-09T10:00:00Z'
+
+
+def test_container_log_collection_preserves_partial_events_on_timeout(tmp_path, monkeypatch):
+    from performance.targets.echomem.acceptance import stage_observability as module
+
+    def run(command, **kwargs):
+        kwargs['stdout'].write(json.dumps({
+            'event': 'recall_stage_completed', 'trace_id': 'private-trace',
+            'stage': 'engine_execution', 'duration_ms': 42.0,
+        }) + '\n')
+        raise module.subprocess.TimeoutExpired(command, kwargs['timeout'])
+
+    monkeypatch.setattr(module.subprocess, 'run', run)
+    output = tmp_path / 'events.jsonl'
+    result = module.collect_container_stage_events(
+        'dedicated-test', since='2026-09-09T09:00:00Z',
+        output=output, timeout_s=1)
+
+    assert result['status'] == 'PARTIAL'
+    assert result['reason'] == 'docker_logs_timeout_partial'
+    assert result['event_count'] == 1
+    assert read_stage_events(output)[0]['module'] == 'recall/engine_execution'
+    assert 'private-trace' not in output.read_text()
 def test_http_ledger_counts_observed_status_without_assuming_business_success():
     from performance.targets.echomem.acceptance.stage_observability import normalize_log_payload, summarize_http_calls
     events = []
@@ -236,3 +262,41 @@ def test_http_ledger_counts_observed_status_without_assuming_business_success():
     assert rows[0]["observed_completions"] == 3
     assert rows[0]["status_counts"] == {"200": 1, "503": 1, "unknown": 1}
     assert rows[0]["business_success"] is None
+
+
+def test_atomic_provider_diagnostics_and_cache_counters_remain_explicit():
+    payload = {
+        "event": "atomic_pipeline_completed",
+        "trace_id": "private-commit-trace",
+        "status": "completed",
+        "macro_stage_timings_ms": {
+            "extraction": 120.0,
+            "atom_persistence": 15.0,
+        },
+        "provider_diagnostics": {
+            "llm_atom_extraction_provider_service_ms_total": 95.0,
+            "llm_atom_extraction_admission_wait_ms_total": 7.0,
+            "llm_atom_extraction_calls": 2,
+            "embedding_provider_service_ms_total": 40.0,
+            "embedding_admission_wait_ms_total": 3.0,
+            "embedding_logical_requests": 4,
+            "embedding_cache_hit_texts": 6,
+            "embedding_unique_misses": 2,
+            "embedding_logical_texts": 8,
+            "embedding_provider_batch_calls": 1,
+        },
+    }
+    rows = normalize_log_payload(payload)
+    modules = {row["module"] for row in rows}
+    assert {"atomic/extraction", "atomic/atom_persistence",
+            "provider/llm_atom_extraction", "provider/embedding",
+            "cache/embedding"} <= modules
+    provider = next(row for row in rows if row["module"] == "provider/embedding")
+    assert provider["duration_ms"] == 40.0
+    assert provider["queue_wait_ms"] == 3.0
+    assert provider["item_count"] == 4.0
+    cache = summarize_cache_diagnostics(rows)
+    totals = {row["counter"]: row["total"] for row in cache}
+    assert totals["embedding_cache_hit_texts"] == 6
+    assert totals["embedding_unique_misses"] == 2
+    assert "private-commit-trace" not in json.dumps(rows)

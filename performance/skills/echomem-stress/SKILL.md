@@ -129,22 +129,27 @@ number as the default deployment baseline. If the team already has recorded
 model, reuse that evidence and run only the single-call identity/dimension
 preflight; do not spend quota repeating the provider sweep.
 
-The default first-pass capacity ceiling is 32 tenants and 32 observed in-flight
-requests. Pin the profile with:
+The default first-pass capacity ceiling is 32 tenants. The default concurrency
+topology targets 1, 8, 16, and 64 observed in-flight requests. Pin the profile
+with:
 
 ```json
 {
-  "m1_tenant_levels": [1, 2, 4, 8, 16, 32],
-  "m1_user_levels": [1, 2, 4, 8, 16, 32],
-  "required_concurrency": 32,
-  "required_embedding_model": "qwen3.7-text-embedding-flash"
+    "m1_tenant_levels": [1, 2, 4, 8, 16, 32],
+    "m1_user_levels": [1, 2, 4, 8, 16, 32],
+    "m1_concurrency_levels": [1, 8, 16, 64],
+    "m1_concurrency_tenants": 4,
+    "required_concurrency": 64,
+    "required_embedding_model": "qwen3.7-text-embedding-flash"
 }
 ```
 
-Explain that 32 configured hot users and 32 observed simultaneous in-flight
-requests are different facts. Report both. Users can append 64 and 128 levels
-later. Record EchoMem concurrency and queue settings for diagnosis, but never
-use them to lower the offered client load.
+Explain that configured actors and observed simultaneous in-flight requests are
+different facts. The default concurrency topology targets total in-flight
+levels 1, 8, 16, and 64 across four independent tenants; report the target and
+actual peak separately. Users can append 128 later. Record EchoMem concurrency
+and queue settings for diagnosis, but never use them to lower the offered
+client load.
 
 M3 must contain both equal-load fairness/priority evidence and a heterogeneous
 tenant case. The default heterogeneous case applies Search weights `[8,4,2,1]`
@@ -159,7 +164,7 @@ The final report must also expose three cross-metric audits:
 - endpoint and service-returned module timing distributions. Never infer internal
   router, recall, scheduler, or engine timings by subtracting unrelated clocks.
 
-When the profile enables `concurrency_topology`, run the 16/32/64/128 matrix for
+When the profile enables `concurrency_topology`, run the 1/8/16/64 matrix for
 four real layouts: one session per user with serial session access, multiple
 serial sessions per user, concurrent requests within one session, and unequal
 small-Search/large-Message+Commit tenant load. Treat each level as target client
@@ -178,6 +183,12 @@ report observations, P50/P95/P99, and queue-wait percentiles per stage. Independ
 summarize the seven supported Prometheus histograms from window deltas and show
 log/metric coverage side by side. A stage is unobservable only when neither source
 contains a real sample; never derive stage time by subtracting end-to-end values.
+
+The fixed `4U8G` resource check is platform-specific: enforce the exact
+4-CPU/8-GiB container contract only when the runner host is Linux. On macOS or
+Windows, keep the target running, record the host/container resource evidence,
+and run HTTP metrics without blocking on a 4U8G cgroup mismatch. The report
+must state that the numeric 4U8G check was skipped on a non-Linux host.
 
 ## Commands
 

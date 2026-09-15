@@ -29,7 +29,7 @@ Windows 可用 PowerShell 的 `.venv/Scripts/Activate.ps1` 激活，但 M5 仍�
 
 | 必须准备 | 如何确认 | 缺失的影响 |
 |---|---|---|
-| 独立 EchoMem 测试容器 | Docker `--cpus=4 --memory=8g`；base_url 必须指向这个容器 | 不能出具 4U8G 验收 |
+| 独立 EchoMem 测试容器 | Linux 4U8G 验收使用 Docker `--cpus=4 --memory=8g`；base_url 必须指向这个容器 | Linux 不满足时不能出具 4U8G 验收；macOS/Windows 的 HTTP 压测记录 host-default |
 | 被测版本与工作目录 | 记录 EchoMem commit；持久化工作目录挂载到容器，重启后不能丢挂载 | 版本不可比 / M5 恢复不成立 |
 | 真实 LLM + Embedding | 被测服务实际生效的配置，双方使用相同模型与凭据环境 | M1–M4 召回质量无效 |
 | 独立租户身份 | 默认 32 个独立 auth_key、tenant_id；前四个做公平/隔离 | 同 key 多名称不能证明租户隔离 |
@@ -38,7 +38,9 @@ Windows 可用 PowerShell 的 `.venv/Scripts/Activate.ps1` 激活，但 M5 仍�
 
 保持 `base_url` 与 `resource_container` 指向同一个目标是部署者的责任；
 普通 HTTP readiness 本身不能证明请求一定被路由到这个 Docker ID。
-4U8G 检查的是容器限额，不保证宿主机有独占 8GB 空闲内存或 4 核 CPU。
+4U8G 检查的是 Linux runner 上的容器限额，不保证宿主机有独占 8GB 空闲内存或 4 核 CPU。
+macOS/Windows 不执行这个数值门槛，只记录实际资源；需要 Docker 控制的 M5 仍必须使用专用
+且可控制的目标容器。
 正式压测应避免同机其他任务争抢资源；不要把共享主机干扰误判为 EchoMem 问题。
 
 | 接口 | 用途 |

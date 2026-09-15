@@ -12,6 +12,7 @@ import hashlib
 import json
 import math
 import subprocess
+import tempfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterable
@@ -128,16 +129,61 @@ def normalize_log_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
         return [_base_event(payload, module=f"commit/memory_extraction/{engine}")]
 
     timings = payload.get("macro_stage_timings_ms")
-    if not isinstance(timings, dict):
-        return [_base_event(payload, module="commit/atomic_pipeline")]
     rows = []
-    for stage, value in timings.items():
-        duration = _number(value)
-        if duration is None:
-            continue
-        row = _base_event(payload, module=f"atomic/{stage}")
-        row["duration_ms"] = duration
-        rows.append(row)
+    if not isinstance(timings, dict):
+        rows.append(_base_event(payload, module="commit/atomic_pipeline"))
+    else:
+        for stage, value in timings.items():
+            duration = _number(value)
+            if duration is None:
+                continue
+            row = _base_event(payload, module=f"atomic/{stage}")
+            row["duration_ms"] = duration
+            rows.append(row)
+
+    # atomic_pipeline_completed carries per-commit provider timings and cache
+    # counters. Keep these as separate, explicitly labelled observations; they
+    # are not inferred from the macro-stage wall clock.
+    diagnostics = payload.get("provider_diagnostics")
+    if isinstance(diagnostics, dict):
+        provider_specs = (
+            ("llm_atom_extraction", "llm_atom_extraction_provider_service_ms_total",
+             "llm_atom_extraction_admission_wait_ms_total", "llm_atom_extraction_calls"),
+            ("llm_atom_extraction_repair", "llm_atom_extraction_repair_provider_service_ms_total",
+             "llm_atom_extraction_repair_admission_wait_ms_total", "llm_atom_extraction_repair_calls"),
+            ("embedding", "embedding_provider_service_ms_total",
+             "embedding_admission_wait_ms_total", "embedding_logical_requests"),
+            ("embedding_gateway", "embedding_gateway_provider_service_ms_total",
+             "embedding_gateway_admission_wait_ms_total", "embedding_gateway_logical_requests"),
+        )
+        for name, duration_key, wait_key, calls_key in provider_specs:
+            duration = _number(diagnostics.get(duration_key))
+            wait = _number(diagnostics.get(wait_key))
+            calls = _number(diagnostics.get(calls_key))
+            if duration is None and wait is None and calls is None:
+                continue
+            row = _base_event(payload, module=f"provider/{name}")
+            row["duration_ms"] = duration
+            row["queue_wait_ms"] = wait
+            row["item_count"] = calls
+            row["diagnostic_kind"] = "provider_diagnostics"
+            rows.append(row)
+        cache_keys = (
+            "embedding_cache_hit_texts", "embedding_unique_misses",
+            "embedding_logical_texts", "embedding_provider_batch_calls",
+            "embedding_gateway_cache_hit_texts", "embedding_gateway_unique_misses",
+            "embedding_gateway_logical_texts", "embedding_gateway_provider_batch_calls",
+            "embedding_gateway_singleflight_waits",
+        )
+        cache = {key: diagnostics.get(key) for key in cache_keys if key in diagnostics}
+        if cache:
+            row = _base_event(payload, module="cache/embedding")
+            row["diagnostic_kind"] = "cache_counters"
+            row["cache_counters"] = {
+                key: int(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+                for key, value in cache.items()
+            }
+            rows.append(row)
     return rows or [_base_event(payload, module="commit/atomic_pipeline")]
 
 
@@ -187,29 +233,50 @@ def collect_container_stage_events(
     """Collect a bounded Docker log window and persist normalized events."""
     if not container:
         return {"status": "NOT_CONFIGURED", "reason": "resource_container_missing", "events": []}
-    try:
-        command = ["docker", "logs", "--since", since]
-        if until:
-            command.extend(["--until", until])
-        command.append(container)
-        completed = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=timeout_s,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        return {"status": "ERROR", "reason": type(exc).__name__, "events": []}
-    text = completed.stdout + "\n" + completed.stderr
-    rows = parse_structured_logs(text)
+    command = ["docker", "logs", "--since", since]
+    if until:
+        command.extend(["--until", until])
+    command.append(container)
+
+    returncode: int | None = None
+    reason = ""
+    rows: list[dict[str, Any]] = []
     output.parent.mkdir(parents=True, exist_ok=True)
-    with output.open("w", encoding="utf-8") as handle:
-        for row in rows:
-            handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    try:
+        # Docker debug logs can exceed hundreds of MiB during a concurrency
+        # run. Spooling avoids retaining the raw stream in memory and lets us
+        # preserve normalized evidence even when collection reaches its limit.
+        with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as raw:
+            try:
+                completed = subprocess.run(
+                    command,
+                    stdout=raw,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    timeout=timeout_s,
+                    check=False,
+                )
+                returncode = completed.returncode
+                if returncode != 0:
+                    reason = "docker_logs_nonzero"
+            except subprocess.TimeoutExpired:
+                reason = "docker_logs_timeout_partial"
+            raw.seek(0)
+            with output.open("w", encoding="utf-8") as handle:
+                for line in raw:
+                    payload = _json_payload(line)
+                    if payload is None:
+                        continue
+                    for row in normalize_log_payload(payload):
+                        rows.append(row)
+                        handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    except OSError as exc:
+        return {"status": "ERROR", "reason": type(exc).__name__, "events": []}
+
+    status = "COLLECTED" if returncode == 0 else "PARTIAL"
     return {
-        "status": "COLLECTED" if completed.returncode == 0 else "PARTIAL",
-        "reason": "" if completed.returncode == 0 else "docker_logs_nonzero",
+        "status": status,
+        "reason": reason,
         "events": rows,
         "event_count": len(rows),
         "trace_count": len({row["trace_ref"] for row in rows if row.get("trace_ref")}),
@@ -257,6 +324,39 @@ def summarize_log_stages(events: Iterable[dict[str, Any]]) -> list[dict[str, Any
             "queue_wait_p50_ms": percentile(waits, 50) if waits else None,
             "queue_wait_p95_ms": percentile(waits, 95) if waits else None,
             "queue_wait_p99_ms": percentile(waits, 99) if waits else None,
+        })
+    return result
+
+
+def summarize_cache_diagnostics(events: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Summarize explicit cache counters without calling missing data a hit."""
+    rows = [row for row in events if row.get("diagnostic_kind") == "cache_counters"]
+    if not rows:
+        return []
+    keys = (
+        "embedding_cache_hit_texts", "embedding_unique_misses",
+        "embedding_logical_texts", "embedding_provider_batch_calls",
+        "embedding_gateway_cache_hit_texts", "embedding_gateway_unique_misses",
+        "embedding_gateway_logical_texts", "embedding_gateway_provider_batch_calls",
+        "embedding_gateway_singleflight_waits",
+    )
+    result = []
+    for key in keys:
+        values = []
+        for row in rows:
+            value = (row.get("cache_counters") or {}).get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                values.append(float(value))
+        if not values:
+            continue
+        result.append({
+            "counter": key,
+            "observations": len(values),
+            "total": int(sum(values)),
+            "p50": percentile(values, 50),
+            "p95": percentile(values, 95),
+            "source": "structured_log provider_diagnostics",
+            "note": "仅报告 EchoMem 明确暴露的计数；LLM 厂商内部 prompt cache 未暴露时不推断命中。",
         })
     return result
 

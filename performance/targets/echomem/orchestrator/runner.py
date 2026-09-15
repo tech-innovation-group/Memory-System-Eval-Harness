@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import time
 import os
 from collections import Counter
@@ -49,6 +50,149 @@ from performance.targets.echomem.protocol import is_anchor_query
 SCENES_DIR = Path(__file__).resolve().parent.parent / "scenes"
 
 
+def _planned_arrival_contract(profile: Profile) -> dict[str, Any]:
+    """Return the effective open-loop arrival counts used by this case.
+
+    The engine's fixed-rate gate stops slots at ``end_s``.  Repeating that
+    calculation here makes the plan auditable without treating observed
+    request counts as the plan or silently shrinking a workload.
+    """
+    duration = float(profile.load.duration_s)
+
+    def count(rate: float, start: float, end: float | None) -> int:
+        finish = duration if end is None else min(duration, float(end))
+        if rate <= 0 or finish <= start:
+            return 0
+        return max(0, int(math.ceil((finish - start) * rate - 1e-9)))
+
+    result: dict[str, Any] = {}
+    tenant_count = len(profile.tenants)
+    for task_name, spec in profile.load.arrival.items():
+        start = float(spec.start_s)
+        if spec.scope == "per_tenant":
+            weights = list(spec.tenant_weights) if spec.tenant_weights else [1.0] * tenant_count
+            by_tenant = {
+                str(index): count(float(spec.rps) * float(weights[index]), start, spec.end_s)
+                for index in range(tenant_count)
+            }
+            result[task_name] = {
+                "scope": spec.scope,
+                "rps": spec.rps,
+                "start_s": start,
+                "end_s": spec.end_s,
+                "tenant_weights": weights,
+                "planned_total": sum(by_tenant.values()),
+                "planned_by_tenant": by_tenant,
+            }
+        else:
+            result[task_name] = {
+                "scope": spec.scope,
+                "rps": spec.rps,
+                "start_s": start,
+                "end_s": spec.end_s,
+                "tenant_weights": None,
+                "planned_total": count(float(spec.rps), start, spec.end_s),
+                "planned_by_tenant": None,
+            }
+    return result
+
+
+def _record_value(record: Any, name: str, default: Any = None) -> Any:
+    if isinstance(record, dict):
+        return record.get(name, default)
+    return getattr(record, name, default)
+
+
+def _case_records(case_dir: Path) -> list[dict[str, str]]:
+    path = case_dir / "records.csv"
+    if not path.is_file():
+        return []
+    with path.open(encoding="utf-8", newline="") as handle:
+        return list(csv.DictReader(handle))
+
+
+def _commit_observation_counts(records: list[Any]) -> dict[str, Any]:
+    """Summarise Commit submit/202/terminal evidence without dropping failures."""
+    submits = [record for record in records if _record_value(record, "op") == "commit_submit"]
+    accepted = [record for record in submits if str(_record_value(record, "http_status")) == "202"]
+    completed = [record for record in records
+                 if _record_value(record, "op") == "commit_done"
+                 and _record_value(record, "commit_terminal_state") == "completed"]
+    failed_terminal = [record for record in records
+                       if _record_value(record, "op") == "commit_done"
+                       and _record_value(record, "commit_terminal_state") in {"failed", "error"}]
+    rejected = [record for record in submits
+                if _number_value(_record_value(record, "http_status")) is not None
+                and _number_value(_record_value(record, "http_status")) >= 400]
+    terminal = len(completed) + len(failed_terminal)
+    by_tenant: dict[str, dict[str, int]] = {}
+    tenants = sorted({str(_record_value(record, "tenant_idx")) for record in submits})
+    for tenant in tenants:
+        tenant_submits = [record for record in submits if str(_record_value(record, "tenant_idx")) == tenant]
+        tenant_accepted = [record for record in accepted if str(_record_value(record, "tenant_idx")) == tenant]
+        tenant_completed = [record for record in completed if str(_record_value(record, "tenant_idx")) == tenant]
+        tenant_failed = [record for record in failed_terminal if str(_record_value(record, "tenant_idx")) == tenant]
+        by_tenant[str(tenant)] = {
+            "submitted": len(tenant_submits),
+            "accepted_202": len(tenant_accepted),
+            "completed": len(tenant_completed),
+            "failed_terminal": len(tenant_failed),
+            "rejected": sum(
+                _number_value(_record_value(record, "http_status")) is not None
+                and _number_value(_record_value(record, "http_status")) >= 400
+                for record in tenant_submits
+            ),
+            "pending_at_end": max(0, len(tenant_accepted) - len(tenant_completed) - len(tenant_failed)),
+        }
+    return {
+        "submitted": len(submits),
+        "accepted_202": len(accepted),
+        "completed": len(completed),
+        "failed_terminal": len(failed_terminal),
+        "rejected": len(rejected),
+        "pending_at_end": max(0, len(accepted) - terminal),
+        "by_tenant": by_tenant,
+    }
+
+
+def _number_value(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _planned_commit_contract(case: dict[str, Any], profile: Profile) -> dict[str, Any]:
+    """Calculate planned Commit work for periodic and barrier cases."""
+    if case.get("scene") == "scene_barrier":
+        count = int(profile.params.get("barrier_count", 0))
+        waves = int(profile.params.get("barrier_waves", 1))
+        from performance.targets.echomem._barrier import barrier_tenant_counts
+
+        per_wave = barrier_tenant_counts(
+            count,
+            len(profile.tenants),
+            distribution=str(profile.params.get("barrier_distribution", "uniform")),
+            zipf_exponent=float(profile.params.get("barrier_zipf_exponent", 2.0)),
+            explicit=profile.params.get("commit_tenant_counts"),
+        )
+        planned_by_tenant = {
+            str(tenant): value * waves for tenant, value in per_wave.items()
+        }
+        return {
+            "planned_total": count * waves,
+            "planned_by_tenant": planned_by_tenant,
+            "source": "commit_barrier",
+        }
+    write = _planned_arrival_contract(profile).get("write") or {}
+    return {
+        "planned_total": write.get("planned_total", 0),
+        "planned_by_tenant": write.get("planned_by_tenant"),
+        "source": "periodic_arrival",
+    }
+
+
 def summarize_case_records(records: list[RequestRecord]) -> dict:
     """records → suite per-run summary（通用 metrics + echomem 扩展）。
 
@@ -71,6 +215,7 @@ def summarize_case_records(records: list[RequestRecord]) -> dict:
         values = [r.stage_ms / 1000 for r in rows]
         summary["details"]["query_classes"][query_type] = {
             "submitted": len(rows),
+            "recall_served": sum(r.status == "ok" and (r.recall_served is not False) and r.hit_count > 0 for r in rows),
             "quality_passed": sum(r.status == "ok" and r.quality_ok for r in rows),
             "degraded": sum(r.degraded for r in rows),
             "mean_s": statistics.mean(values) if values else None,
@@ -226,27 +371,34 @@ def run_case(
         # 保证磁盘 summary 与内存一致（--resume / rebuild_report 都以
         # 磁盘 summary.json 为唯一数据源）。
     # Persist the effective, quick-capped workload, not credentials or query pools.
-    contract = {"version": "echomem-case-v1", "tenant_count": len(profile.tenants),
-                "query_mode": profile.params.get("query_mode", "recall")}
+    arrival_contract = _planned_arrival_contract(profile)
+    commit_plan = _planned_commit_contract(case, profile)
+    commit_counts = _commit_observation_counts(_case_records(case_dir))
+    contract = {
+        "version": "echomem-case-v2",
+        "case_label": case["label"],
+        "tenant_count": len(profile.tenants),
+        "duration_s": profile.load.duration_s,
+        "query_mode": profile.params.get("query_mode", "recall"),
+        "commit_payload_profile": profile.params.get("commit_payload_profile", "standard"),
+        "arrival": arrival_contract,
+        "planned_search_count": (arrival_contract.get("read") or {}).get("planned_total", 0),
+        "planned_commit_count": commit_plan["planned_total"],
+        "planned_commit_by_tenant": commit_plan["planned_by_tenant"],
+        "planned_commit_source": commit_plan["source"],
+        "actual_commit": commit_counts,
+    }
     if case.get("fairness_mode") == "independent-periodic-v1":
         contract.update({"fairness_mode": case["fairness_mode"],
                          "measurement_start_s": case["measurement_start_s"],
-                         "measurement_end_s": case["measurement_end_s"],
-                         "arrival": {name: {"scope": spec.scope, "rps": spec.rps,
-                                            "start_s": spec.start_s, "end_s": spec.end_s,
-                                            "tenant_weights": list(spec.tenant_weights)
-                                            if spec.tenant_weights else None}
-                                     for name, spec in profile.load.arrival.items()}})
-    elif any(spec.tenant_weights for spec in profile.load.arrival.values()):
-        contract.update({"heterogeneous_tenant_load": True,
-                         "arrival": {name: {"scope": spec.scope, "rps": spec.rps,
-                                            "start_s": spec.start_s, "end_s": spec.end_s,
-                                            "tenant_weights": list(spec.tenant_weights)
-                                            if spec.tenant_weights else None}
-                                     for name, spec in profile.load.arrival.items()}})
+                         "measurement_end_s": case["measurement_end_s"]})
+    if any(spec.tenant_weights for spec in profile.load.arrival.values()):
+        contract["heterogeneous_tenant_load"] = True
     if case["scene"] == "scene_barrier":
         contract.update({name: profile.params.get(name) for name in (
-            "barrier_count", "barrier_waves", "barrier_distribution", "commit_tenant_counts")})
+            "barrier_count", "barrier_waves", "barrier_distribution",
+            "barrier_prepare_before_commit", "barrier_prepare_at_s",
+            "barrier_max_workers", "commit_tenant_counts")})
     result["summary"]["measurement_contract"] = contract
     (case_dir / "summary.json").write_text(
         json.dumps(result["summary"], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -271,7 +423,9 @@ def _preflight_stage(config: str, *, strict: bool = False) -> dict:
 
 def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, seed_messages, *,
                            reuse_seed=None, dataset_path="", sample_id="conv-30", session_key="session_1",
-                           search_timeout_s=60):
+                           search_timeout_s=60, corpus_mode="locomo-single-session",
+                           validation_queries=4, validation_query_ids=None,
+                           seed_workers=None, identity_cache=None):
     """Observation workloads share remembered facts, not a bare-marker routing gate."""
     import uuid
     from performance.suite import SeedPreparationError
@@ -283,31 +437,75 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
     )
     from performance.targets.echomem.acceptance.semantic_corpus import (
         DEFAULT_LOCOMO_DATASET,
+        build_fixed_fact_corpus,
         build_locomo_session_corpus,
     )
     from performance.targets.echomem.probes._client import EchoMemHTTP
 
     validate_search_timeout(search_timeout_s)
-    specs = load_tenant_specs(tenant_config, tenant_count=max_tenants)
-    if len(specs) != max_tenants or len({s.auth_key for s in specs}) != max_tenants:
-        raise RuntimeError("Semantic seed requires all independent tenant credentials")
     run_tag = uuid.uuid4().hex
     source_path = Path(dataset_path) if dataset_path else DEFAULT_LOCOMO_DATASET
-    actors = [CapacityActor(index, 0, EchoMemHTTP(base_url, spec.auth_key,
-                    tenant_id=spec.tenant_id, user_id=spec.user_id,
-                    account_id=spec.account_id, agent_id=spec.agent_id),
-                build_locomo_session_corpus(f"formal-recall-{run_tag}-{index}",
-                    dataset_path=source_path, sample_id=sample_id, session_key=session_key))
-              for index, spec in enumerate(specs)]
-    if reuse_seed:
+    if corpus_mode not in {"locomo-single-session", "fixed-natural-fact"}:
+        raise ValueError("corpus_mode must be locomo-single-session or fixed-natural-fact")
+    actors = []
+    seed_source = corpus_mode
+    if identity_cache:
+        from dataclasses import replace
+        from performance.targets.echomem.acceptance.capacity_experiment import _load_actors
+        cached, _ = _load_actors(Path(identity_cache), base_url)
+        if len(cached) < max_tenants:
+            raise RuntimeError(
+                f"Semantic identity cache has {len(cached)} actors; {max_tenants} required"
+            )
+        selected = cached[:max_tenants]
+        if any(not actor.write_session for actor in selected):
+            raise RuntimeError("Semantic identity cache has no live write session for every actor")
+        actors = [replace(actor, tenant_index=index, user_index=0)
+                  for index, actor in enumerate(selected)]
+        seed_source = "validated-identity-cache"
+    else:
+        specs = load_tenant_specs(tenant_config, tenant_count=max_tenants)
+        if len(specs) != max_tenants or len({s.auth_key for s in specs}) != max_tenants:
+            raise RuntimeError("Semantic seed requires all independent tenant credentials")
+        for index, spec in enumerate(specs):
+            identity = f"formal-recall-{run_tag}-{index}"
+            corpus = (
+                build_fixed_fact_corpus(identity)
+                if corpus_mode == "fixed-natural-fact"
+                else build_locomo_session_corpus(
+                    identity, dataset_path=source_path, sample_id=sample_id,
+                    session_key=session_key,
+                )
+            )
+            actors.append(CapacityActor(
+                index, 0,
+                EchoMemHTTP(base_url, spec.auth_key, tenant_id=spec.tenant_id,
+                            user_id=spec.user_id, account_id=spec.account_id,
+                            agent_id=spec.agent_id),
+                corpus,
+            ))
+    if identity_cache:
+        evidence = validate_cached_actors(
+            actors, validation_queries=validation_queries,
+            search_timeout_s=search_timeout_s,
+            validation_query_ids=validation_query_ids,
+        )
+    elif reuse_seed:
         from dataclasses import replace
         from performance.targets.echomem.acceptance.capacity_experiment import _load_actors
         cached, _ = _load_actors(Path(reuse_seed), base_url)
-        incompatible = [a for a in cached if a.corpus.get("query_contract") != "locomo-single-session-evidence-v1"
-                        or (a.corpus.get("source") or {}).get("sample_id") != sample_id
-                        or (a.corpus.get("source") or {}).get("session_key") != session_key]
+        seed_source = "validated-cache"
+        expected_contract = ("fixed-natural-fact-v1" if corpus_mode == "fixed-natural-fact"
+                             else "locomo-single-session-evidence-v1")
+        incompatible = [a for a in cached if (
+            a.corpus.get("query_contract") != expected_contract
+            or (corpus_mode != "fixed-natural-fact" and (
+                (a.corpus.get("source") or {}).get("sample_id") != sample_id
+                or (a.corpus.get("source") or {}).get("session_key") != session_key
+            ))
+        )]
         if incompatible:
-            raise RuntimeError("Semantic cache is not the configured LoCoMo single-session corpus")
+            raise RuntimeError("Semantic cache is not the configured seed corpus")
         actors = []
         for spec in specs:
             matches = [a for a in cached if all(getattr(a.client, field) == getattr(spec, field)
@@ -315,9 +513,16 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
             if len(matches) != 1:
                 raise RuntimeError("Semantic cache must match each configured identity exactly once")
             actors.append(replace(matches[0], tenant_index=len(actors)))
-        evidence = validate_cached_actors(actors, validation_queries=4, search_timeout_s=search_timeout_s)
+        evidence = validate_cached_actors(
+            actors, validation_queries=validation_queries,
+            search_timeout_s=search_timeout_s,
+            validation_query_ids=validation_query_ids,
+        )
     else:
-        evidence = prepare_actors(actors, timeout_s=180, validation_queries=4, search_timeout_s=search_timeout_s)
+        evidence = prepare_actors(
+            actors, timeout_s=180, validation_queries=validation_queries,
+            search_timeout_s=search_timeout_s, workers=seed_workers,
+        )
     if evidence["healthy_actors"] != max_tenants:
         raise SeedPreparationError(f"Semantic seed validation failed: healthy={evidence['healthy_actors']}/{max_tenants}", evidence)
     contexts = [SeedContext(tenant_id=actor.client.tenant_id, auth_key=actor.client.auth_key,
@@ -334,7 +539,7 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
     return contexts, {"status": "completed", "tenant_count": max_tenants,
                       "identity_mode": "independent", "keys_independent": True,
                       "seed_contract": "fixed-fact-in-items", "seed_evidence": evidence,
-                      "seed_source": "validated-cache" if reuse_seed else "locomo-single-session",
+                      "seed_source": seed_source,
                       "corpus_source": {"dataset": source_path.name, "sample_id": sample_id,
                                         "session_key": session_key},
                       "probe_queries": {actor.client.tenant_id: actor.corpus["recall_queries"][0] for actor in actors},
@@ -343,7 +548,9 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
                       "seed_documents_per_tenant": uniform_count("documents"),
                       "facts_per_tenant": uniform_count("facts"),
                       "query_variants_per_tenant": uniform_count("queries"),
-                      "validated_queries_per_tenant": 4, "seed_search_timeout_s": search_timeout_s}
+                      "validated_queries_per_tenant": validation_queries,
+                      "seed_search_timeout_s": search_timeout_s,
+                      "seed_workers": seed_workers}
 
 
 def _prepare_seed(
@@ -458,7 +665,14 @@ def run_suite(
     def _select_cases(name, scenarios):
         if profile.get("six_metrics_observation"):
             from performance.targets.echomem.orchestrator.suites import six_metric_observation_cases
-            catalog = six_metric_observation_cases(quick=quick is not None)
+            catalog = six_metric_observation_cases(
+                quick=quick is not None,
+                duration_s=profile.get("m2m3_duration_s"),
+                tail_s=profile.get("m2m3_tail_s"),
+                m2_commit_rpm=profile.get("m2_commit_rpm"),
+                m3_barrier_count=profile.get("m3_barrier_count"),
+                search_workers=profile.get("m2m3_search_workers"),
+            )
             if scenarios is None:
                 return catalog
             selected = set(scenarios)
@@ -469,14 +683,27 @@ def run_suite(
         return select_cases(name, scenarios)
 
     from functools import partial
-    semantic_seed = partial(
-        _prepare_semantic_seed,
-        reuse_seed=profile.get("semantic_seed_cache"),
-        dataset_path=profile.get("semantic_seed_dataset", ""),
-        sample_id=profile.get("semantic_seed_sample", "conv-30"),
-        session_key=profile.get("semantic_seed_session", "session_1"),
-        search_timeout_s=profile.get("seed_search_timeout_s", 60),
-    )
+    seed_keywords = {
+        "reuse_seed": profile.get("semantic_seed_cache"),
+        "dataset_path": profile.get("semantic_seed_dataset", ""),
+        "sample_id": profile.get("semantic_seed_sample", "conv-30"),
+        "session_key": profile.get("semantic_seed_session", "session_1"),
+        "search_timeout_s": profile.get("seed_search_timeout_s", 60),
+    }
+    identity_cache = profile.get("semantic_seed_identity_cache")
+    if identity_cache:
+        seed_keywords["identity_cache"] = identity_cache
+    if "semantic_seed_mode" in profile:
+        seed_keywords["corpus_mode"] = profile["semantic_seed_mode"]
+    if "semantic_seed_validation_queries" in profile:
+        seed_keywords["validation_queries"] = int(profile["semantic_seed_validation_queries"])
+    if "semantic_seed_validation_query_ids" in profile:
+        seed_keywords["validation_query_ids"] = [
+            str(item) for item in (profile["semantic_seed_validation_query_ids"] or [])
+        ]
+    if "semantic_seed_workers" in profile:
+        seed_keywords["seed_workers"] = profile["semantic_seed_workers"]
+    semantic_seed = partial(_prepare_semantic_seed, **seed_keywords)
     result = run_suite_impl(
         profile,
         suite_dir=suite_dir,

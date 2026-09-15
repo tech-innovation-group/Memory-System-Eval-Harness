@@ -32,6 +32,7 @@ def test_only_returned_memory_content_can_satisfy_fact(payload, expected):
     ctx = Context(payload)
     search(ctx, "我记下的地点在哪？")
     assert ctx.fields["quality_ok"] is expected
+    assert ctx.fields["recall_served"] is (payload.get("items") != [] and "items" in payload)
     assert ctx.fields["quality_assertion"] == "fixed-fact-in-items"
     assert ctx.fields["query_type"] == "recall"
 
@@ -40,6 +41,7 @@ def test_failed_http_preserves_assertion_and_denominator():
     ctx = Context({}, ok=False)
     search(ctx, "我记下的地点在哪？")
     assert ctx.fields["quality_ok"] is False
+    assert ctx.fields["recall_served"] is False
     assert ctx.fields["quality_assertion"] == "fixed-fact-in-items"
 
 
@@ -150,7 +152,10 @@ def test_cached_validation_only_searches_current_returned_facts(healthy):
               "query_type": "recall", "aliases": ["remembered-place"]} for i in range(8)]}
     result = validate_cached_actors([CapacityActor(0, 0, client, corpus)], validation_queries=4)
     assert calls == [("POST", "/api/retrieval/search")] * 4
-    assert result["healthy_actors"] == int(healthy)
+    # A non-empty HTTP 200 response proves the recall path is usable even when
+    # the returned fact does not match this fixture's expected alias.
+    assert result["healthy_actors"] == 1
+    assert result["quality_healthy_actors"] == int(healthy)
     assert len(result["actors"][0]["queries"]) == 4
 
 

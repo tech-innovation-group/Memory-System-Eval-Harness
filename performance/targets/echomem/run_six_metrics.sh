@@ -34,7 +34,9 @@ fi
 
 case "$mode" in
   quick)
-    command+=(--quick)
+    # Quick mode is intentionally limited to the first three metrics.  The
+    # observation runner defaults to M1-M6, so keep this scope explicit here.
+    command+=(--quick --metrics M1,M2,M3)
     ;;
   full)
     command+=(--metrics M1,M2,M3,M4,M5,M6)
