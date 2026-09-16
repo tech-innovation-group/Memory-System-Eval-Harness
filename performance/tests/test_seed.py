@@ -27,6 +27,23 @@ from performance.tests.conftest import MockState
 
 # -- inline servers (provision / flaky-add mocks live here, not conftest) --
 
+
+def test_search_omits_blank_session_id_but_keeps_live_session_id(monkeypatch):
+    client = EchoMemHTTP("http://example.test", "key", tenant_id="tenant")
+    requests = []
+
+    def capture(method, path, body, **kwargs):
+        requests.append((method, path, body, kwargs))
+        return object()
+
+    monkeypatch.setattr(client, "request", capture)
+
+    client.search("", "seed validation question", 5)
+    client.search("live-session", "load question", 5)
+
+    assert "session_id" not in requests[0][2]
+    assert requests[1][2]["session_id"] == "live-session"
+
 def _start_server(handler: type[http.server.BaseHTTPRequestHandler]):
     # Default listen backlog (5) refuses connections when the full suite
     # saturates the GIL; raise it before construction so server_bind's

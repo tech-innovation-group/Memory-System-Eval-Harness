@@ -528,10 +528,19 @@ class EchoMemHTTP:
         )
 
     def search(self, session_id: str, query: str, timeout_s: float) -> HttpResult:
-        return self.request("POST", "/api/retrieval/search", {
-            "query": query, "agent_id": self.agent_id, "session_id": session_id,
-            "limit": 10, "include_explain": False, "include_debug": True,
-        }, timeout_s=timeout_s, operation="search")
+        body = {
+            "query": query,
+            "agent_id": self.agent_id,
+            "limit": 10,
+            "include_explain": False,
+            "include_debug": True,
+        }
+        # Retrieval is tenant-scoped. A blank session is used by seed validation
+        # and must be omitted because strict EchoMem versions reject it as invalid.
+        if str(session_id or "").strip():
+            body["session_id"] = session_id
+        return self.request("POST", "/api/retrieval/search", body,
+                            timeout_s=timeout_s, operation="search")
 
     def provision_isolated_identity(self, label: str) -> dict[str, Any]:
         """Create a tenant/user/key and switch this client to that identity."""
