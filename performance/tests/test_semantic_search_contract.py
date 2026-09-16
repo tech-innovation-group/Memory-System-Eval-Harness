@@ -137,6 +137,35 @@ def test_report_labels_cached_seed_without_claiming_fresh_injection(tmp_path):
     assert "预检抽样通过不代表整个问题池全部通过" in html
 
 
+def test_report_exposes_memory_listing_and_recall_evidence_separately(tmp_path):
+    from performance.targets.echomem.acceptance.observation import evaluate_observation, write_observation_report
+    m1_report = {
+        "seed_status": "PARTIAL",
+        "seed_failed_actor_count": 1,
+        "seed_healthy_actor_count": 1,
+        "seed": {"actors": [
+            {"status": "PASS", "memory_count": 0, "memory_observation": "counted",
+             "queries": [{"http_status": 200, "recall_hit": True}]},
+            {"status": "INCONCLUSIVE", "memory_observation": "memory_endpoint_http_error",
+             "queries": []},
+        ]},
+    }
+    result = evaluate_observation({"runs": []}, {}, [m1_report], quick=False, selected_metrics=["M3"])
+    setup = result["setup_evidence"]
+    assert setup["seed_status"] == "PARTIAL"
+    assert setup["seed_healthy_actor_count"] == 1
+    assert setup["seed_failed_actor_count"] == 1
+    assert setup["seed_memory_observed"] == 2
+    assert setup["seed_memory_rows"] == 1
+    assert setup["seed_memory_empty"] == 1
+    assert setup["seed_recall_served"] == 1
+    path = tmp_path / "report.html"
+    write_observation_report(result, path)
+    html = path.read_text()
+    assert "Memory endpoint 证据" in html
+    assert "空列表与非空 Recall 可以同时出现" in html
+
+
 @pytest.mark.parametrize("healthy", [True, False])
 def test_cached_validation_only_searches_current_returned_facts(healthy):
     from performance.targets.echomem.acceptance.capacity_seed import CapacityActor, validate_cached_actors

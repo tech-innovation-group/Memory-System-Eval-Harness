@@ -1462,9 +1462,44 @@ def evaluate_observation(suite: dict[str, Any], profile: dict[str, Any],
             "error": "; ".join(str(row.get("stop_reason")) for row in blocked
                                   if row.get("stop_reason")),
         }
+    # M1 seed reports carry the only direct evidence that the injected Commit
+    # produced a readable memory list. Keep it separate from Search quality:
+    # a service can return a non-empty Recall while its commit-memory listing
+    # is empty (for example when extraction completed with gaps).
+    seed_actor_rows = []
+    for report in m1_reports or []:
+        nested = report.get("seed") if isinstance(report, dict) else None
+        rows = nested.get("actors") if isinstance(nested, dict) else None
+        if isinstance(rows, list):
+            seed_actor_rows.extend(row for row in rows if isinstance(row, dict))
     seed_evidence = seed.get("seed_evidence") or seed.get("evidence") or {}
+    if not seed_evidence and seed_actor_rows:
+        seed_evidence = {
+            "actor_count": len(seed_actor_rows),
+            "healthy_actors": sum(row.get("status") == "PASS" for row in seed_actor_rows),
+        }
+    memory_observed_rows = [row for row in seed_actor_rows if row.get("memory_observation")]
+    memory_rows = [row for row in memory_observed_rows
+                   if row.get("memory_observation") == "counted"]
+    memory_counts = [row.get("memory_count") for row in memory_rows
+                     if isinstance(row.get("memory_count"), (int, float))]
+    seed_queries = [query for row in seed_actor_rows for query in (row.get("queries") or [])
+                    if isinstance(query, dict)]
+    seed_statuses = [row.get("seed_status") or (row.get("seed") or {}).get("status")
+                     for row in m1_reports or [] if isinstance(row, dict)]
+    aggregate_seed_status = seed.get("status")
+    if not aggregate_seed_status and seed_statuses:
+        aggregate_seed_status = "PARTIAL" if "PARTIAL" in seed_statuses else seed_statuses[0]
+    reported_healthy = sum(int(row.get("seed_healthy_actor_count") or 0)
+                           for row in m1_reports or [] if isinstance(row, dict))
+    reported_failed = sum(int(row.get("seed_failed_actor_count") or 0)
+                          for row in m1_reports or [] if isinstance(row, dict))
+    healthy_actor_count = reported_healthy or int(seed_evidence.get("healthy_actors") or 0)
+    failed_actor_count = reported_failed or max(
+        0, int(seed_evidence.get("actor_count") or len(seed_actor_rows)) - healthy_actor_count
+    )
     setup_evidence = {
-        "seed_status": seed.get("status"), "seed_contract": seed.get("seed_contract"),
+        "seed_status": aggregate_seed_status, "seed_contract": seed.get("seed_contract"),
         "seed_source": seed.get("seed_source"),
         "seed_documents_per_tenant": seed.get("seed_documents_per_tenant"),
         "facts_per_tenant": seed.get("facts_per_tenant"),
@@ -1475,6 +1510,21 @@ def evaluate_observation(suite: dict[str, Any], profile: dict[str, Any],
         "reuse_seed_preflight": seed.get("reuse_seed_preflight"),
         "bare_marker_gate_failed": str(seed.get("error") or "").startswith("Seed marker not found"),
         "load_cases_completed": len(runs),
+        "seed_failed_actor_count": failed_actor_count,
+        "seed_healthy_actor_count": healthy_actor_count,
+        "seed_memory_observed": len(memory_observed_rows),
+        "seed_memory_rows": len(memory_rows),
+        "seed_memory_nonempty": sum(bool(row.get("memory_count")) for row in memory_rows),
+        "seed_memory_empty": sum(row.get("memory_count") == 0 for row in memory_rows),
+        "seed_memory_unknown": sum(row.get("memory_observation") != "counted"
+                                    for row in memory_observed_rows),
+        "seed_memory_total": sum(memory_counts) if memory_counts else None,
+        "seed_recall_queries": len(seed_queries),
+        "seed_recall_served": sum(bool(row.get("recall_hit")) for row in seed_queries),
+        "seed_recall_empty": sum(row.get("http_status") == 200 and not row.get("recall_hit")
+                                  for row in seed_queries),
+        "seed_recall_http_errors": sum(row.get("http_status") not in (200, None)
+                                       for row in seed_queries),
     }
     overall = ("EXECUTION_ERROR" if "EXECUTION_ERROR" in statuses else
                "BLOCKED" if all(value == "BLOCKED" for value in statuses) else
@@ -2531,10 +2581,36 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
         "fresh": "本次重新注入固定事实记忆",
         "locomo-single-session": "本次注入一段 LoCoMo 真实会话，并使用证据完全位于该 session 的标准问题验证召回",
     }
-    seed_source = "<section><h2>记忆与问题来源</h2><p>" + esc(source_labels.get(setup.get("seed_source"), "来源未记录，不能推定为本次重新注入")) + "</p>" + table([setup], [
+    memory_evidence = (
+        "<p class='method'>Memory endpoint 证据：已观测 "
+        f"{esc(setup.get('seed_memory_observed'))} 个租户，可解析 "
+        f"{esc(setup.get('seed_memory_rows'))} 个租户，其中非空 "
+        f"{esc(setup.get('seed_memory_nonempty'))}、空列表 "
+        f"{esc(setup.get('seed_memory_empty'))}；同时种子 Recall HTTP 200 且非空 "
+        f"{esc(setup.get('seed_recall_served'))}/{esc(setup.get('seed_recall_queries'))}。"
+        "空列表与非空 Recall 可以同时出现，需结合 EchoMem 抽取日志判断是否为 extraction gap，"
+        "不能仅凭其中一项断言记忆注入失败。</p>"
+        if setup.get("seed_memory_rows") else
+        "<p class='method'>本轮没有可解析的 Memory endpoint 证据；不能从 HTTP 200 或 Commit completed 推断记忆已持久化，"
+        "需先补采该端点或服务端抽取日志。</p>"
+    )
+    seed_source = ("<section><h2>记忆与问题来源</h2><p>" + esc(source_labels.get(setup.get("seed_source"), "来源未记录，不能推定为本次重新注入")) + "</p>" + table([setup], [
         ("seed_documents_per_tenant", "每租户注入文本数"), ("facts_per_tenant", "每租户事实数"),
         ("query_variants_per_tenant", "每租户问题池大小"),
-        ("validated_queries_per_tenant", "每租户本次预检问题数")]) + "<p>预检抽样通过不代表整个问题池全部通过；正式发压中的空召回、错误和降级仍计入失败分母。</p></section>"
+        ("validated_queries_per_tenant", "每租户本次预检问题数"),
+        ("seed_healthy_actor_count", "实际进入负载租户"),
+        ("seed_failed_actor_count", "失败或 pending 种子租户"),
+        ("seed_memory_observed", "Memory endpoint 已观测租户"),
+        ("seed_memory_rows", "Memory endpoint 可解析租户"),
+        ("seed_memory_nonempty", "Memory endpoint 非空租户"),
+        ("seed_memory_empty", "Memory endpoint 空列表租户"),
+        ("seed_memory_total", "可解析记忆条目总数"),
+        ("seed_recall_queries", "种子 Recall 预检数"),
+        ("seed_recall_served", "种子非空 Recall"),
+        ("seed_recall_empty", "种子 HTTP 200 空召回"),
+        ("seed_recall_http_errors", "种子 HTTP 错误")
+    ]) + "<p>预检抽样通过不代表整个问题池全部通过；正式发压中的空召回、错误和降级仍计入失败分母。</p>"
+    + memory_evidence + "</section>")
     seed_diagnosis = ""
     if result.get("seed_query_diagnosis"):
         labels = {"bare-marker": "只查询编号", "personal-recall": "请回忆编号事项", "personal-question": "询问编号具体事项"}
