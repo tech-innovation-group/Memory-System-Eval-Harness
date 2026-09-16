@@ -345,7 +345,21 @@ def _answer_match(text: str, answer: str) -> bool:
     """Match a LoCoMo answer after extraction may rewrite evidence markers."""
     normalized_answer = re.sub(r"[^\w\u4e00-\u9fff]+", "", _normalized(answer))
     normalized_text = re.sub(r"[^\w\u4e00-\u9fff]+", "", text)
-    return len(normalized_answer) >= 4 and normalized_answer in normalized_text
+    if len(normalized_answer) < 4:
+        return False
+    if normalized_answer in normalized_text:
+        return True
+    # Extraction can insert a location or subject into an otherwise literal
+    # English answer. Require every meaningful answer token rather than a
+    # brittle contiguous phrase, while leaving Chinese answers on the exact
+    # normalized path above.
+    answer_tokens = re.findall(r"[a-z0-9]+", _normalized(answer))
+    if not answer_tokens:
+        return False
+    stop_words = {"a", "an", "and", "are", "as", "at", "be", "because", "by", "for",
+                  "from", "in", "is", "it", "of", "on", "or", "the", "to", "was", "with"}
+    required = {token for token in answer_tokens if token not in stop_words}
+    return bool(required) and all(token in normalized_text for token in required)
 
 
 def assess_retrieval(payload, sample: dict) -> dict:

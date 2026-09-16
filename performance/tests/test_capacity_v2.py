@@ -155,6 +155,16 @@ def test_fixed_tenant_seed_resolves_fixture_qa_evidence(tmp_path):
     assert "Answer: A meeting room" in corpus["documents"][-1]
 
 
+def test_answer_match_allows_inserted_context_between_fact_tokens():
+    from performance.targets.echomem.acceptance.semantic_corpus import _answer_match
+
+    assert _answer_match(
+        "Audrey set up a doggy play area in the backyard with agility stuff and toys.",
+        "a doggy play area with agility stuff and toys",
+    )
+    assert not _answer_match("Audrey set up a play area for dogs.", "agility stuff and toys")
+
+
 def test_arrival_plan_separates_read_message_and_commit_schedules():
     plan = arrival_plan(4, 360, 1, True)
     assert 1200 < sum(e[1] == "read" for e in plan) < 1700
