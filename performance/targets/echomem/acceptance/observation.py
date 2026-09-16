@@ -1871,7 +1871,11 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             trace_ref = str(event.get("trace_ref") or "")
             module = str(event.get("module") or "")
             duration_ms = _number(event.get("duration_ms"))
-            if trace_ref and module.startswith("recall/") and duration_ms is not None:
+            if trace_ref and (
+                module.startswith("recall/")
+                or module.startswith("atomic/")
+                or module.startswith("provider/")
+            ) and duration_ms is not None:
                 by_trace.setdefault(trace_ref, {})[module] = duration_ms
         result_rows: dict[int, dict[str, Any]] = {}
         for level in metric.get("levels", []):
