@@ -517,6 +517,9 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
             refresh_stage_observability()
             result = evaluate_observation(suite, profile, m1_reports, quick=False, selected_metrics=selected)
             result.update(platform_provenance=provenance, checkpoint=error is None, pending_metrics=pending)
+            if pending and error is None:
+                # M1 seeding is active execution, even before it produces load samples.
+                result.update(status="PARTIAL", run_state="RUNNING")
             if "capacity_start_readiness" in suite:
                 result["capacity_start_readiness"] = suite["capacity_start_readiness"]
             if error is not None:
