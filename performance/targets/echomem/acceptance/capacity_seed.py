@@ -32,11 +32,14 @@ class CapacityActor:
 
 
 def _result_body(payload: object) -> dict:
-    """Unwrap EchoMem responses that put the useful body under ``result``."""
+    """Unwrap EchoMem responses that put the useful body under a wrapper."""
     if not isinstance(payload, dict):
         return {}
-    nested = payload.get("result")
-    return nested if isinstance(nested, dict) else payload
+    for wrapper in ("result", "summary"):
+        nested = payload.get(wrapper)
+        if isinstance(nested, dict):
+            return nested
+    return payload
 
 
 def _reduce_locomo_corpus(corpus: dict, max_questions: int | None) -> dict:

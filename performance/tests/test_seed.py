@@ -48,6 +48,7 @@ def test_search_omits_blank_session_id_but_keeps_live_session_id(monkeypatch):
 
 def test_capacity_seed_unwraps_nested_result_body():
     assert _result_body({"result": {"memories": ["m1"]}}) == {"memories": ["m1"]}
+    assert _result_body({"summary": {"memories": ["m1"]}}) == {"memories": ["m1"]}
     assert _result_body({"memories": ["m1"]}) == {"memories": ["m1"]}
 
 def _start_server(handler: type[http.server.BaseHTTPRequestHandler]):
