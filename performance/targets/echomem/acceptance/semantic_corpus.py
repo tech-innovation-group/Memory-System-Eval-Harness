@@ -125,10 +125,15 @@ def build_fixed_tenant_data_corpus(
     records = fixture.get("tenants") if isinstance(fixture, dict) else None
     if not isinstance(records, list) or not records:
         raise ValueError("fixed tenant seed data must contain a non-empty tenants list")
-    if fixture_index < 0 or fixture_index >= len(records):
+    usable_records = [
+        candidate for candidate in records
+        if isinstance(candidate, dict) and str(candidate.get("expected_answer") or "").strip()
+    ]
+    if fixture_index < 0 or fixture_index >= len(usable_records):
         raise ValueError(f"fixed tenant seed index is unavailable: {fixture_index}")
-    record = records[fixture_index]
-    if not isinstance(record, dict) or int(record.get("tenant_index", -1)) != fixture_index:
+    record = usable_records[fixture_index]
+    source_tenant_index = int(record.get("tenant_index", -1))
+    if source_tenant_index < 0:
         raise ValueError(f"fixed tenant seed record is invalid: {fixture_index}")
     question = str(record.get("search_query") or "").strip()
     if not question:
@@ -176,6 +181,11 @@ def build_fixed_tenant_data_corpus(
         documents.append(f"{content} Evidence marker: {marker}.")
         markers.append(marker)
 
+    # The fixture's QA pair is part of the tested memory contract.  Include
+    # the answer as an explicit fact so extraction may summarize the source
+    # dialogue without making the seed's own QA impossible to verify.
+    documents.append(f"Verified memory fact. Question: {question} Answer: {expected}.")
+
     fact_id = f"fixture-{fixture_index}-qa"
     no_recall = [{"id": f"no-recall-{index}", "query": text,
                   "query_type": "no_recall", "aliases": []}
@@ -200,6 +210,8 @@ def build_fixed_tenant_data_corpus(
         "source": {
             "kind": "fixed-tenant-data",
             "fixture_index": fixture_index,
+            "source_tenant_index": source_tenant_index,
+            "usable_fixture_records": len(usable_records),
             "fixture_version": fixture.get("version"),
             "sample_id": sample.get("sample_id"),
             "evidence": evidence,

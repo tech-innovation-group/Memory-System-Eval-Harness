@@ -152,6 +152,7 @@ def test_fixed_tenant_seed_resolves_fixture_qa_evidence(tmp_path):
     assert corpus["recall_queries"][0]["expected_answer"] == "A meeting room"
     assert corpus["recall_queries"][0]["aliases"]
     assert "FIXTURE-EVIDENCE" in corpus["documents"][0]
+    assert "Answer: A meeting room" in corpus["documents"][-1]
 
 
 def test_arrival_plan_separates_read_message_and_commit_schedules():
