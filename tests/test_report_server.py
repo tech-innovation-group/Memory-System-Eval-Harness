@@ -14,6 +14,8 @@ def test_latest_run_uses_run_timestamp_not_directory_mtime(tmp_path: Path):
 
 def test_report_server_allowlist_rejects_private_and_nested_files():
     assert public_file("/report.html") == "report.html"
+    assert public_file("/report.json") == "report.json"
+    assert public_file("/structured-stage-events.jsonl") == "structured-stage-events.jsonl"
     assert public_file("/status.json") is None
     assert public_file("/identities.private.json") is None
     assert public_file("/../identities.private.json") is None

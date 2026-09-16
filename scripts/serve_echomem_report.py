@@ -24,13 +24,16 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
 RUN_NAME = re.compile(r"pr(?P<pr>\d+)-(?P<stamp>\d{8}T\d{6}Z)$")
 PUBLIC_FILES = {
     "report.html",
+    "report.json",
     "robot-status.json",
     "summary.json",
     "suite.json",
     "execution-manifest.json",
     "git-revisions.txt",
     "metrics_samples.csv",
+    "structured-stage-events.jsonl",
 }
+PUBLIC_ALIASES = {"report.json": "summary.json"}
 
 
 def latest_run(runs_dir: Path, pr_number: Optional[int] = None) -> Optional[Path]:
@@ -60,8 +63,11 @@ class ReportHandler(BaseHTTPRequestHandler):
             self.send_error(404, "Report file is not ready")
             return
         body = path.read_bytes()
-        content_type = "text/html; charset=utf-8" if path.suffix == ".html" else (
-            "text/csv; charset=utf-8" if path.suffix == ".csv" else "application/json"
+        content_type = (
+            "text/html; charset=utf-8" if path.suffix == ".html" else
+            "text/csv; charset=utf-8" if path.suffix == ".csv" else
+            "application/x-ndjson" if path.suffix == ".jsonl" else
+            "application/json"
         )
         self.send_response(200)
         self.send_header("Content-Type", content_type)
@@ -88,7 +94,7 @@ class ReportHandler(BaseHTTPRequestHandler):
         if run is None:
             self.send_error(404, "No EchoMem run is available")
             return
-        self._send_file(run / requested)
+        self._send_file(run / PUBLIC_ALIASES.get(requested, requested))
 
     def log_message(self, format: str, *args) -> None:
         return
