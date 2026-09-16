@@ -1767,6 +1767,11 @@ def derive_new_findings(result: dict[str, Any]) -> list[dict[str, Any]]:
 
 def write_observation_report(result: dict[str, Any], path: Path) -> None:
     result.setdefault("new_findings", derive_new_findings(result))
+    empty_state = (
+        "等待真实样本：种子准备或负载窗口尚未完成"
+        if result.get("run_state") == "RUNNING"
+        else "本项未产生可用样本"
+    )
     def esc(value: Any) -> str:
         if isinstance(value, float):
             value = f"{value:.6g}"
@@ -1776,7 +1781,7 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
         head = "".join(f"<th>{esc(label)}</th>" for _, label in columns)
         body = "".join("<tr>" + "".join(f"<td>{esc(row.get(key))}</td>" for key, _ in columns) + "</tr>" for row in rows)
         if not body:
-            body = f'<tr><td colspan="{len(columns)}">暂无数据</td></tr>'
+            body = f'<tr><td colspan="{len(columns)}">{esc(empty_state)}</td></tr>'
         style = f" style='min-width:{int(min_width_px)}px'" if min_width_px else ""
         return f"<div class='scroll'><table{style}><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>"
 
@@ -1791,7 +1796,7 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             f"<div class='bar'><span>{esc(label)}</span><i><b class='{'worse' if signed and value > 0 else 'better'}' style='width:{min(100, 100 * abs(value) / maximum):.2f}%'></b></i><strong>{esc(round(value, 3))}</strong></div>"
             for label, value in normalized if value is not None
         )
-        return f"<h3>{esc(title)}</h3>{body or '<p>暂无数据</p>'}"
+        return f"<h3>{esc(title)}</h3>{body or '<p>' + esc(empty_state) + '</p>'}"
 
     def grouped_bars(title: str, groups: list[tuple[str, list[tuple[str, float | None]]]]) -> str:
         normalized = [
@@ -1851,7 +1856,7 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             f"<h3>{esc(title)}</h3><div class='outcome-legend'>"
             "<span class='served'>非空召回</span><span class='empty'>空召回</span>"
             "<span class='failed'>HTTP/传输/超时异常</span></div>"
-            f"{body or '<p>暂无数据</p>'}"
+            f"{body or '<p>' + esc(empty_state) + '</p>'}"
         )
 
     def paired_m1_stage_timings(metric: dict[str, Any]) -> dict[int, dict[str, Any]]:
@@ -1936,7 +1941,7 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
   const text = document.getElementById('live-seed-progress-text');
   const render = (counts, total) => {
     box.hidden = false;
-    text.textContent = `正在注入固定记忆：${total} 个租户；Commit 已完成 ${counts.completed || 0}，失败 ${counts.failed || 0}，等待终态 ${counts.pending || 0}。种子完成前不会发送压测 Search 请求，因此图表暂无请求分母。`;
+    text.textContent = `正在注入固定记忆：${total} 个租户；Commit 已完成 ${counts.completed || 0}，失败 ${counts.failed || 0}，等待终态 ${counts.pending || 0}。种子完成前不会发送压测 Search 请求，负载请求分母将在种子完成后生成。`;
   };
   const refresh = async () => {
     try {
@@ -1990,7 +1995,7 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
         ("api_base", "Endpoint"), ("status", "真实请求状态"),
         ("model_supported", "返回结构有效"), ("code", "HTTP"),
         ("elapsed_s", "预检耗时秒"), ("error", "失败原因"),
-    ], min_width_px=1100) if model_rows else "<p>没有可展示的模型预检明细。</p>"
+    ], min_width_px=1100) if model_rows else f"<p>{esc(empty_state)}；模型预检明细尚未写入。</p>"
     model_section = (
         "<section class='model-evidence'><h2>本次使用的模型</h2>"
         f"<p class='{model_class}'><b>{esc(model_verdict)}</b></p>"

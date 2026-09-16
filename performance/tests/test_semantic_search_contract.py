@@ -166,6 +166,19 @@ def test_report_exposes_memory_listing_and_recall_evidence_separately(tmp_path):
     assert "空列表与非空 Recall 可以同时出现" in html
 
 
+def test_running_report_labels_missing_samples_as_pending(tmp_path):
+    from performance.targets.echomem.acceptance.observation import evaluate_observation, write_observation_report
+    result = evaluate_observation({"runs": []}, {}, [], quick=False,
+                                  selected_metrics=["M1", "M2", "M3"])
+    result["run_state"] = "RUNNING"
+    path = tmp_path / "report.html"
+    write_observation_report(result, path)
+    html = path.read_text()
+    assert "等待真实样本：种子准备或负载窗口尚未完成" in html
+    assert "负载请求分母将在种子完成后生成" in html
+    assert "暂无数据" not in html
+
+
 @pytest.mark.parametrize("healthy", [True, False])
 def test_cached_validation_only_searches_current_returned_facts(healthy):
     from performance.targets.echomem.acceptance.capacity_seed import CapacityActor, validate_cached_actors
