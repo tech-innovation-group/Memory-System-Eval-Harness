@@ -40,7 +40,7 @@ METRIC_NAMES = {
 METRIC_PURPOSES = {
     "M1": "回答当前单实例实际承载多少热用户，以及不同业务画像下的流量等价 DAU。",
     "M2": "检查同档位租户是否获得接近等权的 Commit 吞吐和 Search 响应机会。",
-    "M3": "检查 Commit 洪泛期间，交互式 Search 的延迟、质量和可用性是否仍受保护。",
+    "M3": "检查 Commit 洪泛期间，交互式 Search 的延迟和服务可用性是否仍受保护；事实命中率仅作诊断。",
     "M4": "观察一个租户失败或变慢时，其他租户的 Search 尾延迟和错误是否被拖累。",
     "M5": "验证已返回 202 的 Commit 在 kill-9 后能否自主恢复，并保持消息、顺序和幂等一致。",
     "M6": "验证每个租户、每个处理层都能观测排队、等待、执行和拒绝四类数据。",
@@ -1936,6 +1936,8 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                 return round(value * 1000, 3) if value is not None else None
 
             visual = (
+                "<p><b>Search 成功统计：</b>HTTP 200 且返回非空、未被意图拒绝的 Recall 即计为成功。"
+                "事实/答案命中（quality_ok）仅作诊断，不参与 M1-M3 的通过、容量或公平性计算。</p>"
                 f"<p><b>客户端并发目标：</b>{esc(metric.get('required_concurrency'))}；"
                 f"<b>实测 Search 在途峰值：</b>{esc(metric.get('peak_inflight_requests'))}；"
                 f"<b>是否真正达到目标：</b>{esc(metric.get('concurrency_target_observed'))}。"
@@ -2481,7 +2483,9 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             f"<section><h2>{code} {esc(METRIC_NAMES[code])}</h2>"
             f"<p class='purpose'><b>反映什么：</b>{esc(METRIC_PURPOSES[code])}</p>"
             f"<p class='method'><b>测试方式：</b>{esc(METRIC_METHODS[code])}</p>"
-            f"<div class='metric-body metric-{code.lower()}'>{metric_body}</div></section>"
+            + ("<p class='method'><b>Search 成功统计：</b>HTTP 200 且返回非空、未被意图拒绝的 Recall；"
+               "事实/答案命中仅作诊断，不参与本项的通过、容量或公平性计算。</p>" if code in {"M2", "M3"} else "")
+            + f"<div class='metric-body metric-{code.lower()}'>{metric_body}</div></section>"
         )
     recommendations = derive_observation_recommendations(result)
     setup = result.get("setup_evidence") or {}
