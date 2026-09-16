@@ -826,7 +826,11 @@ def test_marker_failure_does_not_skip_fixed_semantic_questions():
             return SimpleNamespace(status_code=200, payload={"status": "completed"})
 
         def search(self, *args, **kwargs):
-            return SimpleNamespace(status_code=200, payload={"result": {"items": []}})
+            # The service can return a candidate without the seeded marker.
+            # That is a served Recall, but it is not marker visibility.
+            return SimpleNamespace(status_code=200, payload={"result": {
+                "items": [{"text": "unrelated candidate"}],
+            }})
 
         def get_commit_memories(self, *args):
             return SimpleNamespace(status_code=200, payload={"memories": []})
@@ -839,6 +843,7 @@ def test_marker_failure_does_not_skip_fixed_semantic_questions():
     result = seed_actor(CapacityActor(0, 0, UnitClient(), corpus),
                         checkpoint=lambda row: snapshots.append(len(row["queries"])))
     assert result["marker_visible"] is False
+    assert result["recall_served"] is True
     assert result["valid_semantic_queries"] == 40
     assert result["status"] == "PASS"
     assert 40 in snapshots

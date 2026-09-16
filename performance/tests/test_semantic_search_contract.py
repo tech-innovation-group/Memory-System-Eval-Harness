@@ -163,7 +163,8 @@ def test_report_exposes_memory_listing_and_recall_evidence_separately(tmp_path):
     write_observation_report(result, path)
     html = path.read_text()
     assert "Memory endpoint 证据" in html
-    assert "空列表与非空 Recall 可以同时出现" in html
+    assert "Memory endpoint 空列表表示该 Commit 没有报告抽取条目" in html
+    assert "marker/事实命中" in html
 
 
 def test_running_report_labels_missing_samples_as_pending(tmp_path):

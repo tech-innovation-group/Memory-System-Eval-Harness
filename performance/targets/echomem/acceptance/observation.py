@@ -1519,6 +1519,10 @@ def evaluate_observation(suite: dict[str, Any], profile: dict[str, Any],
         "seed_memory_unknown": sum(row.get("memory_observation") != "counted"
                                     for row in memory_observed_rows),
         "seed_memory_total": sum(memory_counts) if memory_counts else None,
+        "seed_recall_served_diagnostic": sum(bool(row.get("recall_served"))
+                                              for row in seed_actor_rows),
+        "seed_marker_visible": sum(bool(row.get("marker_visible"))
+                                    for row in seed_actor_rows),
         "seed_recall_queries": len(seed_queries),
         "seed_recall_served": sum(bool(row.get("recall_hit")) for row in seed_queries),
         "seed_recall_empty": sum(row.get("http_status") == 200 and not row.get("recall_hit")
@@ -2617,9 +2621,11 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
         f"{esc(setup.get('seed_memory_rows'))} 个租户，其中非空 "
         f"{esc(setup.get('seed_memory_nonempty'))}、空列表 "
         f"{esc(setup.get('seed_memory_empty'))}；同时种子 Recall HTTP 200 且非空 "
-        f"{esc(setup.get('seed_recall_served'))}/{esc(setup.get('seed_recall_queries'))}。"
-        "空列表与非空 Recall 可以同时出现，需结合 EchoMem 抽取日志判断是否为 extraction gap，"
-        "不能仅凭其中一项断言记忆注入失败。</p>"
+        f"{esc(setup.get('seed_recall_served'))}/{esc(setup.get('seed_recall_queries'))}；"
+        f"种子诊断非空候选 {esc(setup.get('seed_recall_served_diagnostic'))}，"
+        f"其中 marker/事实命中 {esc(setup.get('seed_marker_visible'))}。"
+        "Memory endpoint 空列表表示该 Commit 没有报告抽取条目；Search 非空只表示服务返回了候选，"
+        "两者同时出现时应标记为 extraction gap 候选，不能把它当作 marker 已命中。</p>"
         if setup.get("seed_memory_rows") else
         "<p class='method'>本轮没有可解析的 Memory endpoint 证据；不能从 HTTP 200 或 Commit completed 推断记忆已持久化，"
         "需先补采该端点或服务端抽取日志。</p>"
@@ -2635,6 +2641,8 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
         ("seed_memory_nonempty", "Memory endpoint 非空租户"),
         ("seed_memory_empty", "Memory endpoint 空列表租户"),
         ("seed_memory_total", "可解析记忆条目总数"),
+        ("seed_recall_served_diagnostic", "种子诊断非空候选"),
+        ("seed_marker_visible", "种子 marker/事实命中"),
         ("seed_recall_queries", "种子 Recall 预检数"),
         ("seed_recall_served", "种子非空 Recall"),
         ("seed_recall_empty", "种子 HTTP 200 空召回"),

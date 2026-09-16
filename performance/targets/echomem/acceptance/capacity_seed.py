@@ -318,15 +318,25 @@ def seed_actor(actor: CapacityActor, *, timeout_s: float = 180, checkpoint=None,
                          "query_type": "recall", "aliases": [marker]}
         result = client.search("", marker_question, timeout_s=10)
         check = assess_retrieval(result.payload, marker_sample)
-        row["marker_visible"] = result.status_code == 200 and check.get("recall_served", False)
+        # Keep transport/service availability separate from evidence quality.
+        # A non-empty candidate list can be unrelated to the seeded marker;
+        # calling that marker-visible made the seed report overstate injection
+        # success while still allowing Recall capacity to be measured.
+        row["recall_served"] = result.status_code == 200 and check.get("recall_served", False)
+        row["marker_visible"] = result.status_code == 200 and check.get("matched_expected_fact", False)
         row["marker_check"] = check
         save()
         memories = client.get_commit_memories(sid, archive)
         memory_body = _result_body(memories.payload)
+        row["memory_endpoint_http_status"] = memories.status_code
+        memory_kinds = memory_body.get("memory_kinds")
+        if isinstance(memory_kinds, list):
+            row["memory_kinds"] = [str(kind) for kind in memory_kinds]
         for field in ("memories", "items", "memory_ids"):
             value = memory_body.get(field)
             if memories.status_code == 200 and isinstance(value, list):
                 row["memory_count"] = len(value)
+                row["memory_count_field"] = field
                 break
         row["memory_observation"] = (
             "counted" if row["memory_count"] is not None else
