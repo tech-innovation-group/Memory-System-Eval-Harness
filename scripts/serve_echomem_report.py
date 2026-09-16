@@ -8,12 +8,11 @@ server resolves the newest run per request and exposes a small allowlist of
 public evidence files.
 """
 
-from __future__ import annotations
-
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import re
+from typing import Optional
 from urllib.parse import unquote, urlsplit
 
 
@@ -29,7 +28,7 @@ PUBLIC_FILES = {
 }
 
 
-def latest_run(runs_dir: Path, pr_number: int | None = None) -> Path | None:
+def latest_run(runs_dir: Path, pr_number: Optional[int] = None) -> Optional[Path]:
     candidates = []
     for path in runs_dir.iterdir() if runs_dir.is_dir() else ():
         if not path.is_dir():
@@ -37,11 +36,11 @@ def latest_run(runs_dir: Path, pr_number: int | None = None) -> Path | None:
         match = RUN_NAME.fullmatch(path.name)
         if not match or (pr_number is not None and int(match["pr"]) != pr_number):
             continue
-        candidates.append((match["stamp"], path.name, path))
+        candidates.append((match.group("stamp"), path.name, path))
     return max(candidates, default=None)[2] if candidates else None
 
 
-def public_file(path: str) -> str | None:
+def public_file(path: str) -> Optional[str]:
     requested = unquote(urlsplit(path).path).lstrip("/")
     if requested == "":
         requested = "report.html"
@@ -90,7 +89,7 @@ class ReportHandler(BaseHTTPRequestHandler):
         return
 
 
-def build_server(host: str, port: int, runs_dir: Path, pr_number: int | None) -> ThreadingHTTPServer:
+def build_server(host: str, port: int, runs_dir: Path, pr_number: Optional[int]) -> ThreadingHTTPServer:
     server = ThreadingHTTPServer((host, port), ReportHandler)
     server.report_config = {"runs_dir": runs_dir, "pr_number": pr_number}  # type: ignore[attr-defined]
     return server
