@@ -24,7 +24,9 @@ class ScopedProbeReportTest(unittest.TestCase):
             client.return_value.open_session.return_value = ('session', {})
             client.return_value.request_bytes.side_effect = request
             probe.run(ctx)
-        self.assertEqual(events[-3:], ['mcp', 'search', 'search'])
+        # The final small Search proves the instance is healthy after the
+        # boundary and MCP traffic; it runs after the two sized Search cases.
+        self.assertEqual(events[-4:], ['mcp', 'search', 'search', 'search'])
         detail = json.loads(ctx.check.call_args.kwargs['detail'])
         self.assertEqual(detail['cases_total'], 12)
         self.assertEqual(detail['cases_dispatched'], 12)

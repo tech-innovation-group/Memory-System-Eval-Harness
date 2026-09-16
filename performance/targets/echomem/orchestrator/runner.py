@@ -425,7 +425,7 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
                            reuse_seed=None, dataset_path="", sample_id="conv-30", session_key="session_1",
                            search_timeout_s=60, corpus_mode="locomo-single-session",
                            validation_queries=4, validation_query_ids=None,
-                           seed_workers=None, identity_cache=None):
+                           seed_workers=None, identity_cache=None, fragment_seed_file=""):
     """Observation workloads share remembered facts, not a bare-marker routing gate."""
     import uuid
     from performance.suite import SeedPreparationError
@@ -438,6 +438,7 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
     from performance.targets.echomem.acceptance.semantic_corpus import (
         DEFAULT_LOCOMO_DATASET,
         build_fixed_fact_corpus,
+        build_locomo_fragment_corpus,
         build_locomo_session_corpus,
     )
     from performance.targets.echomem.probes._client import EchoMemHTTP
@@ -445,8 +446,11 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
     validate_search_timeout(search_timeout_s)
     run_tag = uuid.uuid4().hex
     source_path = Path(dataset_path) if dataset_path else DEFAULT_LOCOMO_DATASET
-    if corpus_mode not in {"locomo-single-session", "fixed-natural-fact"}:
-        raise ValueError("corpus_mode must be locomo-single-session or fixed-natural-fact")
+    if corpus_mode not in {"locomo-single-session", "fixed-natural-fact", "locomo-fragment-file"}:
+        raise ValueError("corpus_mode must be locomo-single-session, fixed-natural-fact or locomo-fragment-file")
+    fragment_path = Path(fragment_seed_file) if fragment_seed_file else None
+    if corpus_mode == "locomo-fragment-file" and (fragment_path is None or not fragment_path.is_file()):
+        raise ValueError("locomo-fragment-file requires an existing fragment_seed_file")
     actors = []
     seed_source = corpus_mode
     if identity_cache:
@@ -469,14 +473,17 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
             raise RuntimeError("Semantic seed requires all independent tenant credentials")
         for index, spec in enumerate(specs):
             identity = f"formal-recall-{run_tag}-{index}"
-            corpus = (
-                build_fixed_fact_corpus(identity)
-                if corpus_mode == "fixed-natural-fact"
-                else build_locomo_session_corpus(
+            if corpus_mode == "fixed-natural-fact":
+                corpus = build_fixed_fact_corpus(identity)
+            elif corpus_mode == "locomo-fragment-file":
+                corpus = build_locomo_fragment_corpus(
+                    identity, seed_path=fragment_path, tenant_index=index,
+                )
+            else:
+                corpus = build_locomo_session_corpus(
                     identity, dataset_path=source_path, sample_id=sample_id,
                     session_key=session_key,
                 )
-            )
             actors.append(CapacityActor(
                 index, 0,
                 EchoMemHTTP(base_url, spec.auth_key, tenant_id=spec.tenant_id,
@@ -495,11 +502,14 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
         from performance.targets.echomem.acceptance.capacity_experiment import _load_actors
         cached, _ = _load_actors(Path(reuse_seed), base_url)
         seed_source = "validated-cache"
-        expected_contract = ("fixed-natural-fact-v1" if corpus_mode == "fixed-natural-fact"
-                             else "locomo-single-session-evidence-v1")
+        expected_contract = {
+            "fixed-natural-fact": "fixed-natural-fact-v1",
+            "locomo-single-session": "locomo-single-session-evidence-v1",
+            "locomo-fragment-file": "locomo-fragment-local-evidence-v1",
+        }[corpus_mode]
         incompatible = [a for a in cached if (
             a.corpus.get("query_contract") != expected_contract
-            or (corpus_mode != "fixed-natural-fact" and (
+            or (corpus_mode == "locomo-single-session" and (
                 (a.corpus.get("source") or {}).get("sample_id") != sample_id
                 or (a.corpus.get("source") or {}).get("session_key") != session_key
             ))
@@ -532,16 +542,21 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
                     query_cases={q["query"]: q for q in actor.corpus["recall_queries"]}) for actor in actors]
     counts = [{"documents": len(a.corpus["documents"]), "facts": len(a.corpus["facts"]),
                "queries": len(a.corpus["recall_queries"])} for a in actors]
+    query_contracts = sorted({str(a.corpus.get("query_contract") or "unknown") for a in actors})
+    source_kinds = sorted({str((a.corpus.get("source") or {}).get("kind") or "unknown") for a in actors})
+    fragment_files = sorted({str((a.corpus.get("source") or {}).get("seed_file") or "") for a in actors} - {""})
     def uniform_count(field):
         values = {row[field] for row in counts}
         return next(iter(values)) if len(values) == 1 else None
 
     return contexts, {"status": "completed", "tenant_count": max_tenants,
                       "identity_mode": "independent", "keys_independent": True,
-                      "seed_contract": "fixed-fact-in-items", "seed_evidence": evidence,
+                      "seed_contract": query_contracts[0] if len(query_contracts) == 1 else query_contracts,
+                      "seed_evidence": evidence,
                       "seed_source": seed_source,
                       "corpus_source": {"dataset": source_path.name, "sample_id": sample_id,
-                                        "session_key": session_key},
+                                        "session_key": session_key, "kinds": source_kinds,
+                                        "fragment_seed_files": fragment_files},
                       "probe_queries": {actor.client.tenant_id: actor.corpus["recall_queries"][0] for actor in actors},
                       "corpus_fingerprints": [actor.corpus["fingerprint"] for actor in actors],
                       "corpus_counts_by_tenant_index": counts,
@@ -690,6 +705,8 @@ def run_suite(
         "session_key": profile.get("semantic_seed_session", "session_1"),
         "search_timeout_s": profile.get("seed_search_timeout_s", 60),
     }
+    if profile.get("semantic_seed_fragment_file"):
+        seed_keywords["fragment_seed_file"] = profile["semantic_seed_fragment_file"]
     identity_cache = profile.get("semantic_seed_identity_cache")
     if identity_cache:
         seed_keywords["identity_cache"] = identity_cache

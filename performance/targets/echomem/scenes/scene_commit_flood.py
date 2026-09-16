@@ -58,9 +58,9 @@ def _do_one_commit(ctx, seq: int) -> dict:
     poll_result = poll_commit(ctx, sid, aid,
                               timeout_s=ctx.params.get("commit_poll_timeout_s", 120))
     return {
-        "status": poll_result.get("status", "unknown"),
-        "terminal": poll_result.get("terminal", False),
-        "timeout": poll_result.get("timeout", False),
+        "status": poll_result.status,
+        "terminal": poll_result.status in {"completed", "failed"},
+        "timeout": poll_result.status == "timeout",
         "e2e_ms": (time.time() - t0) * 1000,
         "sid": sid, "aid": aid, "seq": seq,
     }

@@ -107,6 +107,80 @@ def build_locomo_session_corpus(
     return result
 
 
+def build_locomo_fragment_corpus(
+    identity: str,
+    *,
+    seed_path: str | Path,
+    tenant_index: int,
+) -> dict:
+    """Build a tenant-local corpus from the reproducible LoCoMo fragment file.
+
+    The fixture's sampled question is not used as a quality assertion when it
+    refers to a different source conversation.  A stable marker is appended to
+    the actual injected fragment and queried through tenant-local text.
+    """
+    path = Path(seed_path)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    records = raw.get("tenants") if isinstance(raw, dict) else None
+    if not isinstance(records, list) or not records:
+        raise ValueError("LoCoMo fragment seed must contain a non-empty tenants list")
+    by_index: dict[int, dict] = {}
+    for record in records:
+        if not isinstance(record, dict):
+            raise ValueError("LoCoMo fragment seed contains a non-object tenant entry")
+        try:
+            index = int(record["tenant_index"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("LoCoMo fragment seed entry has no valid tenant_index") from exc
+        if index in by_index:
+            raise ValueError(f"LoCoMo fragment seed repeats tenant_index {index}")
+        by_index[index] = record
+    if sorted(by_index) != list(range(len(records))) or tenant_index not in by_index:
+        raise ValueError("LoCoMo fragment seed tenant indexes must be contiguous and available")
+    record = by_index[tenant_index]
+    text = str(record.get("inject_text") or "").strip()
+    if not text:
+        raise ValueError(f"LoCoMo fragment seed {tenant_index} has empty inject_text")
+    actual_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    if record.get("text_hash") and str(record["text_hash"]) != actual_hash:
+        raise ValueError(f"LoCoMo fragment seed {tenant_index} text_hash does not match inject_text")
+    if record.get("text_chars") is not None and int(record["text_chars"]) != len(text):
+        raise ValueError(f"LoCoMo fragment seed {tenant_index} text_chars does not match inject_text")
+    marker = f"LOCOMO-FRAGMENT-EVIDENCE-{hashlib.sha256(identity.encode()).hexdigest()[:12]}-{tenant_index}"
+    normalized = " ".join(text.split())
+    offsets = (0, max(0, len(normalized) // 3 - 80), max(0, 2 * len(normalized) // 3 - 80),
+               max(0, len(normalized) - 160))
+    prefixes = list(dict.fromkeys(normalized[offset:offset + 160] for offset in offsets
+                                  if normalized[offset:offset + 160]))
+    source = str(record.get("inject_source") or "unknown")
+    fact_id = f"locomo-fragment-{tenant_index}"
+    result = {
+        "documents": [f"{text}\nLocal evidence marker: {marker}."],
+        "facts": [{"id": fact_id, "source": source, "text_hash": actual_hash}],
+        "recall_queries": [{
+            "id": f"{fact_id}-local-evidence-{index}", "fact_id": fact_id,
+            "query": f"Retrieve this local {source} conversation fragment: {prefix}",
+            "query_type": "recall", "aliases": [marker], "match_policy": "all",
+            "evidence_ids": [f"fragment-{tenant_index}"],
+        } for index, prefix in enumerate(prefixes)],
+        "no_recall_queries": [{"id": f"no-recall-{index}", "query": value,
+                               "query_type": "no_recall", "aliases": []}
+                              for index, value in enumerate(NO_RECALL)],
+        "memory_scale": 1, "input_characters": len(text) + len(marker) + 25,
+        "query_contract": "locomo-fragment-local-evidence-v1",
+        "source": {"kind": "locomo-fragment-file", "seed_file": path.name,
+                   "seed_version": raw.get("version"), "tenant_index": tenant_index,
+                   "inject_source": source, "text_hash": actual_hash,
+                   "declared_query_source": str(record.get("query_source") or ""),
+                   "declared_query_is_local": str(record.get("query_source") or "") == source,
+                   "quality_assertion": "tenant-local-evidence-marker"},
+    }
+    result["fingerprint"] = hashlib.sha256(
+        json.dumps(result, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    return result
+
+
 def build_fixed_tenant_data_corpus(
     identity: str,
     *,

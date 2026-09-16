@@ -12,8 +12,15 @@ from performance.targets.echomem.acceptance.observation import (
 )
 from performance.targets.echomem.orchestrator.probes import run_configured_probes
 from performance.targets.echomem.orchestrator.report import render_objective_suite_html
-from performance.targets.echomem.probes.payload_boundary import _case_outcome, _poll_commit
+from performance.targets.echomem.probes.payload_boundary import (
+    _case_outcome,
+    _long_commit,
+    _natural_payload,
+    _poll_commit,
+)
 from performance.targets.echomem.probes.concurrency_topology import (
+    _CommitBacklog,
+    _SessionInflight,
     _capacity_levels,
     _commit_call,
     _generator_workers,
@@ -68,6 +75,61 @@ def test_fairness_and_percentile_are_deterministic() -> None:
     assert _capacity_levels([16, 32], 128) == [16, 32, 64, 128]
     assert _generator_workers(32, 16, 1, 2) == 32
     assert _generator_workers(32, 8, 4, 1) == 32
+
+
+def test_long_payloads_are_exact_length_and_keep_three_distinct_facts() -> None:
+    payload = _natural_payload(4096, "boundary")
+    assert len(payload) == 4096
+    assert "first fact" in payload
+    assert "middle fact" in payload
+    assert "last fact" in payload
+
+
+def test_long_commit_requires_first_middle_and_last_fact_readback() -> None:
+    class Client:
+        def open_session(self, *_args):
+            return "session-a", {}
+
+        def add_message(self, *_args):
+            return SimpleNamespace(status_code=201, elapsed_s=.01, reason_code="", transport_error_type="")
+
+        def commit(self, *_args, **_kwargs):
+            return SimpleNamespace(status_code=202, elapsed_s=.01, reason_code="", transport_error_type="",
+                                   payload={"archive_id": "archive-1"})
+
+        def commit_status(self, *_args):
+            return SimpleNamespace(status_code=200, elapsed_s=.01, reason_code="", transport_error_type="",
+                                   payload={"status": "completed"})
+
+        def search(self, *_args):
+            return SimpleNamespace(status_code=200, elapsed_s=.01, reason_code="", transport_error_type="",
+                                   payload={"items": [{"content": "the project owner is Rowan; the review room is Cedar; the approval code is ORBIT-47"}]})
+
+    result = _long_commit(Client(), "tenant-a", 4096, 1024, 1)
+    assert result["terminal"]["state"] == "completed"
+    assert result["semantic_readback"]["status"] == "PASS"
+    assert [sample["position"] for sample in result["semantic_readback"]["samples"]] == ["first", "middle", "last"]
+
+
+def test_session_and_commit_observers_keep_separate_peaks() -> None:
+    session = _SessionInflight()
+    backlog = _CommitBacklog()
+    assert session.call("s1", lambda: "ok") == "ok"
+    assert session.peaks == {"s1": 1}
+    backlog.accepted()
+    backlog.accepted()
+    assert backlog.peak == 2
+    backlog.resolved()
+    assert backlog.active == 1
+
+
+def test_user_jain_is_not_interpreted_for_too_few_users() -> None:
+    result = _summary([
+        {"tenant_id": "a", "user_id": "a", "http_status": 200, "elapsed_ms": 10.0},
+        {"tenant_id": "b", "user_id": "b", "http_status": 200, "elapsed_ms": 10.0},
+    ], 1.0)
+    assert result["fairness_user_count"] == 2
+    assert result["user_throughput_jain"] is None
 
 
 def test_search_2xx_requires_expected_fact_for_quality() -> None:

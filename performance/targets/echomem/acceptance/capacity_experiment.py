@@ -284,6 +284,7 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
                     session_keys: list[str] | None = None,
                     max_questions: int | None = None,
                     query_count: int | None = None,
+                    fragment_seed_file: str | None = None,
                     search_schedule: str = "poisson",
                     rewrite_queries: bool = False,
                     continue_after_congestion: bool = False,
@@ -351,7 +352,8 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
                                              session_key=session_key,
                                              session_keys=session_keys,
                                              max_questions=max_questions,
-                                             query_count=query_count), None))
+                                             query_count=query_count,
+                                             fragment_seed_file=fragment_seed_file), None))
     if reused_seed is not None:
         reused_actor_count = len(actors) if reused_seed is not None else None
     extension = []
@@ -366,7 +368,8 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
                                      session_key=session_key,
                                      session_keys=session_keys,
                                      max_questions=max_questions,
-                                     query_count=query_count)
+                                     query_count=query_count,
+                                     fragment_seed_file=fragment_seed_file)
         actors.extend(extension)
     if reused_seed is not None:
         actors = _select_reused_actors(

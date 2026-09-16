@@ -7,7 +7,7 @@ def test_explicit_extension_includes_full_contract_without_mutating_input():
     source = {"extended_load_tests": True, "payload_boundary": {"mcp_base_url": "http://localhost:8001"}}
     result = expand_extended_profile(source, ["M1", "M2", "M3"])
     assert "concurrency_topology" not in source
-    assert result["concurrency_topology"]["levels"] == [16, 64]
+    assert result["concurrency_topology"]["levels"] == [1, 8, 16, 64]
     assert result["concurrency_topology"]["stop_after_boundary"] is False
     assert len(result["payload_boundary"]["sizes_bytes"]) == 7
     assert result["payload_boundary"]["commit_content_chars"] == 1048576
@@ -16,6 +16,7 @@ def test_explicit_extension_includes_full_contract_without_mutating_input():
 @pytest.mark.parametrize("override", [
     {"payload_boundary": {}},
     {"concurrency_topology": {"levels": [16]}},
+    {"concurrency_topology": {"operation_modes": ["search"]}},
     {"concurrency_topology": {"stop_after_boundary": True}},
     {"payload_boundary": {"skip_mcp": True}},
     {"payload_boundary": {"skip_long_commit": True}},

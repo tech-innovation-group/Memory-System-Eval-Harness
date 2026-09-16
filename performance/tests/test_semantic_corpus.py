@@ -3,6 +3,7 @@
 from performance.targets.echomem.acceptance.semantic_corpus import (
     assess_retrieval,
     build_corpus,
+    build_locomo_fragment_corpus,
     build_locomo_session_corpus,
 )
 
@@ -75,6 +76,19 @@ def test_locomo_evidence_markers_are_tenant_specific_without_changing_questions(
     assert [row["query"] for row in first["recall_queries"]] == [
         row["query"] for row in second["recall_queries"]]
     assert first["recall_queries"][0]["aliases"] != second["recall_queries"][0]["aliases"]
+
+
+def test_locomo_fragment_file_uses_tenant_local_evidence_not_cross_source_question():
+    path = "performance/targets/echomem/profiles/seed-data-64-tenants.json"
+    first = build_locomo_fragment_corpus("tenant-a", seed_path=path, tenant_index=0)
+    second = build_locomo_fragment_corpus("tenant-b", seed_path=path, tenant_index=1)
+    assert first["source"]["kind"] == "locomo-fragment-file"
+    assert first["source"]["declared_query_is_local"] is False
+    assert len(first["recall_queries"]) == 4
+    assert first["recall_queries"][0]["aliases"] != second["recall_queries"][0]["aliases"]
+    assert "Audrey set up" not in first["recall_queries"][0]["query"]
+    assert assess_retrieval({"items": [{"content": first["recall_queries"][0]["aliases"][0]}]},
+                            first["recall_queries"][0])["quality_ok"] is True
 
 
 def test_locomo_multi_evidence_question_requires_every_source_memory():

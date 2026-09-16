@@ -16,6 +16,7 @@ from performance.targets.echomem.acceptance.semantic_corpus import (
     build_corpus,
     build_fixed_fact_corpus,
     build_fixed_tenant_data_corpus,
+    build_locomo_fragment_corpus,
     build_locomo_session_corpus,
 )
 from performance.targets.echomem.probes._client import EchoMemHTTP, extract_archive, status_from
@@ -165,7 +166,8 @@ def provision_actors(base_url: str, tenants: int, users: int, *, memory_scale: i
                      session_key: str = "session_1",
                      session_keys: list[str] | None = None,
                      max_questions: int | None = None,
-                     query_count: int | None = None) -> list[CapacityActor]:
+                     query_count: int | None = None,
+                     fragment_seed_file: str | None = None) -> list[CapacityActor]:
     """Only for a dedicated test deployment with public bootstrap enabled."""
     actors = []
     run_tag = uuid.uuid4().hex[:12]
@@ -199,6 +201,12 @@ def provision_actors(base_url: str, tenants: int, users: int, *, memory_scale: i
                 )
             elif corpus_mode == "fixed-natural-fact":
                 corpus = build_fixed_fact_corpus(identity)
+            elif corpus_mode == "locomo-fragment-file":
+                if not fragment_seed_file:
+                    raise ValueError("locomo-fragment-file requires fragment_seed_file")
+                corpus = build_locomo_fragment_corpus(
+                    identity, seed_path=fragment_seed_file, tenant_index=tenant_index,
+                )
             elif corpus_mode == "locomo-single-session":
                 chosen_sample = sample_id
                 chosen_session = session_key
@@ -226,7 +234,7 @@ def provision_actors(base_url: str, tenants: int, users: int, *, memory_scale: i
                 corpus = build_corpus(identity, seed=seed, memory_scale=memory_scale)
             else:
                 raise ValueError(
-                    "corpus_mode must be standard, fixed-tenant-data, fixed-natural-fact or locomo-single-session"
+                    "corpus_mode must be standard, fixed-tenant-data, fixed-natural-fact, locomo-single-session or locomo-fragment-file"
                 )
             actors.append(CapacityActor(tenant_index, user_index, client, corpus))
     return actors

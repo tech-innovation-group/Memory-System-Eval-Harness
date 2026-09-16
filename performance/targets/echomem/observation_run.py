@@ -76,6 +76,7 @@ def _public_profile(profile: dict[str, Any]) -> dict[str, Any]:
         "m1_search_workers", "m1_seed_validation_queries",
         "m1_seed_profile", "m1_seed_workers", "m1_within_fixed_tenants",
         "m1_seed_dataset", "m1_seed_sample", "m1_seed_session", "m1_seed_session_keys",
+        "m1_seed_fragment_file",
         "m1_seed_max_questions", "m1_seed_query_count",
         "m1_seed_timeout_s", "m1_seed_full_session", "m1_recovery_timeout_s",
         "m1_reuse_seed", "m1_reuse_preflight_checks",
@@ -88,7 +89,7 @@ def _public_profile(profile: dict[str, Any]) -> dict[str, Any]:
         "require_stage_observability",
         "preflight_config", "tenant_config",
         "semantic_seed_mode", "semantic_seed_validation_queries", "semantic_seed_validation_query_ids",
-        "semantic_seed_workers", "semantic_seed_identity_cache",
+        "semantic_seed_workers", "semantic_seed_identity_cache", "semantic_seed_fragment_file",
     }
     return {key: profile.get(key) for key in allowed if profile.get(key) not in (None, "")}
 
@@ -252,6 +253,7 @@ def _run_m1_profiles(profile: dict[str, Any], args: argparse.Namespace, output: 
             reuse_seed=_m1_reuse_seed(profile, topology),
             retry_failed=retry_failed,
             dataset_path=str(profile.get("m1_seed_dataset") or "") or None,
+            fragment_seed_file=str(profile.get("m1_seed_fragment_file") or "") or None,
             sample_id=str(profile.get("m1_seed_sample") or "conv-30"),
             session_key=str(profile.get("m1_seed_session") or "session_1"),
             session_keys=[str(item) for item in (profile.get("m1_seed_session_keys") or [])] or None,

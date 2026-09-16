@@ -72,8 +72,10 @@ def _probe_visual(key: str, payload: dict[str, Any]) -> str:
                 "<tr>"
                 f"<td>{html.escape(str(row.get('requested_concurrency') or row.get('level')))}</td>"
                 f"<td>{html.escape(str(row.get('topology')))}</td>"
+                f"<td>{html.escape(str(row.get('operation_mode') or '-'))}</td>"
                 f"<td>{html.escape(str(row.get('actual_users')))} / {html.escape(str(row.get('requested_users')))}</td>"
                 f"<td>{html.escape(str(row.get('peak_active_operations', '-')))}</td>"
+                f"<td>{html.escape(str(row.get('search_http_inflight_peak', '-')))} / {html.escape(str(row.get('commit_submit_http_inflight_peak', '-')))} / {html.escape(str(row.get('unfinished_commit_peak', '-')))}</td>"
                 f"<td>{html.escape(str(row.get('completed_2xx')))} / {html.escape(str(row.get('offered')))}</td>"
                 f"<td><div class='bar' style='width:{width:.1f}%'></div>{html.escape(str(row.get('p95_ms')))} ms</td>"
                 f"<td>{html.escape(str(row.get('throughput_rps_2xx')))}</td>"
@@ -84,6 +86,7 @@ def _probe_visual(key: str, payload: dict[str, Any]) -> str:
             )
         if rows:
             operation_rows = []
+            user_rows = []
             for row in matrix:
                 for op, values in (row.get("operations") or {}).items():
                     operation_rows.append("<tr>" + "".join(
@@ -94,15 +97,26 @@ def _probe_visual(key: str, payload: dict[str, Any]) -> str:
                             values.get("search_strict_throughput_jain") if op == "search" else values.get("commit_completion_throughput_jain"),
                             json.dumps(values.get("boundary_reasons") or {}, ensure_ascii=False),
                         )) + "</tr>")
-            return ("<table><thead><tr><th>并发档</th><th>拓扑</th><th>实际/请求用户</th>"
-                    "<th>峰值在途操作</th><th>2xx/总请求</th><th>操作 P95（含超时）</th><th>2xx受理吞吐</th>"
+                for user in row.get("users") or []:
+                    user_rows.append("<tr>" + "".join(
+                        f"<td>{html.escape(str(value))}</td>" for value in (
+                            row.get("level"), row.get("topology"), row.get("operation_mode"),
+                            user.get("user_id"), user.get("payload_classes"), user.get("offered"),
+                            user.get("strict_completed"), user.get("throughput_rps"), user.get("p95_ms"),
+                            row.get("user_throughput_jain"),
+                        )) + "</tr>")
+            return ("<table><thead><tr><th>并发档</th><th>拓扑</th><th>运行模式</th><th>实际/请求用户</th>"
+                    "<th>峰值在途操作</th><th>Search/Commit提交/未完成Commit 峰值</th><th>2xx/总请求</th><th>操作 P95（含超时）</th><th>2xx受理吞吐</th>"
                     "<th>受理 Jain（非完成公平性）</th><th>HTTP/传输分布</th><th>Commit 排空</th></tr></thead><tbody>"
                     + "".join(rows) + "</tbody></table>"
                     "<h4>按操作拆分（延迟单位 ms）</h4><p>Search 成功要求真实召回命中；Commit 成功要求最终 completed。"
                     "Jain 仅在有可比较的完成吞吐时展示，受理公平性不等于完成公平性。</p>"
                     "<table><thead><tr><th>档位</th><th>拓扑</th><th>操作</th><th>分母</th><th>P50</th><th>P95</th><th>P99</th>"
                     "<th>严格成功</th><th>完成吞吐 Jain</th><th>错误分类</th></tr></thead><tbody>"
-                    + "".join(operation_rows) + "</tbody></table>")
+                    + "".join(operation_rows) + "</tbody></table>"
+                    "<h4>逐 user 公平性（异构用户按请求类型分组）</h4><p>少于 4 个 user 的窗口只作为基线，不展示 Jain 公平性结论。</p>"
+                    "<table><thead><tr><th>档位</th><th>拓扑</th><th>模式</th><th>user</th><th>请求类别</th><th>分母</th><th>严格完成</th><th>吞吐</th><th>P95</th><th>该窗口 user Jain</th></tr></thead><tbody>"
+                    + "".join(user_rows) + "</tbody></table>")
     if key == "payload_boundary":
         cases = detail.get("cases") if isinstance(detail.get("cases"), list) else []
         rows = []
@@ -129,7 +143,7 @@ def _probe_visual(key: str, payload: dict[str, Any]) -> str:
             return (chart + "<table><thead><tr><th>API</th><th>编码</th><th>内容字节</th>"
                     "<th>Wire 字节</th><th>发送状态</th><th>结果</th><th>原因类型</th><th>边界判定</th><th>耗时</th>"
                     "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
-                    f"<pre>{html.escape(json.dumps({'long_commit': detail.get('long_commit'), 'mcp_add_memory': detail.get('mcp_add_memory')}, ensure_ascii=False, indent=2))}</pre>")
+                    f"<pre>{html.escape(json.dumps({'long_commits': detail.get('long_commits') or [detail.get('long_commit')], 'mcp_add_memory': detail.get('mcp_add_memory'), 'post_boundary_search': detail.get('post_boundary_search')}, ensure_ascii=False, indent=2))}</pre>")
     return ""
 
 

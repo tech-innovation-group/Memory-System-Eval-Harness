@@ -163,6 +163,12 @@ def _resolve_profile(profile: dict[str, Any], profiles_path: Path) -> dict[str, 
         "semantic_seed_identity_cache": resolve_relative_to(
             str(profile.get("semantic_seed_identity_cache") or ""), profiles_dir
         ),
+        "semantic_seed_fragment_file": resolve_relative_to(
+            str(profile.get("semantic_seed_fragment_file") or ""), profiles_dir
+        ),
+        "m1_seed_fragment_file": resolve_relative_to(
+            str(profile.get("m1_seed_fragment_file") or ""), profiles_dir
+        ),
     }
 
 

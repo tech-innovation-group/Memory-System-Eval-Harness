@@ -27,9 +27,20 @@ from performance.targets.echomem.protocol import (
     WRITE_ANCHOR_PREFIX,
 )
 
-_barrier = threading.Barrier
 _ready: list[dict] = []  # 每租户预提交的 session 信息
 _lock = threading.Lock()
+_barriers: dict[tuple[int, int], threading.Barrier] = {}
+
+
+def _shared_barrier(ctx) -> threading.Barrier:
+    """One barrier per active scene parameter object, shared by all tenants."""
+    key = (id(ctx.params), ctx.tenant_count)
+    with _lock:
+        barrier = _barriers.get(key)
+        if barrier is None or barrier.broken:
+            barrier = threading.Barrier(ctx.tenant_count)
+            _barriers[key] = barrier
+        return barrier
 
 
 def _prepare_session(ctx) -> dict:
@@ -68,11 +79,7 @@ def task_write_barrier(ctx) -> None:
         _ready.append(info)
 
     # 同步屏障：等所有租户写完消息
-    barrier = _barrier(1)
-    try:
-        barrier = _barrier(ctx.params.get("tenants", 1))
-    except Exception:
-        pass
+    barrier = _shared_barrier(ctx)
     try:
         barrier.wait(timeout=30)
     except threading.BrokenBarrierError:
@@ -95,9 +102,9 @@ def task_write_barrier(ctx) -> None:
     e2e_ms = (time.time() - t0) * 1000
     ctx.note(
         commit_e2e_ms=e2e_ms,
-        commit_status=poll_result.get("status", "unknown"),
-        commit_terminal=poll_result.get("terminal", False),
-        commit_timeout=poll_result.get("timeout", False),
+        commit_status=poll_result.status,
+        commit_terminal=poll_result.status in {"completed", "failed"},
+        commit_timeout=poll_result.status == "timeout",
         session_id=info["session_id"],
         archive_id=aid,
     )
