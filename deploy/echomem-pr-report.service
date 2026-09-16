@@ -1,0 +1,16 @@
+[Unit]
+Description=EchoMem PR report server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 /opt/echomem-pr-bot/serve_echomem_report.py --runs-dir /opt/echomem-pr-bot/runs --pr 33 --host 127.0.0.1 --port 18181
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
