@@ -16,6 +16,7 @@ def test_report_server_allowlist_rejects_private_and_nested_files():
     assert public_file("/report.html") == "report.html"
     assert public_file("/report.json") == "report.json"
     assert public_file("/structured-stage-events.jsonl") == "structured-stage-events.jsonl"
+    assert public_file("/M1/cross-tenant/seed-progress.json") == "M1/cross-tenant/seed-progress.json"
     assert public_file("/status.json") is None
     assert public_file("/identities.private.json") is None
     assert public_file("/../identities.private.json") is None

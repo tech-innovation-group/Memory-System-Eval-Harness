@@ -32,6 +32,9 @@ PUBLIC_FILES = {
     "git-revisions.txt",
     "metrics_samples.csv",
     "structured-stage-events.jsonl",
+    # The report's browser-side progress panel polls this one sanitized,
+    # non-credential seed status file while the formal run is in progress.
+    "M1/cross-tenant/seed-progress.json",
 }
 PUBLIC_ALIASES = {"report.json": "summary.json"}
 
