@@ -9,11 +9,16 @@ public evidence files.
 """
 
 import argparse
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import re
+from socketserver import ThreadingMixIn
 from typing import Optional
 from urllib.parse import unquote, urlsplit
+
+
+class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
+    daemon_threads = True
 
 
 RUN_NAME = re.compile(r"pr(?P<pr>\d+)-(?P<stamp>\d{8}T\d{6}Z)$")
