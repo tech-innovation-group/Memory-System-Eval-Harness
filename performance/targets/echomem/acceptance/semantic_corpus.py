@@ -353,7 +353,7 @@ def _answer_match(text: str, answer: str) -> bool:
     # English answer. Require every meaningful answer token rather than a
     # brittle contiguous phrase, while leaving Chinese answers on the exact
     # normalized path above.
-    answer_tokens = re.findall(r"[a-z0-9]+", _normalized(answer))
+    answer_tokens = re.findall(r"[a-z0-9]+", unicodedata.normalize("NFKC", answer).casefold())
     if not answer_tokens:
         return False
     stop_words = {"a", "an", "and", "are", "as", "at", "be", "because", "by", "for",
