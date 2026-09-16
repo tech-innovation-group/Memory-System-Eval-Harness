@@ -439,17 +439,42 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
             int(row.get("input_characters") or 0) for row in seed_rows if isinstance(row, dict)
         )
     report["seed"] = seeded
-    _write(output / "seed-evidence.json", seeded)
     if persist_private_identities:
         _write(output / "identities.private.json", _private_actors(actors), private=True)
-    if seeded["status"] != "PASS":
-        # A failed seed has no valid write_session or Recall fact to measure.
-        # Continuing would turn setup failures into misleading 400s and empty
-        # Search responses inside the workload denominator.
+    # Keep failed seed rows in the evidence denominator, but never send their
+    # missing session/recall state into a load window. A partial seed is useful
+    # when independent tenants are healthy; only zero healthy actors blocks M1.
+    healthy_coordinates = {
+        (int(row.get("tenant_index")), int(row.get("user_index", 0)))
+        for row in seed_rows
+        if isinstance(row, dict) and row.get("status") == "PASS"
+    }
+    # A PASS result with no actor rows is accepted for lightweight callers that
+    # supply their own prepared actor state (and keeps the load phase testable).
+    # Real seed preparation always emits one row per actor.
+    has_seed_rows = bool(seed_rows)
+    failed_seed_count = len(actors) - len(healthy_coordinates) if has_seed_rows else 0
+    if failed_seed_count:
+        actors = [actor for actor in actors
+                  if (actor.tenant_index, actor.user_index) in healthy_coordinates]
+        seeded["status"] = "PARTIAL"
+        seeded["failed_actor_count"] = failed_seed_count
+        seeded["healthy_actor_count"] = len(actors)
+        report["seed_status"] = "PARTIAL"
+        report["seed_failed_actor_count"] = failed_seed_count
+        report["seed_healthy_actor_count"] = len(actors)
+    if not actors:
         report.update(status="BLOCKED", phase="semantic-seed",
-                      stop_reason="semantic-seed-failed")
+                      stop_reason="semantic-seed-no-healthy-actors")
+        report["seed"] = seeded
+        _write(output / "seed-evidence.json", seeded)
         _write(output / "report.json", report)
         return report
+
+    # Write after partial-seed accounting so live and final evidence expose the
+    # same denominator and healthy actor counts.
+    report["seed"] = seeded
+    _write(output / "seed-evidence.json", seeded)
 
     resources, phase = [], {"name": "idle", "level": None}
     stop = threading.Event()

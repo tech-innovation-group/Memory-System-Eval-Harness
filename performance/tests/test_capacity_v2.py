@@ -98,7 +98,7 @@ def test_reused_seed_preflight_blocks_before_load_on_auth_failure():
     assert result["checks"][0]["error_class"] == "RuntimeError"
 
 
-def test_new_seed_failure_blocks_before_load(monkeypatch, tmp_path):
+def test_new_seed_with_no_healthy_actor_blocks_before_load(monkeypatch, tmp_path):
     actor = SimpleNamespace(tenant_index=0, user_index=0)
     monkeypatch.setattr(capacity_experiment, "provision_actors", lambda *args, **kwargs: [actor])
     monkeypatch.setattr(
@@ -119,7 +119,36 @@ def test_new_seed_failure_blocks_before_load(monkeypatch, tmp_path):
 
     assert result["status"] == "BLOCKED"
     assert result["phase"] == "semantic-seed"
-    assert result["stop_reason"] == "semantic-seed-failed"
+    assert result["stop_reason"] == "semantic-seed-no-healthy-actors"
+
+
+def test_partial_seed_keeps_healthy_actors_for_load(monkeypatch, tmp_path):
+    actors = [
+        SimpleNamespace(tenant_index=0, user_index=0, write_session="live"),
+        SimpleNamespace(tenant_index=1, user_index=0, write_session=""),
+    ]
+    monkeypatch.setattr(capacity_experiment, "provision_actors", lambda *args, **kwargs: actors)
+    monkeypatch.setattr(
+        capacity_experiment,
+        "prepare_actors",
+        lambda *args, **kwargs: {"status": "SEED_FAILED", "actors": [
+            {"tenant_index": 0, "user_index": 0, "status": "PASS"},
+            {"tenant_index": 1, "user_index": 0, "status": "INCONCLUSIVE"},
+        ]},
+    )
+    monkeypatch.setattr(capacity_experiment, "measure", lambda selected, **kwargs: {
+        "rows": [], "mixed": False, "duration_s": 1, "identity_count": len(selected),
+        "tenant_count": len(selected),
+    })
+    result = run_exploration(
+        base_url="http://example.test", output=tmp_path / "partial", topology="cross-tenant",
+        levels=[1, 2], load_profile="search", persist_private_identities=False,
+        warmup_s=0, duration_s=0,
+    )
+    assert result["seed_status"] == "PARTIAL"
+    assert result["seed_failed_actor_count"] == 1
+    assert result["seed_healthy_actor_count"] == 1
+    assert result["levels"][0]["tenant_count"] == 1
 
 
 def test_fixed_tenant_seed_resolves_fixture_qa_evidence(tmp_path):
