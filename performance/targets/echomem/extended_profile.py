@@ -8,14 +8,14 @@ def expand_extended_profile(profile, selected):
         return result
     if not {"M1", "M2", "M3"}.issubset(selected):
         raise ValueError("extended_load_tests requires M1,M2,M3")
-    topology = {"enabled": True, "levels": [16, 64], "max_concurrency": 64,
+    topology = {"enabled": True, "levels": [1, 8, 16, 64], "max_concurrency": 64,
                 "requests_per_level": 128, "sessions_per_user": 2,
                 "within_session_concurrency": 4, "stop_after_boundary": False,
                 "require_recall_quality": True, "large_commit_chars": 65536,
                 "commit_poll_timeout_s": 120,
                 **result.get("concurrency_topology", {})}
-    if not topology.get("enabled") or not {16, 64}.issubset(topology.get("levels", [])):
-        raise ValueError("extended_load_tests must include enabled 16/64 topology tests")
+    if not topology.get("enabled") or not {1, 64}.issubset(topology.get("levels", [])):
+        raise ValueError("extended_load_tests must include enabled 1/64 topology tests")
     if topology.get("stop_after_boundary") or topology.get("topologies"):
         raise ValueError("extended_load_tests must retain all four topologies and both levels")
     payload = {"enabled": True, "sizes_bytes": [0, 1, 1024, 65536, 262144, 524288, 1048576],

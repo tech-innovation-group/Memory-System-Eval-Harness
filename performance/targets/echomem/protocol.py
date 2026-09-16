@@ -79,8 +79,30 @@ def recall_quality(payload: Any, marker: str = "", query_type: str = "recall") -
 #  端点级函数：一个函数 = 一个 EchoMem HTTP 端点                         #
 # --------------------------------------------------------------------- #
 
+def _extract_layer_timing(resp: Response) -> dict:
+    """Extract per-module timing from EchoMem response headers (方案A).
+
+    Returns a dict with keys like intent_ms / embedding_ms / retrieval_ms /
+    rerank_ms / assembly_ms, defaulting to 0 when headers are absent.
+    """
+    timing = {}
+    for key, header in (
+        ("intent_ms", "X-EchoMem-Intent-Ms"),
+        ("embedding_ms", "X-EchoMem-Embedding-Ms"),
+        ("retrieval_ms", "X-EchoMem-Retrieval-Ms"),
+        ("rerank_ms", "X-EchoMem-Rerank-Ms"),
+        ("assembly_ms", "X-EchoMem-Assembly-Ms"),
+    ):
+        val = resp.raw_headers.get(header, resp.raw_headers.get(header.lower(), "")) if hasattr(resp, "raw_headers") else ""
+        try:
+            timing[key] = int(val) if val else 0
+        except (ValueError, TypeError):
+            timing[key] = 0
+    return timing
+
+
 def search(ctx: Ctx, query: str, *, top_k: int = 5) -> Response:
-    """POST /api/retrieval/search 并记录质量断言字段。
+    """POST /api/retrieval/search 并记录质量断言字段与分层耗时。
 
     HTTP 错误记 error；200 但空结果、错误标记或降级均不能通过召回质量断言。
     """
@@ -96,6 +118,10 @@ def search(ctx: Ctx, query: str, *, top_k: int = 5) -> Response:
         op="read",
         query=query,
     )
+    # 分层耗时采集（方案A: Response Header）
+    layer_timing = _extract_layer_timing(resp)
+    if any(layer_timing.values()):
+        ctx.note(**layer_timing)
     marker = anchor_marker(query)
     payload = resp.json if isinstance(resp.json, dict) else {}
     ctx.note(trace_ref=response_trace_ref(payload))
