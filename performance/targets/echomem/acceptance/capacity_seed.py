@@ -15,6 +15,7 @@ from performance.targets.echomem.acceptance.semantic_corpus import (
     assess_retrieval,
     build_corpus,
     build_fixed_fact_corpus,
+    build_fixed_tenant_data_corpus,
     build_locomo_session_corpus,
 )
 from performance.targets.echomem.probes._client import EchoMemHTTP, extract_archive, status_from
@@ -188,7 +189,15 @@ def provision_actors(base_url: str, tenants: int, users: int, *, memory_scale: i
             client = EchoMemHTTP(base_url, auth_key, timeout_s=20, tenant_id=tenant,
                                  user_id=user, account_id=tenant, agent_id=f"capacity-{run_tag}")
             identity = f"tenant-{tenant_index}/user-{user_index}"
-            if corpus_mode == "fixed-natural-fact":
+            if corpus_mode == "fixed-tenant-data":
+                if not dataset_path:
+                    raise ValueError("fixed-tenant-data requires a seed data path")
+                corpus = build_fixed_tenant_data_corpus(
+                    identity,
+                    seed_data_path=dataset_path,
+                    fixture_index=tenant_index * users + user_index,
+                )
+            elif corpus_mode == "fixed-natural-fact":
                 corpus = build_fixed_fact_corpus(identity)
             elif corpus_mode == "locomo-single-session":
                 chosen_sample = sample_id
@@ -217,7 +226,7 @@ def provision_actors(base_url: str, tenants: int, users: int, *, memory_scale: i
                 corpus = build_corpus(identity, seed=seed, memory_scale=memory_scale)
             else:
                 raise ValueError(
-                    "corpus_mode must be standard, fixed-natural-fact or locomo-single-session"
+                    "corpus_mode must be standard, fixed-tenant-data, fixed-natural-fact or locomo-single-session"
                 )
             actors.append(CapacityActor(tenant_index, user_index, client, corpus))
     return actors

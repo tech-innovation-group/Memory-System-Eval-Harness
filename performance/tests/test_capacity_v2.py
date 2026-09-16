@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from performance.targets.echomem.acceptance.capacity_load import arrival_plan, measure, query_for
+from performance.targets.echomem.acceptance import capacity_experiment
 from performance.targets.echomem.acceptance.capacity_experiment import (
     _select_reused_actors,
     _validate_reused_sessions,
@@ -16,7 +17,10 @@ from performance.targets.echomem.acceptance.capacity_statistics import (
     search_summary,
     wilson,
 )
-from performance.targets.echomem.acceptance.semantic_corpus import build_corpus
+from performance.targets.echomem.acceptance.semantic_corpus import (
+    build_corpus,
+    build_fixed_tenant_data_corpus,
+)
 from performance.targets.echomem.acceptance.capacity_report import render
 from performance.targets.echomem.acceptance.capacity_publish import redacted_resources, seed_summary
 from performance.targets.echomem.acceptance.capacity_recovery import crash_reason, observe_recovery
@@ -92,6 +96,62 @@ def test_reused_seed_preflight_blocks_before_load_on_auth_failure():
     assert result["status"] == "BLOCKED"
     assert result["reason"] == "reused-seed-auth-or-session-invalid"
     assert result["checks"][0]["error_class"] == "RuntimeError"
+
+
+def test_new_seed_failure_blocks_before_load(monkeypatch, tmp_path):
+    actor = SimpleNamespace(tenant_index=0, user_index=0)
+    monkeypatch.setattr(capacity_experiment, "provision_actors", lambda *args, **kwargs: [actor])
+    monkeypatch.setattr(
+        capacity_experiment,
+        "prepare_actors",
+        lambda *args, **kwargs: {"status": "SEED_FAILED", "actors": [{"status": "INCONCLUSIVE"}]},
+    )
+    monkeypatch.setattr(
+        capacity_experiment,
+        "measure",
+        lambda *args, **kwargs: pytest.fail("load must not start after a failed seed"),
+    )
+
+    result = run_exploration(
+        base_url="http://example.test", output=tmp_path / "m1", topology="cross-tenant",
+        levels=[1], load_profile="search", persist_private_identities=False,
+    )
+
+    assert result["status"] == "BLOCKED"
+    assert result["phase"] == "semantic-seed"
+    assert result["stop_reason"] == "semantic-seed-failed"
+
+
+def test_fixed_tenant_seed_resolves_fixture_qa_evidence(tmp_path):
+    fixture = tmp_path / "seed.json"
+    fixture.write_text(json.dumps({
+        "version": "test",
+        "tenants": [{
+            "tenant_index": 0,
+            "search_query": "What was recorded?",
+            "expected_answer": "A meeting room",
+        }],
+    }), encoding="utf-8")
+    dataset = tmp_path / "locomo.json"
+    dataset.write_text(json.dumps([{
+        "sample_id": "conv-test",
+        "conversation": {"session_1": [{
+            "dia_id": "D1:1", "speaker": "A", "text": "A meeting room was reserved.",
+        }]},
+        "qa": [{
+            "question": "What was recorded?", "answer": "A meeting room", "evidence": ["D1:1"],
+        }],
+    }]), encoding="utf-8")
+
+    corpus = build_fixed_tenant_data_corpus(
+        "tenant-0/user-0", seed_data_path=fixture, fixture_index=0,
+        locomo_dataset_path=dataset,
+    )
+
+    assert corpus["source"]["kind"] == "fixed-tenant-data"
+    assert corpus["recall_queries"][0]["expected_answer"] == "A meeting room"
+    assert corpus["recall_queries"][0]["aliases"]
+    assert "FIXTURE-EVIDENCE" in corpus["documents"][0]
 
 
 def test_arrival_plan_separates_read_message_and_commit_schedules():

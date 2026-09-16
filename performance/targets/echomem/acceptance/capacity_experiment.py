@@ -439,8 +439,12 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
     _write(output / "seed-evidence.json", seeded)
     if persist_private_identities:
         _write(output / "identities.private.json", _private_actors(actors), private=True)
-    if seeded["status"] != "PASS" and assessment_mode == "slo":
-        report.update(status="BLOCKED", phase="semantic-seed")
+    if seeded["status"] != "PASS":
+        # A failed seed has no valid write_session or Recall fact to measure.
+        # Continuing would turn setup failures into misleading 400s and empty
+        # Search responses inside the workload denominator.
+        report.update(status="BLOCKED", phase="semantic-seed",
+                      stop_reason="semantic-seed-failed")
         _write(output / "report.json", report)
         return report
 

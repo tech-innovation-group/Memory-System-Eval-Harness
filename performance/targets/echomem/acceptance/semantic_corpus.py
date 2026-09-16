@@ -107,6 +107,110 @@ def build_locomo_session_corpus(
     return result
 
 
+def build_fixed_tenant_data_corpus(
+    identity: str,
+    *,
+    seed_data_path: str | Path,
+    fixture_index: int,
+    locomo_dataset_path: str | Path = DEFAULT_LOCOMO_DATASET,
+) -> dict:
+    """Build one auditable corpus from the fixed tenant seed/QA fixture.
+
+    The fixture stores a question and expected answer, while its abbreviated
+    ``inject_text`` is not guaranteed to include the question's evidence.
+    Resolve the exact LoCoMo evidence messages at injection time and attach
+    deterministic markers so each Search has an observable positive contract.
+    """
+    fixture = json.loads(Path(seed_data_path).read_text(encoding="utf-8"))
+    records = fixture.get("tenants") if isinstance(fixture, dict) else None
+    if not isinstance(records, list) or not records:
+        raise ValueError("fixed tenant seed data must contain a non-empty tenants list")
+    if fixture_index < 0 or fixture_index >= len(records):
+        raise ValueError(f"fixed tenant seed index is unavailable: {fixture_index}")
+    record = records[fixture_index]
+    if not isinstance(record, dict) or int(record.get("tenant_index", -1)) != fixture_index:
+        raise ValueError(f"fixed tenant seed record is invalid: {fixture_index}")
+    question = str(record.get("search_query") or "").strip()
+    if not question:
+        raise ValueError(f"fixed tenant seed query is missing: {fixture_index}")
+
+    raw = json.loads(Path(locomo_dataset_path).read_text(encoding="utf-8"))
+    samples = raw if isinstance(raw, list) else [raw]
+    selected = next(
+        ((sample, qa) for sample in samples if isinstance(sample, dict)
+         for qa in sample.get("qa") or []
+         if isinstance(qa, dict) and str(qa.get("question") or "") == question),
+        None,
+    )
+    if selected is None:
+        raise ValueError(f"fixed tenant QA is absent from LoCoMo: {fixture_index}")
+    sample, qa = selected
+    expected = str(record.get("expected_answer") or "")
+    if expected != str(qa.get("answer") or ""):
+        raise ValueError(f"fixed tenant QA answer mismatch: {fixture_index}")
+    evidence = [str(value) for value in qa.get("evidence") or []]
+    if not evidence:
+        raise ValueError(f"fixed tenant QA has no evidence: {fixture_index}")
+
+    conversations = sample.get("conversation") or {}
+    identity_tag = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
+    documents, markers = [], []
+    for evidence_id in evidence:
+        session_number = evidence_id.split(":", 1)[0].removeprefix("D")
+        messages = conversations.get(f"session_{session_number}") or []
+        message = next(
+            (item for item in messages if isinstance(item, dict)
+             and str(item.get("dia_id") or "") == evidence_id),
+            None,
+        )
+        if message is None:
+            raise ValueError(f"fixed tenant evidence is missing: {fixture_index}/{evidence_id}")
+        marker = f"FIXTURE-EVIDENCE-{identity_tag}-{evidence_id.replace(':', '-')}"
+        content = " ".join(
+            str(message.get(key) or "").strip()
+            for key in ("speaker", "text", "blip_caption", "query")
+            if message.get(key)
+        )
+        if not content:
+            raise ValueError(f"fixed tenant evidence is empty: {fixture_index}/{evidence_id}")
+        documents.append(f"{content} Evidence marker: {marker}.")
+        markers.append(marker)
+
+    fact_id = f"fixture-{fixture_index}-qa"
+    no_recall = [{"id": f"no-recall-{index}", "query": text,
+                  "query_type": "no_recall", "aliases": []}
+                 for index, text in enumerate(NO_RECALL)]
+    result = {
+        "documents": documents,
+        "facts": [{"id": fact_id, "answer": expected, "evidence": evidence}],
+        "recall_queries": [{
+            "id": fact_id,
+            "fact_id": fact_id,
+            "query": question,
+            "query_type": "recall",
+            "aliases": markers,
+            "match_policy": "all",
+            "expected_answer": expected,
+            "evidence_ids": evidence,
+        }],
+        "no_recall_queries": no_recall,
+        "memory_scale": 1,
+        "input_characters": sum(map(len, documents)),
+        "query_contract": "fixed-tenant-data-locomo-evidence-v1",
+        "source": {
+            "kind": "fixed-tenant-data",
+            "fixture_index": fixture_index,
+            "fixture_version": fixture.get("version"),
+            "sample_id": sample.get("sample_id"),
+            "evidence": evidence,
+        },
+    }
+    result["fingerprint"] = hashlib.sha256(
+        json.dumps(result, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    return result
+
+
 def build_fixed_fact_corpus(identity: str) -> dict:
     """Build one small, natural-language memory for bounded load tests.
 
