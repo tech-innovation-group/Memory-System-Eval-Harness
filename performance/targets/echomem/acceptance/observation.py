@@ -1952,9 +1952,14 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
     )
     cards = "".join(
         f"<article><b>{code}</b><h2>{esc(METRIC_NAMES[code])}</h2>"
-        f"<span class='{metric['status']}'>{metric['status']}</span>"
-        f"<p>{esc(METRIC_PURPOSES[code])}</p><small>{esc(metric.get('reason'))}</small></article>"
+        f"<span class='{status}'>{label}</span>"
+        f"<p>{esc(METRIC_PURPOSES[code])}</p><small>{esc(reason)}</small></article>"
         for code, metric in ordered_metrics.items() if code in selected
+        for status, label, reason in [
+            ("PARTIAL", "进行中", "等待种子与负载样本")
+            if result.get("run_state") == "RUNNING" and metric.get("status") == "BLOCKED"
+            else (metric["status"], metric["status"], metric.get("reason"))
+        ]
     )
     sections = []
     for code, metric in ordered_metrics.items():
