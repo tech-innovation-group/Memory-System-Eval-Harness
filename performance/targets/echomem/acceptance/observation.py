@@ -100,6 +100,14 @@ def _request_stats(rows: list[dict[str, Any]], op: str = "read") -> dict[str, An
     quality_observed = [row for row in selected if str(row.get("quality_ok", "")).lower() in {"true", "false"}]
     quality_ok = [row for row in quality_observed if row.get("status") == "ok"
                   and _truth(row.get("quality_ok")) and not _truth(row.get("degraded"))]
+    # Empty Recall is only classifiable when the transport recorded a numeric
+    # hit count. Legacy records may omit both ``hit_count`` and
+    # ``recall_served``; treating those missing fields as zero created false
+    # baseline-health failures in M3 evidence summaries.
+    known_hit_counts = [
+        row for row in selected
+        if _number(row.get("hit_count")) is not None
+    ]
     return {
         "planned_or_recorded": len(selected),
         "completed": len(selected),
@@ -124,7 +132,8 @@ def _request_stats(rows: list[dict[str, Any]], op: str = "read") -> dict[str, An
         "quality_ok": len(quality_ok),
         "quality_rate": len(quality_ok) / len(selected) if selected else None,
         "empty_recall": sum(row.get("status") == "ok"
-                            and (_number(row.get("hit_count")) or 0) == 0 for row in selected),
+                            and _number(row.get("hit_count")) == 0
+                            for row in known_hit_counts),
         "http_status": dict(Counter(str(row.get("http_status") or "none") for row in selected)),
         "error_types": dict(Counter(str(row.get("error_type") or "none") for row in selected)),
     }
@@ -2484,6 +2493,8 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                 ("recall_service_rate", "Recall 服务率"), ("served_p95_ms", "非空 Recall P95 ms"),
                 ("p95_ms", "全部尝试 P95 ms"), ("errors", "HTTP/传输错误"),
                 ("timeouts", "超时"), ("empty_recall", "HTTP 200空召回"),
+                ("quality_ok", "事实质量通过"), ("quality_missing", "质量字段缺失"),
+                ("mean_ms", "平均耗时 ms"),
                 ("http_status", "HTTP 状态")], min_width_px=1300)
             visual += details("查看基线逐租户召回证据", table(metric.get("baseline_tenants", []), [
                 ("tenant_index", "租户"), ("planned_or_recorded", "样本数"),
