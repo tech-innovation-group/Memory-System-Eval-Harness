@@ -13,7 +13,7 @@ import json
 import math
 import subprocess
 import tempfile
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -26,7 +26,12 @@ LOG_EVENTS = frozenset({
     "dashscope_rerank_operation",
     "http_request_completed",
     "memory_extraction_completed",
+    "memory_extraction_failed",
     "atomic_pipeline_completed",
+    "atomic_macro_stage_failed",
+    "commit_failed",
+    "commit_accepted",
+    "commit_stage_completed",
     "prototype_multiply_started",
     "prototype_multiply_completed",
     "rule_pattern_started",
@@ -90,6 +95,8 @@ def _base_event(payload: dict[str, Any], *, module: str) -> dict[str, Any]:
         "duration_ms": _number(payload.get("duration_ms")),
         "queue_wait_ms": _number(payload.get("queue_wait_ms")),
         "item_count": _number(payload.get("item_count")),
+        "error_type": str(payload.get("error_type") or "") or None,
+        "retryable": payload.get("retryable") if isinstance(payload.get("retryable"), bool) else None,
         "source": "structured_log",
     }
 
@@ -127,6 +134,20 @@ def normalize_log_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
     if event == "memory_extraction_completed":
         engine = str(payload.get("engine_id") or "unknown")
         return [_base_event(payload, module=f"commit/memory_extraction/{engine}")]
+    if event == "memory_extraction_failed":
+        engine = str(payload.get("engine_id") or "unknown")
+        return [_base_event(payload, module=f"commit/memory_extraction/{engine}")]
+    if event == "atomic_macro_stage_failed":
+        return [_base_event(payload, module=f"atomic/{payload.get('stage') or 'unknown'}")]
+    if event == "commit_failed":
+        return [_base_event(payload, module=f"commit/{payload.get('stage') or 'failed'}")]
+    if event == "commit_accepted":
+        row = _base_event(payload, module="commit/accepted")
+        row["duration_ms"] = _number(payload.get("preparation_ms"))
+        row["item_count"] = _number(payload.get("pending_item_count"))
+        return [row]
+    if event == "commit_stage_completed":
+        return [_base_event(payload, module=f"commit/{payload.get('stage') or 'unknown'}")]
 
     timings = payload.get("macro_stage_timings_ms")
     rows = []
@@ -324,6 +345,9 @@ def summarize_log_stages(events: Iterable[dict[str, Any]]) -> list[dict[str, Any
             "queue_wait_p50_ms": percentile(waits, 50) if waits else None,
             "queue_wait_p95_ms": percentile(waits, 95) if waits else None,
             "queue_wait_p99_ms": percentile(waits, 99) if waits else None,
+            "failed_observations": sum(row.get("status") in {"failed", "error"} for row in rows),
+            "error_types": dict(Counter(str(row.get("error_type")) for row in rows
+                                         if row.get("error_type"))),
         })
     return result
 

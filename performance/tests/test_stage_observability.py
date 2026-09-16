@@ -300,3 +300,23 @@ def test_atomic_provider_diagnostics_and_cache_counters_remain_explicit():
     assert totals["embedding_cache_hit_texts"] == 6
     assert totals["embedding_unique_misses"] == 2
     assert "private-commit-trace" not in json.dumps(rows)
+
+
+def test_failed_commit_and_atomic_events_preserve_safe_error_evidence():
+    rows = parse_structured_logs("\n".join([
+        json.dumps({"event": "atomic_macro_stage_failed", "trace_id": "private-trace",
+                    "stage": "extraction", "status": "failed", "duration_ms": 86706.6,
+                    "error_type": "ExtractorError", "retryable": True}),
+        json.dumps({"event": "memory_extraction_failed", "trace_id": "private-trace",
+                    "status": "failed", "duration_ms": 86709.9,
+                    "error_type": "ExtractorError", "engine_id": "atomic_engine"}),
+        json.dumps({"event": "commit_stage_completed", "trace_id": "private-trace",
+                    "stage": "executor_queue", "status": "completed", "queue_wait_ms": 0.46}),
+    ]))
+    assert {row["module"] for row in rows} == {
+        "atomic/extraction", "commit/memory_extraction/atomic_engine", "commit/executor_queue"}
+    stats = {row["module"]: row for row in summarize_log_stages(rows)}
+    assert stats["atomic/extraction"]["failed_observations"] == 1
+    assert stats["atomic/extraction"]["error_types"] == {"ExtractorError": 1}
+    assert stats["commit/executor_queue"]["queue_wait_p95_ms"] == 0.46
+    assert "private-trace" not in json.dumps(rows)

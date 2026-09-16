@@ -2748,6 +2748,7 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             ("module", "模块路径"), ("observations", "耗时样本"),
             ("trace_count", "Trace 数"), ("p50_ms", "P50 ms"),
             ("p95_ms", "P95 ms"), ("p99_ms", "P99 ms"),
+            ("failed_observations", "失败事件"), ("error_types", "错误类型"),
             ("queue_wait_observations", "排队样本"),
             ("queue_wait_p50_ms", "排队 P50 ms"),
             ("queue_wait_p95_ms", "排队 P95 ms"),
