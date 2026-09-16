@@ -23,6 +23,7 @@ from performance.targets.echomem.probes._client import (
     EchoMemHTTP,
     TenantSpec,
 )
+from performance.targets.echomem.acceptance.capacity_seed import _result_body
 from performance.tests.conftest import MockState
 
 # -- inline servers (provision / flaky-add mocks live here, not conftest) --
@@ -43,6 +44,11 @@ def test_search_omits_blank_session_id_but_keeps_live_session_id(monkeypatch):
 
     assert "session_id" not in requests[0][2]
     assert requests[1][2]["session_id"] == "live-session"
+
+
+def test_capacity_seed_unwraps_nested_result_body():
+    assert _result_body({"result": {"memories": ["m1"]}}) == {"memories": ["m1"]}
+    assert _result_body({"memories": ["m1"]}) == {"memories": ["m1"]}
 
 def _start_server(handler: type[http.server.BaseHTTPRequestHandler]):
     # Default listen backlog (5) refuses connections when the full suite

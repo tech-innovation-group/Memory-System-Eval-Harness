@@ -31,6 +31,14 @@ class CapacityActor:
     write_session: str = ""
 
 
+def _result_body(payload: object) -> dict:
+    """Unwrap EchoMem responses that put the useful body under ``result``."""
+    if not isinstance(payload, dict):
+        return {}
+    nested = payload.get("result")
+    return nested if isinstance(nested, dict) else payload
+
+
 def _reduce_locomo_corpus(corpus: dict, max_questions: int | None) -> dict:
     """Keep only evidence documents needed by a small real QA subset."""
     if not max_questions or max_questions >= len(corpus.get("recall_queries", [])):
@@ -311,11 +319,18 @@ def seed_actor(actor: CapacityActor, *, timeout_s: float = 180, checkpoint=None,
         row["marker_check"] = check
         save()
         memories = client.get_commit_memories(sid, archive)
+        memory_body = _result_body(memories.payload)
         for field in ("memories", "items", "memory_ids"):
-            value = memories.payload.get(field)
+            value = memory_body.get(field)
             if memories.status_code == 200 and isinstance(value, list):
                 row["memory_count"] = len(value)
                 break
+        row["memory_observation"] = (
+            "counted" if row["memory_count"] is not None else
+            "response_without_recognized_memory_list"
+            if memories.status_code == 200 else
+            "memory_endpoint_http_error"
+        )
         phase = "semantic-validation"
         for check in semantic_checks(actor, validation_queries, search_timeout_s=search_timeout_s):
             row["queries"].append(check)
