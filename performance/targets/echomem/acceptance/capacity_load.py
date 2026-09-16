@@ -172,7 +172,14 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
         return f"read:{index}" if isolate_read_workers and op == "read" else op
     pools = {name: ThreadPoolExecutor(max_workers=width) for name, width in widths.items()}
     slots = {name: threading.BoundedSemaphore(width) for name, width in widths.items()}
-    polls = ThreadPoolExecutor(max_workers=min(512, max(4, len(actors))))
+    # Each poll task owns one accepted Commit until terminal state or deadline.
+    # Sizing this pool only by actor count queues later receipts behind earlier
+    # ones from the same tenant, so queued tasks can start after their deadline
+    # and become false timeouts. Polling is I/O-bound; bound it by this window's
+    # planned receipts with a hard cap.
+    planned_commit_count = sum(event[1] == "commit_submit" for event in plan)
+    poll_workers = min(512, max(4, planned_commit_count))
+    polls = ThreadPoolExecutor(max_workers=poll_workers)
     closed_loop_scheduled = len(plan)
 
     def append(row):
@@ -340,7 +347,8 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
             "planned_commit": sum(event[1] == "commit_submit" for event in plan),
             "started_at_monotonic_s": started,
             "duration_s": duration_s, "elapsed_with_drain_s": time.monotonic() - started,
-            "pools": {**widths, "commit_poll": polls._max_workers},
+            "pools": {**widths, "commit_poll": poll_workers},
+            "planned_commit_count": planned_commit_count,
             "read_worker_isolation": "per_identity" if isolate_read_workers else "shared",
             "per_user_search_rps": q if mode != "commit" else 0,
             "mixed": mode in {"mixed", "hotspot"},
