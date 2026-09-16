@@ -98,19 +98,7 @@ chmod 600 .local-stress/tenants.json .local-stress/test.env
    `require_4u8g` according to the actual test objective, and identify the
    dedicated recovery container. Keep profiles and env files out of Git.
 
-Run a quick chain check before a formal run:
-
-```bash
-performance/targets/echomem/run_six_metrics.sh quick \
-  .local-stress/six-metrics.profile.json \
-  results/local-six-metrics-quick \
-  .local-stress/test.env
-```
-
-Quick results are `PARTIAL` by design. They must never be reported as a capacity
-boundary or formal acceptance result.
-
-After the command exits, verify the report contract:
+After a formal run exits, verify the report contract:
 
 ```bash
 test -f "OUTPUT/report.html"

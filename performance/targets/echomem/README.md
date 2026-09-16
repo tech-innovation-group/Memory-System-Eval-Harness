@@ -38,8 +38,7 @@ EchoMem 仓库：<EchoMem 绝对路径>
 ```
 
 AI 必须先展示 readiness 和实际命令，再开始会消耗模型额度或重启容器的步骤。若它不能
-读取文件、执行 Shell、访问 Docker 或持续跟踪长任务，就不能声称已经完成压测。若只想
-先验证链路，将“运行完整 M1-M6”改成“运行 quick”；quick 的结果只能标记为 `PARTIAL`。
+读取文件、执行 Shell、访问 Docker 或持续跟踪长任务，就不能声称已经完成压测。
 
 > 完整测试会对专用 EchoMem 容器注入租户故障，并在 M5 中执行真实 `kill -9` 和重启。
 > 请勿指向日常开发、共享或生产容器。
@@ -57,8 +56,8 @@ mkdir -p ~/.codex/skills/echomem-stress
 cp -R performance/skills/echomem-stress/. ~/.codex/skills/echomem-stress/
 ```
 
-其他 AI 不需要执行这段安装命令。无论使用哪种 AI，执行规范都要求先展示 readiness；在
-新机器上先跑 quick，链路通过后再选择 M1-M3、完整 M1-M6、单项、续跑或仅重建报告。
+其他 AI 不需要执行这段安装命令。无论使用哪种 AI，执行规范都要求先展示 readiness；随后
+选择 M1-M3、完整 M1-M6、单项、续跑或仅重建报告。
 M4 故障注入、M5 容器重启以及远程/共享资源操作仍需获得操作者明确授权。
 
 ## 测试内容
@@ -629,23 +628,10 @@ M2/M3 默认使用 `m2m3_search_workers: 1024`。该值是客户端可同时执�
 报告中的 `missing_starts` 和 `start_lag_p95_ms` 必须为每个租户保留，以区分客户端发压不足
 与 EchoMem 服务端处理缓慢。可以显式调小该参数做低资源客户端测试，但不能把结果描述成服务容量边界。
 
-## 6. 先运行快速链路检查
+## 6. 运行完整六项测试
 
-所有命令均在测试平台仓库根目录执行：
-
-```bash
-bash -n performance/targets/echomem/run_six_metrics.sh
-performance/targets/echomem/run_six_metrics.sh quick \
-  .local-stress/six-metrics.profile.json \
-  results/local-six-metrics-quick \
-  .local-stress/test.env
-```
-
-profile 文件只有一个 profile 时，脚本会自动选择 `Local`，不需要再写 `--profile`。
-`quick` 使用真实 HTTP、模型、租户、故障和重启，但缩短采样时间，结果固定视为
-`PARTIAL`，只用于确认整条链路能跑通。
-
-## 7. 运行完整六项测试
+所有命令均在测试平台仓库根目录执行。profile 文件只有一个 profile 时，脚本会自动选择
+`Local`，不需要再写 `--profile`。
 
 ```bash
 performance/targets/echomem/run_six_metrics.sh full \

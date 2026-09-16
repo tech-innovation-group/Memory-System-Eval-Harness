@@ -190,8 +190,8 @@ def _run_m1_profiles(profile: dict[str, Any], args: argparse.Namespace, output: 
     reports = []
     selected_topologies = _m1_topologies(profile)
     levels_by_topology = {
-        "cross-tenant": _m1_levels(profile, "m1_tenant_levels", [1, 2] if args.quick else DEFAULT_M1_LEVELS),
-        "within-tenant": _m1_levels(profile, "m1_user_levels", [1, 2] if args.quick else DEFAULT_M1_LEVELS),
+        "cross-tenant": _m1_levels(profile, "m1_tenant_levels", DEFAULT_M1_LEVELS),
+        "within-tenant": _m1_levels(profile, "m1_user_levels", DEFAULT_M1_LEVELS),
         "concurrency": _m1_levels(
             profile, "m1_concurrency_levels", DEFAULT_M1_CONCURRENCY_LEVELS
         ),
@@ -200,8 +200,8 @@ def _run_m1_profiles(profile: dict[str, Any], args: argparse.Namespace, output: 
         levels = levels_by_topology[topology]
         target = output / "M1" / topology
         report_path = target / "report.json"
-        duration_s = 15 if args.quick else float(profile.get("m1_duration_s", 300))
-        warmup_s = 5 if args.quick else float(profile.get("m1_warmup_s", 30))
+        duration_s = float(profile.get("m1_duration_s", 300))
+        warmup_s = float(profile.get("m1_warmup_s", 30))
         load_profile = str(profile.get("m1_load_profile", "all"))
         expected_resume = {"topology": topology, "levels_requested": levels,
             "assessment_mode": "observe", "load_profile": load_profile, "warmup_s": warmup_s,
@@ -241,8 +241,8 @@ def _run_m1_profiles(profile: dict[str, Any], args: argparse.Namespace, output: 
                       "seed_timeout_s": float(profile.get("m1_seed_timeout_s", 600)),
                       "seed_full_session": bool(profile.get("m1_seed_full_session", False))},
             assessment_mode="observe", load_profile=load_profile,
-            seed_validation_queries=(4 if args.quick else int(profile.get("m1_seed_validation_queries", 40))),
-            recovery_timeout_s=(30 if args.quick else float(profile.get("m1_recovery_timeout_s", 60))),
+            seed_validation_queries=int(profile.get("m1_seed_validation_queries", 40)),
+            recovery_timeout_s=float(profile.get("m1_recovery_timeout_s", 60)),
             persist_private_identities=bool(profile.get("m1_persist_seed_identities", True)),
             search_workers=int(profile.get("m1_search_workers", 1024)),
             seed_profile=str(profile.get("m1_seed_profile", "standard")),
@@ -303,7 +303,7 @@ def _validate_stage_observability_config(
         raise ValueError("M1-M3 stage observability requires resource_container for bounded Docker log collection")
 
 
-def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> dict[str, Any]:
+def _configure(profile: dict[str, Any], selected: list[str]) -> dict[str, Any]:
     from performance.targets.echomem.extended_profile import expand_extended_profile
     profile = expand_extended_profile(profile, selected)
     needs_m6_behaviors = "M6" in selected
@@ -336,7 +336,7 @@ def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> 
             f"observed {sorted(observed_embeddings)!r}"
         )
     required_concurrency = int(profile.get("required_concurrency") or 0)
-    if "M1" in selected and not quick and required_concurrency > 0:
+    if "M1" in selected and required_concurrency > 0:
         configured_levels = [
             *_m1_levels(profile, "m1_tenant_levels", DEFAULT_M1_LEVELS),
             *_m1_levels(profile, "m1_user_levels", DEFAULT_M1_LEVELS),
@@ -369,12 +369,12 @@ def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> 
     if "M6" in selected and not lanes:
         raise ValueError("No effective scheduler lanes could be derived from preflight_config")
     base_url = str(profile.get("base_url") or "").rstrip("/")
-    phase = 15 if quick or m6_only else 60
+    phase = 60
     fault = {
         "enabled": "M4" in selected or needs_m6_behaviors,
         "endpoint": base_url + "/api/inspect/test-control/fault",
         "token_env": "ECHOMEM_TEST_CONTROL_TOKEN",
-        "samples": 10 if quick else 100,
+        "samples": 100,
         "repeats": 3,
         "phase_duration_s": phase,
         "duration_s": min(300, phase * 3),
@@ -442,9 +442,7 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
         # operation observes the same daemon as the target container.
         os.environ["DOCKER_CONTEXT"] = docker_context
         os.environ["ECHOMEM_DOCKER_CONTEXT"] = docker_context
-    profile = _configure(
-        _resolve_profile(matches[0], args.profiles), selected, quick=args.quick
-    )
+    profile = _configure(_resolve_profile(matches[0], args.profiles), selected)
     output = args.out_dir.expanduser().resolve()
     output.mkdir(parents=True, exist_ok=True)
     lock = output_lock if output_lock is not None else acquire_output_lock(output)
@@ -463,7 +461,7 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
         "metric_numbering": "capacity-fairness-priority-isolation-recovery-observability-v2",
         "started_at": started_at, "finished_at": None,
         "git_commit": provenance["git_commit"], "platform_provenance": provenance, "selected_metrics": selected,
-        "sampling_mode": "quick-non-complete" if args.quick else "full",
+        "sampling_mode": "full",
         "soak_enabled": False, "execution_status": "PARTIAL",
         "real_http_required": True, "real_llm_required": True,
         "real_embedding_required": True,
@@ -517,7 +515,7 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
             suite["tenant_observability_samples"] = list(observation_samples)
             suite["tenant_observability_monitor"] = dict(observation_monitor)
             refresh_stage_observability()
-            result = evaluate_observation(suite, profile, m1_reports, quick=args.quick, selected_metrics=selected)
+            result = evaluate_observation(suite, profile, m1_reports, quick=False, selected_metrics=selected)
             result.update(platform_provenance=provenance, checkpoint=error is None, pending_metrics=pending)
             if "capacity_start_readiness" in suite:
                 result["capacity_start_readiness"] = suite["capacity_start_readiness"]
@@ -576,7 +574,7 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
                     include_seed=True,
                     commit_poll_timeout_cap_s=45 if m6_only else None,
                 )
-                if args.quick or m6_only else None
+                if m6_only else None
             )
             try:
                 suite = run_suite(
@@ -615,7 +613,7 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
         pending = [code for code in selected if code in {"M4", "M5", "M6"}]
         early_report = None
         if scenarios and pending:
-            early_report = evaluate_observation(suite, profile, m1_reports, quick=args.quick, selected_metrics=selected)
+            early_report = evaluate_observation(suite, profile, m1_reports, quick=False, selected_metrics=selected)
             early_report.update(platform_provenance=provenance, checkpoint=True, pending_metrics=pending)
             (output / "suite.json").write_text(json.dumps(suite, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             (output / "summary.json").write_text(json.dumps(early_report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -625,7 +623,7 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
         try:
             probes, commands = run_configured_probes(
                 profile, base_url=profile["base_url"], suite_dir=output,
-                auth_headers={}, tenant_config=tenant_config, quick=args.quick,
+                auth_headers={}, tenant_config=tenant_config, quick=False,
                 timeout_s=args.timeout_s,
             )
         except Exception as exc:
@@ -664,7 +662,7 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
         _combine_csv(suite, output, "records.csv")
         _combine_csv(suite, output, "metrics_samples.csv")
         result = evaluate_observation(
-            suite, profile, m1_reports, quick=args.quick,
+            suite, profile, m1_reports, quick=False,
             selected_metrics=selected,
         )
         result["platform_provenance"] = provenance
@@ -700,7 +698,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out-dir", required=True, type=Path)
     parser.add_argument("--metrics", default="M1,M2,M3")
     parser.add_argument("--env-file", type=Path)
-    parser.add_argument("--quick", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--timeout-s", type=float, default=7200)
     return parser
@@ -751,7 +748,7 @@ def main(argv: list[str] | None = None) -> int:
             "schema_version": 1, "assessment": "observation-only",
             "instance_profile": args.profile or "local",
             "performance_thresholds_applied": False,
-            "sampling_mode": "quick-non-complete" if args.quick else "full",
+            "sampling_mode": "full",
             "status": status, "selected_metrics": selected,
             "model_preflight": model_preflight,
             "allowed_statuses": ["MEASURED", "PARTIAL", "BLOCKED", "EXECUTION_ERROR"],

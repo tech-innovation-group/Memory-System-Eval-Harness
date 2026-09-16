@@ -118,23 +118,9 @@ M6 单项会使用 4 个独立租户，以最长 45 秒负载与终态观察、8
 再执行一个真实 reject 故障用例和一次真实容器崩溃恢复，采集
 NORMAL、QUEUE、REJECT、RESET 所需证据；不会把依赖数据冒充为 M3/M4/M5 的完整执行。
 完整六项运行仍执行 M4 的 24 个故障用例和 M5 的 3 个恢复样本，测试目标没有缩减。
-quick smoke 使用短窗口和小样本，报告固定标记
-`quick-non-complete` 与 `PARTIAL`，不能与完整采样混用：
-
-```bash
-.venv/bin/python -m performance.targets.echomem.observation_run \
-  --profiles .local-stress/six-metrics.profile.json --profile 4U8G \
-  --out-dir results/smoke --quick
-```
-
-quick 一般需要 10 到 40 分钟，取决于真实模型和 Commit 恢复时间。
-
 推荐直接使用统一脚本：
 
 ```bash
-# 快速诊断版
-performance/targets/echomem/run_six_metrics.sh quick PROFILE_JSON OUTPUT_DIR ENV_FILE
-
 # 正式完整版
 performance/targets/echomem/run_six_metrics.sh full PROFILE_JSON OUTPUT_DIR ENV_FILE
 
@@ -216,7 +202,7 @@ M3 先串行 open/add 准备每个计划事务，再集中提交 Commit；Search
 - HTML 同时展示宽观察窗口与非终态确认窗口的 Search 样本、平均延迟、P95、错误和质量。
   在途峰值是客户端观察值，不等于服务端排队深度，更不能证明内部严格 Search 优先级。
 - 实际生效的 tenant 数、query 模式和 barrier 参数写入 `summary.json.measurement_contract`，
-  quick 缩减后的数量不会冒充原计划。缺清单、缺租户召回基线、计划 Commit 未全部受理、
+  不会冒充原计划。缺清单、缺租户召回基线、计划 Commit 未全部受理、
   终态不明或确认重叠证据不全时保留数据并标为 `PARTIAL`。不以 P95 或质量数值作为性能准入门槛。
 - 历史 CSV 不补造新字段，旧报告重新汇总可能降为 `PARTIAL`；这是证据不足，不是服务性能退化。
 
@@ -260,8 +246,6 @@ Commit 吞吐按 `[30,300)` 内确认完成数除以 270 秒；Search 按请求�
 零完成租户仍在分母中，全部为零时 Jain 为 undefined。排空阶段失败及最终未完成任务另外保留。
 Jain 接近 1 只说明租户之间均匀，并不说明性能好；短窗口不能证明长期稳态。
 
-快速模式是 3 秒预热、12 秒测量、每租户每 3 秒一次 Write、最多 30 秒排空，
-始终为 PARTIAL；额外 quick 时长上限可能进一步截短，应以报告实际窗口和缺口为准。
 没有执行时钟或仍使用旧 barrier 合约的历史运行保留数据，但不标为新版 M3 完整实测。
 
 ### M3/M4 历史洪泛补测的 Commit 证据

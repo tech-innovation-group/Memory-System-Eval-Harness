@@ -87,9 +87,9 @@ just a prose summary or raw JSON.
 2. Inspect prerequisites and present a compact readiness summary: EchoMem ready,
    Docker/container, profile, tenant count, LLM preflight, Embedding preflight,
    protected test endpoints, output directory, and destructive-test safety.
-3. If the requested scope is not already clear, default to M1-M3. On a new
-   machine, run a quick M1-M3 chain check first. Use full M1-M6, one metric,
-   resume, or report-only only when the user explicitly selects that scope.
+3. If the requested scope is not already clear, default to M1-M3. Use full
+   M1-M6, one metric, resume, or report-only only when the user explicitly
+   selects that scope.
 4. Preview the exact command, selected metrics, estimated destructive actions,
    and output directory. Obtain explicit user authorization before M4 fault
    injection, M5 kill/restart, root login, or use of remote/shared resources.
@@ -200,7 +200,7 @@ Run from the harness repository root with a profile and a secret env file that
 are outside Git:
 
 ```bash
-performance/targets/echomem/run_six_metrics.sh quick PROFILE OUTPUT ENV_FILE
+performance/targets/echomem/run_six_metrics.sh full PROFILE OUTPUT ENV_FILE
 performance/targets/echomem/run_six_metrics.sh full PROFILE OUTPUT ENV_FILE
 
 .venv/bin/python -m performance.targets.echomem.observation_run \
