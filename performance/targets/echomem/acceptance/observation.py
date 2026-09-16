@@ -1911,6 +1911,9 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
             for module in (
                 "recall/recall_total", "recall/semantic", "recall/query_embedding",
                 "recall/engine_execution", "recall/memory_profile",
+                "atomic/extraction", "provider/llm_atom_extraction",
+                "provider/llm_atom_extraction_repair", "provider/embedding",
+                "provider/dashscope_rerank",
             ):
                 values = [by_trace[trace][module] for trace in traces
                           if trace in by_trace and module in by_trace[trace]]
@@ -2082,6 +2085,16 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                     "semantic_p95_ms": paired_module("recall/semantic") or stage_stat(level, "echomem_memrouter_stage_duration_seconds", "semantic"),
                     "engine_execution_p95_ms": paired_module("recall/engine_execution") or stage_stat(level, "echomem_memrouter_stage_duration_seconds", "engine_execution"),
                     "memory_profile_p95_ms": paired_module("recall/memory_profile") or stage_stat(level, "echomem_memrouter_stage_duration_seconds", "memory_profile"),
+                    "atomic_extraction_p95_ms": paired_module("atomic/extraction"),
+                    "llm_provider_p95_ms": max(
+                        (paired_module(name) for name in (
+                            "provider/llm_atom_extraction",
+                            "provider/llm_atom_extraction_repair",
+                        ) if paired_module(name) is not None),
+                        default=None,
+                    ),
+                    "embedding_provider_p95_ms": paired_module("provider/embedding"),
+                    "rerank_p95_ms": paired_module("provider/dashscope_rerank"),
                     "stage_timing_source": paired.get("source") or "Prometheus Histogram fallback",
                     "paired_trace_count": paired.get("trace_count", 0),
                     "query_embedding_queue_p95_ms": stage_stat(level, "echomem_memrouter_stage_queue_wait_seconds", "query_embedding"),
@@ -2110,6 +2123,10 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                     ("semantic_p95_ms", "Semantic P95(ms)"),
                     ("engine_execution_p95_ms", "Engine Execution P95(ms)"),
                     ("memory_profile_p95_ms", "Memory Profile P95(ms)"),
+                    ("atomic_extraction_p95_ms", "Atomic extraction P95(ms)"),
+                    ("llm_provider_p95_ms", "LLM provider P95(ms)"),
+                    ("embedding_provider_p95_ms", "Embedding provider P95(ms)"),
+                    ("rerank_p95_ms", "Rerank P95(ms)"),
                     ("query_embedding_queue_p95_ms", "Query Embedding Queue P95(ms)"),
                     ("engine_queue_p95_ms", "Engine Queue P95(ms)"),
                     ("llm_queue_p95_ms", "LLM Queue P95(ms)"),
@@ -2127,6 +2144,10 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                     ("query_embedding_p95_ms", "Query Embedding"),
                     ("engine_execution_p95_ms", "Engine Execution"),
                     ("memory_profile_p95_ms", "Memory Profile"),
+                    ("atomic_extraction_p95_ms", "Atomic extraction"),
+                    ("llm_provider_p95_ms", "LLM provider"),
+                    ("embedding_provider_p95_ms", "Embedding provider"),
+                    ("rerank_p95_ms", "Rerank"),
                 ):
                     if row.get(key) is not None:
                         stage_bars.append((f"C={row.get('concurrency')} {label}", row[key]))
@@ -2139,7 +2160,7 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                      ("Engine Execution", slowest.get("engine_execution_p95_ms"))),
                     key=lambda item: item[1] if item[1] is not None else -1,
                 )
-                visual += f"<p><b>耗时结论：</b>最高端到端 P95 出现在 {esc(slowest.get('concurrency'))} 并发；在该档位可观测模块中，P95 最大的是 {esc(dominant[0])}（{esc(dominant[1])} ms）。memory_profile 仅表示画像阶段本身，不等于整条 Recall 耗时。</p>"
+                visual += f"<p><b>耗时结论：</b>最高端到端 P95 出现在 {esc(slowest.get('concurrency'))} 并发；在该档位可观测模块中，P95 最大的是 {esc(dominant[0])}（{esc(dominant[1])} ms）。memory_profile 仅表示画像阶段本身，不等于整条 Recall 耗时。Atomic extraction、LLM provider、Embedding provider 或 Rerank 显示为缺失时，表示该并发窗口没有对应 trace 样本，不能解释为 0 ms。</p>"
             if comparison.get("comparison_ready"):
                 visual += f"<p><b>16→64 memory_profile 放大：</b>{esc(comparison.get('p95_amplification'))}；该结论只在两档都有真实阶段样本时成立。</p>"
             visual += bars("已测负载曲线：Search P95 ms", [

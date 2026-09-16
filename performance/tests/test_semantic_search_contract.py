@@ -177,6 +177,8 @@ def test_running_report_labels_missing_samples_as_pending(tmp_path):
     assert "等待真实样本：种子准备或负载窗口尚未完成" in html
     assert "负载请求分母将在种子完成后生成" in html
     assert "暂无数据" not in html
+    assert "Atomic extraction P95(ms)" in html
+    assert "LLM provider P95(ms)" in html
 
 
 @pytest.mark.parametrize("healthy", [True, False])
