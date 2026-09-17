@@ -18,6 +18,7 @@
         "concurrency": 4
       },
       "m1_seed_retry_failed": 1,
+      "m1_continue_after_congestion": true,
       "m1_reuse_preflight_checks": 2,
       "required_concurrency": 64,
       "required_embedding_model": "qwen3.7-text-embedding-flash",

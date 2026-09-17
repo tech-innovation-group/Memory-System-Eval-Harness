@@ -28,3 +28,11 @@ def test_wrapper_does_not_offer_quick_mode() -> None:
     wrapper = Path("performance/targets/echomem/run_six_metrics.sh").read_text(encoding="utf-8")
     assert "{quick|" not in wrapper
     assert "--quick" not in wrapper
+
+
+def test_formal_profile_example_continues_after_congestion() -> None:
+    import json
+
+    profile_path = Path("performance/targets/echomem/docs/six-metrics.profile.example.json")
+    profile = json.loads(profile_path.read_text(encoding="utf-8"))
+    assert profile["profiles"][0]["m1_continue_after_congestion"] is True
