@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>EchoMem PR #33 完整测试方式</title>
+  <style>
+    *{box-sizing:border-box} body{margin:0;background:#f5f7f7;color:#17252b;font:15px/1.65 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:0}
+    main{max-width:1180px;margin:auto;padding:28px 18px 48px} header,section{background:#fff;border:1px solid #d5e0e1;padding:24px;margin-top:14px} header{border-top:5px solid #146e68}
+    h1{margin:3px 0 10px;font-size:30px;line-height:1.2} h2{margin:0 0 12px;font-size:22px} h3{margin:18px 0 8px;font-size:17px} p{margin:7px 0}.eyebrow{font-size:12px;font-weight:750;color:#526f74;text-transform:uppercase;letter-spacing:.05em}
+    .notice{background:#fff5dc;border-left:4px solid #bd8116;padding:10px 13px}.method{background:#ebf5f3;border-left:4px solid #218178;padding:10px 13px}.status{display:inline-block;border:1px solid #b8c9ca;background:#edf4f3;color:#265d59;padding:2px 9px;font-size:12px;font-weight:700}
+    .flow{display:flex;gap:8px;align-items:stretch;flex-wrap:wrap;margin:14px 0}.step{flex:1;min-width:150px;border:1px solid #cbdcdd;background:#f3f8f8;padding:10px}.step b,.step small{display:block}.step small{color:#536d71;margin-top:3px}.arrow{align-self:center;color:#73878a;font-size:18px}
+    .scroll{overflow:auto}table{border-collapse:collapse;width:100%;min-width:940px}th,td{text-align:left;vertical-align:top;border-bottom:1px solid #e1e9e9;padding:9px}th{background:#edf4f4;color:#294c50;white-space:nowrap}code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.card{border:1px solid #d6e1e2;padding:14px;background:#fbfcfc}.card h3{margin-top:0}.metric{font-variant-numeric:tabular-nums;font-weight:700;color:#146e68}.bad{color:#9b5c00}.ok{color:#0d695e} details{border-top:1px solid #dce6e7;padding:10px 0}summary{cursor:pointer;font-weight:700;color:#146e68}@media(max-width:760px){main{padding:10px}.grid{grid-template-columns:1fr}.arrow{display:none}.step{min-width:100%}}
+  </style>
+</head>
+<body><main>
+  <header>
+    <div class="eyebrow">EchoMem / PR #33 / M1-M3</div>
+    <h1>完整并发、公平性与边界测试方式</h1>
+    <span class="status">执行方案，非实测结果</span>
+    <p>测试分为四组：先注入并验证每个租户自己的记忆；再运行 2、16、64 并发下的三种 user/session 拓扑；随后用独立租户做公平性和 Commit 洪泛；最后单独运行超长与 API 请求体边界。性能主窗口和边界窗口绝不混合统计。</p>
+    <p class="notice"><b>当前 seed 前置条件：</b><code>seed-data-64-tenants.json</code> 里的每项是约 0.5-0.8KiB 的 LoCoMo 对话片段，不是完整 LoCoMo session。执行器必须实际读取该文件，并且只用能由同一租户注入片段回答的问题进行 Search 预检；不能使用来源不同的 <code>query_source</code> 作为质量断言。</p>
+  </header>
+
+  <section>
+    <h2>1. 测哪些 API</h2>
+    <div class="scroll"><table>
+      <thead><tr><th>阶段</th><th>API</th><th>用途</th><th>成功口径</th></tr></thead>
+      <tbody>
+        <tr><td>就绪</td><td><code>GET /api/v1/system/ready</code></td><td>确认 EchoMem、模型和目标容器可用</td><td>服务就绪；记录版本、配置指纹、CPU/内存</td></tr>
+        <tr><td>创建写会话</td><td><code>POST /api/sessions/open</code></td><td>为 tenant/user 创建独立写 Session</td><td>取得 session_id</td></tr>
+        <tr><td>写入记忆</td><td><code>POST /api/sessions/{session_id}/messages</code></td><td>按 LoCoMo 片段的说话顺序写入消息</td><td>每条消息均成功；保存顺序和内容 hash</td></tr>
+        <tr><td>提交处理</td><td><code>POST /api/sessions/{session_id}/commit</code></td><td>触发真实抽取、Embedding、索引和原子引擎</td><td><code>202</code> 且取得 archive_id；202 不是完成</td></tr>
+        <tr><td>终态轮询</td><td><code>GET /api/sessions/{session_id}/commits/{archive_id}</code></td><td>确认 Commit 生命周期</td><td>completed / failed / timeout / pending 全部保留</td></tr>
+        <tr><td>主读负载</td><td><code>POST /api/retrieval/search</code></td><td>真实自然语言召回</td><td>HTTP 200 且返回该租户预期事实才算质量成功</td></tr>
+        <tr><td>超长工具写入</td><td>MCP <code>add_memory</code> 与回读接口</td><td>1MiB 字符存储和读回</td><td>全文长度/hash 一致；不把它等同于 Commit 已完成</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>2. 统一准备流程</h2>
+    <div class="flow">
+      <div class="step"><b>独立身份</b><small>准备 64 份独立 tenant key、tenant_id、user_id、account_id</small></div><span class="arrow">-&gt;</span>
+      <div class="step"><b>读取 seed 文件</b><small>按 tenant_index 取 inject_text 和来源元数据</small></div><span class="arrow">-&gt;</span>
+      <div class="step"><b>注入片段</b><small>open；按说话顺序 add message；Commit；轮询终态</small></div><span class="arrow">-&gt;</span>
+      <div class="step"><b>租户内验证</b><small>Search 必须命中该 tenant 自己的事实</small></div><span class="arrow">-&gt;</span>
+      <div class="step"><b>进入发压</b><small>只复用通过验证的 tenant；失败则整轮 BLOCKED</small></div>
+    </div>
+    <div class="grid"><div class="card"><h3>seed 文件校验</h3><p>64 个 <code>tenant_index</code> 必须连续且唯一；每条 <code>inject_text</code> 非空；内容 hash 与文件一致。按发言人首次出现映射 user/assistant 角色，以多条 message 写入，而不是把整段文本塞为一条 message。</p></div><div class="card"><h3>Search 预检校验</h3><p>给每条注入片段生成或人工选择一个“本片段可回答”的问题和预期答案。响应必须同时满足 <span class="metric">HTTP 200</span>、有 recall items、预期事实命中。跨来源 query、空 expected_answer 或答案不在本片段证据中，不能成为质量分母。</p></div></div>
+  </section>
+
+  <section>
+    <h2>3. M1：2 / 16 / 64 并发容量</h2>
+    <p class="method"><b>目的：</b>在相同 seed、query 池、模型与服务端配置下，找出四种 user/session 形状在 Search 和 Commit 上的容量边界。每种拓扑、每个档位分开运行：Search-only、Commit-only；可另跑混合负载，但混合结果不替代基线。</p>
+    <div class="scroll"><table>
+      <thead><tr><th>拓扑</th><th>C=2</th><th>C=16</th><th>C=64</th><th>必须证明</th></tr></thead>
+      <tbody>
+        <tr><td><b>T1</b> 多 user × 每 user 1 session × session 内 1 并发</td><td>2 user × 1 session × 1</td><td>16 × 1 × 1</td><td>64 × 1 × 1</td><td>每个 session 的业务操作最大在途为 1；上一操作完成/Commit 终态后，才发下一操作</td></tr>
+        <tr><td><b>T2</b> 多 user × 每 user 多 session × session 内 1 并发</td><td>2 user、各 2 session；只激活 2 个 session</td><td>8 user × 2 session × 1</td><td>32 user × 2 session × 1</td><td>每 session 串行；C=2 时存在 4 个 session 但最多 2 个活跃，不能伪称全部并发</td></tr>
+        <tr><td><b>T3</b> 多 user × 每 user 1 session × session 内多并发</td><td>2 user；轮转使一个 session 观察到 2 在途</td><td>4 user × 1 session × 4</td><td>16 user × 1 session × 4</td><td>记录每 session 实际 peak；C=2 必须有至少一个 session peak=2，才证明 session 内多并发</td></tr>
+              </tbody>
+    </table></div>
+    <h3>每个档位的执行顺序</h3>
+    <ol>
+      <li>预热：用通过 seed 验证的 Search query 发少量请求，不计入测量。</li>
+      <li>Search-only：维持目标并发 2、16 或 64；每个完成请求立即由同一 user/session 补发，持续固定测量窗口。</li>
+      <li>停发并排空：记录所有已发、未发、429、503、超时、空召回、非空召回和实际峰值在途。</li>
+      <li>Commit-only：每个逻辑操作执行 <code>open -&gt; add -&gt; commit -&gt; poll</code>。session 内串行规则限制的是业务操作，不把轮询连接数冒充 Commit 并发。</li>
+      <li>停发并排空：直到所有 Commit 终态或达到明确排空截止；保留 pending。</li>
+    </ol>
+    <p class="notice"><b>Commit 的两个并发数：</b><code>commit_submit_http_inflight</code> 是提交 HTTP 的同时在途数；<code>unfinished_commit_count</code> 是收到 202 后尚未 completed/failed 的后台任务数。两者都必须报，后者才反映 Commit 积压。</p>
+  </section>
+
+  <section>
+    <h2>4. M2：独立租户公平性</h2>
+    <p class="method"><b>目的：</b>评估不同租户是否获得接近等权的服务。这里不能用同一租户内多个 user 代替租户公平性，必须使用不同认证凭据。</p>
+    <div class="scroll"><table>
+      <thead><tr><th>并发档位</th><th>推荐租户/用户形状</th><th>负载</th><th>每个租户输出</th></tr></thead>
+      <tbody>
+        <tr><td>C=2</td><td>2 tenant × 1 user × 1 Search session + 1 写 session</td><td>等权 Search；等权 Commit</td><td>已发/到达/完成、Search P95、事实命中、202/completed/failed/pending</td></tr>
+        <tr><td>C=16</td><td>4 tenant × 4 user 或 8 tenant × 2 user</td><td>每租户完全相同的 Search 到达率和 Commit 计划</td><td>同左；按 tenant 分行</td></tr>
+        <tr><td>C=64</td><td>8 tenant × 8 user 或 16 tenant × 4 user</td><td>同上；不让单租户独占模型池</td><td>同左；保留租户级队列/拒绝原因</td></tr>
+      </tbody>
+    </table></div>
+    <p>固定预热后，所有租户进入同一测量窗口。Commit 只以窗口内 <b>completed/s</b> 计算吞吐，202 不计完成；Search 使用每租户 P95 的倒数计算延迟公平性：</p>
+    <p><code>Jain(x) = (sum(x_i)^2) / (n * sum(x_i^2))</code>。Commit 取 <code>x_i = completed/s</code>；Search 取 <code>x_i = 1/P95_i</code>。零完成租户仍留在分母；所有租户零完成时 Commit Jain 标记无定义，不能写为 1。</p>
+
+    <h3>T4：多 user 间大小请求混合（公平性视角）</h3>
+    <p class="method"><b>为什么从 M1 移到 M2：</b>大小请求混合的本质问题是"大请求是否挤占小请求的资源"——这是公平性问题，不是容量问题。只有按 user 分组对比延迟和吞吐，才能暴露 head-of-line blocking 或队列不公平。</p>
+    <div class="scroll"><table>
+      <thead><tr><th>组</th><th>Search 请求</th><th>Commit 请求</th><th>租户数</th><th>观测</th></tr></thead>
+      <tbody>
+        <tr><td>小请求组</td><td>短事实问句（≤100B query）</td><td>短对话 Commit（1KiB 自然语言）</td><td>4</td><td>P50/P95/P99、空召回数、200/429/503 每租户分行</td></tr>
+        <tr><td>大请求组</td><td>长上下文问句（64KiB query）</td><td>长对话 Commit（64KiB 自然语言）</td><td>4</td><td>同左；与小组对比 P95 比值</td></tr>
+        <tr><td>超大请求组</td><td>—</td><td>256KiB Commit</td><td>2</td><td>仅观测，单独统计，不纳入 Jain</td></tr>
+      </tbody>
+    </table></div>
+    <p>大小请求分组后：<b>组内计算 Jain 公平性</b>（小请求组 4 租户、大请求组 4 租户各自算），<b>组间对比 P95 比值</b>。如果大请求组 P95 是小请求组的 3 倍以上，说明存在排队不公平。429/503 按组分别计数，不能把 429 全部归因于"正常容量不足"——如果只有大请求组收到 429 而小请求组没有，说明限流策略本身就可能不公平。</p>
+
+    <h3>每租户 Search 统计（所有 M2 场景通用）</h3>
+    <div class="scroll"><table>
+      <thead><tr><th>租户</th><th class="num">HTTP 200</th><th class="num">有效召回</th><th class="num">空召回</th><th class="num">429</th><th class="num">503</th><th class="num">超时</th><th class="num">其他错误</th><th class="num">P50(ms)</th><th class="num">P95(ms)</th><th class="num">P99(ms)</th></tr></thead>
+      <tbody>
+        <tr><td>tenant-0</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td></tr>
+        <tr><td colspan="11" style="color:#536d71;font-size:13px">…每租户一行；零请求租户也必须出现在表中，吞吐按 0 纳入 Jain；无 P95 时标注"无样本"</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>5. M3：Commit 洪泛下的 Search 优先级</h2>
+    <p class="method"><b>目的：</b>确认后台 Commit 压力存在时，已验证的交互式 Search 是否仍可用。先建立健康基线，再比较洪泛窗口；客户端延迟只能反映用户可见影响，严格优先级还需要服务端队列/调度事件。</p>
+    <div class="scroll"><table>
+      <thead><tr><th>场景</th><th>Search</th><th>Commit</th><th>比较方式</th></tr></thead>
+      <tbody>
+        <tr><td>Baseline</td><td>已验证 query，固定 C=2/16/64</td><td>不发</td><td>只有 baseline 健康，才可以解释后续劣化比例</td></tr>
+        <tr><td>Uniform flood</td><td>各租户等权</td><td>各租户等量持续 Commit</td><td>对比 Search P95/P99、错误、事实命中、queue wait</td></tr>
+        <tr><td>Noisy neighbor</td><td>所有租户等权 Search</td><td>仅 1 个租户洪泛 Commit</td><td>比较洪泛租户与旁观租户，验证隔离</td></tr>
+        <tr><td>Heterogeneous size</td><td>短 Search 与长上下文 Search 分组</td><td>1KiB、64KiB、256KiB 自然语言 Commit 分组</td><td>观察不同 user 的吞吐、P95、pending 与 Jain；1MiB 留给边界组</td></tr>
+      </tbody>
+    </table></div>
+    <p>只统计 Search 时间戳落在“至少一个 Commit 已返回 202 且尚未终态”的重叠窗口内的样本。每个场景保留 Commit 时间线、Search 时间线和 server queue wait；不能用非重叠的 503/超时推断洪泛影响。</p>
+  </section>
+
+  <section>
+    <h2>6. 超长与 API 边界：独立运行</h2>
+    <div class="scroll"><table>
+      <thead><tr><th>组别</th><th>用例</th><th>执行</th><th>结果口径</th></tr></thead>
+      <tbody>
+        <tr><td>B1 请求体矩阵</td><td><code>message / commit / search × 0、1、1KiB、64KiB、256KiB、512KiB、1MiB × text / binary</code></td><td>共 42 个离散协议用例；每例记录实际 wire bytes、Content-Type 和是否真正发出</td><td>HTTP/传输错误、reason code、耗时、服务恢复；二进制被拒绝是有效契约结果</td></tr>
+        <tr><td>B2 合法超长 Commit</td><td>1MiB 字符的自然语言记录</td><td>分段 message 写入同一 session，再 Commit 并轮询终态；验证首/中/尾事实</td><td>写入成功、202、completed/failed/pending、后续 Search 质量分别记录</td></tr>
+        <tr><td>B3 MCP 超长</td><td>1MiB 字符 <code>add_memory</code></td><td>真实 MCP 调用后，使用读回接口核对字节数与 hash</td><td>全文回读一致只表示保存，不证明 EchoMem Commit 抽取已完成</td></tr>
+        <tr><td>B4 恢复</td><td>每类超长用例后</td><td>复用已验证的短 Search 连续请求</td><td>证明异常输入没有持续污染后续召回；记录恢复前后差异</td></tr>
+      </tbody>
+    </table></div>
+    <p class="notice"><b>边界不进入 M1-M3：</b>超长请求、非法二进制、0 字节和协议拒绝单独计数。它们会改变模型 token、队列和超时分布，混进 M1/M2/M3 会使容量、公平性和优先级没有可比性。</p>
+  </section>
+
+  <section>
+    <h2>7. 每次运行必须留下的结果</h2>
+    <div class="grid">
+      <div class="card"><h3>M1 容量</h3><p>拓扑、目标并发、实际峰值并发、每 session peak、Search P50/P95/P99、事实命中、HTTP 分布、超时、未发、Commit 202/终态/pending、排空时间、CPU/RSS。</p></div>
+      <div class="card"><h3>M2 公平性</h3><p>每 tenant 的 arrival、Search P95、Search 命中、Commit completed/s、pending、Jain Commit、Jain Search，以及每租户 admission/queue/reject。</p></div>
+      <div class="card"><h3>M3 优先级</h3><p>Baseline 与三个洪泛场景分开保存；只比较真实重叠窗口；记录 Search 相对 baseline 的 P95/P99、错误、质量、Commit 积压和 queue wait。</p></div>
+      <div class="card"><h3>原始证据</h3><p><code>records.csv</code>、<code>summary.json</code>、<code>suite.json</code>、<code>execution-manifest.json</code>、阶段 JSON 日志/Prometheus 样本、seed 映射和脱敏身份清单。</p></div>
+    </div>
+    <details><summary>最终判定规则</summary><ul>
+      <li><b>M1：</b>“达到 C=64”要求实际峰值达到 64，不能只看到配置为 64；并说明入口错误边界、召回质量边界和 Commit 排空边界。</li>
+      <li><b>M2：</b>只在独立租户、等权到达、相同窗口下报告 Jain；同租户 user 公平性作为补充数据。</li>
+      <li><b>M3：</b>baseline 若已不健康，只展示洪泛原始数据，不能声称 Commit 导致劣化或 Search 具有优先级。</li>
+      <li><b>边界：</b>HTTP 4xx/5xx、传输失败、超时、未发和 pending 都保留；不能删除失败样本后再计算指标。</li>
+    </ul></details>
+  </section>
+</main></body></html>
