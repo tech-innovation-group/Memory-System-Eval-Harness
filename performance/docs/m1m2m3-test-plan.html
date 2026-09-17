@@ -20,7 +20,7 @@
     <h1>完整并发、公平性与边界测试方式</h1>
     <span class="status">执行方案，非实测结果</span>
     <p>测试分为四组：先注入并验证每个租户自己的记忆；再运行 2、16、64 并发下的三种 user/session 拓扑；随后用独立租户做公平性和 Commit 洪泛；最后单独运行超长与 API 请求体边界。性能主窗口和边界窗口绝不混合统计。</p>
-    <p class="notice"><b>当前 seed 前置条件：</b><code>seed-data-64-tenants.json</code> 里的每项是约 0.5-0.8KiB 的 LoCoMo 对话片段，不是完整 LoCoMo session。执行器必须实际读取该文件，并且只用能由同一租户注入片段回答的问题进行 Search 预检；不能使用来源不同的 <code>query_source</code> 作为质量断言。</p>
+    <p class="notice"><b>当前 seed 前置条件：</b>所有租户使用同一个 LoCoMo <code>conv-30/session_1</code>，每个租户只注入同一 session 的一句话（默认 <code>D1:2</code>），再为不同租户生成不同问法。执行器必须记录 sentence_id、question_variant 和答案证据；不能使用来源不同的 <code>query_source</code> 作为质量断言。</p>
   </header>
 
   <section>
