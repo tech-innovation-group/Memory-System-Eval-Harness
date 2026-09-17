@@ -589,9 +589,15 @@ def run_exploration(*, base_url: str, output: Path, topology: str, levels: list[
                             report["stop_reason"] = "sustained-service-congestion"
                     _write(output / f"level-{level}-{label}-recovery.json", recovery)
                     if recovery["state"] == "BOUNDARY_OBSERVED":
-                        report["stop_reason"] = recovery["reason"]
                         report["operational_boundary"] = {"hot_users": hot_users, "load_profile": label,
                                                            "evidence": recovery}
+                        # A continued exploration records the boundary but must
+                        # still execute later levels for comparison.  The
+                        # previous unconditional stop here made
+                        # m1_continue_after_congestion ineffective whenever
+                        # recovery classified the backlog as a boundary.
+                        if not continue_after_congestion:
+                            report["stop_reason"] = recovery["reason"]
                 _write(output / "report.json", report)
                 if report.get("stop_reason"):
                     break
