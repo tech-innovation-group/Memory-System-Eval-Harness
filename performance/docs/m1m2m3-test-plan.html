@@ -129,7 +129,7 @@
     <div class="scroll"><table>
       <thead><tr><th>组别</th><th>用例</th><th>执行</th><th>结果口径</th></tr></thead>
       <tbody>
-        <tr><td>B1 请求体矩阵</td><td><code>message / commit / search × 0、1、1KiB、64KiB、256KiB、512KiB、1MiB × text / binary</code></td><td>共 42 个离散协议用例；每例记录实际 wire bytes、Content-Type 和是否真正发出</td><td>HTTP/传输错误、reason code、耗时、服务恢复；二进制被拒绝是有效契约结果</td></tr>
+        <tr><td>B1 请求体边界</td><td><code>message / commit / search × 0、1、1MiB × text / binary</code></td><td>只测边界值（0、1、1MiB），每 API 6 个用例共 18 例；记录 wire bytes、Content-Type、状态码</td><td>HTTP/传输错误、reason code、耗时；0 字节期望 4xx 拒绝，1MiB 期望接受或明确拒绝，二进制被拒绝是有效契约结果</td></tr>
         <tr><td>B2 合法超长 Commit</td><td>1MiB 字符的自然语言记录</td><td>分段 message 写入同一 session，再 Commit 并轮询终态；验证首/中/尾事实</td><td>写入成功、202、completed/failed/pending、后续 Search 质量分别记录</td></tr>
         <tr><td>B3 MCP 超长</td><td>1MiB 字符 <code>add_memory</code></td><td>真实 MCP 调用后，使用读回接口核对字节数与 hash</td><td>全文回读一致只表示保存，不证明 EchoMem Commit 抽取已完成</td></tr>
         <tr><td>B4 恢复</td><td>每类超长用例后</td><td>复用已验证的短 Search 连续请求</td><td>证明异常输入没有持续污染后续召回；记录恢复前后差异</td></tr>
