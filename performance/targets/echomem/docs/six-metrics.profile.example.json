@@ -12,6 +12,12 @@
       "m1_topologies": ["cross-tenant", "within-tenant", "concurrency"],
       "m1_concurrency_levels": [1, 8, 16, 64],
       "m1_concurrency_tenants": 4,
+      "m1_seed_workers_by_topology": {
+        "cross-tenant": 4,
+        "within-tenant": 4,
+        "concurrency": 4
+      },
+      "m1_seed_retry_failed": 1,
       "m1_reuse_preflight_checks": 2,
       "required_concurrency": 64,
       "required_embedding_model": "qwen3.7-text-embedding-flash",
