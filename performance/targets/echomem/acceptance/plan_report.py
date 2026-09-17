@@ -210,6 +210,28 @@ def write_test_plan_report(plan: dict[str, Any], path: Path) -> None:
 
     current_rows = current.get("rows") or []
     comparison = current.get("comparison") or {}
+    timing = current.get("timing") or {}
+    timing_rows = timing.get("rows") or []
+    timing_section = (
+        "<section><h2>当前 M1-M3 阶段耗时证据</h2>"
+        f"<p class='notice'>{esc(timing.get('note') or '未提供 EchoMem JSON 阶段耗时快照；不能用端到端耗时相减推导模块耗时。')}</p>"
+        + table(
+            timing_rows,
+            [
+                ("event", "事件"),
+                ("stage", "阶段"),
+                ("observations", "样本数"),
+                ("p50_ms", "P50 ms"),
+                ("p95_ms", "P95 ms"),
+                ("p99_ms", "P99 ms"),
+                ("max_ms", "最大 ms"),
+            ],
+            min_width=1050,
+        )
+        + "<p class='muted'>责任判断：Commit/atomic extraction 的 P95 若达到分钟级，优先检查 LLM thinking、Provider 响应和原子引擎；HTTP/Recall engine 仅在真实样本显示同量级排队时才作为主瓶颈。M2/M3 没有运行样本时明确显示暂无数据。</p></section>"
+        if timing_rows
+        else ""
+    )
     current_section = (
         "<section><h2>当前已有证据快照（不是完整六项结果）</h2>"
         f"<p class='notice'>{esc(current.get('summary') or '没有传入历史证据目录；本页只展示测试方案。')}</p>"
@@ -369,6 +391,7 @@ details{border-top:1px solid #dfe7e8;padding:10px 0}summary{cursor:pointer;color
         "</section>"
         + execution_section
         + current_section
+        + timing_section
         + parameter_section
         + "<section><h2>3. 一次运行的执行顺序</h2>"
         + flow(plan.get("workflow") or [])

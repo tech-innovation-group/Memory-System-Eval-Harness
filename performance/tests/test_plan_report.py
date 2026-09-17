@@ -3,9 +3,41 @@ import unittest
 from pathlib import Path
 
 from performance.targets.echomem.acceptance.plan_report import write_test_plan_report
+from scripts.build_echomem_test_plan import _metric_m2
 
 
 class PlanReportTest(unittest.TestCase):
+    def test_m2_contains_t4_size_mix_case(self):
+        case_ids = {case["id"] for case in _metric_m2()["cases"]}
+        self.assertIn("m2-t4-mixed-request-sizes", case_ids)
+
+    def test_renders_stage_timing_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "report.html"
+            write_test_plan_report({
+                "title": "timing",
+                "status": "PARTIAL",
+                "profile": {},
+                "execution_state": {"rows": []},
+                "current_evidence": {
+                    "summary": "partial",
+                    "source": "timing",
+                    "comparison": {},
+                    "caveats": [],
+                    "timing": {"note": "real log", "rows": [{
+                        "event": "commit_completed", "stage": "", "observations": 2,
+                        "p50_ms": 1000, "p95_ms": 2000, "p99_ms": 2100, "max_ms": 2200,
+                    }]},
+                },
+                "concurrency_parameters": {"rows": [], "topologies": [], "chart": [], "rules": [], "do_not_change": [], "references": []},
+                "metrics": [], "workflow": [], "schedule": [], "contracts": [],
+                "commands": [], "artifacts": [], "delivery_checks": [], "improvements": [],
+            }, output)
+            html = output.read_text(encoding="utf-8")
+        self.assertIn("当前 M1-M3 阶段耗时证据", html)
+        self.assertIn("commit_completed", html)
+        self.assertIn("2000", html)
+
     def test_renders_plan_without_interpreting_values_as_measurements(self):
         plan = {
             "title": "方案测试",

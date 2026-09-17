@@ -90,6 +90,8 @@ def _current_evidence(evidence_dir: Path | None) -> dict[str, Any]:
             "source": "未提供 --evidence-dir",
             "caveats": ["方案页不把计划值当作实测值。"],
         }
+    timing_path = evidence_dir / "timing-evidence.json"
+    timing = _read_json(timing_path) if timing_path.is_file() else None
     summary_path = evidence_dir / "summary.json"
     summary = _read_json(summary_path)
     if not summary:
@@ -97,6 +99,7 @@ def _current_evidence(evidence_dir: Path | None) -> dict[str, Any]:
             "summary": "指定证据目录缺少可读 summary.json；不能从该目录推导 16/64 结果。",
             "source": str(summary_path),
             "caveats": ["请保留同一运行目录中的 summary.json、level-* measurement 和 Prometheus 窗口证据。"],
+            "timing": timing or {},
         }
 
     m1 = ((summary.get("metrics") or {}).get("M1") or {})
@@ -166,6 +169,7 @@ def _current_evidence(evidence_dir: Path | None) -> dict[str, Any]:
         "rows": sorted(rows, key=lambda row: (row.get("concurrency") is None, row.get("concurrency") or 0)),
         "comparison": comparison_view,
         "caveats": caveats,
+        "timing": timing or {},
     }
 
 
@@ -778,6 +782,7 @@ def _metric_m1() -> dict[str, Any]:
             "配置的热用户数、租户数、客户端 worker 数和实际 peak_inflight 是四个不同字段，报告必须同时展示。",
         ],
         "gaps": [
+            "T4 多 user 大小请求混合已移到 M2-T4；M1 只保留同一 payload 口径的容量阶梯，避免把请求大小成本混入容量边界。",
             "旧复测 profile 可能只有 m1_concurrency_levels=[16,64]；当前默认方案补齐 C=1、C=8，并保存四档独立证据。",
             "若 C=64 主要返回 HTTP 503/429，阶段样本仍可比较，但业务容量/质量结论只能写拥塞现象和责任码。",
             "要宣布容量边界，至少需要相邻档位、停压排空和资源/容器状态；单次错误不能外推全部实例容量。",
@@ -798,8 +803,8 @@ def _metric_m2() -> dict[str, Any]:
         "name": "同档位多租户公平性",
         "state": "计划",
         "reflects": "在多个真实、互相独立的租户同时使用 Search 和 Commit 时，是否每个同档位租户都获得接近等权的完成机会；它看的是不同租户之间，不是同一租户的多个 session。",
-        "method": "分别运行 4 租户和 8 租户。每个租户使用独立凭据、独立 user、自己的 Search session，并用自己的写 session 执行 open -> add x4 -> Commit -> 轮询终态。所有租户使用相同的 offered Search/Commit 速率和测量窗口；Commit 完成吞吐与 Search P95 按租户单独计算。",
-        "boundary": "M2 的等权 Jain 只能用独立租户、同档位、同一测量窗口数据。M3 的 8:4:2:1 / 1:2:4:8 是异构负载，用来观察权重和吵闹邻居，不能混入 M2 等权指数。",
+        "method": "分别运行 4 租户和 8 租户。每个租户使用独立凭据和多个 user/session：等权场景保持相同的租户级到达率，同时在租户内部加入 T4 多 user 大小请求混合（短 1 KiB、中 64 KiB、长 256 KiB；1 MiB 以上仍归边界测试）。每个写 session 执行 open -> add x4 -> Commit -> 轮询终态。Commit 完成吞吐与 Search P95 按租户单独计算，T4 另按 user 和 payload 桶统计。",
+        "boundary": "M2 的等权 Jain 只能用独立租户、同档位、同一测量窗口数据；T4 的大小请求混合用于观察同一公平窗口内不同 user 成本的影响，不把 payload 成本混入 M1 容量边界。M3 的 8:4:2:1 / 1:2:4:8 仍是异构租户权重，不能混入 M2 等权指数。",
         "flow": [
             {"label": "4 tenants", "detail": "独立 key / session"},
             {"label": "equal arrival", "detail": "同速率到达"},
@@ -829,6 +834,14 @@ def _metric_m2() -> dict[str, Any]:
                 "window": "与 4T 相同的测量和 tail 口径",
                 "evidence": "8 个租户逐租户完整分母；缺失租户不填 0",
             },
+            {
+                "id": "m2-t4-mixed-request-sizes",
+                "goal": "把 T4 多 user 间大小请求混合纳入公平性窗口",
+                "actors": "4/8 个独立租户；每租户 4 个 user、每 user 独立 session；不复用凭据",
+                "load": "每租户等权到达；user payload 比例 8:4:1（1 KiB / 64 KiB / 256 KiB），Search 与 Commit 同窗混合",
+                "window": "与对应 4T/8T M2 窗口一致；短中长请求分桶，停压后继续轮询 pending",
+                "evidence": "按 tenant×user×size 桶记录 planned/sent、HTTP、P95/P99、非空 Recall、Commit 完成/pending；同时给 tenant-level Jain 和 size-normalized 对比",
+            },
         ],
         "fields": [
             {"field": "tenant identity", "meaning": "租户是否由不同凭据真实隔离", "denominator": "4T/8T 预期租户数；重复 key 不计为独立租户", "source": "tenant manifest + preflight"},
@@ -852,6 +865,7 @@ def _metric_m2() -> dict[str, Any]:
             {"module": "租户鉴权 / 配额", "observe": "每租户 key、tenant_id、quota/reject", "improve": "启动前做凭据唯一性校验；配额按租户显示而非共享全局池"},
             {"module": "Commit 调度", "observe": "per-tenant arrival、queue、completed、window", "improve": "独立租户配额和加权公平队列；轮询不占用 Search worker"},
             {"module": "Search admission", "observe": "每租户 P95、queue wait、429/503", "improve": "租户级 admission 与全局池分层，避免一个租户耗尽共享槽位"},
+            {"module": "Payload 成本 / T4 混合调度", "observe": "按 user 和 payload 桶的请求大小、token、queue wait、Commit 完成", "improve": "按成本加权配额与大小分层队列；大请求限流，避免小请求被长请求阻塞"},
         ],
         "evidence": ["m2-fairness-4t/records.csv", "m2-fairness-8t/records.csv", "m2-fairness-*/summary.json", "tenant manifest (redacted)"],
     }
@@ -1211,6 +1225,14 @@ def _plan(profile_path: Path, profile: dict[str, Any], evidence_dir: Path | None
                 "status": "PARTIAL",
                 "evidence": "Search Jain 已计算；窗口内无 Commit 完成，Commit Jain 无定义",
                 "next_step": "延长窗口或降低 Commit 强度，保证窗口内有完成样本",
+            },
+            {
+                "unit": "M2-T4",
+                "metric": "M2",
+                "scenario": "多 user 大小请求混合（短/中/长 payload）",
+                "status": "PLANNED",
+                "evidence": "新增 tenant×user×size 分桶口径；当前 run 尚未进入 M2",
+                "next_step": "在 4T/8T 等权窗口中执行并报告大小归一化前后公平性",
             },
             {
                 "unit": "M3-A",
