@@ -92,19 +92,19 @@
     <div class="scroll"><table>
       <thead><tr><th>组</th><th>Search 请求</th><th>Commit 请求</th><th>租户数</th><th>观测</th></tr></thead>
       <tbody>
-        <tr><td>小请求组</td><td>短事实问句（≤100B query）</td><td>短对话 Commit（1KiB 自然语言）</td><td>4</td><td>P50/P95/P99、空召回数、200/429/503 每租户分行</td></tr>
-        <tr><td>大请求组</td><td>长上下文问句（64KiB query）</td><td>长对话 Commit（64KiB 自然语言）</td><td>4</td><td>同左；与小组对比 P95 比值</td></tr>
+        <tr><td>小请求组</td><td><code>short_fact</code> 短事实问句（≤100B query）</td><td>短对话 Commit（1KiB 自然语言）</td><td>4</td><td>P50/P95/P99、空召回数、非空召回数、事实命中、HTTP 200/429/503/超时/传输错误，每租户分行</td></tr>
+        <tr><td>大请求组</td><td><code>long_context</code> 长上下文问句（64KiB query）</td><td>长对话 Commit（64KiB 自然语言）</td><td>4</td><td>同左；与小组对比 P95 比值</td></tr>
         <tr><td>超大请求组</td><td>—</td><td>256KiB Commit</td><td>2</td><td>仅观测，单独统计，不纳入 Jain</td></tr>
       </tbody>
     </table></div>
     <p>大小请求分组后：<b>组内计算 Jain 公平性</b>（小请求组 4 租户、大请求组 4 租户各自算），<b>组间对比 P95 比值</b>。如果大请求组 P95 是小请求组的 3 倍以上，说明存在排队不公平。429/503 按组分别计数，不能把 429 全部归因于"正常容量不足"——如果只有大请求组收到 429 而小请求组没有，说明限流策略本身就可能不公平。</p>
 
-    <h3>每租户 Search 统计（所有 M2 场景通用）</h3>
+    <h3>每租户、每 Search 类型统计（所有 M2 场景通用）</h3>
     <div class="scroll"><table>
-      <thead><tr><th>租户</th><th class="num">HTTP 200</th><th class="num">有效召回</th><th class="num">空召回</th><th class="num">429</th><th class="num">503</th><th class="num">超时</th><th class="num">其他错误</th><th class="num">P50(ms)</th><th class="num">P95(ms)</th><th class="num">P99(ms)</th></tr></thead>
+      <thead><tr><th>租户</th><th>user</th><th>size bucket</th><th>search_type</th><th class="num">planned</th><th class="num">sent</th><th class="num">HTTP 200</th><th class="num">非空召回</th><th class="num">空召回</th><th class="num">事实命中</th><th class="num">429</th><th class="num">503</th><th class="num">超时</th><th class="num">传输错误</th><th class="num">其他 4xx/5xx</th><th class="num">P50(ms)</th><th class="num">P95(ms)</th><th class="num">P99(ms)</th></tr></thead>
       <tbody>
-        <tr><td>tenant-0</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td></tr>
-        <tr><td colspan="11" style="color:#536d71;font-size:13px">…每租户一行；零请求租户也必须出现在表中，吞吐按 0 纳入 Jain；无 P95 时标注"无样本"</td></tr>
+        <tr><td>tenant-0</td><td>user-a</td><td>1KiB</td><td>short_fact</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td></tr>
+        <tr><td colspan="18" style="color:#536d71;font-size:13px">…按 tenant × user × size bucket × search_type 分桶；零请求桶也必须出现在表中。HTTP 200 后继续拆非空召回、空召回、事实命中；429/503、超时、传输错误和未发请求仍留在 planned 分母里。</td></tr>
       </tbody>
     </table></div>
   </section>
@@ -118,7 +118,7 @@
         <tr><td>Baseline</td><td>已验证 query，固定 C=2/16/64</td><td>不发</td><td>只有 baseline 健康，才可以解释后续劣化比例</td></tr>
         <tr><td>Uniform flood</td><td>各租户等权</td><td>各租户等量持续 Commit</td><td>对比 Search P95/P99、错误、事实命中、queue wait</td></tr>
         <tr><td>Noisy neighbor</td><td>所有租户等权 Search</td><td>仅 1 个租户洪泛 Commit</td><td>比较洪泛租户与旁观租户，验证隔离</td></tr>
-        <tr><td>Heterogeneous size</td><td>短 Search 与长上下文 Search 分组</td><td>1KiB、64KiB、256KiB 自然语言 Commit 分组</td><td>观察不同 user 的吞吐、P95、pending 与 Jain；1MiB 留给边界组</td></tr>
+        <tr><td>Heterogeneous tenants</td><td>租户 Search 权重 8:4:2:1；仍使用已验证 recall query</td><td>租户 Commit 权重 1:2:4:8</td><td>观察读多写少、均衡、写多读少租户在洪泛窗口的 P95/P99、质量、错误和 pending；不再重复 M2-T4 的大小请求混合</td></tr>
       </tbody>
     </table></div>
     <p>只统计 Search 时间戳落在“至少一个 Commit 已返回 202 且尚未终态”的重叠窗口内的样本。每个场景保留 Commit 时间线、Search 时间线和 server queue wait；不能用非重叠的 503/超时推断洪泛影响。</p>

@@ -17,6 +17,7 @@ from performance.targets.echomem.acceptance.semantic_corpus import (
     build_fixed_fact_corpus,
     build_fixed_tenant_data_corpus,
     build_locomo_fragment_corpus,
+    build_locomo_single_sentence_corpus,
     build_locomo_session_corpus,
 )
 from performance.targets.echomem.probes._client import EchoMemHTTP, extract_archive, status_from
@@ -175,6 +176,7 @@ def provision_actors(base_url: str, tenants: int, users: int, *, memory_scale: i
                      dataset_path: str | None = None,
                      sample_id: str = "conv-30",
                      session_key: str = "session_1",
+                     sentence_id: str = "D1:2",
                      session_keys: list[str] | None = None,
                      max_questions: int | None = None,
                      query_count: int | None = None,
@@ -218,7 +220,7 @@ def provision_actors(base_url: str, tenants: int, users: int, *, memory_scale: i
                 corpus = build_locomo_fragment_corpus(
                     identity, seed_path=fragment_seed_file, tenant_index=tenant_index,
                 )
-            elif corpus_mode == "locomo-single-session":
+            elif corpus_mode in {"locomo-single-session", "locomo-single-sentence"}:
                 chosen_sample = sample_id
                 chosen_session = session_key
                 if session_keys:
@@ -227,12 +229,22 @@ def provision_actors(base_url: str, tenants: int, users: int, *, memory_scale: i
                         chosen_sample, chosen_session = token.split("/", 1)
                     else:
                         chosen_session = token
-                corpus = build_locomo_session_corpus(
-                    identity,
-                    dataset_path=dataset_path or DEFAULT_LOCOMO_DATASET,
-                    sample_id=chosen_sample,
-                    session_key=chosen_session,
-                )
+                if corpus_mode == "locomo-single-sentence":
+                    corpus = build_locomo_single_sentence_corpus(
+                        identity,
+                        dataset_path=dataset_path or DEFAULT_LOCOMO_DATASET,
+                        sample_id=chosen_sample,
+                        session_key=chosen_session,
+                        sentence_id=str(sentence_id or "D1:2"),
+                        question_variant=tenant_index * max(1, users) + user_index,
+                    )
+                else:
+                    corpus = build_locomo_session_corpus(
+                        identity,
+                        dataset_path=dataset_path or DEFAULT_LOCOMO_DATASET,
+                        sample_id=chosen_sample,
+                        session_key=chosen_session,
+                    )
                 corpus = _reduce_locomo_corpus(corpus, max_questions)
                 corpus["source"] = {**(corpus.get("source") or {}),
                                     "assigned_sample_id": chosen_sample,

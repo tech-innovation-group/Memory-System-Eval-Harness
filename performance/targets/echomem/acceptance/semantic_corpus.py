@@ -107,6 +107,77 @@ def build_locomo_session_corpus(
     return result
 
 
+def build_locomo_single_sentence_corpus(
+    identity: str,
+    *,
+    dataset_path: str | Path = DEFAULT_LOCOMO_DATASET,
+    sample_id: str = "conv-30",
+    session_key: str = "session_1",
+    sentence_id: str = "D1:2",
+    question_variant: int = 0,
+) -> dict:
+    """Use one shared LoCoMo sentence while varying each tenant's question."""
+    raw = json.loads(Path(dataset_path).read_text(encoding="utf-8"))
+    samples = raw if isinstance(raw, list) else [raw]
+    sample = next((row for row in samples if isinstance(row, dict)
+                   and str(row.get("sample_id")) == sample_id), None)
+    if sample is None:
+        raise ValueError(f"LoCoMo sample not found: {sample_id}")
+    conversation = sample.get("conversation") or {}
+    messages = conversation.get(session_key)
+    message = next((item for item in messages or []
+                    if isinstance(item, dict) and str(item.get("dia_id")) == sentence_id), None)
+    if message is None:
+        raise ValueError(f"LoCoMo sentence not found: {sample_id}/{session_key}/{sentence_id}")
+    qa = next((item for item in sample.get("qa") or []
+               if isinstance(item, dict) and [str(value) for value in item.get("evidence") or []] == [sentence_id]
+               and str(item.get("answer") or "").strip()), None)
+    if qa is None:
+        raise ValueError(f"LoCoMo sentence has no single-sentence QA: {sentence_id}")
+    identity_tag = hashlib.sha256(identity.encode()).hexdigest()[:12]
+    marker = f"LOCOMO-SENTENCE-EVIDENCE-{identity_tag}-{sentence_id.replace(':', '-')}"
+    speaker = str(message.get("speaker") or message.get("role") or "speaker")
+    text = str(message.get("text") or "").strip()
+    if not text:
+        raise ValueError(f"LoCoMo sentence is empty: {sentence_id}")
+    questions = (
+        f"When did {speaker} say they lost their job as a banker?",
+        f"What date did {speaker} report losing the banking job?",
+        f"{speaker} lost the banker job on what date?",
+        f"Which date is associated with {speaker}'s job loss as a banker?",
+    )
+    question = questions[int(question_variant) % len(questions)]
+    fact_id = f"{sample_id}-{session_key}-{sentence_id}-single-sentence"
+    document = f"{speaker}: {text} Evidence marker: {marker}."
+    result = {
+        "documents": [document],
+        "facts": [{"id": fact_id, "answer": str(qa["answer"]), "evidence": [sentence_id]}],
+        "recall_queries": [{
+            "id": f"{fact_id}-q{int(question_variant) % len(questions)}",
+            "fact_id": fact_id,
+            "query": question,
+            "query_type": "short_fact",
+            "aliases": [marker],
+            "match_policy": "all",
+            "expected_answer": str(qa["answer"]),
+            "evidence_ids": [sentence_id],
+        }],
+        "no_recall_queries": [{"id": f"no-recall-{index}", "query": value,
+                               "query_type": "no_recall", "aliases": []}
+                              for index, value in enumerate(NO_RECALL)],
+        "memory_scale": 1,
+        "input_characters": len(document),
+        "query_contract": "locomo-single-sentence-evidence-v1",
+        "source": {"kind": "locomo-single-sentence", "sample_id": sample_id,
+                   "session_key": session_key, "sentence_id": sentence_id,
+                   "session_messages": 1, "question_variant": int(question_variant) % len(questions)},
+    }
+    result["fingerprint"] = hashlib.sha256(
+        json.dumps(result, sort_keys=True, ensure_ascii=False).encode()
+    ).hexdigest()
+    return result
+
+
 def build_locomo_fragment_corpus(
     identity: str,
     *,

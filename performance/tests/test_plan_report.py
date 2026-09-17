@@ -8,8 +8,18 @@ from scripts.build_echomem_test_plan import _metric_m2
 
 class PlanReportTest(unittest.TestCase):
     def test_m2_contains_t4_size_mix_case(self):
-        case_ids = {case["id"] for case in _metric_m2()["cases"]}
+        metric = _metric_m2()
+        case_ids = {case["id"] for case in metric["cases"]}
         self.assertIn("m2-t4-mixed-request-sizes", case_ids)
+        rendered = "\n".join(
+            str(value)
+            for section in ("cases", "fields", "formulas", "modules")
+            for row in metric[section]
+            for value in (row.values() if isinstance(row, dict) else (row,))
+        )
+        self.assertIn("tenant×user×size×search_type", rendered)
+        self.assertIn("HTTP 200/429/503", rendered)
+        self.assertIn("空召回", rendered)
 
     def test_renders_stage_timing_evidence(self):
         with tempfile.TemporaryDirectory() as directory:

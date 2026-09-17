@@ -15,7 +15,7 @@
 ### 核心数据流
 
 ```
-Phase 0: Seed（每租户注入不同 LoCoMo session）
+Phase 0: Seed（所有租户使用同一 LoCoMo session 的同一句话；每租户使用不同问法）
   → 固定 LoCoMo 版本 + 随机种子
   → 64 个不同 session 分配，保存 conv_id/消息数/字符数/哈希
   → threshold = max(20000, 最长 session 字符数 + 余量)

@@ -423,6 +423,7 @@ def _preflight_stage(config: str, *, strict: bool = False) -> dict:
 
 def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, seed_messages, *,
                            reuse_seed=None, dataset_path="", sample_id="conv-30", session_key="session_1",
+                           sentence_id="D1:2",
                            search_timeout_s=60, corpus_mode="locomo-single-session",
                            validation_queries=4, validation_query_ids=None,
                            seed_workers=None, identity_cache=None, fragment_seed_file=""):
@@ -439,6 +440,7 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
         DEFAULT_LOCOMO_DATASET,
         build_fixed_fact_corpus,
         build_locomo_fragment_corpus,
+        build_locomo_single_sentence_corpus,
         build_locomo_session_corpus,
     )
     from performance.targets.echomem.probes._client import EchoMemHTTP
@@ -446,7 +448,7 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
     validate_search_timeout(search_timeout_s)
     run_tag = uuid.uuid4().hex
     source_path = Path(dataset_path) if dataset_path else DEFAULT_LOCOMO_DATASET
-    if corpus_mode not in {"locomo-single-session", "fixed-natural-fact", "locomo-fragment-file"}:
+    if corpus_mode not in {"locomo-single-session", "locomo-single-sentence", "fixed-natural-fact", "locomo-fragment-file"}:
         raise ValueError("corpus_mode must be locomo-single-session, fixed-natural-fact or locomo-fragment-file")
     fragment_path = Path(fragment_seed_file) if fragment_seed_file else None
     if corpus_mode == "locomo-fragment-file" and (fragment_path is None or not fragment_path.is_file()):
@@ -479,6 +481,12 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
                 corpus = build_locomo_fragment_corpus(
                     identity, seed_path=fragment_path, tenant_index=index,
                 )
+            elif corpus_mode == "locomo-single-sentence":
+                corpus = build_locomo_single_sentence_corpus(
+                    identity, dataset_path=source_path, sample_id=sample_id,
+                    session_key=session_key, sentence_id=sentence_id,
+                    question_variant=index,
+                )
             else:
                 corpus = build_locomo_session_corpus(
                     identity, dataset_path=source_path, sample_id=sample_id,
@@ -505,11 +513,12 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
         expected_contract = {
             "fixed-natural-fact": "fixed-natural-fact-v1",
             "locomo-single-session": "locomo-single-session-evidence-v1",
+            "locomo-single-sentence": "locomo-single-sentence-evidence-v1",
             "locomo-fragment-file": "locomo-fragment-local-evidence-v1",
         }[corpus_mode]
         incompatible = [a for a in cached if (
             a.corpus.get("query_contract") != expected_contract
-            or (corpus_mode == "locomo-single-session" and (
+            or (corpus_mode in {"locomo-single-session", "locomo-single-sentence"} and (
                 (a.corpus.get("source") or {}).get("sample_id") != sample_id
                 or (a.corpus.get("source") or {}).get("session_key") != session_key
             ))
@@ -703,6 +712,7 @@ def run_suite(
         "dataset_path": profile.get("semantic_seed_dataset", ""),
         "sample_id": profile.get("semantic_seed_sample", "conv-30"),
         "session_key": profile.get("semantic_seed_session", "session_1"),
+        "sentence_id": profile.get("semantic_seed_sentence_id", "D1:2"),
         "search_timeout_s": profile.get("seed_search_timeout_s", 60),
     }
     if profile.get("semantic_seed_fragment_file"):

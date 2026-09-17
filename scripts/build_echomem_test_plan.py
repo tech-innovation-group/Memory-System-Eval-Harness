@@ -840,12 +840,15 @@ def _metric_m2() -> dict[str, Any]:
                 "actors": "4/8 个独立租户；每租户 4 个 user、每 user 独立 session；不复用凭据",
                 "load": "每租户等权到达；user payload 比例 8:4:1（1 KiB / 64 KiB / 256 KiB），Search 与 Commit 同窗混合",
                 "window": "与对应 4T/8T M2 窗口一致；短中长请求分桶，停压后继续轮询 pending",
-                "evidence": "按 tenant×user×size 桶记录 planned/sent、HTTP、P95/P99、非空 Recall、Commit 完成/pending；同时给 tenant-level Jain 和 size-normalized 对比",
+                "evidence": "按 tenant×user×size×search_type 桶记录 planned/sent、HTTP 200/429/503/timeout/transport、空召回、非空 Recall、事实命中、P95/P99、Commit 完成/pending；同时给 tenant-level Jain 和 size-normalized 对比",
             },
         ],
         "fields": [
             {"field": "tenant identity", "meaning": "租户是否由不同凭据真实隔离", "denominator": "4T/8T 预期租户数；重复 key 不计为独立租户", "source": "tenant manifest + preflight"},
             {"field": "Search offered/arrivals/P95", "meaning": "每租户实际到达与尾延迟", "denominator": "固定测量窗口内已发 Search；未发另列", "source": "records.csv"},
+            {"field": "Search recall breakdown by type", "meaning": "按 tenant×user×size×search_type 分桶统计不同召回 query 的结果", "denominator": "每个桶内所有 planned Search；not_sent、HTTP 429/503、timeout 和 transport error 不从分母删除", "source": "records.csv + semantic assessor"},
+            {"field": "HTTP status counts", "meaning": "每个 Search 分桶的 HTTP 200、429、503、其他 4xx/5xx、timeout、transport error 个数", "denominator": "所有 sent Search；HTTP 200 继续拆 recall 结果，非 200 只进入错误分项", "source": "records.csv + client error log"},
+            {"field": "empty_recall / non_empty_recall / fact_hit", "meaning": "区分 200 但无召回、200 且有召回、以及命中预期事实", "denominator": "HTTP 200 Search；空召回不算质量成功，但必须保留为独立计数", "source": "retrieval response + expected-answer assessor"},
             {"field": "Commit planned/202/completed/pending", "meaning": "受理和终态完成分开", "denominator": "计划事务；202 只进入 accepted，不进入 completed", "source": "commit evidence + status polls"},
             {"field": "Jain_commit", "meaning": "各租户完成 Commit/s 的等权公平", "denominator": "x_i=每租户窗口内 completed/s；零完成租户保留", "source": "derived from per-tenant window"},
             {"field": "Jain_search", "meaning": "各租户 Search P95 倒数的等权公平", "denominator": "y_i=1/P95_i；缺失/非法 P95 不伪造为 0", "source": "derived from per-tenant window"},
@@ -854,6 +857,7 @@ def _metric_m2() -> dict[str, Any]:
             "Jain(x) = (sum(x_i)^2) / (n * sum(x_i^2))；n 是实际应测的独立租户数，零完成租户仍在分母。",
             "Commit 公平使用完成吞吐，不使用提交数或 202 数；Search 公平使用每租户 P95 的倒数，数值越大表示延迟越公平。",
             "等权窗口只包含同一测量时间段；窗口外排空单列，不能用 tail 完成量回填窗口内吞吐。",
+            "Search 分桶口径 = tenant_id × user_id × size_bucket × search_type；至少包含 short_fact、long_context、mixed_context 三类，报告中逐桶列出空召回数量和 HTTP 200/429/503/timeout/transport 个数。",
             "所有租户都为 0 完成时 Commit Jain 没有业务意义，报告写明未定义和原因，不写成 1。",
         ],
         "gaps": [
@@ -864,7 +868,7 @@ def _metric_m2() -> dict[str, Any]:
         "modules": [
             {"module": "租户鉴权 / 配额", "observe": "每租户 key、tenant_id、quota/reject", "improve": "启动前做凭据唯一性校验；配额按租户显示而非共享全局池"},
             {"module": "Commit 调度", "observe": "per-tenant arrival、queue、completed、window", "improve": "独立租户配额和加权公平队列；轮询不占用 Search worker"},
-            {"module": "Search admission", "observe": "每租户 P95、queue wait、429/503", "improve": "租户级 admission 与全局池分层，避免一个租户耗尽共享槽位"},
+            {"module": "Search admission", "observe": "每租户、每 user、每 search_type 的 P95、queue wait、HTTP 200/429/503、空召回", "improve": "租户级 admission 与全局池分层，按 query 类型暴露拒绝和空召回原因，避免一个租户耗尽共享槽位"},
             {"module": "Payload 成本 / T4 混合调度", "observe": "按 user 和 payload 桶的请求大小、token、queue wait、Commit 完成", "improve": "按成本加权配额与大小分层队列；大请求限流，避免小请求被长请求阻塞"},
         ],
         "evidence": ["m2-fairness-4t/records.csv", "m2-fairness-8t/records.csv", "m2-fairness-*/summary.json", "tenant manifest (redacted)"],
