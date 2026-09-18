@@ -115,8 +115,11 @@ def build_locomo_single_sentence_corpus(
     session_key: str = "session_1",
     sentence_id: str = "D1:2",
     question_variant: int = 0,
+    repeat_count: int = 1,
 ) -> dict:
-    """Use one shared LoCoMo sentence while varying each tenant's question."""
+    """Use one shared LoCoMo sentence, optionally repeated per tenant."""
+    if repeat_count < 1:
+        raise ValueError("repeat_count must be at least 1")
     raw = json.loads(Path(dataset_path).read_text(encoding="utf-8"))
     samples = raw if isinstance(raw, list) else [raw]
     sample = next((row for row in samples if isinstance(row, dict)
@@ -149,8 +152,9 @@ def build_locomo_single_sentence_corpus(
     question = questions[int(question_variant) % len(questions)]
     fact_id = f"{sample_id}-{session_key}-{sentence_id}-single-sentence"
     document = f"{speaker}: {text} Evidence marker: {marker}."
+    documents = [document] * repeat_count
     result = {
-        "documents": [document],
+        "documents": documents,
         "facts": [{"id": fact_id, "answer": str(qa["answer"]), "evidence": [sentence_id]}],
         "recall_queries": [{
             "id": f"{fact_id}-q{int(question_variant) % len(questions)}",
@@ -165,12 +169,13 @@ def build_locomo_single_sentence_corpus(
         "no_recall_queries": [{"id": f"no-recall-{index}", "query": value,
                                "query_type": "no_recall", "aliases": []}
                               for index, value in enumerate(NO_RECALL)],
-        "memory_scale": 1,
-        "input_characters": len(document),
+        "memory_scale": repeat_count,
+        "input_characters": len(document) * repeat_count,
         "query_contract": "locomo-single-sentence-evidence-v1",
         "source": {"kind": "locomo-single-sentence", "sample_id": sample_id,
                    "session_key": session_key, "sentence_id": sentence_id,
-                   "session_messages": 1, "question_variant": int(question_variant) % len(questions)},
+                   "session_messages": 1, "repeated_documents": repeat_count,
+                   "question_variant": int(question_variant) % len(questions)},
     }
     result["fingerprint"] = hashlib.sha256(
         json.dumps(result, sort_keys=True, ensure_ascii=False).encode()

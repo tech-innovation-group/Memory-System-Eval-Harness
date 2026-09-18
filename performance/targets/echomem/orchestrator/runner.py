@@ -424,6 +424,7 @@ def _preflight_stage(config: str, *, strict: bool = False) -> dict:
 def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, seed_messages, *,
                            reuse_seed=None, dataset_path="", sample_id="conv-30", session_key="session_1",
                            sentence_id="D1:2",
+                           question_variant=0, repeat_count=1,
                            search_timeout_s=60, corpus_mode="locomo-single-session",
                            validation_queries=4, validation_query_ids=None,
                            seed_workers=None, identity_cache=None, fragment_seed_file=""):
@@ -485,7 +486,8 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
                 corpus = build_locomo_single_sentence_corpus(
                     identity, dataset_path=source_path, sample_id=sample_id,
                     session_key=session_key, sentence_id=sentence_id,
-                    question_variant=index,
+                    question_variant=question_variant,
+                    repeat_count=repeat_count,
                 )
             else:
                 corpus = build_locomo_session_corpus(
@@ -713,6 +715,8 @@ def run_suite(
         "sample_id": profile.get("semantic_seed_sample", "conv-30"),
         "session_key": profile.get("semantic_seed_session", "session_1"),
         "sentence_id": profile.get("semantic_seed_sentence_id", "D1:2"),
+        "question_variant": int(profile.get("semantic_seed_question_variant", 0)),
+        "repeat_count": int(profile.get("semantic_seed_repeat_count", 1)),
         "search_timeout_s": profile.get("seed_search_timeout_s", 60),
     }
     if profile.get("semantic_seed_fragment_file"):

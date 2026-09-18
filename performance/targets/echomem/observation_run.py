@@ -77,6 +77,7 @@ def _public_profile(profile: dict[str, Any]) -> dict[str, Any]:
         "m1_seed_profile", "m1_seed_workers", "m1_within_fixed_tenants",
         "m1_seed_dataset", "m1_seed_sample", "m1_seed_session", "m1_seed_session_keys",
         "m1_seed_fragment_file",
+        "m1_seed_sentence_id", "m1_seed_question_variant", "m1_seed_repeat_count",
         "m1_seed_max_questions", "m1_seed_query_count",
         "m1_seed_timeout_s", "m1_seed_full_session", "m1_recovery_timeout_s",
         "m1_reuse_seed", "m1_reuse_preflight_checks",
@@ -89,6 +90,8 @@ def _public_profile(profile: dict[str, Any]) -> dict[str, Any]:
         "require_stage_observability",
         "preflight_config", "tenant_config",
         "semantic_seed_mode", "semantic_seed_validation_queries", "semantic_seed_validation_query_ids",
+        "semantic_seed_sample", "semantic_seed_session", "semantic_seed_sentence_id",
+        "semantic_seed_question_variant", "semantic_seed_repeat_count",
         "semantic_seed_workers", "semantic_seed_identity_cache", "semantic_seed_fragment_file",
     }
     return {key: profile.get(key) for key in allowed if profile.get(key) not in (None, "")}
@@ -256,6 +259,9 @@ def _run_m1_profiles(profile: dict[str, Any], args: argparse.Namespace, output: 
             fragment_seed_file=str(profile.get("m1_seed_fragment_file") or "") or None,
             sample_id=str(profile.get("m1_seed_sample") or "conv-30"),
             session_key=str(profile.get("m1_seed_session") or "session_1"),
+            sentence_id=str(profile.get("m1_seed_sentence_id") or "D1:2"),
+            question_variant=int(profile.get("m1_seed_question_variant", 0)),
+            repeat_count=int(profile.get("m1_seed_repeat_count", 1)),
             session_keys=[str(item) for item in (profile.get("m1_seed_session_keys") or [])] or None,
             max_questions=(int(profile["m1_seed_max_questions"])
                            if profile.get("m1_seed_max_questions") is not None else None),
