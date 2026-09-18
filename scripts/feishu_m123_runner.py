@@ -27,7 +27,9 @@ def provision(base_url, count=8):
         auth = result.get('auth_key') or result.get('key', {}).get('auth_key')
         if not auth:
             raise RuntimeError('Tenant provisioning returned no auth key')
-        tenants.append({'tenant_id': tenant, 'user_id': user, 'auth_key': auth})
+        env_name = f'ECHOMEM_TENANT_{i + 1}_KEY'
+        os.environ[env_name] = auth
+        tenants.append({'tenant_id': tenant, 'user_id': user, 'auth_key_env': env_name})
         print(f'Independent tenants ready: {i + 1}/{count}', flush=True)
     return tenants
 
@@ -36,6 +38,12 @@ def main():
     os.umask(0o077)
     private = Path('/private'); private.mkdir(exist_ok=True)
     tenants = provision(os.environ['STRESS_BASE_URL'])
+    env_path = private / 'tenant.env'
+    with env_path.open('w', encoding='utf-8') as handle:
+        for item in tenants:
+            name = item['auth_key_env']
+            handle.write(f'{name}={os.environ[name]}\n')
+    env_path.chmod(0o600)
     (private / 'tenants.json').write_text(json.dumps({'tenants': tenants}))
     # Remove provisioning capability from the load subprocess environment.
     os.environ.pop('ECHOMEM_PROVISIONING_AUTH_KEY', None)
