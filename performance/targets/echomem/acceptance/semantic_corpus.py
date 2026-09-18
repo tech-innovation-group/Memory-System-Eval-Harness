@@ -151,7 +151,9 @@ def build_locomo_single_sentence_corpus(
     )
     question = questions[int(question_variant) % len(questions)]
     fact_id = f"{sample_id}-{session_key}-{sentence_id}-single-sentence"
-    document = f"{speaker}: {text} Evidence marker: {marker}."
+    date_time = str(conversation.get(f"{session_key}_date_time") or "").strip()
+    time_prefix = f"Conversation time: {date_time}. " if date_time else ""
+    document = f"{time_prefix}{speaker}: {text} Evidence marker: {marker}."
     documents = [document] * repeat_count
     result = {
         "documents": documents,

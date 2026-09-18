@@ -5,7 +5,20 @@ from performance.targets.echomem.acceptance.semantic_corpus import (
     build_corpus,
     build_locomo_fragment_corpus,
     build_locomo_session_corpus,
+    build_locomo_single_sentence_corpus,
 )
+
+
+def test_repeated_sentence_preserves_date_needed_for_relative_time_qa():
+    corpus = build_locomo_single_sentence_corpus("date-context", repeat_count=100)
+    assert len(corpus["documents"]) == 100
+    assert len(set(corpus["documents"])) == 1
+    document = corpus["documents"][0]
+    assert "20 January, 2023" in document
+    assert "yesterday" in document
+    assert corpus["recall_queries"][0]["expected_answer"] == "19 January, 2023"
+    other = build_locomo_single_sentence_corpus("other-tenant", repeat_count=100)
+    assert other["recall_queries"][0]["query"] == corpus["recall_queries"][0]["query"]
 
 
 def test_corpus_has_fixed_facts_paraphrases_and_non_recall_queries():
