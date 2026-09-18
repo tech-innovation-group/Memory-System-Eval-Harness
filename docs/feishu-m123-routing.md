@@ -8,6 +8,12 @@
 容器（4 CPU / 8 GiB），开启 DEBUG/JSON；模型配置沿用机器人当前配置，不静默换模型。
 8 个独立租户各注入 LoCoMo conv-30/session_1/D1:19 的 100 份相同信息，使用相同 QA。
 M1 目标并发为 64；M2/M3 复用本次 M1 的种子身份。M2/M3 使用套件正式窗口默认值。
+
+服务端调度配置按 600 客户端并发预留：HTTP workers=2400、检索准入=600、Commit
+queue=2400、Commit tenant quota=600、Commit executor=600、LLM/Embedding=2400、
+Recall LLM/Embedding=600、tenant concurrency=600、tenant QPS=2400；控制面连接池为
+500。64 并发与未来 600 并发复用该上限。4 CPU/8 GiB 和 Provider 配额仍是实际边界，
+这些数值不是性能承诺；默认 profile 与本调优 profile 应分开比较。
 任务的重试保留 stress 类型，不会回退到 LoCoMo。报告为 observation_run 的 report.html；
 缺少报告视为 WRONG_ENTRYPOINT。PARTIAL/BLOCKED 是实测结论，不转换为性能通过。
 

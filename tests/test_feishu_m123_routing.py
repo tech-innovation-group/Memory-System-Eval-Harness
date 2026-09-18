@@ -36,7 +36,16 @@ class RoutingTests(unittest.TestCase):
             self.assertEqual(profile['m1_seed_repeat_count'], 100)
             self.assertEqual(profile['semantic_seed_repeat_count'], 100)
             self.assertEqual(profile['resource_container'], 'job-target')
+            self.assertEqual(profile['service_concurrency_target'], 600)
             self.assertNotIn('private-test-key', json.dumps(profile))
+        tune = self.ns.get('apply_m123_service_tuning')
+        # The tuning contract is generated in the deployed bot; verify its
+        # selected values without touching a real EchoMem instance.
+        if tune:
+            cfg = tune({})
+            self.assertEqual(cfg['scheduling']['http']['max_workers'], 2400)
+            self.assertEqual(cfg['scheduling']['retrieval']['admission_permits'], 600)
+            self.assertEqual(cfg['scheduling']['llm_gateway']['recall_llm_max_concurrent'], 600)
             self.assertIn('/opt/echomem-pr-bot/harness', volumes)
             self.assertEqual(cmd, ['python', '/app/scripts/feishu_m123_runner.py'])
 

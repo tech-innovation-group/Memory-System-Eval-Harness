@@ -14,6 +14,27 @@ def parse_stress_command(text):
     return ("develop", None) if match.group(1) == "develop" else ("pr", int(match.group(2)))
 
 
+def apply_m123_service_tuning(config):
+    """Set service admission/pool knobs high enough for 64/600 client loads."""
+    scheduling = config.setdefault("scheduling", {})
+    scheduling.update({
+        "http": {"max_workers": 2400},
+        "retrieval": {"admission_permits": 600},
+        "commit": {"queue_max": 2400, "tenant_quota": 600, "executor_workers": 600},
+        "tenant": {"concurrency": 600, "qps": 2400},
+        "llm_gateway": {
+            "llm_max_concurrent": 2400, "embed_max_concurrent": 2400,
+            "recall_llm_max_concurrent": 600, "recall_embed_max_concurrent": 600,
+            "episode_llm_max_concurrent": 600, "episode_embed_max_concurrent": 600,
+            "workers_llm_share": 600, "workers_embed_share": 600,
+            "provider_budget_llm": 4200, "provider_budget_embed": 4200,
+        },
+    })
+    config.setdefault("control_store", {})["pool_size"] = 500
+    config.setdefault("tenant_coordination", {})["pool_size"] = 500
+    return config
+
+
 def stress_runner_spec(job, provisioning_key, prepared, echo_container):
     # The target is the source version prepared for THIS job, never the old
     # manually started target. Private credentials stay in /private tmpfs.
@@ -23,6 +44,7 @@ def stress_runner_spec(job, provisioning_key, prepared, echo_container):
         "name": "bot-M1M2M3-64c-100", "base_url": f"http://127.0.0.1:{ECHOMEM_HTTP_PORT}",
         "tenant_config": "/private/tenants.json", "preflight_config": "/target/config.json",
         "resource_container": echo_container.name, "required_concurrency": 64,
+        "service_concurrency_target": 600,
         "required_embedding_model": "qwen3.7-text-embedding-flash",
         "m1_topologies": ["concurrency"], "m1_concurrency_levels": [64],
         "m1_concurrency_tenants": 8, "m1_tenant_levels": [8], "m1_load_profile": "search",
@@ -73,7 +95,7 @@ def patch_source(source):
     replace('f"任务已创建\\nLoCoMo / conv-30\\n{code_source}\\n"', 'f"任务已创建\\n{\'M1/M2/M3 压测 · 64 并发 · 每租户 100 条\' if stress_command else \'LoCoMo / conv-30\'}\\n{code_source}\\n"')
     replace('                "服务器单并发排队执行，完成后自动回传准确率和结果文件。",', '                + ("任务排队执行，结果页展示 M1/M2/M3 报告。" if stress_command else "服务器单并发排队执行，完成后自动回传准确率和结果文件。"),')
     replace('        echo_container = client.containers.run(\n            prepared["image"],', '        echo_container = client.containers.run(\n            prepared["image"],\n            **({"nano_cpus": 4000000000, "mem_limit": "8g"} if job.get("test_type") == "stress" else {}),')
-    replace('        prepared = prepare_echomem_source(job, secret_values)', '        prepared = prepare_echomem_source(job, secret_values)\n        if job.get("test_type") == "stress":\n            config_path = Path(prepared["config_path"])\n            config = json.loads(config_path.read_text())\n            config.setdefault("runtime", {})["log_level"] = "DEBUG"\n            config.setdefault("logging", {}).update(level="debug", format="json")\n            config_path.write_text(json.dumps(config))')
+    replace('        prepared = prepare_echomem_source(job, secret_values)', '        prepared = prepare_echomem_source(job, secret_values)\n        if job.get("test_type") == "stress":\n            config_path = Path(prepared["config_path"])\n            config = json.loads(config_path.read_text())\n            config.setdefault("runtime", {})["log_level"] = "DEBUG"\n            config.setdefault("logging", {}).update(level="debug", format="json")\n            config = apply_m123_service_tuning(config)\n            config_path.write_text(json.dumps(config))')
     anchor='        eval_container = client.containers.run(\n            IMAGE,'
     replace(anchor, '''        runner_volumes = {str(DOCKER_RESULTS_DIR): {"bind": "/app/results", "mode": "rw"}}
         if job.get("test_type") == "stress":
