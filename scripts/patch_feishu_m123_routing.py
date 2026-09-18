@@ -31,7 +31,6 @@ def apply_m123_service_tuning(config):
         },
     })
     config.setdefault("control_store", {})["pool_size"] = 500
-    config.setdefault("tenant_coordination", {})["pool_size"] = 500
     return config
 
 
