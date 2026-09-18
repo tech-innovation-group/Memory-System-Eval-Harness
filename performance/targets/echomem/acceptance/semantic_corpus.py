@@ -143,13 +143,11 @@ def build_locomo_single_sentence_corpus(
     text = str(message.get("text") or "").strip()
     if not text:
         raise ValueError(f"LoCoMo sentence is empty: {sentence_id}")
-    questions = (
-        f"When did {speaker} say they lost their job as a banker?",
-        f"What date did {speaker} report losing the banking job?",
-        f"{speaker} lost the banker job on what date?",
-        f"Which date is associated with {speaker}'s job loss as a banker?",
-    )
-    question = questions[int(question_variant) % len(questions)]
+    # Keep the real LoCoMo QA wording tied to the selected evidence sentence.
+    # This prevents a fixed banker/date question from being paired with a
+    # different sentence when profiles switch the one-sentence fixture.
+    questions = (str(qa["question"]).strip(),)
+    question = questions[0]
     fact_id = f"{sample_id}-{session_key}-{sentence_id}-single-sentence"
     date_time = str(conversation.get(f"{session_key}_date_time") or "").strip()
     time_prefix = f"Conversation time: {date_time}. " if date_time else ""
@@ -159,7 +157,7 @@ def build_locomo_single_sentence_corpus(
         "documents": documents,
         "facts": [{"id": fact_id, "answer": str(qa["answer"]), "evidence": [sentence_id]}],
         "recall_queries": [{
-            "id": f"{fact_id}-q{int(question_variant) % len(questions)}",
+            "id": f"{fact_id}-q0",
             "fact_id": fact_id,
             "query": question,
             "query_type": "short_fact",
@@ -177,7 +175,7 @@ def build_locomo_single_sentence_corpus(
         "source": {"kind": "locomo-single-sentence", "sample_id": sample_id,
                    "session_key": session_key, "sentence_id": sentence_id,
                    "session_messages": 1, "repeated_documents": repeat_count,
-                   "question_variant": int(question_variant) % len(questions)},
+                   "question_variant": 0},
     }
     result["fingerprint"] = hashlib.sha256(
         json.dumps(result, sort_keys=True, ensure_ascii=False).encode()
