@@ -187,7 +187,8 @@ def _inject_report(report: Path, dossier: dict[str, Any]) -> None:
     llm_html = "<p class='stress-muted'>" + html.escape(str(llm.get("reason") or "模型分析已完成")) + "</p>"
     if llm.get("text"):
         llm_html = "<pre class='stress-llm'>" + html.escape(str(llm["text"])) + "</pre>"
-    section = "<section class='stress-dossier'><h2>异常诊断与开发者分析</h2><p>本节只展示由本次结果计算出的异常，不修改原始分母；HTTP 成功、非空召回和事实命中分别统计。</p><div class='stress-anomaly-grid'>" + "".join(cards or ["<p>本次没有检测到规则异常。</p>"]) + "</div><h3>大模型分析</h3>" + llm_html + "<p><a href='files/anomaly-dossier.json'>结构化诊断</a> · <a href='files/developer-bundle.tar.gz'>开发者资料包</a></p></section>"
+    job_root = html.escape(root_name := report.parent.name)
+    section = "<section class='stress-dossier'><h2>异常诊断与开发者分析</h2><p>本节只展示由本次结果计算出的异常，不修改原始分母；HTTP 成功、非空召回和事实命中分别统计。</p><div class='stress-anomaly-grid'>" + "".join(cards or ["<p>本次没有检测到规则异常。</p>"]) + "</div><h3>大模型分析</h3>" + llm_html + f"<p><a href='/jobs/{job_root}/files/anomaly-dossier.json'>结构化诊断</a> · <a href='/jobs/{job_root}/files/developer-bundle.tar.gz'>开发者资料包</a></p></section>"
     css = "<style>.stress-dossier{border:2px solid #b84a3b!important;background:#fffaf8}.stress-anomaly-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}.stress-anomaly-card{background:#fff;border:1px solid #ead5d0;border-radius:10px;padding:14px}.stress-severity{float:right;border-radius:99px;padding:2px 8px;font-size:12px;background:#f1e4df}.stress-severity.high{color:#a3281b;background:#f9d9d2}.stress-severity.medium{color:#8b6200;background:#fff0c2}.stress-dossier pre{max-height:260px;overflow:auto;white-space:pre-wrap}.stress-llm{background:#f4f7f8;border-left:3px solid #17746a}.stress-muted{color:#66757d}</style>"
     if "class='stress-dossier'" in raw:
         raw = re.sub(r"<section class='stress-dossier'>.*?</section>", section, raw, flags=re.S)
