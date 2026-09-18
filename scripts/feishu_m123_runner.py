@@ -52,6 +52,12 @@ def main():
     result = subprocess.run(cmd, check=False)
     if not Path('/out/report.html').is_file():
         raise RuntimeError('WRONG_ENTRYPOINT: missing M1/M2/M3 report.html')
+    # Keep the canonical report, but add a bounded anomaly dossier and a safe
+    # developer archive. This never changes measurement files or status.
+    dossier_cmd = [sys.executable, '/app/scripts/build_stress_artifacts.py', '--root', '/out']
+    dossier = subprocess.run(dossier_cmd, check=False)
+    if dossier.returncode != 0 or not Path('/out/anomaly-dossier.json').is_file():
+        print('WARNING: anomaly dossier generation failed; raw report is preserved', flush=True)
     return result.returncode
 
 

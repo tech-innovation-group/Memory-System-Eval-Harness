@@ -105,6 +105,11 @@ def patch_source(source):
         if job.get("test_type") == "stress":
             command, environment, runner_volumes = stress_runner_spec(job, provisioning_key, prepared, echo_container)
             environment.update({k: v for k, v in echo_environment.items() if k != "ECHOMEM_REGISTRY_MASTER_KEY"})
+            environment.update({
+                "ANOMALY_LLM_BASE_URL": secret_values["llm_base_url"],
+                "ANOMALY_LLM_MODEL": secret_values["llm_model"],
+                "ANOMALY_LLM_API_KEY": secret_values["llm_api_key"],
+            })
         eval_container = client.containers.run(
             "echomem-m123-runner:20260918" if job.get("test_type") == "stress" else IMAGE,''')
     # Scope replacements to source worker only, not other job runners.
