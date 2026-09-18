@@ -16,6 +16,11 @@ def parse_stress_command(text):
 
 def apply_m123_service_tuning(config):
     """Set service admission/pool knobs high enough for 64/600 client loads."""
+    tenant_coordination = config.get("tenant_coordination")
+    if isinstance(tenant_coordination, dict):
+        # The current EchoMem build rejects this legacy field even when it is
+        # present in config.example.json.
+        tenant_coordination.pop("pool_size", None)
     scheduling = config.setdefault("scheduling", {})
     scheduling.update({
         "http": {"max_workers": 2400},
