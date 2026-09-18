@@ -69,7 +69,8 @@ def stress_runner_spec(job, provisioning_key, prepared, echo_container):
     command = ["python", "/app/scripts/feishu_m123_runner.py"]
     environment = {"PYTHONPATH": "/app", "PYTHONUNBUFFERED": "1",
                    "ECHOMEM_PROVISIONING_AUTH_KEY": provisioning_key,
-                   "STRESS_BASE_URL": profile["profiles"][0]["base_url"]}
+                   "STRESS_BASE_URL": profile["profiles"][0]["base_url"],
+                   "STRESS_JOB_ID": job["id"]}
     volumes = {
         "/opt/echomem-pr-bot/harness": {"bind": "/app", "mode": "ro"},
         str(DOCKER_RESULTS_DIR / job["id"]): {"bind": "/out", "mode": "rw"},
