@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import csv
 import html
+import io
 import json
 import os
 import re
@@ -186,7 +187,7 @@ def _inject_report(report: Path, dossier: dict[str, Any]) -> None:
     llm_html = "<p class='stress-muted'>" + html.escape(str(llm.get("reason") or "模型分析已完成")) + "</p>"
     if llm.get("text"):
         llm_html = "<pre class='stress-llm'>" + html.escape(str(llm["text"])) + "</pre>"
-    section = "<section class='stress-dossier'><h2>异常诊断与开发者分析</h2><p>本节只展示由本次结果计算出的异常，不修改原始分母；HTTP 成功、非空召回和事实命中分别统计。</p><div class='stress-anomaly-grid'>" + "".join(cards or ["<p>本次没有检测到规则异常。</p>"]) + "</div><h3>大模型分析</h3>" + llm_html + "<p><a href='anomaly-dossier.json'>结构化诊断</a> · <a href='developer-bundle.tar.gz'>开发者资料包</a></p></section>"
+    section = "<section class='stress-dossier'><h2>异常诊断与开发者分析</h2><p>本节只展示由本次结果计算出的异常，不修改原始分母；HTTP 成功、非空召回和事实命中分别统计。</p><div class='stress-anomaly-grid'>" + "".join(cards or ["<p>本次没有检测到规则异常。</p>"]) + "</div><h3>大模型分析</h3>" + llm_html + "<p><a href='files/anomaly-dossier.json'>结构化诊断</a> · <a href='files/developer-bundle.tar.gz'>开发者资料包</a></p></section>"
     css = "<style>.stress-dossier{border:2px solid #b84a3b!important;background:#fffaf8}.stress-anomaly-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}.stress-anomaly-card{background:#fff;border:1px solid #ead5d0;border-radius:10px;padding:14px}.stress-severity{float:right;border-radius:99px;padding:2px 8px;font-size:12px;background:#f1e4df}.stress-severity.high{color:#a3281b;background:#f9d9d2}.stress-severity.medium{color:#8b6200;background:#fff0c2}.stress-dossier pre{max-height:260px;overflow:auto;white-space:pre-wrap}.stress-llm{background:#f4f7f8;border-left:3px solid #17746a}.stress-muted{color:#66757d}</style>"
     if "class='stress-dossier'" in raw:
         raw = re.sub(r"<section class='stress-dossier'>.*?</section>", section, raw, flags=re.S)
@@ -196,17 +197,32 @@ def _inject_report(report: Path, dossier: dict[str, Any]) -> None:
 
 
 def _archive(root: Path, out: Path) -> None:
+    def safe_bytes(path: Path) -> bytes:
+        data = path.read_bytes()
+        if path.suffix.lower() not in {".json", ".jsonl", ".log", ".csv", ".html"}:
+            return data
+        text = data.decode("utf-8", errors="replace")
+        text = re.sub(r"(?i)(authorization|api[_-]?key|password|secret|token)(\s*[=:]\s*)[^,\\s}]+", r"\1\2[REDACTED]", text)
+        return text.encode("utf-8")
+
+    def add_safe(archive: tarfile.TarFile, path: Path, arcname: str) -> None:
+        payload = safe_bytes(path)
+        info = tarfile.TarInfo(arcname)
+        info.size = len(payload)
+        info.mtime = 0
+        archive.addfile(info, io.BytesIO(payload))
+
     with tarfile.open(out, "w:gz") as archive:
         for name in SAFE_FILES:
             path = root / name
             if path.is_file():
-                archive.add(path, arcname=name, recursive=False)
+                add_safe(archive, path, name)
         for scenario in SCENARIOS:
             directory = root / scenario
             if not directory.is_dir():
                 continue
             for path in directory.glob("*.csv"):
-                archive.add(path, arcname=f"{scenario}/{path.name}", recursive=False)
+                add_safe(archive, path, f"{scenario}/{path.name}")
 
 
 def build(root: Path) -> Path:
