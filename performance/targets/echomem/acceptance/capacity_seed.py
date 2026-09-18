@@ -177,6 +177,8 @@ def provision_actors(base_url: str, tenants: int, users: int, *, memory_scale: i
                      sample_id: str = "conv-30",
                      session_key: str = "session_1",
                      sentence_id: str = "D1:2",
+                     question_variant: int = 0,
+                     repeat_count: int = 1,
                      session_keys: list[str] | None = None,
                      max_questions: int | None = None,
                      query_count: int | None = None,
@@ -236,7 +238,8 @@ def provision_actors(base_url: str, tenants: int, users: int, *, memory_scale: i
                         sample_id=chosen_sample,
                         session_key=chosen_session,
                         sentence_id=str(sentence_id or "D1:2"),
-                        question_variant=tenant_index * max(1, users) + user_index,
+                        question_variant=question_variant,
+                        repeat_count=repeat_count,
                     )
                 else:
                     corpus = build_locomo_session_corpus(
