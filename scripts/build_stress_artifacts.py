@@ -222,8 +222,13 @@ def _archive(root: Path, out: Path) -> None:
             directory = root / scenario
             if not directory.is_dir():
                 continue
-            for path in directory.glob("*.csv"):
-                add_safe(archive, path, f"{scenario}/{path.name}")
+            # metrics_samples.csv can be hundreds of MB for a long run. The
+            # report already contains its aggregates; keep request-level CSVs
+            # in the portable bundle and leave the full samples on the host.
+            for filename in ("search_results.csv", "commit_results.csv", "records.csv"):
+                path = directory / filename
+                if path.is_file():
+                    add_safe(archive, path, f"{scenario}/{path.name}")
 
 
 def build(root: Path) -> Path:
