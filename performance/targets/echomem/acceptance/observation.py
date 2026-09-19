@@ -2271,7 +2271,13 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                     "served": served, "served_rate": 100 * served / sent,
                     "empty_rate": 100 * empty / sent, "failed_rate": 100 * failed / sent,
                 })
-            concurrency_baseline = concurrency_rows[0] if concurrency_rows else {}
+            concurrency_baseline = next(
+                (
+                    row for row in concurrency_rows
+                    if int(row.get("concurrency") or 0) == 1
+                ),
+                None,
+            )
             stage_keys = (
                 ("Search 端到端", "p95_ms"),
                 ("Recall Total", "recall_total_p95_ms"),
@@ -2285,7 +2291,11 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                 points = []
                 for label, key in stage_keys:
                     value = row.get(key)
-                    baseline_value = concurrency_baseline.get(key)
+                    baseline_value = (
+                        concurrency_baseline.get(key)
+                        if concurrency_baseline is not None
+                        else None
+                    )
                     ratio = (
                         value / baseline_value
                         if value is not None and baseline_value not in (None, 0)
@@ -2312,11 +2322,19 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                 "部分档位缺少完整 trace_id 配对，缺失档位回退为 Prometheus Histogram；"
                 "回退值只用于趋势观察，不能与客户端端到端 P95 做包含关系判断。"
             )
+            if concurrency_baseline is not None:
+                stage_chart_title = "不同并发下 Query / Recall 阶段 P95（ms，括号为相对 C=1 放大倍数）"
+                amplification_note = "放大倍数 = 当前并发档 P95 ÷ C=1 P95；C=1 固定为 1.00x。"
+            else:
+                stage_chart_title = "不同并发下 Query / Recall 阶段 P95（ms；本轮未测 C=1）"
+                amplification_note = "本轮没有 C=1 实测基线，因此不计算或展示放大倍数。"
             headline_visual = (
                 "<div class='primary-charts'>"
-                "<figure>" + hierarchy_bars("不同并发下 Query / Recall 阶段 P95（ms，括号为相对 C=1 放大倍数）", stage_groups)
+                "<figure>" + hierarchy_bars(stage_chart_title, stage_groups)
                 + f"<p class='chart-warning'><b>配对口径：</b>{esc(pairing_message)}</p>"
-                + "<p class='chart-note'>包含关系：Search 端到端 → Recall Total → Semantic → Query Embedding；Memory Profile 和 Engine Execution 是 Recall Total 下的并行阶段。放大倍数 = 当前并发档 P95 ÷ C=1 P95；C=1 固定为 1.00x。阶段不可相加；Search 端到端还包含 Recall 外层编排和网络开销。</p></figure>"
+                + "<p class='chart-note'>包含关系：Search 端到端 → Recall Total → Semantic → Query Embedding；Memory Profile 和 Engine Execution 是 Recall Total 下的并行阶段。"
+                + amplification_note
+                + "阶段不可相加；Search 端到端还包含 Recall 外层编排和网络开销。</p></figure>"
                 "<figure>" + outcome_bars("不同并发下空召回率与请求结果", outcome_rows)
                 + "<p class='chart-note'>空召回指 HTTP 成功但返回结果为空；异常包含 HTTP 非 2xx、传输错误和超时。每个档位的比例以本轮实际已发请求为分母。</p></figure>"
                 "</div>"

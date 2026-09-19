@@ -139,6 +139,67 @@ def test_m1_stage_chart_uses_trace_paired_measurements(tmp_path):
     assert "部分档位缺少完整 trace_id 配对" not in page
 
 
+def test_m1_stage_chart_omits_amplification_without_c1(tmp_path):
+    data = result(["M1"])
+    data["metrics"]["M1"]["levels"] = [{
+        "topology": "concurrency",
+        "target_concurrency": 64,
+        "search": {
+            "sent": 64,
+            "p95_s": 3.5,
+            "latency_observations": 64,
+            "peak_inflight_requests": 64,
+            "http_status_counts": {"200": 64},
+            "recall_served": 64,
+        },
+    }]
+
+    path = tmp_path / "report.html"
+    write_observation_report(data, path)
+    page = path.read_text()
+
+    assert "本轮未测 C=1" in page
+    assert "本轮没有 C=1 实测基线，因此不计算或展示放大倍数" in page
+    assert "Search 端到端 · 1.00x" not in page
+
+
+def test_m1_stage_chart_uses_actual_c1_when_rows_are_out_of_order(tmp_path):
+    data = result(["M1"])
+    data["metrics"]["M1"]["levels"] = [
+        {
+            "topology": "concurrency",
+            "target_concurrency": 64,
+            "search": {
+                "sent": 64,
+                "p95_s": 2.0,
+                "latency_observations": 64,
+                "peak_inflight_requests": 64,
+                "http_status_counts": {"200": 64},
+                "recall_served": 64,
+            },
+        },
+        {
+            "topology": "concurrency",
+            "target_concurrency": 1,
+            "search": {
+                "sent": 1,
+                "p95_s": 1.0,
+                "latency_observations": 1,
+                "peak_inflight_requests": 1,
+                "http_status_counts": {"200": 1},
+                "recall_served": 1,
+            },
+        },
+    ]
+
+    path = tmp_path / "report.html"
+    write_observation_report(data, path)
+    page = path.read_text()
+
+    assert "Search 端到端 · 2.00x" in page
+    assert "Search 端到端 · 1.00x" in page
+
+
 def test_m4_report_explains_fault_injection_and_worst_bystander(tmp_path):
     data = result(["M4"])
     data["metrics"]["M4"]["cases"] = [{
