@@ -20,3 +20,16 @@
 5. 缺少事实命中质量证据。
 
 资料包用于开发者分析，不能用其中的 LLM 文字替代原始分母和请求级证据。
+
+## 注入数据量
+
+压测 profile 的每租户注入量支持两档：`100`（默认）和 `1000`。机器人宿主机配置
+`/opt/memory-eval-web/server.env` 中的 `M123_STRESS_REPEAT_COUNT` 控制默认档位：
+
+```bash
+M123_STRESS_REPEAT_COUNT=100   # 快速回归
+M123_STRESS_REPEAT_COUNT=1000  # 大数据量压测
+```
+
+任务生成的 `stress-profile.json` 会记录实际值，报告和开发者资料包也会保留该 profile。
+非法值会在任务启动前拒绝，避免误把压测量扩大到未验证的档位。

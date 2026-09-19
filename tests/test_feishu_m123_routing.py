@@ -1,4 +1,5 @@
 import ast
+import os
 import re
 import unittest
 from scripts.patch_feishu_m123_routing import HELPERS
@@ -6,7 +7,7 @@ from scripts.patch_feishu_m123_routing import HELPERS
 
 class RoutingTests(unittest.TestCase):
     def setUp(self):
-        self.ns = {'re': re}
+        self.ns = {'re': re, 'os': os}
         exec(HELPERS, self.ns)
 
     def test_explicit_stress_commands(self):
@@ -48,6 +49,14 @@ class RoutingTests(unittest.TestCase):
             self.assertEqual(cfg['scheduling']['llm_gateway']['recall_llm_max_concurrent'], 600)
             self.assertIn('/opt/echomem-pr-bot/harness', volumes)
             self.assertEqual(cmd, ['python', '/app/scripts/feishu_m123_runner.py'])
+            profile_1000 = json.loads((Path(root)/'test-1000/stress-profile.json').read_text())['profiles'][0] if (Path(root)/'test-1000/stress-profile.json').exists() else None
+            self.ns['stress_runner_spec']({'id': 'test-1000', 'stress_seed_repeat_count': 1000}, 'private-test-key',
+                                          {'config_path': '/target.json'}, SimpleNamespace(name='job-target'))
+            profile_1000 = json.loads((Path(root)/'test-1000/stress-profile.json').read_text())['profiles'][0]
+            self.assertEqual(profile_1000['m1_seed_repeat_count'], 1000)
+            with self.assertRaises(ValueError):
+                self.ns['stress_runner_spec']({'id': 'bad', 'stress_seed_repeat_count': 200}, 'private-test-key',
+                                              {'config_path': '/target.json'}, SimpleNamespace(name='job-target'))
 
 if __name__ == '__main__':
     unittest.main()
