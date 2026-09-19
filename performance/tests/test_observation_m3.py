@@ -116,6 +116,14 @@ def test_full_and_quick_status_and_historical_contract(tmp_path):
     assert summarize_m2(runs, quick=False)["status"] == "PARTIAL"
 
 
+def test_custom_m2_tenant_levels_are_summarized(tmp_path):
+    runs = {run["scenario"]: run for run in (write_run(tmp_path, 2), write_run(tmp_path, 64))}
+    result = summarize_m2(runs, quick=False, tenant_levels=[2, 64])
+    assert result["status"] == "MEASURED"
+    assert result["expected_windows"] == 2
+    assert [window["tenant_count"] for window in result["windows"]] == [2, 64]
+
+
 def test_fairness_with_only_drain_completions_is_partial(tmp_path):
     runs = {run["scenario"]: run for run in (
         write_run(tmp_path, 4, drain_only=True), write_run(tmp_path, 8, drain_only=True)

@@ -868,9 +868,15 @@ def _fairness_window(run: dict[str, Any], tenant_count: int) -> dict[str, Any]:
             "search_inverse_p95_jain": search_inverse_p95_jain}
 
 
-def summarize_m2(runs: dict[str, dict[str, Any]], *, quick: bool) -> dict[str, Any]:
+def summarize_m2(
+    runs: dict[str, dict[str, Any]],
+    *,
+    quick: bool,
+    tenant_levels: list[int] | None = None,
+) -> dict[str, Any]:
+    levels = [4, 8] if tenant_levels is None else [int(value) for value in tenant_levels]
     windows = []
-    for count in (4, 8):
+    for count in levels:
         run = (runs.get(f"m2-fairness-{count}t")
                or runs.get(f"m3-fairness-{count}t"))
         if run and _records(run):
@@ -883,9 +889,9 @@ def summarize_m2(runs: dict[str, dict[str, Any]], *, quick: bool) -> dict[str, A
               "短窗口不证明长期稳态")
     if missing_result:
         reason += "；以下场景窗口内没有已完成 Commit，不能计算 Commit Jain：" + ", ".join(missing_result)
-    return {"status": "MEASURED" if not quick and complete == 2 else "PARTIAL" if windows else "BLOCKED",
+    return {"status": "MEASURED" if not quick and complete == len(levels) else "PARTIAL" if windows else "BLOCKED",
             "reason": reason,
-            "expected_windows": 2, "observed_windows": len(windows),
+            "expected_windows": len(levels), "observed_windows": len(windows),
             "complete_windows": complete, "windows": windows}
 
 
@@ -1440,7 +1446,11 @@ def evaluate_observation(suite: dict[str, Any], profile: dict[str, Any],
     runs = {str(run.get("scenario")): run for run in suite.get("runs", [])}
     metrics = {
         "M1": summarize_m1(m1_reports or [], profile),
-        "M2": summarize_m2(runs, quick=quick),
+        "M2": summarize_m2(
+            runs,
+            quick=quick,
+            tenant_levels=profile.get("m2_tenant_levels"),
+        ),
         "M3": summarize_m3(runs, quick=quick),
         "M4": summarize_m4(suite, profile, quick=quick),
         "M5": summarize_m5(suite, quick=quick),
