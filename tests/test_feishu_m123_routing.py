@@ -67,12 +67,15 @@ class RoutingTests(unittest.TestCase):
             cfg = tune({})
             self.assertEqual(cfg['scheduling']['http']['max_workers'], 2400)
             self.assertEqual(cfg['scheduling']['retrieval']['admission_permits'], 600)
-            self.assertEqual(cfg['scheduling']['fanout']['engine_max_inflight'], 600)
+            self.assertEqual(cfg['scheduling']['fanout'], {
+                'executor_workers': 1200,
+                'engine_max_inflight': 600,
+            })
             self.assertEqual(cfg['scheduling']['llm_gateway']['recall_llm_max_concurrent'], 600)
             self.assertEqual(cfg['recall']['concurrency']['engine'], {
-                'max_concurrent': 600,
+                'max_concurrent': 1200,
                 'queue_capacity': 2400,
-                'max_queued_per_tenant': 600,
+                'max_queued_per_tenant': 1200,
             })
             self.assertEqual(cfg['recall']['concurrency']['query_embedding']['max_concurrent'], 600)
             self.assertEqual(cfg['commit_pipeline']['queue_max'], 2400)

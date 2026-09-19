@@ -40,7 +40,9 @@ def apply_m123_service_tuning(config):
         "retrieval": {"admission_permits": 600},
         "commit": {"queue_max": 2400, "tenant_quota": 600, "executor_workers": 600},
         "tenant": {"concurrency": 600, "qps": 2400},
-        "fanout": {"executor_workers": 600, "engine_max_inflight": 600},
+        # Atomic and episode can fan out together. The shared lane therefore
+        # needs two slots per C=600 request, while each engine is capped at 600.
+        "fanout": {"executor_workers": 1200, "engine_max_inflight": 600},
         "llm_gateway": {
             "llm_max_concurrent": 2400, "embed_max_concurrent": 2400,
             "recall_llm_max_concurrent": 600, "recall_embed_max_concurrent": 600,
@@ -59,6 +61,10 @@ def apply_m123_service_tuning(config):
             "queue_capacity": 2400,
             "max_queued_per_tenant": 600,
         })
+    recall_concurrency["engine"].update({
+        "max_concurrent": 1200,
+        "max_queued_per_tenant": 1200,
+    })
     config.setdefault("commit_pipeline", {}).update({
         "queue_max": 2400,
         "tenant_quota": 600,
