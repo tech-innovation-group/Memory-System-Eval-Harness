@@ -230,6 +230,15 @@ def test_observation_cases_can_use_bounded_full_windows():
     assert all(case["search_workers"] == 1024 for case in cases)
 
 
+def test_observation_cases_accept_custom_m2_tenant_levels():
+    cases = six_metric_observation_cases(m2_tenant_levels=[2, 64])
+    fairness = [case for case in cases if case["label"].startswith("m2-fairness-")]
+    assert [(case["label"], case["tenants"]) for case in fairness] == [
+        ("m2-fairness-2t", 2),
+        ("m2-fairness-64t", 64),
+    ]
+
+
 def test_build_d_burst():
     case = _by_label(complete_cases())["D@1"]
     profile = _profile(case)

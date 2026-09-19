@@ -6,8 +6,9 @@
 
 压测复用机器人源码准备流程，测试本次指定的 develop/PR 合并版本，新建专用 EchoMem
 容器（4 CPU / 8 GiB），开启 DEBUG/JSON；模型配置沿用机器人当前配置，不静默换模型。
-8 个独立租户各注入 LoCoMo conv-30/session_1/D1:19 的 100 份相同信息，使用相同 QA。
-M1 目标并发为 64；M2/M3 复用本次 M1 的种子身份。M2/M3 使用套件正式窗口默认值。
+本轮 profile 使用独立租户注入 LoCoMo conv-30/session_1 的单句事实；M1 只测 C=64。
+M2 只测 2 租户和 64 租户两个公平性窗口，M3 保留基线、均匀洪泛、单租户洪泛和异构
+负载四个场景。M2/M3 复用本次 M1 的种子身份。M1 的容量结果不能替代 M2 的租户公平性结论。
 
 服务端调度配置按 600 客户端并发预留：HTTP workers=2400、检索准入=600、Commit
 queue=2400、Commit tenant quota=600、Commit executor=600、LLM/Embedding=2400、

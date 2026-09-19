@@ -76,6 +76,7 @@ def stress_runner_spec(job, provisioning_key, prepared, echo_container):
         "semantic_seed_repeat_count": repeat_count, "semantic_seed_question_variant": 0,
         "semantic_seed_workers": 4, "semantic_seed_validation_queries": 1,
         "semantic_seed_identity_cache": "/out/M1/concurrency",
+        "m2_tenant_levels": [2, 64],
         "m2m3_search_workers": 64, "require_stage_observability": True
     }]}
     (result_dir / "stress-profile.json").write_text(json.dumps(profile))

@@ -696,6 +696,7 @@ def run_suite(
                 duration_s=profile.get("m2m3_duration_s"),
                 tail_s=profile.get("m2m3_tail_s"),
                 m2_commit_rpm=profile.get("m2_commit_rpm"),
+                m2_tenant_levels=profile.get("m2_tenant_levels"),
                 m3_barrier_count=profile.get("m3_barrier_count"),
                 search_workers=profile.get("m2m3_search_workers"),
             )

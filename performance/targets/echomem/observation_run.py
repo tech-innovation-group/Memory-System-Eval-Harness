@@ -567,7 +567,8 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
         load_metrics = [name for name in selected if name in {"M2", "M3"}]
         scenarios = []
         if "M2" in load_metrics:
-            scenarios.extend(("m2-fairness-4t", "m2-fairness-8t"))
+            m2_tenant_levels = profile.get("m2_tenant_levels") or [4, 8]
+            scenarios.extend(f"m2-fairness-{int(level)}t" for level in m2_tenant_levels)
         if "M3" in load_metrics:
             scenarios.extend(("m3-baseline", "m3-flood-uniform", "m3-flood-single-tenant",
                               "m3-heterogeneous-tenants"))

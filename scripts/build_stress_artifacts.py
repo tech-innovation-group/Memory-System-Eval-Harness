@@ -22,8 +22,8 @@ from pathlib import Path
 from typing import Any
 
 
-SCENARIOS = ("m2-fairness-4t", "m2-fairness-8t", "m3-baseline",
-             "m3-flood-uniform", "m3-flood-single-tenant", "m3-heterogeneous-tenants")
+M3_SCENARIOS = ("m3-baseline", "m3-flood-uniform", "m3-flood-single-tenant",
+                "m3-heterogeneous-tenants")
 SAFE_FILES = (
     "summary.json", "execution-manifest.json", "suite.json", "stress-profile.json",
     "report.html", "container.log", "structured-stage-events.jsonl", "records.csv",
@@ -37,6 +37,11 @@ def _read_json(path: Path) -> dict[str, Any]:
         return value if isinstance(value, dict) else {}
     except (OSError, json.JSONDecodeError):
         return {}
+
+
+def _scenario_names(root: Path) -> tuple[str, ...]:
+    fairness = tuple(sorted(path.name for path in root.glob("m2-fairness-*t") if path.is_dir()))
+    return fairness + M3_SCENARIOS
 
 
 def _rows(path: Path) -> list[dict[str, str]]:
@@ -91,8 +96,9 @@ def _commit_facts(root: Path, scenario: str) -> dict[str, Any]:
 def collect_facts(root: Path) -> dict[str, Any]:
     summary = _read_json(root / "summary.json")
     manifest = _read_json(root / "execution-manifest.json")
-    searches = [_search_facts(root, name) for name in SCENARIOS if (root / name).is_dir()]
-    commits = [_commit_facts(root, name) for name in SCENARIOS if (root / name).is_dir()]
+    scenarios = _scenario_names(root)
+    searches = [_search_facts(root, name) for name in scenarios if (root / name).is_dir()]
+    commits = [_commit_facts(root, name) for name in scenarios if (root / name).is_dir()]
     duration_s = None
     try:
         from datetime import datetime
@@ -110,7 +116,7 @@ def collect_facts(root: Path) -> dict[str, Any]:
         "quality_evidence": {
             "semantic_quality_fields_present": any(
                 any("quality_ok" in row for row in _rows(root / name / "search_results.csv"))
-                for name in SCENARIOS if (root / name / "search_results.csv").is_file()
+                for name in scenarios if (root / name / "search_results.csv").is_file()
             ),
             "note": "quality_ok/事实命中必须有真实 QA 证据；非空 hit_count 不等于事实命中。",
         },
@@ -122,7 +128,8 @@ def derive_anomalies(facts: dict[str, Any]) -> list[dict[str, Any]]:
     searches = {row["scenario"]: row for row in facts["search"]}
     commits = {row["scenario"]: row for row in facts["commit"]}
     baseline = searches.get("m3-baseline")
-    multi = searches.get("m2-fairness-8t")
+    fairness = [row for name, row in searches.items() if name.startswith("m2-fairness-")]
+    multi = max(fairness, key=lambda row: row["planned_or_recorded"], default=None)
     if baseline and multi and multi["empty_recall_rate_pct"] > baseline["empty_recall_rate_pct"]:
         anomalies.append({
             "id": "multi_tenant_empty_recall_regression",
@@ -218,7 +225,7 @@ def _archive(root: Path, out: Path) -> None:
             path = root / name
             if path.is_file():
                 add_safe(archive, path, name)
-        for scenario in SCENARIOS:
+        for scenario in _scenario_names(root):
             directory = root / scenario
             if not directory.is_dir():
                 continue

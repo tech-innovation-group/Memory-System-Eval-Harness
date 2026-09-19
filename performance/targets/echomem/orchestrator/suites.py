@@ -498,6 +498,7 @@ def six_metric_observation_cases(
     duration_s: float | None = None,
     tail_s: float | None = None,
     m2_commit_rpm: float | None = None,
+    m2_tenant_levels: list[int] | None = None,
     m3_barrier_count: int | None = None,
     search_workers: int | None = None,
 ) -> list[dict]:
@@ -514,6 +515,11 @@ def six_metric_observation_cases(
         (20.0 if quick else 2.0) if m2_commit_rpm is None else float(m2_commit_rpm)
     )
     read_workers = 1024 if search_workers is None else int(search_workers)
+    fairness_tenant_levels = [4, 8] if m2_tenant_levels is None else list(m2_tenant_levels)
+    if (len(fairness_tenant_levels) < 1
+            or any(type(n) is not int or n < 2 for n in fairness_tenant_levels)
+            or fairness_tenant_levels != sorted(set(fairness_tenant_levels))):
+        raise ValueError("m2_tenant_levels must contain increasing integer levels >= 2")
     if duration <= 0 or tail < 0 or barrier < 1 or fairness_commit_rpm <= 0 or read_workers < 1:
         raise ValueError("M2/M3 observation duration, tail, barrier and Commit rate must be positive")
     measurement_start = 3 if quick else min(30.0, duration / 2)
@@ -526,25 +532,20 @@ def six_metric_observation_cases(
         "sessions_per_tenant": 2,
         "messages_per_session": 4,
     }
+    fairness_cases = [
+        _case(
+            label=f"m2-fairness-{tenants}t", scene="scene_c_mixed", tenants=tenants,
+            commit_rpm=fairness_commit_rpm, commit_barrier=False,
+            commit_payload_profile="standard",
+            arrival_scope="per_tenant", commit_start_s=measurement_start,
+            arrival_end_s=duration, measurement_start_s=measurement_start,
+            measurement_end_s=duration, fairness_mode="independent-periodic-v1",
+            **{**common, "search_rps": 1.0, "duration_s": duration + tail},
+        )
+        for tenants in fairness_tenant_levels
+    ]
     return [
-        _case(
-            label="m2-fairness-4t", scene="scene_c_mixed", tenants=4,
-            commit_rpm=fairness_commit_rpm, commit_barrier=False,
-            commit_payload_profile="standard",
-            arrival_scope="per_tenant", commit_start_s=measurement_start,
-            arrival_end_s=duration, measurement_start_s=measurement_start,
-            measurement_end_s=duration, fairness_mode="independent-periodic-v1",
-            **{**common, "search_rps": 1.0, "duration_s": duration + tail},
-        ),
-        _case(
-            label="m2-fairness-8t", scene="scene_c_mixed", tenants=8,
-            commit_rpm=fairness_commit_rpm, commit_barrier=False,
-            commit_payload_profile="standard",
-            arrival_scope="per_tenant", commit_start_s=measurement_start,
-            arrival_end_s=duration, measurement_start_s=measurement_start,
-            measurement_end_s=duration, fairness_mode="independent-periodic-v1",
-            **{**common, "search_rps": 1.0, "duration_s": duration + tail},
-        ),
+        *fairness_cases,
         _case(
             label="m3-baseline", scene="scene_capacity", tenants=4,
             commit_rpm=0.0, read_only=True,

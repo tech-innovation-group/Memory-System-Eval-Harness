@@ -34,6 +34,7 @@ class RoutingTests(unittest.TestCase):
                         {'config_path': '/target.json'}, SimpleNamespace(name='job-target'))
             profile=json.loads((Path(root)/'test/stress-profile.json').read_text())['profiles'][0]
             self.assertEqual(profile['m1_concurrency_levels'], [64])
+            self.assertEqual(profile['m2_tenant_levels'], [2, 64])
             self.assertEqual(profile['m1_seed_repeat_count'], 100)
             self.assertEqual(profile['semantic_seed_repeat_count'], 100)
             self.assertEqual(profile['resource_container'], 'job-target')
