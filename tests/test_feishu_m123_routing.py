@@ -67,7 +67,16 @@ class RoutingTests(unittest.TestCase):
             cfg = tune({})
             self.assertEqual(cfg['scheduling']['http']['max_workers'], 2400)
             self.assertEqual(cfg['scheduling']['retrieval']['admission_permits'], 600)
+            self.assertEqual(cfg['scheduling']['fanout']['engine_max_inflight'], 600)
             self.assertEqual(cfg['scheduling']['llm_gateway']['recall_llm_max_concurrent'], 600)
+            self.assertEqual(cfg['recall']['concurrency']['engine'], {
+                'max_concurrent': 600,
+                'queue_capacity': 2400,
+                'max_queued_per_tenant': 600,
+            })
+            self.assertEqual(cfg['recall']['concurrency']['query_embedding']['max_concurrent'], 600)
+            self.assertEqual(cfg['commit_pipeline']['queue_max'], 2400)
+            self.assertEqual(cfg['commit_pipeline']['tenant_quota'], 600)
             self.assertIn('/opt/echomem-pr-bot/harness', volumes)
             self.assertEqual(cmd, ['python', '/app/scripts/feishu_m123_runner.py'])
             profile_1000 = json.loads((Path(root)/'test-1000/stress-profile.json').read_text())['profiles'][0] if (Path(root)/'test-1000/stress-profile.json').exists() else None

@@ -40,6 +40,7 @@ def apply_m123_service_tuning(config):
         "retrieval": {"admission_permits": 600},
         "commit": {"queue_max": 2400, "tenant_quota": 600, "executor_workers": 600},
         "tenant": {"concurrency": 600, "qps": 2400},
+        "fanout": {"executor_workers": 600, "engine_max_inflight": 600},
         "llm_gateway": {
             "llm_max_concurrent": 2400, "embed_max_concurrent": 2400,
             "recall_llm_max_concurrent": 600, "recall_embed_max_concurrent": 600,
@@ -47,6 +48,20 @@ def apply_m123_service_tuning(config):
             "workers_llm_share": 600, "workers_embed_share": 600,
             "provider_budget_llm": 4200, "provider_budget_embed": 4200,
         },
+    })
+    # config.example.json contains explicit inner limits, so changing only the
+    # scheduling profile leaves Recall at an effective four-slot fanout and
+    # Commit at 256/64. Raise the authoritative sections as well.
+    recall_concurrency = config.setdefault("recall", {}).setdefault("concurrency", {})
+    for lane in ("engine", "intent_llm", "query_embedding", "rerank"):
+        recall_concurrency.setdefault(lane, {}).update({
+            "max_concurrent": 600,
+            "queue_capacity": 2400,
+            "max_queued_per_tenant": 600,
+        })
+    config.setdefault("commit_pipeline", {}).update({
+        "queue_max": 2400,
+        "tenant_quota": 600,
     })
     config.setdefault("control_store", {})["pool_size"] = 500
     return config
