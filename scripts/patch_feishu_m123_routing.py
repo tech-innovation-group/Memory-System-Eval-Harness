@@ -14,6 +14,19 @@ def parse_stress_command(text):
     return ("develop", None) if match.group(1) == "develop" else ("pr", int(match.group(2)))
 
 
+def completed_stress_execution(job):
+    """Return whether the evaluator finished a stress job successfully."""
+    try:
+        exit_code = int(job.get("exit_code"))
+    except (TypeError, ValueError):
+        return False
+    return (
+        job.get("test_type") == "stress"
+        and job.get("status") == "completed"
+        and exit_code == 0
+    )
+
+
 def apply_m123_service_tuning(config):
     """Set service admission/pool knobs high enough for 64/600 client loads."""
     tenant_coordination = config.get("tenant_coordination")
@@ -145,13 +158,28 @@ def patch_source(source):
     if body.count(old)!=1: raise ValueError('runner volume anchor')
     body=body.replace(old,'volumes=runner_volumes,')
     body=body.replace('status = "completed" if exit_code == 0 else "failed"','status = "completed" if exit_code == 0 else "failed"\n        if job.get("test_type") == "stress" and not (RESULTS_DIR / job_id / "report.html").is_file():\n            raise RuntimeError("WRONG_ENTRYPOINT: M1/M2/M3 report.html missing")')
+    post_completion_anchor = '''    except Exception as exc:
+        current = get_job(job_id) or {}
+        if current.get("merge_status") == "conflict":'''
+    post_completion_guard = '''    except Exception as exc:
+        current = get_job(job_id) or {}
+        if completed_stress_execution(current):
+            error_message = f"{type(exc).__name__}: {exc}"[:500]
+            append_job_log(job_id, f"压测已完成；后置通知失败，不重跑：{error_message}")
+            update_job(job_id, post_completion_error=error_message)
+            app.logger.exception("post-completion hook failed for stress job %s", job_id)
+            return
+        if current.get("merge_status") == "conflict":'''
+    if body.count(post_completion_anchor) != 1:
+        raise ValueError('post-completion guard anchor')
+    body = body.replace(post_completion_anchor, post_completion_guard, 1)
     source=source[:start]+body+source[end:]
     replace('    if not job or not job.get("feishu_chat_id"):\n        return\n    try:', '''    if not job or not job.get("feishu_chat_id"):
         return
-    if job.get("test_type") == "stress":
-        send_feishu_text(str(job["feishu_chat_id"]), f"M1/M2/M3 压测：{job.get('status')}\\n{job.get('message', '')}\\n报告与进度：{job_detail_url(job_id)}")
-        return
-    try:''')
+    try:
+        if job.get("test_type") == "stress":
+            send_feishu_text(str(job["feishu_chat_id"]), f"M1/M2/M3 压测：{job.get('status')}\\n{job.get('message', '')}\\n报告与进度：{job_detail_url(job_id)}")
+            return''')
     replace('    job = {\n        **job,\n        "summary": compact_job(job).get("summary") or {},\n    }', '''    if job.get("test_type") == "stress":
         report = RESULTS_DIR / job_id / "report.html"
         if report.is_file():

@@ -22,6 +22,24 @@ class RoutingTests(unittest.TestCase):
         for text in ['测试develop', '压测develop结果怎么样', '不要压测develop', '查询28f328593461', '压测', '压测 develop; rm -rf /']:
             self.assertIsNone(self.ns['parse_stress_command'](text), text)
 
+    def test_only_successfully_completed_stress_jobs_preserve_their_result(self):
+        completed = self.ns['completed_stress_execution']
+        self.assertTrue(completed({
+            'test_type': 'stress', 'status': 'completed', 'exit_code': 0,
+        }))
+        self.assertFalse(completed({
+            'test_type': 'stress', 'status': 'completed', 'exit_code': 2,
+        }))
+        self.assertFalse(completed({
+            'test_type': 'stress', 'status': 'running', 'exit_code': 0,
+        }))
+        self.assertFalse(completed({
+            'test_type': 'full', 'status': 'completed', 'exit_code': 0,
+        }))
+        self.assertFalse(completed({
+            'test_type': 'stress', 'status': 'completed', 'exit_code': None,
+        }))
+
     def test_profile_contract(self):
         import tempfile
         from pathlib import Path
