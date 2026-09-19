@@ -7,7 +7,10 @@ import sys
 import urllib.request
 
 
-def provision(base_url, count=8):
+STRESS_TENANT_COUNT = 64
+
+
+def provision(base_url, count=STRESS_TENANT_COUNT):
     key = os.environ['ECHOMEM_PROVISIONING_AUTH_KEY']
     def post(path, body, bootstrap=''):
         headers = {'Content-Type': 'application/json', 'X-EchoMem-Provisioning-Key': key}

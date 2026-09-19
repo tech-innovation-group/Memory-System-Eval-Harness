@@ -64,7 +64,7 @@ def stress_runner_spec(job, provisioning_key, prepared, echo_container):
         "service_concurrency_target": 600,
         "required_embedding_model": "qwen3.7-text-embedding-flash",
         "m1_topologies": ["concurrency"], "m1_concurrency_levels": [64],
-        "m1_concurrency_tenants": 8, "m1_tenant_levels": [8], "m1_load_profile": "search",
+        "m1_concurrency_tenants": 64, "m1_tenant_levels": [64], "m1_load_profile": "search",
         "m1_warmup_s": 10, "m1_duration_s": 60, "m1_seed_workers": 4,
         "m1_seed_timeout_s": 900, "m1_seed_profile": "locomo-single-sentence",
         "m1_seed_dataset": "/app/benchmarks/locomo/data/locomo10.json",
