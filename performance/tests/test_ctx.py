@@ -100,6 +100,38 @@ def test_request_ok(server):
     assert records[0] is resp.record
 
 
+def test_response_retains_echo_memory_timing_headers():
+    class TimingHandler(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            payload = b'{"result":{"items":[]}}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("X-EchoMem-Intent-Ms", "12")
+            self.send_header("X-EchoMem-Embedding-Ms", "34")
+            self.end_headers()
+            self.wfile.write(payload)
+
+    httpd = _start_raw_server(TimingHandler)
+    try:
+        ctx, _, _ = make_ctx(f"http://127.0.0.1:{httpd.server_port}")
+        response = ctx.get("/timed", op="read")
+        assert response.raw_headers["x-echomem-intent-ms"] == "12"
+        from performance.targets.echomem.protocol import _extract_layer_timing
+        assert _extract_layer_timing(response) == {
+            "intent_ms": 12, "embedding_ms": 34,
+            "retrieval_ms": 0, "rerank_ms": 0, "assembly_ms": 0,
+        }
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
 def test_request_http_5xx(server):
     _, _, base_url = server
     ctx, records, _ = make_ctx(base_url)

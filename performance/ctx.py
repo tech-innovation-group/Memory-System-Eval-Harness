@@ -52,6 +52,9 @@ class Response:
     body: dict[str, Any] | None  # parsed JSON, or None when not JSON
     body_text: str
     record: RequestRecord
+    # Normalized response headers are retained for protocol-specific server
+    # timing evidence (for example EchoMem's per-stage latency headers).
+    raw_headers: dict[str, str] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -252,7 +255,7 @@ class Ctx:
         op = op or _default_op(path)
         started = time.perf_counter()
         try:
-            status, error_type, http_status, body_text, body_json, reason = _do_request(
+            status, error_type, http_status, body_text, body_json, reason, raw_headers = _do_request(
                 self._base_url,
                 method,
                 path,
@@ -265,8 +268,8 @@ class Ctx:
                 registry=self._registry,
             )
         except TransportError as exc:
-            status, error_type, http_status, body_text, body_json, reason = (
-                "error", exc.error_type, None, "", None, "",
+            status, error_type, http_status, body_text, body_json, reason, raw_headers = (
+                "error", exc.error_type, None, "", None, "", {},
             )
         record = self._make_record(
             op=op,
@@ -288,6 +291,7 @@ class Ctx:
             body=body_json,
             body_text=body_text,
             record=record,
+            raw_headers=raw_headers,
         )
 
     def poll(
@@ -329,7 +333,7 @@ class Ctx:
             polls += 1
             request_started_ms = time.time() * 1000
             try:
-                status, error_type, http_status, body_text, body_json, reason = _do_request(
+                status, error_type, http_status, body_text, body_json, reason, _raw_headers = _do_request(
                     self._base_url,
                     "GET",
                     path,
@@ -341,8 +345,8 @@ class Ctx:
                     registry=self._registry,
                 )
             except TransportError as exc:
-                status, error_type, http_status, body_text, body_json, reason = (
-                    "error", exc.error_type, None, "", None, "",
+                status, error_type, http_status, body_text, body_json, reason, _raw_headers = (
+                    "error", exc.error_type, None, "", None, "", {},
                 )
             elapsed_ms = (time.perf_counter() - start) * 1000
             if on_response is not None:
@@ -742,11 +746,11 @@ def _do_request(
     timeout_s: float,
     interrupt: threading.Event | None = None,
     registry: ConnectionRegistry,
-) -> tuple[str, str, int | None, str, dict[str, Any] | None, str]:
+) -> tuple[str, str, int | None, str, dict[str, Any] | None, str, dict[str, str]]:
     """Execute one request; never raises for HTTP/transport failures.
 
     Returns ``(status, error_type, http_status, body_text, body_json,
-    reason_code)``.  ``status`` is ``ok`` for any 2xx/3xx response; all
+    reason_code, response_headers)``.  ``status`` is ``ok`` for any 2xx/3xx response; all
     other outcomes are ``error`` with a classified ``error_type``.
     ``interrupt``（引擎超时中断）置位时由 ``Engine.stop()`` shutdown 本注册表
     连接与在途响应的底层 socket，在途阻塞读立即返回并映射为
@@ -854,10 +858,10 @@ def _do_request(
         response_headers = {key.lower(): value for key, value in response.getheaders()}
         http_status = response.status
         if 200 <= http_status < 400:
-            return "ok", "", http_status, body_text, _parse_json(body_text), ""
+            return "ok", "", http_status, body_text, _parse_json(body_text), "", response_headers
         error_type = "http_4xx" if http_status < 500 else "http_5xx"
         reason = _extract_reason_code(response_headers, raw)
-        return "error", error_type, http_status, body_text, _parse_json(body_text), reason
+        return "error", error_type, http_status, body_text, _parse_json(body_text), reason, response_headers
     raise AssertionError("unreachable: _do_request retry loop")
 
 

@@ -91,6 +91,7 @@ def render_observation(report: dict) -> str:
     highest = max((l.get("hot_users", l.get("identity_count", 0)) for l in levels
                    if l.get("search", {}).get("sent")), default=None)
     baseline = qps_baseline(levels)
+    m1_summary = report.get("m1") or report
     total_sent = sum(l["search"]["sent"] for l in levels)
     total_errors = sum(l["search"]["errors"] for l in levels)
     summary_rows, detail_rows, class_rows, commit_rows, dau_rows, issue_rows = [], [], [], [], [], []
@@ -197,6 +198,34 @@ def render_observation(report: dict) -> str:
     breakpoint_rows = [[row["nominal_qps"], row["runs"], row["strict_failures"],
                         row["degraded"], row["request_errors"], row["provider_failures"]]
                        for row in baseline["rows"]]
+    seed_assignments = m1_summary.get("seed_assignments") or []
+    if not seed_assignments:
+        for actor in (report.get("seed") or {}).get("actors") or []:
+            source = actor.get("corpus_source") or {}
+            seed_assignments.append({
+                **actor,
+                "sample_id": source.get("assigned_sample_id") or source.get("sample_id"),
+                "session_key": source.get("assigned_session_key") or source.get("session_key"),
+                "session_messages": source.get("session_messages"),
+            })
+    seed_rows = [[
+        f"T{int(row.get('tenant_index', 0)) + 1}", row.get("sample_id"), row.get("session_key"),
+        row.get("session_messages") or row.get("input_documents"), row.get("input_characters"),
+        row.get("semantic_queries"), row.get("commit_http_status"), row.get("commit_state"),
+        row.get("elapsed_s"), row.get("status"),
+    ] for row in seed_assignments]
+    seed_detail = _table(
+        ["租户", "LoCoMo sample", "完整 session", "消息/文档数", "字符数", "Search题数",
+         "Commit HTTP", "Commit终态", "注入耗时 s", "状态"], seed_rows
+    )
+    seed_policy = m1_summary.get("seed_memory_policy") or "未记录"
+    seed_status = m1_summary.get("seed_status") or (report.get("seed") or {}).get("status") or "未测量"
+    seed_documents_total = m1_summary.get("seed_total_documents")
+    if seed_documents_total is None:
+        seed_documents_total = sum(int(row.get("input_documents") or 0) for row in seed_assignments)
+    seed_characters_total = m1_summary.get("seed_total_input_characters")
+    if seed_characters_total is None:
+        seed_characters_total = sum(int(row.get("input_characters") or 0) for row in seed_assignments)
     return f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>4U8G 热用户与 DAU 实测数据</title><style>
 *{{box-sizing:border-box}}body{{margin:0;background:#f5f7f8;color:#202a30;font:15px/1.7 system-ui,-apple-system,"PingFang SC",sans-serif;letter-spacing:0}}main{{max-width:1400px;margin:auto;padding:26px}}h1{{font-size:28px;margin:6px 0 12px}}h2{{font-size:21px;margin:24px 0 12px}}h3{{font-size:16px}}header,section{{border-bottom:1px solid #cdd7dc;padding:18px 0}}.muted{{color:#566773}}.notice{{border-left:4px solid #b74c39;padding:8px 14px;background:#fff4ec}}.kpis{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px;margin:22px 0}}.kpis div{{border-top:3px solid #258577;padding:10px 0}}.kpis strong{{display:block;font-size:26px}}.charts{{display:grid;grid-template-columns:1fr 1fr;gap:30px}}.barrow{{display:grid;grid-template-columns:112px minmax(0,1fr) 85px;align-items:center;gap:10px;margin:12px 0;font-size:13px}}.barrow b{{text-align:right;font-variant-numeric:tabular-nums}}.track{{height:15px;background:#e0e6e8}}.track span{{display:block;height:100%;background:#268978}}.charts>div+div .track span{{background:#4c7fba}}.scroll{{overflow:auto}}table{{width:100%;border-collapse:collapse;background:white;font-size:13px}}th,td{{padding:9px 12px;border-bottom:1px solid #dce3e6;text-align:left;vertical-align:top}}th{{white-space:nowrap;background:#e8eff1}}td{{overflow-wrap:anywhere}}code{{overflow-wrap:anywhere}}summary{{cursor:pointer;font-weight:600;padding:12px 0}}a{{color:#1568a3}}@media(max-width:720px){{main{{padding:14px}}.kpis{{grid-template-columns:1fr 1fr}}.charts{{grid-template-columns:1fr}}h1{{font-size:24px}}}}
@@ -210,6 +239,7 @@ def render_observation(report: dict) -> str:
 <section><h2>环境与负载</h2><p>服务器 {_fmt(env.get('host'))}；限制 {_fmt(env.get('cpus'))} CPU / {_fmt(env.get('memory_bytes'))} 字节。EchoMem <code>{_fmt(env.get('echomem_commit'))}</code>，develop <code>{_fmt(env.get('develop_commit'))}</code>。</p>
 <p>配置摘要 <code>{_fmt(env.get('config_sha256'))}</code>。每热用户 Search 1/s，独立泊松到达；纯召回和 70% recall + 30% no-recall 混合组分别测量。混合组每用户约每分钟 2 条新消息，每 300 秒一次显式 Commit；搜索和写入独立并发。</p>
 <p>记忆准备：{_fmt(seed.get('actors'))} 个身份，{_fmt(seed.get('strict_valid'))}/{_fmt(seed.get('queries'))} 道严格有效验证。当前窗口复用记忆：{_fmt(report.get('seed_reused'))}。配置和 API key 不包含在报告内。</p></section>
+<section><h2>每租户完整 session 注入</h2><p>策略：<strong>{escape(str(seed_policy))}</strong>；种子状态：<strong>{escape(str(seed_status))}</strong>。本轮每个租户绑定一个不同的真实 LoCoMo session，注入该 session 的全部对话消息；Search 阶段只循环该 session 的真实 memory-recall QA，不把短 QA 子集误当成完整记忆。总 session {_fmt(len(seed_assignments))}，总消息/文档 {_fmt(seed_documents_total)}，总字符 {_fmt(seed_characters_total)}。</p>{seed_detail}</section>
 <section><h2>容量曲线</h2><div class="charts">{_bars('Search P95',p95_points,'s')}{_bars('严格有效 Search 吞吐',rps_points,'/s')}</div>
 {_table(['H','负载','P95 s','发送/s','HTTP 200/s','有效召回/s','HTTP/传输错误','严格有效/已发出','CPU峰值 %','RSS峰值 MiB'],summary_rows)}
 <p class="muted">H=T×U，用户请求率决定在途请求量。严格有效性同时要求 HTTP 正常、满足问题预期、无降级；其错误数不等于传输错误数。短窗口数字不代表全天稳态。</p></section>

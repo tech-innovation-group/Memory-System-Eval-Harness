@@ -14,8 +14,10 @@ done，四阶段独立计时）。事务按租户分布（uniform / zipf / expli
 - ``barrier_distribution``：uniform / zipf / explicit，默认 uniform
 - ``barrier_zipf_exponent``：zipf 指数，默认 2.0
 - ``commit_tenant_counts``：explicit 分布的每租户计数列表
-- ``barrier_max_workers``：阶段并发上限，默认 8
-- ``barrier_at_s``：首波注入时刻，默认 0.0
+- ``barrier_max_workers``：Commit 阶段并发上限，默认 8
+- ``barrier_prepare_before_commit``：是否提前完成 open + add，默认 False
+- ``barrier_prepare_at_s``：提前准备阶段的时刻，默认 0.0
+- ``barrier_at_s``：Commit 提交阶段时刻，默认 0.0
 - ``barrier_waves``：波数，默认 1
 - ``barrier_cooldown_s``：波间隔，默认 0.0
 - ``floor_to_tenants``：uniform 计数下限提到租户数，默认 False
@@ -50,12 +52,17 @@ def schedule(ctx: Ctx) -> None:
         explicit=ctx.params.get("commit_tenant_counts"),
     )
     max_workers = int(ctx.params.get("barrier_max_workers", 8))
+    if max_workers < 1:
+        raise ValueError("barrier_max_workers must be >= 1")
     at_s = float(ctx.params.get("barrier_at_s", 0.0))
     waves = int(ctx.params.get("barrier_waves", 1))
     cooldown = float(ctx.params.get("barrier_cooldown_s", 0.0))
     if ctx.params.get("barrier_prepare_before_commit"):
         if waves != 1:
             raise ValueError("Prepared Commit flood requires exactly one wave")
+        prepare_at_s = float(ctx.params.get("barrier_prepare_at_s", 0.0))
+        if prepare_at_s < 0 or prepare_at_s > at_s:
+            raise ValueError("barrier_prepare_at_s must be between 0 and barrier_at_s")
         pending = sum(tenant_counts.values())
         sessions = defaultdict(deque)
         lock = threading.Lock()
@@ -66,6 +73,13 @@ def schedule(ctx: Ctx) -> None:
             sid = None
             try:
                 sid = prepare_commit_session(job)
+                if sid is None:
+                    job.record(
+                        op="commit_preparation_failed",
+                        stage_ms=0,
+                        status="error",
+                        error_type="commit_preparation_failed",
+                    )
             finally:
                 with lock:
                     sessions[job.tenant_idx].append(sid)
@@ -78,9 +92,14 @@ def schedule(ctx: Ctx) -> None:
                 if job._sleep(0.1):
                     return
             with lock:
-                sid = sessions[job.tenant_idx].popleft()
+                sid = sessions[job.tenant_idx].popleft() if sessions[job.tenant_idx] else None
             if sid is None:
-                job.record(op="commit_preparation_failed", status="error", stage_ms=0)
+                job.record(
+                    op="commit_preparation_missing",
+                    stage_ms=0,
+                    status="error",
+                    error_type="commit_preparation_missing",
+                )
                 return
             response = commit_session(job, sid)
             aid = archive_id(response.json) if response.ok else None
@@ -88,7 +107,18 @@ def schedule(ctx: Ctx) -> None:
                 poll_commit(job, sid, aid)
 
         jobs = {tenant: jobs for tenant, jobs in tenant_counts.items() if jobs > 0}
-        ctx.at_time(0, prepare, tenant_counts=jobs, max_workers=1, name="barrier-prepare")
+        if not jobs:
+            raise ValueError("Commit barrier has no positive tenant counts")
+        # Preparation is deliberately concurrent: it is outside the measured
+        # Commit flood, but serialising open + add would make every M3 run
+        # spend most of its wall time before the priority window starts.
+        ctx.at_time(
+            prepare_at_s,
+            prepare,
+            tenant_counts=jobs,
+            max_workers=max_workers,
+            name="barrier-prepare",
+        )
         ctx.at_time(at_s, submit, tenant_counts=jobs, max_workers=max_workers, name="barrier")
         return
     for wave in range(waves):

@@ -260,6 +260,32 @@ def run_configured_probes(
         if payload:
             artifacts["invalid_input"] = {**payload, "path": str(output)}
 
+    concurrency_topology = profile.get("concurrency_topology")
+    if isinstance(concurrency_topology, dict) and concurrency_topology.get("enabled", True):
+        output = suite_dir / "concurrency-topology.json"
+        params = {"tenant_config": str(tenant_path), **concurrency_topology}
+        payload, execution = run_configured_probe(
+            params, probes_dir=PROBES_DIR, scene="concurrency_topology.py", output=output,
+            base_url=base_url, timeout_s=min(timeout_s, 3600), redact_values=redact,
+        )
+        commands.append(execution)
+        if payload:
+            artifacts["concurrency_topology"] = {**payload, "path": str(output)}
+
+    # Run the oversized-payload audit after capacity/fairness diagnostics so a
+    # long Commit cannot contaminate their queue and latency windows.
+    payload_boundary = profile.get("payload_boundary")
+    if isinstance(payload_boundary, dict) and payload_boundary.get("enabled", True):
+        output = suite_dir / "payload-boundary.json"
+        params = {"tenant_config": str(tenant_path), **payload_boundary}
+        payload, execution = run_configured_probe(
+            params, probes_dir=PROBES_DIR, scene="payload_boundary.py", output=output,
+            base_url=base_url, timeout_s=min(timeout_s, 1800), redact_values=redact,
+        )
+        commands.append(execution)
+        if payload:
+            artifacts["payload_boundary"] = {**payload, "path": str(output)}
+
     capability = profile.get("capability_probe")
     if isinstance(capability, dict):
         output = suite_dir / "capability-probe.json"

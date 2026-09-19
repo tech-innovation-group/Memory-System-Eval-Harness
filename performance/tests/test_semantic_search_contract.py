@@ -32,6 +32,7 @@ def test_only_returned_memory_content_can_satisfy_fact(payload, expected):
     ctx = Context(payload)
     search(ctx, "我记下的地点在哪？")
     assert ctx.fields["quality_ok"] is expected
+    assert ctx.fields["recall_served"] is (payload.get("items") != [] and "items" in payload)
     assert ctx.fields["quality_assertion"] == "fixed-fact-in-items"
     assert ctx.fields["query_type"] == "recall"
 
@@ -40,6 +41,7 @@ def test_failed_http_preserves_assertion_and_denominator():
     ctx = Context({}, ok=False)
     search(ctx, "我记下的地点在哪？")
     assert ctx.fields["quality_ok"] is False
+    assert ctx.fields["recall_served"] is False
     assert ctx.fields["quality_assertion"] == "fixed-fact-in-items"
 
 
@@ -135,6 +137,51 @@ def test_report_labels_cached_seed_without_claiming_fresh_injection(tmp_path):
     assert "预检抽样通过不代表整个问题池全部通过" in html
 
 
+def test_report_exposes_memory_listing_and_recall_evidence_separately(tmp_path):
+    from performance.targets.echomem.acceptance.observation import evaluate_observation, write_observation_report
+    m1_report = {
+        "seed_status": "PARTIAL",
+        "seed_failed_actor_count": 1,
+        "seed_healthy_actor_count": 1,
+        "seed": {"actors": [
+            {"status": "PASS", "memory_count": 0, "memory_observation": "counted",
+             "queries": [{"http_status": 200, "recall_hit": True}]},
+            {"status": "INCONCLUSIVE", "memory_observation": "memory_endpoint_http_error",
+             "queries": []},
+        ]},
+    }
+    result = evaluate_observation({"runs": []}, {}, [m1_report], quick=False, selected_metrics=["M3"])
+    setup = result["setup_evidence"]
+    assert setup["seed_status"] == "PARTIAL"
+    assert setup["seed_healthy_actor_count"] == 1
+    assert setup["seed_failed_actor_count"] == 1
+    assert setup["seed_memory_observed"] == 2
+    assert setup["seed_memory_rows"] == 1
+    assert setup["seed_memory_empty"] == 1
+    assert setup["seed_recall_served"] == 1
+    path = tmp_path / "report.html"
+    write_observation_report(result, path)
+    html = path.read_text()
+    assert "Memory endpoint 证据" in html
+    assert "Memory endpoint 空列表表示该 Commit 没有报告抽取条目" in html
+    assert "marker/事实命中" in html
+
+
+def test_running_report_labels_missing_samples_as_pending(tmp_path):
+    from performance.targets.echomem.acceptance.observation import evaluate_observation, write_observation_report
+    result = evaluate_observation({"runs": []}, {}, [], quick=False,
+                                  selected_metrics=["M1", "M2", "M3"])
+    result["run_state"] = "RUNNING"
+    path = tmp_path / "report.html"
+    write_observation_report(result, path)
+    html = path.read_text()
+    assert "等待真实样本：种子准备或负载窗口尚未完成" in html
+    assert "负载请求分母将在种子完成后生成" in html
+    assert "暂无数据" not in html
+    assert "Atomic extraction P95(ms)" in html
+    assert "LLM provider P95(ms)" in html
+
+
 @pytest.mark.parametrize("healthy", [True, False])
 def test_cached_validation_only_searches_current_returned_facts(healthy):
     from performance.targets.echomem.acceptance.capacity_seed import CapacityActor, validate_cached_actors
@@ -150,7 +197,10 @@ def test_cached_validation_only_searches_current_returned_facts(healthy):
               "query_type": "recall", "aliases": ["remembered-place"]} for i in range(8)]}
     result = validate_cached_actors([CapacityActor(0, 0, client, corpus)], validation_queries=4)
     assert calls == [("POST", "/api/retrieval/search")] * 4
-    assert result["healthy_actors"] == int(healthy)
+    # A non-empty HTTP 200 response proves the recall path is usable even when
+    # the returned fact does not match this fixture's expected alias.
+    assert result["healthy_actors"] == 1
+    assert result["quality_healthy_actors"] == int(healthy)
     assert len(result["actors"][0]["queries"]) == 4
 
 

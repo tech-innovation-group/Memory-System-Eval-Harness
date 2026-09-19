@@ -15,6 +15,7 @@ from performance.targets.echomem.orchestrator.suites import (
     complete_cases,
     four_u8g_cases,
     select_cases,
+    six_metric_observation_cases,
 )
 
 REQUIRED_FIELDS = (
@@ -201,6 +202,41 @@ def test_build_saturation():
     assert params["barrier_count"] == 128
     assert params["barrier_distribution"] == "uniform"
     assert params["barrier_max_workers"] == 32
+
+
+def test_build_priority_barrier_preserves_preparation_contract():
+    case = next(case for case in six_metric_observation_cases()
+                if case["label"] == "m3-flood-single-tenant")
+    profile = _profile(case, quick=QuickSpec(duration_cap_s=45, barrier_count_cap=64))
+    assert profile.params["commit_payload_profile"] == "standard"
+    assert profile.params["barrier_prepare_before_commit"] is True
+    assert profile.params["barrier_prepare_at_s"] == 0.0
+    assert profile.params["barrier_max_workers"] == 32
+    assert profile.params["commit_tenant_counts"] == [64, 0, 0, 0]
+
+
+def test_observation_cases_can_use_bounded_full_windows():
+    cases = six_metric_observation_cases(
+        duration_s=60, tail_s=30, m2_commit_rpm=4, m3_barrier_count=32,
+        search_workers=1024,
+    )
+    by_label = {case["label"]: case for case in cases}
+    assert by_label["m2-fairness-4t"]["duration_s"] == 90
+    assert by_label["m2-fairness-4t"]["commit_rpm"] == 4
+    assert by_label["m3-flood-uniform"]["commit_barrier_count"] == 32
+    assert by_label["m3-flood-uniform"]["duration_s"] == 60
+    for label in ("m3-baseline", "m3-flood-uniform", "m3-flood-single-tenant"):
+        assert by_label[label]["arrival_end_s"] == 60
+    assert all(case["search_workers"] == 1024 for case in cases)
+
+
+def test_observation_cases_accept_custom_m2_tenant_levels():
+    cases = six_metric_observation_cases(m2_tenant_levels=[2, 64])
+    fairness = [case for case in cases if case["label"].startswith("m2-fairness-")]
+    assert [(case["label"], case["tenants"]) for case in fairness] == [
+        ("m2-fairness-2t", 2),
+        ("m2-fairness-64t", 64),
+    ]
 
 
 def test_build_d_burst():

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: $0 {quick|full|m6} PROFILE_JSON OUTPUT_DIR [ENV_FILE]" >&2
+  echo "Usage: $0 {full|m6} PROFILE_JSON OUTPUT_DIR [ENV_FILE]" >&2
   exit 2
 }
 
@@ -33,10 +33,8 @@ if [[ -n "$env_file" ]]; then
 fi
 
 case "$mode" in
-  quick)
-    command+=(--quick)
-    ;;
   full)
+    command+=(--metrics M1,M2,M3,M4,M5,M6)
     ;;
   m6)
     command+=(--metrics M6)

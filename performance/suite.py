@@ -22,6 +22,7 @@ import logging
 import shutil
 import statistics
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -200,7 +201,13 @@ def summarize_case_records(
     （stage_ms/1000）。``is_anchor`` 为 None 时 quality_asserted 记 0。
     """
     reads = [r for r in records if r.op == search_op]
-    ok_reads = [r for r in reads if r.status == "ok"]
+    def _recall_served(record: RequestRecord) -> bool:
+        # New EchoMem protocol records carry an explicit value. Older custom
+        # scenes did not, so retain their status-based behavior as a fallback.
+        value = getattr(record, "recall_served", None)
+        return (record.status == "ok") if value is None else bool(value)
+
+    ok_reads = [r for r in reads if _recall_served(r)]
     read_latencies = [_seconds(r.stage_ms) for r in ok_reads]
 
     submits = [r for r in records if r.op == commit_submit_op]
@@ -219,7 +226,9 @@ def summarize_case_records(
     search = {
         "submitted": len(reads),
         "succeeded": len(ok_reads),
+        "recall_served": len(ok_reads),
         "errors": len(reads) - len(ok_reads),
+        "recall_service_rate": (len(ok_reads) / len(reads)) if reads else None,
         "success_rate": (len(ok_reads) / len(reads)) if reads else None,
         "rate_limited_count": sum(1 for r in reads if _rate_limited(r)),
         "quality_asserted": (
@@ -307,6 +316,7 @@ def run_case(
     ``write_evidence`` 在 summary.json/records.csv 之后写 target 专属
     证据文件。
     """
+    wall_started = time.monotonic()
     scene = load_scene(scene_path)
     runner_timeout = False
     status = "completed"
@@ -350,8 +360,14 @@ def run_case(
     summary = summarize_fn(records)
     summary["status"] = status
     summary["runner_timeout"] = runner_timeout
-    summary["run_clock"] = {"started_wall_ms": getattr(run_result, "started_wall_ms", None),
-                            "load_duration_s": profile.load.duration_s}
+    wall_elapsed_s = time.monotonic() - wall_started
+    engine_elapsed_s = getattr(run_result, "elapsed_s", None) if run_result is not None else None
+    summary["run_clock"] = {
+        "started_wall_ms": getattr(run_result, "started_wall_ms", None),
+        "load_duration_s": profile.load.duration_s,
+        "engine_elapsed_s": engine_elapsed_s,
+        "wall_elapsed_s": wall_elapsed_s,
+    }
     write_records(case_dir, records, summary)
     if write_evidence is not None:
         write_evidence(case_dir, records)
@@ -367,6 +383,8 @@ def run_case(
         "policy": "server-observe",
         "status": status,
         "duration_s": float(profile.load.duration_s),
+        "wall_elapsed_s": wall_elapsed_s,
+        "engine_elapsed_s": engine_elapsed_s,
         "case_timeout_s": float(timeout_s or 0),
         "runner_timeout": runner_timeout,
         "output_dir": str(case_dir.resolve()),
@@ -463,6 +481,8 @@ def _load_completed_run(
         "policy": "server-observe",
         "status": "completed",
         "duration_s": float(case.get("duration_s") or 0),
+        "wall_elapsed_s": (summary.get("run_clock") or {}).get("wall_elapsed_s"),
+        "engine_elapsed_s": (summary.get("run_clock") or {}).get("engine_elapsed_s"),
         "case_timeout_s": float(timeout_s or 0),
         "runner_timeout": False,
         "output_dir": str(case_dir.resolve()),

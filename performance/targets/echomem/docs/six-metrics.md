@@ -37,6 +37,8 @@ python -m performance --target echomem \
 `ECHOMEM_TEST_CONTROL_TOKEN` 传递，不填写在报告或提交进 Git。
 实例 profile 使用 `resource_container` 指定被测容器。
 runner 必须能读取该容器的 Docker 信息；实际限额要求 4 CPU、8589934592 bytes。
+该数值校验只在 Linux runner 上执行；macOS/Windows 仍记录可读取的容器资源，但不因
+CPU/内存没有精确匹配 4U8G 而阻塞 HTTP 压测，并在报告中标记为 host-default。Linux
 资源校验失败时禁止把结果标为 4U8G 实测。
 
 `--six-metrics` 与 `--quick` 互斥。六指标目录不含 soak。
@@ -71,7 +73,9 @@ query 中，只用于核验 Search 返回的 `items` 是否包含该题对应的
 内容造成假命中。
 每个租户只使用自己的 query 池与 agent/user 身份。
 准备阶段的 marker 可见性与服务健康分开记录：若已经命中但服务返回 degraded，
-允许继续采集故障数据，但该请求的质量仍判失败，降级原因写入逐请求 CSV。
+允许继续采集故障数据，但该请求的质量仍判失败，降级原因写入逐请求 CSV。容量和延迟统计另用
+`recall_served`（HTTP 200、非空候选、非 intent reject）作为服务成功；`quality_ok` 只表示预期事实命中，
+不参与 Recall 服务成功分母。熔断/跳过引擎产生的零耗时不能当作真实执行耗时。
 故障隔离基线已经降级时只能报告 INCONCLUSIVE，不能把已有问题归因于故障注入。
 
 | 样本组 | 输入 | 统计 |

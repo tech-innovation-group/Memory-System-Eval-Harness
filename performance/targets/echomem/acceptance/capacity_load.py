@@ -27,6 +27,7 @@ def arrival_plan(
     load_mode: str | None = None,
     commit_interval_s: float = 30.0,
     hotspot_multiplier: float = 8.0,
+    search_schedule: str = "poisson",
 ) -> list[tuple]:
     if identities < 1 or duration_s <= 0 or q <= 0 or not all(math.isfinite(v) for v in (duration_s, q)):
         raise ValueError("Positive finite identities, duration and per-user rate required")
@@ -38,20 +39,33 @@ def arrival_plan(
         raise ValueError("commit_interval_s must be positive and finite")
     if hotspot_multiplier < 1 or not math.isfinite(hotspot_multiplier):
         raise ValueError("hotspot_multiplier must be finite and >= 1")
+    if search_schedule not in {"poisson", "fixed-interval"}:
+        raise ValueError("search_schedule must be poisson or fixed-interval")
     include_search = mode in {"search", "mixed", "hotspot"}
     include_commit = mode in {"commit", "mixed", "hotspot"}
     events = []
     for actor in range(identities):
-        # Seeded independent Poisson streams keep runs reproducible without
-        # synchronising every actor on the same fixed tick.
         rate = q * (hotspot_multiplier if mode == "hotspot" and actor == 0 else 1.0)
         if include_search:
-            rng = random.Random(f"{seed}:read:{actor}")
-            at, seq = rng.expovariate(rate), 0
-            while at < duration_s:
-                events.append((at, "read", actor, seq))
-                seq += 1
-                at += rng.expovariate(rate)
+            if search_schedule == "fixed-interval":
+                # Stagger starts within the first interval so tenants do not
+                # share a synthetic barrier, while every tenant still emits
+                # exactly one request per configured interval.
+                interval = 1.0 / rate
+                phase = (actor / max(1, identities)) * interval
+                for seq in range(math.ceil(duration_s * rate)):
+                    at = phase + seq * interval
+                    if at < duration_s:
+                        events.append((at, "read", actor, seq))
+            else:
+                # Seeded independent Poisson streams preserve the historical
+                # arrival model for profiles that do not request fixed ticks.
+                rng = random.Random(f"{seed}:read:{actor}")
+                at, seq = rng.expovariate(rate), 0
+                while at < duration_s:
+                    events.append((at, "read", actor, seq))
+                    seq += 1
+                    at += rng.expovariate(rate)
         if include_commit:
             if legacy_mixed:
                 events.append((actor / identities, "add", actor, 0))
@@ -82,13 +96,24 @@ def arrival_plan(
     return sorted(e for e in events if e[0] < duration_s)
 
 
-def query_for(actor, sequence: int, mixed: bool) -> dict:
+def query_for(actor, sequence: int, mixed: bool, *, rewrite_queries: bool = False) -> dict:
     kind = "no_recall_queries" if mixed and sequence % 10 >= 7 else "recall_queries"
     pool = actor.corpus[kind]
     index = sequence
     if mixed:
         index = sequence // 10 * 3 + sequence % 10 - 7 if kind == "no_recall_queries" else sequence // 10 * 7 + sequence % 10
-    return pool[index % len(pool)]
+    sample = pool[index % len(pool)]
+    if not rewrite_queries or sample.get("query_type") != "recall":
+        return sample
+    variants = (
+        ("original", sample["query"]),
+        ("history_context", f"请根据已记录的历史对话回答：{sample['query']}"),
+        ("recall_context", f"回顾之前的对话，{sample['query']}"),
+        ("memory_context", f"在这段历史记忆中，{sample['query']}"),
+    )
+    variant, query = variants[sequence % len(variants)]
+    return {**sample, "query": query, "original_query": sample["query"],
+            "query_variant": variant}
 
 
 def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = False,
@@ -96,16 +121,39 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
             seed: int = 42, load_mode: str | None = None,
             commit_interval_s: float = 30.0,
             hotspot_multiplier: float = 8.0, isolate_read_workers: bool = False,
-            search_workers: int | None = None) -> dict:
+            search_workers: int | None = None,
+            target_concurrency: int | None = None,
+            search_schedule: str = "poisson",
+            rewrite_queries: bool = False) -> dict:
     if search_workers is not None and (isinstance(search_workers, bool) or not isinstance(search_workers, int) or search_workers < 1):
         raise ValueError("search_workers must be a positive integer")
+    if search_schedule not in {"poisson", "fixed-interval"}:
+        raise ValueError("search_schedule must be poisson or fixed-interval")
     if isolate_read_workers and search_workers is not None and search_workers < len(actors):
         raise ValueError("isolated read workers require at least one worker per identity")
+    if target_concurrency is not None and (
+        isinstance(target_concurrency, bool)
+        or not isinstance(target_concurrency, int)
+        or target_concurrency < 1
+        or load_mode not in (None, "search")
+        or mixed
+        or isolate_read_workers
+    ):
+        raise ValueError("target_concurrency requires a positive search-only load")
     mode = load_mode or ("mixed" if mixed else "search")
-    plan = arrival_plan(
-        len(actors), duration_s, q, mixed, seed=seed, load_mode=mode,
-        commit_interval_s=commit_interval_s,
-        hotspot_multiplier=hotspot_multiplier,
+    closed_loop = target_concurrency is not None
+    plan = (
+        # Stagger the query cursor per actor. Without this, high-concurrency
+        # closed-loop runs repeatedly hit the first QA and are not comparable
+        # across concurrency levels.
+        [(0.0, "read", index % len(actors), index // len(actors))
+         for index in range(target_concurrency)]
+        if closed_loop else arrival_plan(
+            len(actors), duration_s, q, mixed, seed=seed, load_mode=mode,
+            commit_interval_s=commit_interval_s,
+            hotspot_multiplier=hotspot_multiplier,
+            search_schedule=search_schedule,
+        )
     )
     rows = []
     receipts = []
@@ -114,7 +162,7 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
     started = time.monotonic()
     end = started + duration_s
     dirty = [0] * len(actors)
-    widths = {"read": search_workers if search_workers is not None else min(512, max(16, len(actors) * 8)), "add": min(32, max(4, len(actors))),
+    widths = {"read": target_concurrency if closed_loop else (search_workers if search_workers is not None else min(512, max(16, len(actors) * 8))), "add": min(32, max(4, len(actors))),
               "commit_submit": min(32, max(4, len(actors)))}
     if isolate_read_workers:
         per_identity = max(1, widths.pop("read") // len(actors))
@@ -124,7 +172,15 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
         return f"read:{index}" if isolate_read_workers and op == "read" else op
     pools = {name: ThreadPoolExecutor(max_workers=width) for name, width in widths.items()}
     slots = {name: threading.BoundedSemaphore(width) for name, width in widths.items()}
-    polls = ThreadPoolExecutor(max_workers=min(512, max(4, len(actors))))
+    # Each poll task owns one accepted Commit until terminal state or deadline.
+    # Sizing this pool only by actor count queues later receipts behind earlier
+    # ones from the same tenant, so queued tasks can start after their deadline
+    # and become false timeouts. Polling is I/O-bound; bound it by this window's
+    # planned receipts with a hard cap.
+    planned_commit_count = sum(event[1] == "commit_submit" for event in plan)
+    poll_workers = min(512, max(4, planned_commit_count))
+    polls = ThreadPoolExecutor(max_workers=poll_workers)
+    closed_loop_scheduled = len(plan)
 
     def append(row):
         with lock:
@@ -166,6 +222,7 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
                 "success": terminal == "completed" and time.monotonic() <= deadline})
 
     def execute(event):
+        nonlocal closed_loop_scheduled
         scheduled, op, index, sequence = event
         actor = actors[index]
         begin = time.monotonic()
@@ -173,8 +230,11 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
                   "user_index": actor.user_index, "sequence": sequence, "scheduled_s": scheduled,
                   "start_s": begin - started, "generator_lag_s": max(0, begin - started - scheduled)}
         if op == "read":
-            sample = query_for(actor, sequence, mode in {"mixed", "hotspot"})
-            record.update(query_type=sample["query_type"], query_id=sample["id"])
+            sample = query_for(actor, sequence, mode in {"mixed", "hotspot"},
+                               rewrite_queries=rewrite_queries)
+            record.update(query_type=sample["query_type"], query_id=sample["id"],
+                          query_variant=sample.get("query_variant", "original"),
+                          original_query=sample.get("original_query", sample["query"]))
         try:
             if begin >= end:
                 record.update(sent=False, success=False, error="missed_window")
@@ -188,7 +248,15 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
                 }, timeout_s=request_timeout_s, operation="search")
                 quality = assess_retrieval(result.payload, sample)
                 record.update(quality)
-                record["success"] = result.status_code == 200 and quality["quality_ok"]
+                # Capacity/latency success means a real non-empty Recall was
+                # served. Keep quality_ok for optional benchmark diagnostics.
+                recall_served = quality.get("recall_served")
+                # Keep compatibility with narrow test doubles; real
+                # assess_retrieval results always carry recall_served.
+                if recall_served is None:
+                    recall_served = quality.get("quality_ok", False)
+                record["recall_served"] = bool(recall_served)
+                record["success"] = result.status_code == 200 and record["recall_served"]
             elif op == "add":
                 result = actor.client.add_message(actor.write_session, f"live-{sequence}",
                     f"我刚完成了第{sequence}轮资料整理，并记录下一轮的待办事项。" * 15)
@@ -237,6 +305,12 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
             record["end_s"] = time.monotonic() - started
             append(record)
             slots[pool_key(op, index)].release()
+            if closed_loop and op == "read" and time.monotonic() < end:
+                next_event = (time.monotonic() - started, "read", index, sequence + 1)
+                if slots["read"].acquire(blocking=False):
+                    with lock:
+                        closed_loop_scheduled += 1
+                    pools["read"].submit(execute, next_event)
 
     try:
         for event in plan:
@@ -253,9 +327,12 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
                         "scheduled_s": at, "sent": False, "success": False, "error": "generator_saturated"}
                 if op == "read":
                     sample = query_for(
-                        actors[index], sequence, mode in {"mixed", "hotspot"}
+                        actors[index], sequence, mode in {"mixed", "hotspot"},
+                        rewrite_queries=rewrite_queries,
                     )
-                    missed.update(query_type=sample["query_type"], query_id=sample["id"])
+                    missed.update(query_type=sample["query_type"], query_id=sample["id"],
+                                  query_variant=sample.get("query_variant", "original"),
+                                  original_query=sample.get("original_query", sample["query"]))
                 append(missed)
         remaining = end - time.monotonic()
         if remaining > 0:
@@ -265,12 +342,13 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
             pool.shutdown(wait=True)
         polls.shutdown(wait=True)
     return {"rows": sorted(rows, key=lambda r: r.get("scheduled_s", r.get("start_s", r.get("end_s", 0)))),
-            "planned_search": sum(event[1] == "read" for event in plan),
+            "planned_search": closed_loop_scheduled if closed_loop else sum(event[1] == "read" for event in plan),
             "planned_add": sum(event[1] == "add" for event in plan),
             "planned_commit": sum(event[1] == "commit_submit" for event in plan),
             "started_at_monotonic_s": started,
             "duration_s": duration_s, "elapsed_with_drain_s": time.monotonic() - started,
-            "pools": {**widths, "commit_poll": polls._max_workers},
+            "pools": {**widths, "commit_poll": poll_workers},
+            "planned_commit_count": planned_commit_count,
             "read_worker_isolation": "per_identity" if isolate_read_workers else "shared",
             "per_user_search_rps": q if mode != "commit" else 0,
             "mixed": mode in {"mixed", "hotspot"},
@@ -282,5 +360,9 @@ def measure(actors: list, *, duration_s: float, q: float = 1, mixed: bool = Fals
             "recall_query_fraction": .7 if mode in {"mixed", "hotspot"} else 1.0,
             "request_timeout_s": request_timeout_s, "commit_deadline_s": commit_timeout_s,
             "arrival_process": "independent-seeded-poisson", "arrival_seed": seed,
+            "search_schedule": search_schedule,
+            "query_rewrite": "deterministic-context-variants" if rewrite_queries else "disabled",
             "commit_receipts": receipts,
+            "closed_loop": closed_loop,
+            "target_concurrency": target_concurrency,
             "identity_count": len(actors), "tenant_count": len({a.tenant_index for a in actors})}

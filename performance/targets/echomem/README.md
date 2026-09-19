@@ -22,11 +22,14 @@ EchoMem 仓库：<EchoMem 绝对路径>
 也必须按照其中的 Discover、Configure、Preview、Validate、Execute、Explain 流程执行。
 先核对两个仓库的 branch、commit 和 dirty state，不要静默 fetch、switch、reset。
 使用真实 LLM 和 qwen3.7-text-embedding-flash Embedding，运行完整 M1-M6。
-默认容量档位为 1、2、4、8、16、32，创建 32 个独立租户凭据。需要继续寻找更高
-边界时，由使用者在 profile 中追加 64、128 等档位并补足独立租户凭据。
+默认容量档位为 1、2、4、8、16、32，创建 32 个独立租户凭据；并发拓扑默认使用
+1、8、16、64 个总在途 Search 请求。需要继续寻找更高容量边界时，由使用者在 profile
+中追加 64、128 等租户/用户档位并补足独立租户凭据。
 先跑默认配置基线，再跑并发调优配置；两个结果目录和配置指纹必须分开。
 测试平台不得根据 EchoMem 的 worker、queue、provider budget 或 max concurrency 自动降载。
-保留超时、拒绝、Provider 异常、pending、空召回和质量失败的原始分母。
+保留超时、拒绝、Provider 异常、pending、空召回和质量失败的原始分母。Search 的容量/延迟服务分母使用
+`recall_served`：HTTP 200、返回非空候选且未被 intent reject；事实是否匹配单独记为
+`quality_ok` 诊断，不把质量不匹配误报成传输失败。被熔断或跳过的引擎若返回零耗时，不计为真实执行样本。
 允许对本次专用容器执行 M4 delay/reject 故障注入和 M5 kill/restart。
 完成后打开 report.html，逐项解释数据、分母、错误归属和 EchoMem 模块改进建议。
 报告顶部必须列出实际预检的 LLM、Embedding、Endpoint、真实请求状态和配置指纹。
@@ -35,8 +38,7 @@ EchoMem 仓库：<EchoMem 绝对路径>
 ```
 
 AI 必须先展示 readiness 和实际命令，再开始会消耗模型额度或重启容器的步骤。若它不能
-读取文件、执行 Shell、访问 Docker 或持续跟踪长任务，就不能声称已经完成压测。若只想
-先验证链路，将“运行完整 M1-M6”改成“运行 quick”；quick 的结果只能标记为 `PARTIAL`。
+读取文件、执行 Shell、访问 Docker 或持续跟踪长任务，就不能声称已经完成压测。
 
 > 完整测试会对专用 EchoMem 容器注入租户故障，并在 M5 中执行真实 `kill -9` 和重启。
 > 请勿指向日常开发、共享或生产容器。
@@ -54,8 +56,8 @@ mkdir -p ~/.codex/skills/echomem-stress
 cp -R performance/skills/echomem-stress/. ~/.codex/skills/echomem-stress/
 ```
 
-其他 AI 不需要执行这段安装命令。无论使用哪种 AI，执行规范都要求先展示 readiness；在
-新机器上先跑 quick，链路通过后再选择 M1-M3、完整 M1-M6、单项、续跑或仅重建报告。
+其他 AI 不需要执行这段安装命令。无论使用哪种 AI，执行规范都要求先展示 readiness；随后
+选择 M1-M3、完整 M1-M6、单项、续跑或仅重建报告。
 M4 故障注入、M5 容器重启以及远程/共享资源操作仍需获得操作者明确授权。
 
 ## 测试内容
@@ -88,6 +90,78 @@ M3 同时包含均匀 Commit 洪泛和单租户洪泛。后者让一个租户承
 继续独立 Search，用于观察不同租户负载与耗时是否串扰；它是异构/吵闹邻居场景，不能
 拿来计算 M2 的等权 Jain 公平性。当前 EchoMem 故障控制作用于目标租户全部认证请求，
 若要分别制造“仅 Search 慢”或“仅 Commit 慢”，服务端还需提供按 operation 选择的故障范围。
+
+### 离线复测 `memory_profile` 阶段
+
+历史报告中的 `memory_profile` 倍率只能由带场景边界的证据复测。仓库提供离线脚本
+`scripts/reproduce_memory_profile.py`，它不访问 EchoMem、不调用 LLM 或 Embedding，
+只读取已保存的 EchoMem JSONL 和 Prometheus 快照。
+
+1. **结构化 JSONL 日志**：脚本筛选
+   `event=recall_stage_completed`、`stage=memory_profile`，按真实
+   `duration_ms` 和 `queue_wait_ms` 计算 observations、mean、P50、P95、P99、max，
+   并按日志中的 `scenario`/`topology` 和 `concurrency` 分组。只有日志明确包含
+   `C=16` 与 `C=64` 标签时，才会标记为可复测对比。
+
+   ```bash
+   python3 scripts/reproduce_memory_profile.py \
+     --log /workspace/log/echomem.jsonl \
+     --reference "/path/to/EchoMem 16 : 64 并发阶段打点复测.html" \
+     --out memory-profile-reproduction.json
+   ```
+
+2. **Prometheus 窗口快照**：分别在 16 并发场景开始和结束抓取 `/metrics`，保存为
+   `before.prom` 和 `after.prom`。脚本对
+   `echomem_memrouter_stage_duration_seconds_bucket/_sum/_count` 做同一窗口的
+   累计值差分，只统计 `stage="memory_profile"`，然后计算均值和 Histogram P50/P95/P99：
+
+   ```bash
+   python3 scripts/reproduce_memory_profile.py \
+     --before /path/to/memory-profile-16-before.prom \
+     --after /path/to/memory-profile-16-after.prom
+   ```
+
+   64 并发需要单独再抓一对快照；不能把 16 和 64 的快照混成一对。脚本输出中的
+   `mean_seconds` 和 `percentiles_seconds` 是该窗口的阶段数据，不是 Search 端到端耗时。
+
+3. **单个累计快照**：可以用 `--metrics snapshot.prom` 查看当前累计 observations
+   和均值，但脚本会明确输出 `CUMULATIVE_ONLY`、`comparison_ready=false`。它没有
+   16/64 的起止边界，不能计算并发倍率。
+
+`--reference` 只提取旧 HTML 已展示的三行数值用于核对，不把 HTML 数字当作新证据。
+倍率应按同一拓扑计算：
+`memory_profile_P95_64 / memory_profile_P95_16`。若使用日志，必须确认两档来自
+同一 EchoMem 进程窗口且每条记录有 `trace_id`；若使用 Prometheus，必须保留两档各自
+的 before/after 原始快照。不得用 HTTP 总耗时减去其他阶段推算 `memory_profile`。
+
+#### 真实 Search 16/64 复测
+
+如果要重新验证旧报告的 16/64 倍率，使用 `scripts/retest_memory_profile.py`。
+它只读取已有的 owner-only 身份文件，不提交 Commit；每个并发档位都会保存
+原始 Prometheus 前后快照，并在 `run.json` 中计算 `C64/C16` 的 mean、P50、P95、P99。
+运行前必须确认所选租户的 Search 预检已经能召回已注入事实；预检失败时仍会保存真实
+阶段样本，但 `comparison_ready` 不代表召回质量通过。
+
+```bash
+DOCKER_CONTEXT=colima-echomem-stress .venv/bin/python \
+  -m scripts.retest_memory_profile \
+  --base-url http://127.0.0.1:18170 \
+  --identities /path/to/identities.private.json \
+  --tenant-index 0 \
+  --out /path/to/memory-profile-16-64 \
+  --warmup-s 2 --duration-s 10
+```
+
+`--tenant-index` 必须指向同一个已验证租户，16/64 两档使用同一查询 corpus 和同一
+服务进程；脚本不会把不同租户或不同服务实例的阶段耗时混在一起。输出目录包含：
+`run.json`、两对 Prometheus 原始快照以及每档 Search 请求明细。`run.json` 只写入
+身份文件路径和租户序号，不写入 API key。
+
+六项 profile 可以设置 `docker_context`，资源采样、容器就绪检查和故障控制会自动使用
+该 context，不需要操作者先切换全局 Docker context。复用 M1 记忆时默认只抽查 2 个身份
+的认证并打开新 session；若预检失败，会在正式计时窗口前标记
+`reused-seed-auth-or-session-invalid`，避免把 401 当成容量问题并白跑全部档位。可用
+`m1_reuse_preflight_checks` 调整抽查数；这项检查不会重复 Commit 或运行额外 Search 窗口。
 
 ## 1. 准备环境
 
@@ -299,14 +373,71 @@ Recall 队列。这些值可能在默认 32 客户端并发前先形成排队，
 `http.max_workers=128` 与 `retrieval.admission_permits=32` 满足 EchoMem 的 4:1 约束；
 Commit executor+gate 为 `5+3=8`，不超过 4 核的 2 倍约束。
 
+本项目在 64 个客户端在途 Search 的诊断复测中，还使用过下面这组 **4U8G 高并发
+放开值**。它用于排除 EchoMem 本地 admission、worker 和队列先于被测链路截断请求，
+不是默认部署基线，也不证明外部模型 Provider 支持同样并发。复现时只把这些字段合并到
+被测 EchoMem 自带的完整 `config.json`：
+
+```json
+{
+  "instance": {"profile": "small", "cpu_cores": 4, "memory_gb": 8},
+  "runtime": {"log_level": "DEBUG"},
+  "logging": {"level": "debug", "format": "json"},
+  "scheduling": {
+    "http": {"max_workers": 256},
+    "retrieval": {"admission_permits": 64, "deadline_s": 40},
+    "tenant": {"qps": 512, "concurrency": 128},
+    "llm_gateway": {
+      "llm_max_concurrent": 256,
+      "embed_max_concurrent": 192,
+      "recall_llm_max_concurrent": 64,
+      "recall_embed_max_concurrent": 96,
+      "episode_llm_max_concurrent": 4,
+      "episode_embed_max_concurrent": 4,
+      "provider_budget_llm": 512,
+      "provider_budget_embed": 512,
+      "tenant_max_share_pct": 100
+    },
+    "fanout": {"executor_workers": 192, "engine_max_inflight": 96, "straggler_cap_s": 60},
+    "commit": {
+      "queue_max": 512, "tenant_quota": 0,
+      "executor_workers": 4, "gate_workers": 4,
+      "tenant_inflight_max": 4, "slow_task_threshold_s": 120
+    },
+    "tenant_cache": {
+      "max_cached_tenants": 12, "active_overshoot": 3,
+      "hard_cap": 15, "cache_reaper_interval_seconds": 30
+    }
+  },
+  "model": {"max_concurrent": 256},
+  "commit_pipeline": {"engine_timeout_seconds": 900, "queue_max": 512, "tenant_quota": 0},
+  "session": {"auto_commit_threshold": 1000000},
+  "recall": {
+    "max_inflight": 0,
+    "timeout_seconds": 40,
+    "concurrency": {
+      "engine": {"max_concurrent": 96, "queue_capacity": 512, "max_queued_per_tenant": 96},
+      "intent_llm": {"max_concurrent": 96, "queue_capacity": 512, "max_queued_per_tenant": 96},
+      "query_embedding": {"max_concurrent": 96, "queue_capacity": 512, "max_queued_per_tenant": 96},
+      "rerank": {"max_concurrent": 96, "queue_capacity": 512, "max_queued_per_tenant": 96}
+    }
+  }
+}
+```
+
+这组值分别放开 HTTP 入口、Retrieval admission、租户 QPS/在途配额、模型网关预算、
+Recall fanout/各阶段队列和 Commit 队列。报告仍须保留 429、503、超时、空召回、实际峰值
+在途及 Provider 错误。`tenant_cache.hard_cap=15` 是同时常驻 runtime 的上限，不等于系统
+最多支持 15 个租户；测试更多活跃租户时应另做更高 hard cap 对照并记录配置指纹。
+
 不要为了展示“32 热租户”把租户常驻缓存硬改成 32。4U8G 的租户缓存有真实内存预算，
 启动校验拒绝超出预算的配置也属于有效容量证据。32 个独立凭据表示测试平台会产生
 最多 32 租户流量，不代表 32 个租户必须同时常驻；报告要分别展示活动租户、峰值在途请求、
 常驻缓存上限、淘汰以及首个持续积压档。
 
 每次改配置后重启专用 Core，并在日志中保存 `instance_profile_resolved` 和
-`provider_budget_configured`，确认实际生效值。默认测试平台仍然发送配置的 32 客户端并发，
-不会读取这些服务端值后自动减压。
+`provider_budget_configured`，确认实际生效值。并发拓扑的默认测试平台目标是 1/8/16/64
+总在途请求，不会读取这些服务端值后自动减压；目标值和实际峰值必须分开记录。
 
 ### 后续扩展到 128 并发时核对什么
 
@@ -393,7 +524,9 @@ trace 引用，不保存请求正文或原始 trace id。
       "preflight_config": "/absolute/path/to/EchoMem/deploy/single-node/config.json",
       "m1_tenant_levels": [1, 2, 4, 8, 16, 32],
       "m1_user_levels": [1, 2, 4, 8, 16, 32],
-      "required_concurrency": 32,
+      "m1_concurrency_levels": [1, 8, 16, 64],
+      "m1_concurrency_tenants": 4,
+      "required_concurrency": 64,
       "required_embedding_model": "qwen3.7-text-embedding-flash",
       "require_stage_observability": true,
       "m1_duration_s": 300,
@@ -424,8 +557,10 @@ trace 引用，不保存请求正文或原始 trace id。
 ```
 
 `require_4u8g: false` 表示不检查固定 4U8G cgroup；Docker 未设置上限时 CPU 和内存字段
-可能显示为 `0`，含义是使用宿主机默认资源。为保证数据可比较，报告还会保存容器 ID、
-镜像 ID 和 Docker 资源配置。
+可能显示为 `0`，含义是使用宿主机默认资源。4U8G 数值检查只在 Linux runner 上执行；
+macOS 和 Windows 即使 profile 保留 `require_4u8g: true`，也只检查目标是否运行并记录实际
+资源，不会因为没有 4 核/8 GiB cgroup 阻塞本机 HTTP 压测。为保证数据可比较，报告还会保存
+host platform、容器 ID、镜像 ID 和 Docker 资源配置。
 
 `required_embedding_model` 是硬性预检条件。本例只接受真实成功调用
 `qwen3.7-text-embedding-flash`；如果服务实际使用其他 Embedding，正式发压前会直接停止。
@@ -451,10 +586,24 @@ M1 独立命令 `python -m performance.targets.echomem.acceptance.capacity_exper
 不要无条件设置为 0 来关闭保护。此配置通常需要重启生效，须按部署流程授权执行。
 默认配置与调优配置分开保存结果，不能将配置拒绝边界描述为硬件极限。
 
-`required_concurrency: 32` 表示首轮需要观察到至少 32 个同时在途请求，不等同于仅配置了
-32 个用户。需要扩展时，可将两组 M1 档位和该值一起提高到 64、128。测试平台不会读取
+`required_concurrency: 64` 表示并发拓扑首轮需要观察到至少 64 个同时在途请求，不等同于
+64 个用户。需要扩展时，可将并发档位和该值一起提高到 128。测试平台不会读取
 EchoMem 的 `max_concurrency`、队列容量或 worker 数后主动
 降低负载；这些服务端限制会原样写入报告，用来解释排队、拒绝或容量边界。
+
+若只做本次并发专项，profile 至少应显式选择并发拓扑：
+
+```json
+{
+  "m1_topologies": ["concurrency"],
+  "m1_concurrency_levels": [1, 8, 16, 64],
+  "m1_concurrency_tenants": 4,
+  "required_concurrency": 64
+}
+```
+
+其中 1/8/16/64 是总的闭环在途 Search 数；4 个租户只是承载这些请求的独立身份数，
+不是并发数本身。
 
 首轮得到 32 租户数据后，如需继续寻找 64/128 的边界，使用者再显式扩展：
 
@@ -474,23 +623,15 @@ M3 除等负载场景外还会运行异构租户场景：四个独立租户的 S
 Commit 权重为 `1:2:4:8`。报告逐租户展示计划速率、实际请求数、Search P95/错误/召回质量
 与 Commit 完成量，用于验证读多写少、读写均衡、写多读少租户能在同一轮被真实压测。
 
-## 6. 先运行快速链路检查
+M2/M3 默认使用 `m2m3_search_workers: 1024`。该值是客户端可同时执行的 Search 工作名额，
+不是 EchoMem 服务端并发配置；高延迟下若工作名额过小，会导致计划请求根本没有按时发出。
+报告中的 `missing_starts` 和 `start_lag_p95_ms` 必须为每个租户保留，以区分客户端发压不足
+与 EchoMem 服务端处理缓慢。可以显式调小该参数做低资源客户端测试，但不能把结果描述成服务容量边界。
 
-所有命令均在测试平台仓库根目录执行：
+## 6. 运行完整六项测试
 
-```bash
-bash -n performance/targets/echomem/run_six_metrics.sh
-performance/targets/echomem/run_six_metrics.sh quick \
-  .local-stress/six-metrics.profile.json \
-  results/local-six-metrics-quick \
-  .local-stress/test.env
-```
-
-profile 文件只有一个 profile 时，脚本会自动选择 `Local`，不需要再写 `--profile`。
-`quick` 使用真实 HTTP、模型、租户、故障和重启，但缩短采样时间，结果固定视为
-`PARTIAL`，只用于确认整条链路能跑通。
-
-## 7. 运行完整六项测试
+所有命令均在测试平台仓库根目录执行。profile 文件只有一个 profile 时，脚本会自动选择
+`Local`，不需要再写 `--profile`。
 
 ```bash
 performance/targets/echomem/run_six_metrics.sh full \
@@ -559,6 +700,24 @@ performance/targets/echomem/run_six_metrics.sh m6 \
 results/local-six-metrics-default/report.html
 results/local-six-metrics-tuned/report.html
 ```
+
+### 8.1 只生成当前压测方案 HTML
+
+需要先审阅“会怎么测”而不消耗模型额度时，使用仓库内的方案生成入口。它只读取公开
+profile 和可选的历史 `summary.json`，不发 HTTP、不调用 LLM/Embedding，也不会把密钥
+写入页面：
+
+```bash
+.venv/bin/python scripts/build_echomem_test_plan.py \
+  --profile /absolute/path/to/m1m2m3.profile.json \
+  --evidence-dir /absolute/path/to/previous-run \
+  --out-dir results/echomem-plan
+```
+
+输出 `results/echomem-plan/report.html` 和 `plan.json`。页面按 M1→M6 展示指标含义、
+每个场景的租户/user/session 拓扑、Search/Commit 发送方式、16/64 在途并发定义、Jain
+公式、阶段耗时证据、分母、失败归因、启动命令和 EchoMem 模块改进建议。`--evidence-dir`
+只用于显示已有证据快照，历史数字不会回填成新的六项结果。
 
 不能只交付 HTML；同目录的结构化分母和逐请求证据必须一起保留：
 

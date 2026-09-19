@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import subprocess
 import urllib.error
 import urllib.request
@@ -84,22 +85,39 @@ def check_readiness(profile: dict) -> dict:
 
     container = str(profile.get("resource_container") or "")
     require_4u8g = profile.get("require_4u8g", True) is not False
+    host_platform = platform.system() or "unknown"
+    enforce_4u8g = require_4u8g and host_platform.lower() == "linux"
     try:
         inspected = inspect_container(container)
         limits = inspected["HostConfig"]
         cpus = float(limits.get("NanoCpus", 0)) / 1e9
         if not cpus and limits.get("CpuPeriod", 0) > 0:
             cpus = limits.get("CpuQuota", 0) / limits["CpuPeriod"]
+        if not require_4u8g:
+            resource_policy = "host-default"
+            resource_reason = "profile_disabled"
+        elif enforce_4u8g:
+            resource_policy = "fixed-4u8g"
+            resource_reason = "linux_resource_contract"
+        else:
+            resource_policy = "host-default"
+            resource_reason = "non_linux_resource_check_skipped"
         resource = {"container": container, "container_id": inspected.get("Id"),
                     "image_id": inspected.get("Image"), "cpus": cpus,
                     "memory_bytes": limits.get("Memory"),
                     "running": inspected.get("State", {}).get("Running") is True,
-                    "resource_policy": "fixed-4u8g" if require_4u8g else "host-default"}
+                    "resource_policy": resource_policy,
+                    "host_platform": host_platform,
+                    "four_u8g_requested": require_4u8g,
+                    "four_u8g_check_applied": enforce_4u8g,
+                    "four_u8g_check_reason": resource_reason}
         resource_ok = resource["running"]
         action = "Start the dedicated target container and verify Docker access."
-        if require_4u8g:
+        if enforce_4u8g:
             resource_ok = resource_ok and cpus == 4 and resource["memory_bytes"] == 8 * 1024**3
             action = "Start the dedicated target with --cpus=4 --memory=8g; verify Docker access."
+        elif require_4u8g:
+            action = "Keep the target running; 4U8G numeric limits are not enforced on this host platform."
         record("resource-container", resource_ok, "deployment", action, **resource)
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
         record("resource-container", False, "deployment", "Cannot inspect the target container; check its name and Docker access.")

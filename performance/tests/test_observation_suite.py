@@ -5,16 +5,21 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 from performance.targets.echomem.acceptance.capacity_load import arrival_plan
 from performance.targets.echomem.acceptance.observation import (
     STATUSES,
+    _flood_window,
     derive_observation_recommendations,
     evaluate_observation,
     jain,
     summarize_api_coverage,
     summarize_concurrency_configuration,
+    summarize_m1,
     summarize_m5,
     summarize_m6,
+    summarize_m3,
     summarize_timing_evidence,
     write_observation_report,
 )
@@ -37,6 +42,47 @@ def test_empty_report_tables_span_their_actual_columns(tmp_path: Path) -> None:
         empty = re.search(r'<td colspan="(\d+)">暂无数据</td>', table)
         if empty:
             assert int(empty.group(1)) == len(re.findall(r"<th\b", table))
+
+
+def test_m1_summary_reports_per_tenant_question_coverage() -> None:
+    actors = []
+    for index, question in enumerate(("question zero", "question one")):
+        actors.append({
+            "tenant_index": index,
+            "user_index": 0,
+            "corpus_source": {
+                "kind": "locomo-single-sentence",
+                "sample_id": "conv-30",
+                "session_key": "session_1",
+                "sentence_id": "D1:19",
+                "session_messages": 1,
+                "question_variant": index,
+            },
+            "queries": [{
+                "query_id": f"q{index}",
+                "query": question,
+                "expected_answer": "Finding Freedom",
+            }],
+            "input_documents": 100,
+            "input_characters": 1000,
+            "semantic_queries": 1,
+            "commit_http_status": 202,
+            "commit_state": "completed",
+            "status": "PASS",
+        })
+    summary = summarize_m1([{
+        "topology": "concurrency",
+        "levels_requested": [],
+        "levels": [],
+        "seed": {"status": "PASS", "actors": actors},
+    }], {})
+
+    assert summary["seed_contract"].startswith("每租户只注入同一个 LoCoMo session 的同一句证据")
+    assert summary["seed_tenant_count"] == 2
+    assert summary["seed_unique_questions"] == 2
+    assert summary["seed_question_variation_complete"] is True
+    assert summary["seed_assignments"][1]["question_variant"] == 1
+    assert summary["seed_assignments"][1]["question"] == "question one"
 
 
 def test_report_shows_verified_llm_and_embedding_models(tmp_path: Path) -> None:
@@ -131,6 +177,24 @@ def test_arrival_plan_has_four_real_load_shapes() -> None:
     assert hot_reads > normal_reads
 
 
+def test_timing_evidence_contains_actual_scenario_elapsed_and_drain(tmp_path: Path) -> None:
+    run = _run(tmp_path, "m3-baseline", [
+        {"op": "read", "status": "ok", "stage_ms": 12},
+        {"op": "commit_submit", "status": "ok", "stage_ms": 20},
+    ])
+    run["summary"] = {"run_clock": {
+        "load_duration_s": 15.0,
+        "engine_elapsed_s": 15.4,
+        "wall_elapsed_s": 16.1,
+    }}
+    timing = summarize_timing_evidence({"runs": [run]}, [])
+    row = timing["scenario_timings"][0]
+    assert row["actual_elapsed_s"] == pytest.approx(16.1)
+    assert row["engine_elapsed_s"] == pytest.approx(15.4)
+    assert row["drain_s"] == pytest.approx(1.1)
+    assert timing["timing_totals"]["actual_elapsed_s"] == pytest.approx(16.1)
+
+
 def test_jain_all_zero_is_undefined_and_zero_tenant_is_retained() -> None:
     assert jain([0, 0, 0, 0]) is None
     assert jain([8, 8, 8, 0]) == 0.75
@@ -197,6 +261,48 @@ def test_overlap_uses_search_start_not_interval_intersection(tmp_path: Path) -> 
     result = evaluate_observation(suite, {}, quick=False)["metrics"]["M3"]
     assert result["windows"][0]["overlap"]["planned_or_recorded"] == 1
     assert result["windows"][0]["overlap"]["timeouts"] == 1
+
+
+def test_m3_ratio_uses_nonempty_recall_p95_not_deadline_p95(tmp_path: Path) -> None:
+    records = [
+        {"op": "commit_submit", "tenant_idx": "0", "status": "ok", "http_status": "202",
+         "session_id": "s", "archive_id": "a", "accepted_at_ms": "1000", "ts_ms": "1000"},
+        {"op": "commit_done", "tenant_idx": "0", "status": "ok", "http_status": "200",
+         "session_id": "s", "archive_id": "a", "completed_at_ms": "2000", "ts_ms": "2000",
+         "poll_evidence_version": "echomem-poll-v1", "poll_count": "1",
+         "poll_http_errors": "0", "commit_terminal_state": "completed",
+         "terminal_at_ms": "2000", "last_nonterminal_at_ms": "1500"},
+        {"op": "read", "tenant_idx": "0", "status": "ok", "http_status": "200",
+         "stage_ms": "150", "ts_ms": "1500", "recall_served": "true", "hit_count": "1"},
+    ]
+    path = tmp_path / "records.csv"
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=sorted(records[0] | records[1] | records[2]))
+        writer.writeheader()
+        writer.writerows(records)
+    baseline = [{"op": "read", "tenant_idx": "0", "status": "ok", "stage_ms": 100,
+                 "recall_served": True, "hit_count": 1}]
+    result = _flood_window(baseline, {"scenario": "m3-test", "output_dir": str(tmp_path)}, 1)
+    tenant = result["tenants"][0]
+    assert tenant["baseline"]["p95_ms"] == 100
+    assert tenant["overlap"]["p95_ms"] == 150
+    assert tenant["p95_ratio"] == 1.5
+    assert tenant["p95_delta_ms"] == 50
+
+
+def test_m3_invalid_baseline_blocks_priority_comparison(tmp_path: Path) -> None:
+    baseline = _run(tmp_path, "m3-baseline", [
+        {"op": "read", "tenant_idx": "0", "status": "ok", "stage_ms": 100,
+         "recall_served": "true", "hit_count": 1},
+        {"op": "read", "tenant_idx": "0", "status": "ok", "stage_ms": 120,
+         "recall_served": "false", "hit_count": 0},
+        {"op": "read", "tenant_idx": "0", "status": "error", "stage_ms": 300,
+         "error_type": "timeout", "recall_served": "false", "hit_count": 0},
+    ])
+    result = summarize_m3({"m3-baseline": baseline}, quick=False)
+    assert result["baseline_health"]["status"] == "INVALID"
+    assert result["baseline_health"]["eligible_for_priority_comparison"] is False
+    assert "baseline_health_gate_failed" in result["evidence_issues"]
 
 
 def test_m5_preserves_three_sample_denominators() -> None:

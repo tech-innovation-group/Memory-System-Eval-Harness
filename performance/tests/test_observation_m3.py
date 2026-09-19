@@ -6,7 +6,7 @@ from performance.targets.echomem.acceptance.observation import _fairness_window,
 from performance.targets.echomem.orchestrator.suites import build_case_profile, six_metric_observation_cases
 
 
-def write_run(tmp_path, tenants=4, *, zero_last=False):
+def write_run(tmp_path, tenants=4, *, zero_last=False, drain_only=False):
     rows = []
     for tenant in range(tenants):
         for seq, start in enumerate((11000, 12000)):
@@ -19,7 +19,8 @@ def write_run(tmp_path, tenants=4, *, zero_last=False):
             key = dict(tenant_idx=tenant, session_id=f"s-{tenant}-{seq}", archive_id=f"a-{tenant}-{seq}")
             rows.append(dict(**key, op="commit_submit", ts_ms=start + 10,
                              stage_ms=10, accepted_at_ms=start + 10, http_status=202))
-            complete = 12000 if seq == 0 and not (zero_last and tenant == tenants - 1) else 14000
+            complete = (14000 if drain_only else
+                        (12000 if seq == 0 and not (zero_last and tenant == tenants - 1) else 14000))
             rows.append(dict(**key, op="commit_done", ts_ms=complete, completed_at_ms=complete,
                              terminal_at_ms=complete, observation_ended_at_ms=complete,
                              commit_terminal_state="completed", poll_evidence_version="echomem-poll-v1",
@@ -113,6 +114,25 @@ def test_full_and_quick_status_and_historical_contract(tmp_path):
     assert summarize_m2(runs, quick=True)["status"] == "PARTIAL"
     runs["m3-fairness-4t"]["summary"]["measurement_contract"].pop("fairness_mode")
     assert summarize_m2(runs, quick=False)["status"] == "PARTIAL"
+
+
+def test_custom_m2_tenant_levels_are_summarized(tmp_path):
+    runs = {run["scenario"]: run for run in (write_run(tmp_path, 2), write_run(tmp_path, 64))}
+    result = summarize_m2(runs, quick=False, tenant_levels=[2, 64])
+    assert result["status"] == "MEASURED"
+    assert result["expected_windows"] == 2
+    assert [window["tenant_count"] for window in result["windows"]] == [2, 64]
+
+
+def test_fairness_with_only_drain_completions_is_partial(tmp_path):
+    runs = {run["scenario"]: run for run in (
+        write_run(tmp_path, 4, drain_only=True), write_run(tmp_path, 8, drain_only=True)
+    )}
+    result = summarize_m2(runs, quick=False)
+    assert result["status"] == "PARTIAL"
+    assert result["complete_windows"] == 0
+    assert all(not window["fairness_result_available"] for window in result["windows"])
+    assert "窗口内没有已完成 Commit" in result["reason"]
 
 
 def test_formal_m3_is_periodic_not_barrier():

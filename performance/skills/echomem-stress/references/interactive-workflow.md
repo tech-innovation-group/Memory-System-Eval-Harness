@@ -59,7 +59,8 @@ Also display the distinction between configured actors and measured overlap:
 
 ```text
 Hot-user levels:       1,2,4,8,16,32
-Required concurrency:  32 simultaneous in-flight requests
+Concurrency levels:    1,8,16,64 total simultaneous in-flight requests
+Required concurrency:  64 simultaneous in-flight requests
 EchoMem limits:         observed and reported; not used to cap client load
 Heterogeneous tenants: Search weights 8:4:2:1 / Commit weights 1:2:4:8
 ```
@@ -97,19 +98,7 @@ chmod 600 .local-stress/tenants.json .local-stress/test.env
    `require_4u8g` according to the actual test objective, and identify the
    dedicated recovery container. Keep profiles and env files out of Git.
 
-Run a quick chain check before a formal run:
-
-```bash
-performance/targets/echomem/run_six_metrics.sh quick \
-  .local-stress/six-metrics.profile.json \
-  results/local-six-metrics-quick \
-  .local-stress/test.env
-```
-
-Quick results are `PARTIAL` by design. They must never be reported as a capacity
-boundary or formal acceptance result.
-
-After the command exits, verify the report contract:
+After a formal run exits, verify the report contract:
 
 ```bash
 test -f "OUTPUT/report.html"
@@ -345,6 +334,11 @@ timings, show observation count and P50/P95/P99 plus queue wait when available;
 identify whether each value came from a trace-correlated JSON log or a Prometheus
 window delta. Never mix endpoint latency, model latency, and internal stage time
 in one unlabeled series.
+
+固定 4U8G 资源校验只在 Linux runner 上执行。macOS/Windows 仍记录可读取的容器或主机
+资源证据，但不因 CPU/内存没有精确匹配 4U8G 而阻塞 HTTP 压测；报告要写明数值校验被
+非 Linux 平台跳过。若某个指标确实需要 Docker 控制（例如 M5 重启），仍需单独满足该
+指标的容器条件。
 
 On every live refresh, preserve completed sections and prior denominators. The
 agent must verify that `report.html` exists, its modification time advanced, its

@@ -5,19 +5,30 @@ from types import SimpleNamespace
 
 import pytest
 
-from performance.targets.echomem.acceptance.capacity_load import arrival_plan, query_for
-from performance.targets.echomem.acceptance.capacity_experiment import _select_reused_actors
+from performance.targets.echomem.acceptance.capacity_load import arrival_plan, measure, query_for
+from performance.targets.echomem.acceptance import capacity_experiment
+from performance.targets.echomem.acceptance.capacity_experiment import (
+    _select_reused_actors,
+    _validate_reused_sessions,
+)
 from performance.targets.echomem.acceptance.capacity_statistics import (
     evaluate_level,
     qps_baseline,
     search_summary,
     wilson,
 )
-from performance.targets.echomem.acceptance.semantic_corpus import build_corpus
+from performance.targets.echomem.acceptance.semantic_corpus import (
+    build_corpus,
+    build_fixed_tenant_data_corpus,
+)
 from performance.targets.echomem.acceptance.capacity_report import render
 from performance.targets.echomem.acceptance.capacity_publish import redacted_resources, seed_summary
 from performance.targets.echomem.acceptance.capacity_recovery import crash_reason, observe_recovery
-from performance.targets.echomem.acceptance.capacity_seed import CapacityActor, seed_actor
+from performance.targets.echomem.acceptance.capacity_seed import (
+    CapacityActor,
+    _limit_locomo_queries,
+    seed_actor,
+)
 from performance.targets.echomem.acceptance.capacity_experiment import run_exploration
 from performance.targets.echomem.acceptance.capacity_confirmation import (
     _aggregate,
@@ -53,6 +64,136 @@ def test_reused_seed_requires_complete_nonduplicate_coordinates():
         )
 
 
+def test_reused_seed_preflight_is_bounded_and_refreshes_sessions():
+    class Client:
+        tenant_id = "tenant"
+
+        def open_session(self, tenant, name, retry_rate_limit):
+            assert retry_rate_limit is False
+            return f"fresh-{name}", tenant
+
+    actors = [SimpleNamespace(tenant_index=0, user_index=index,
+                              client=Client(), write_session="stale")
+              for index in range(4)]
+    result = _validate_reused_sessions(actors, max_checks=2)
+    assert result["status"] == "PASS"
+    assert result["checked_actors"] == 2
+    assert [actor.write_session for actor in actors] == [
+        "fresh-capacity-reuse-preflight", "fresh-capacity-reuse-preflight", "stale", "stale"
+    ]
+
+
+def test_reused_seed_preflight_blocks_before_load_on_auth_failure():
+    class Client:
+        tenant_id = "tenant"
+
+        def open_session(self, tenant, name, retry_rate_limit):
+            raise RuntimeError("unauthenticated")
+
+    actor = SimpleNamespace(tenant_index=0, user_index=0,
+                            client=Client(), write_session="stale")
+    result = _validate_reused_sessions([actor])
+    assert result["status"] == "BLOCKED"
+    assert result["reason"] == "reused-seed-auth-or-session-invalid"
+    assert result["checks"][0]["error_class"] == "RuntimeError"
+
+
+def test_new_seed_with_no_healthy_actor_blocks_before_load(monkeypatch, tmp_path):
+    actor = SimpleNamespace(tenant_index=0, user_index=0)
+    monkeypatch.setattr(capacity_experiment, "provision_actors", lambda *args, **kwargs: [actor])
+    monkeypatch.setattr(
+        capacity_experiment,
+        "prepare_actors",
+        lambda *args, **kwargs: {"status": "SEED_FAILED", "actors": [{"status": "INCONCLUSIVE"}]},
+    )
+    monkeypatch.setattr(
+        capacity_experiment,
+        "measure",
+        lambda *args, **kwargs: pytest.fail("load must not start after a failed seed"),
+    )
+
+    result = run_exploration(
+        base_url="http://example.test", output=tmp_path / "m1", topology="cross-tenant",
+        levels=[1], load_profile="search", persist_private_identities=False,
+    )
+
+    assert result["status"] == "BLOCKED"
+    assert result["phase"] == "semantic-seed"
+    assert result["stop_reason"] == "semantic-seed-no-healthy-actors"
+
+
+def test_partial_seed_keeps_healthy_actors_for_load(monkeypatch, tmp_path):
+    actors = [
+        SimpleNamespace(tenant_index=0, user_index=0, write_session="live"),
+        SimpleNamespace(tenant_index=1, user_index=0, write_session=""),
+    ]
+    monkeypatch.setattr(capacity_experiment, "provision_actors", lambda *args, **kwargs: actors)
+    monkeypatch.setattr(
+        capacity_experiment,
+        "prepare_actors",
+        lambda *args, **kwargs: {"status": "SEED_FAILED", "actors": [
+            {"tenant_index": 0, "user_index": 0, "status": "PASS"},
+            {"tenant_index": 1, "user_index": 0, "status": "INCONCLUSIVE"},
+        ]},
+    )
+    monkeypatch.setattr(capacity_experiment, "measure", lambda selected, **kwargs: {
+        "rows": [], "mixed": False, "duration_s": 1, "identity_count": len(selected),
+        "tenant_count": len(selected),
+    })
+    result = run_exploration(
+        base_url="http://example.test", output=tmp_path / "partial", topology="cross-tenant",
+        levels=[1, 2], load_profile="search", persist_private_identities=False,
+        warmup_s=0, duration_s=0,
+    )
+    assert result["seed_status"] == "PARTIAL"
+    assert result["seed_failed_actor_count"] == 1
+    assert result["seed_healthy_actor_count"] == 1
+    assert result["levels"][0]["tenant_count"] == 1
+
+
+def test_fixed_tenant_seed_resolves_fixture_qa_evidence(tmp_path):
+    fixture = tmp_path / "seed.json"
+    fixture.write_text(json.dumps({
+        "version": "test",
+        "tenants": [{
+            "tenant_index": 0,
+            "search_query": "What was recorded?",
+            "expected_answer": "A meeting room",
+        }],
+    }), encoding="utf-8")
+    dataset = tmp_path / "locomo.json"
+    dataset.write_text(json.dumps([{
+        "sample_id": "conv-test",
+        "conversation": {"session_1": [{
+            "dia_id": "D1:1", "speaker": "A", "text": "A meeting room was reserved.",
+        }]},
+        "qa": [{
+            "question": "What was recorded?", "answer": "A meeting room", "evidence": ["D1:1"],
+        }],
+    }]), encoding="utf-8")
+
+    corpus = build_fixed_tenant_data_corpus(
+        "tenant-0/user-0", seed_data_path=fixture, fixture_index=0,
+        locomo_dataset_path=dataset,
+    )
+
+    assert corpus["source"]["kind"] == "fixed-tenant-data"
+    assert corpus["recall_queries"][0]["expected_answer"] == "A meeting room"
+    assert corpus["recall_queries"][0]["aliases"]
+    assert "FIXTURE-EVIDENCE" in corpus["documents"][0]
+    assert "Answer: A meeting room" in corpus["documents"][-1]
+
+
+def test_answer_match_allows_inserted_context_between_fact_tokens():
+    from performance.targets.echomem.acceptance.semantic_corpus import _answer_match
+
+    assert _answer_match(
+        "Audrey set up a doggy play area in the backyard with agility stuff and toys.",
+        "a doggy play area with agility stuff and toys",
+    )
+    assert not _answer_match("Audrey set up a play area for dogs.", "agility stuff and toys")
+
+
 def test_arrival_plan_separates_read_message_and_commit_schedules():
     plan = arrival_plan(4, 360, 1, True)
     assert 1200 < sum(e[1] == "read" for e in plan) < 1700
@@ -65,6 +206,107 @@ def test_arrival_plan_separates_read_message_and_commit_schedules():
         adds = [e for e in plan if e[1] == "add" and e[2] == identity]
         assert adds and adds[0][0] < 1
     assert not any(e[1] != "read" for e in arrival_plan(4, 60, 1, False))
+
+
+def test_fixed_interval_emits_exactly_one_search_per_tenant_per_second():
+    plan = arrival_plan(
+        16, 60, 1, load_mode="search", search_schedule="fixed-interval"
+    )
+    reads = [event for event in plan if event[1] == "read"]
+    assert len(reads) == 16 * 60
+    for identity in range(16):
+        times = [event[0] for event in reads if event[2] == identity]
+        assert len(times) == 60
+        assert all(next_at - at == pytest.approx(1.0)
+                   for at, next_at in zip(times, times[1:]))
+        assert 0 <= times[0] < 1 and times[-1] < 60
+
+
+def test_rewrite_queries_cycles_context_without_changing_recall_contract():
+    actor = SimpleNamespace(corpus=build_corpus("unit"))
+    variants = [query_for(actor, sequence, False, rewrite_queries=True)
+                for sequence in range(4)]
+    assert [item["query_variant"] for item in variants] == [
+        "original", "history_context", "recall_context", "memory_context"
+    ]
+    assert all(item["query_type"] == "recall" for item in variants)
+    assert all(item["aliases"] for item in variants)
+    assert all(item["original_query"] in item["query"] for item in variants)
+
+
+def test_locomo_query_limit_keeps_the_complete_session_memory():
+    from performance.targets.echomem.acceptance.semantic_corpus import (
+        build_locomo_session_corpus,
+    )
+
+    corpus = build_locomo_session_corpus(
+        "tenant-unit", sample_id="conv-30", session_key="session_1"
+    )
+    limited = _limit_locomo_queries(corpus, 1)
+    assert len(corpus["documents"]) == 28
+    assert limited["documents"] == corpus["documents"]
+    assert limited["input_characters"] == corpus["input_characters"]
+    assert limited["source"]["session_messages"] == 28
+    assert len(limited["recall_queries"]) == 1
+
+
+def test_closed_loop_search_reaches_requested_peak_concurrency():
+    class FakeClient:
+        agent_id = "unit"
+
+        def request(self, method, path, body, timeout_s, operation):
+            time.sleep(0.01)
+            return SimpleNamespace(
+                status_code=200,
+                payload={"items": [{"text": "蓝桥项目-UNIT"}]},
+                reason_code="",
+                transport_error_type="",
+            )
+
+    import time
+
+    corpus = {
+        "recall_queries": [{"id": "q", "query": "项目代号是什么？",
+                            "query_type": "recall", "aliases": ["蓝桥项目-UNIT"]}],
+    }
+    actors = [SimpleNamespace(tenant_index=index, user_index=0,
+                              client=FakeClient(), corpus=corpus)
+              for index in range(4)]
+    measurement = measure(actors, duration_s=0.08, request_timeout_s=1,
+                          target_concurrency=4)
+    assert measurement["closed_loop"] is True
+    assert measurement["target_concurrency"] == 4
+    assert search_summary([row for row in measurement["rows"] if row["op"] == "read"])["peak_inflight_requests"] == 4
+
+
+def test_closed_loop_search_staggers_query_cursor_across_actors():
+    class FakeClient:
+        agent_id = "unit"
+
+        def request(self, method, path, body, timeout_s, operation):
+            return SimpleNamespace(
+                status_code=200,
+                payload={"items": [{"text": body["query"]}]},
+                reason_code="",
+                transport_error_type="",
+            )
+
+    corpus = {"recall_queries": [
+        {"id": f"q{i}", "query": f"q{i}", "query_type": "recall", "aliases": [f"q{i}"]}
+        for i in range(3)
+    ]}
+    actors = [SimpleNamespace(tenant_index=index, user_index=0,
+                              client=FakeClient(), corpus=corpus)
+              for index in range(4)]
+    measurement = measure(actors, duration_s=0.02, request_timeout_s=1,
+                          target_concurrency=8)
+    rows = [row for row in measurement["rows"] if row["op"] == "read"]
+    initial = {(row["identity_index"], row["sequence"]): row["query_id"]
+               for row in rows if row["sequence"] < 2}
+    assert initial[(0, 0)] == "q0"
+    assert initial[(0, 1)] == "q1"
+    assert initial[(1, 0)] == "q0"
+    assert initial[(1, 1)] == "q1"
 
 
 def test_mixed_queries_use_all_paraphrases_with_70_30_split():
@@ -584,7 +826,11 @@ def test_marker_failure_does_not_skip_fixed_semantic_questions():
             return SimpleNamespace(status_code=200, payload={"status": "completed"})
 
         def search(self, *args, **kwargs):
-            return SimpleNamespace(status_code=200, payload={"result": {"items": []}})
+            # The service can return a candidate without the seeded marker.
+            # That is a served Recall, but it is not marker visibility.
+            return SimpleNamespace(status_code=200, payload={"result": {
+                "items": [{"text": "unrelated candidate"}],
+            }})
 
         def get_commit_memories(self, *args):
             return SimpleNamespace(status_code=200, payload={"memories": []})
@@ -597,6 +843,7 @@ def test_marker_failure_does_not_skip_fixed_semantic_questions():
     result = seed_actor(CapacityActor(0, 0, UnitClient(), corpus),
                         checkpoint=lambda row: snapshots.append(len(row["queries"])))
     assert result["marker_visible"] is False
+    assert result["recall_served"] is True
     assert result["valid_semantic_queries"] == 40
     assert result["status"] == "PASS"
     assert 40 in snapshots

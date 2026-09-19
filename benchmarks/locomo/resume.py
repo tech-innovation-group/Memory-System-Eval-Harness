@@ -162,7 +162,7 @@ def write_judge_resume_manifest(
 
 
 def _resolve_resume_csv(source: str | Path) -> Path:
-    path = Path(source).expanduser().resolve()
+    path = Path(source).expanduser().absolute()
     if path.is_file():
         return path
     if not path.is_dir():
@@ -184,7 +184,7 @@ def find_qa_resume_csv(source: str | Path) -> Path | None:
     the import phase has no qa_results.csv yet, in which case resume should
     run the full QA instead of failing.
     """
-    path = Path(source).expanduser().resolve()
+    path = Path(source).expanduser().absolute()
     if path.is_file():
         return path
     if not path.is_dir():
@@ -203,7 +203,7 @@ def find_judge_resume_csv(source: str | Path) -> Path | None:
     judge_results.csv yet (import-only or QA-only interruption) should run
     the full judge instead of failing.
     """
-    path = Path(source).expanduser().resolve()
+    path = Path(source).expanduser().absolute()
     if path.is_file():
         return path
     if not path.is_dir():

@@ -54,6 +54,10 @@ class RequestRecord:
     query: str = ""
     hit_count: int = 0
     real_recall: bool = False
+    # HTTP success is not sufficient for a recall observation: the response
+    # must contain non-empty candidates and must not be an intent rejection.
+    # None preserves compatibility for records created by older callers.
+    recall_served: bool | None = None
     quality_ok: bool = True
     degraded: bool = False
     query_type: str = "unclassified"
@@ -117,6 +121,7 @@ CSV_FIELDS: list[str] = [
     "content_bytes",
     "hit_count",
     "real_recall",
+    "recall_served",
     "quality_ok",
     "degraded",
     "query",

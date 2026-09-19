@@ -65,6 +65,7 @@ def recall_quality(payload: Any, marker: str = "", query_type: str = "recall") -
     return {
         "hit_count": len(items), "degraded": degraded,
         "real_recall": bool(items),
+        "recall_served": valid and bool(items),
         "quality_ok": bool(valid and not degraded and (
             not items if query_type == "no_recall" else hit if marker else bool(items)
         )),
@@ -78,8 +79,30 @@ def recall_quality(payload: Any, marker: str = "", query_type: str = "recall") -
 #  端点级函数：一个函数 = 一个 EchoMem HTTP 端点                         #
 # --------------------------------------------------------------------- #
 
+def _extract_layer_timing(resp: Response) -> dict:
+    """Extract per-module timing from EchoMem response headers (方案A).
+
+    Returns a dict with keys like intent_ms / embedding_ms / retrieval_ms /
+    rerank_ms / assembly_ms, defaulting to 0 when headers are absent.
+    """
+    timing = {}
+    for key, header in (
+        ("intent_ms", "X-EchoMem-Intent-Ms"),
+        ("embedding_ms", "X-EchoMem-Embedding-Ms"),
+        ("retrieval_ms", "X-EchoMem-Retrieval-Ms"),
+        ("rerank_ms", "X-EchoMem-Rerank-Ms"),
+        ("assembly_ms", "X-EchoMem-Assembly-Ms"),
+    ):
+        val = resp.raw_headers.get(header, resp.raw_headers.get(header.lower(), "")) if hasattr(resp, "raw_headers") else ""
+        try:
+            timing[key] = int(val) if val else 0
+        except (ValueError, TypeError):
+            timing[key] = 0
+    return timing
+
+
 def search(ctx: Ctx, query: str, *, top_k: int = 5) -> Response:
-    """POST /api/retrieval/search 并记录质量断言字段。
+    """POST /api/retrieval/search 并记录质量断言字段与分层耗时。
 
     HTTP 错误记 error；200 但空结果、错误标记或降级均不能通过召回质量断言。
     """
@@ -95,6 +118,10 @@ def search(ctx: Ctx, query: str, *, top_k: int = 5) -> Response:
         op="read",
         query=query,
     )
+    # 分层耗时采集（方案A: Response Header）
+    layer_timing = _extract_layer_timing(resp)
+    if any(layer_timing.values()):
+        ctx.note(**layer_timing)
     marker = anchor_marker(query)
     payload = resp.json if isinstance(resp.json, dict) else {}
     ctx.note(trace_ref=response_trace_ref(payload))
@@ -103,13 +130,13 @@ def search(ctx: Ctx, query: str, *, top_k: int = 5) -> Response:
     if sample is not None:
         query_type = sample["query_type"]
     if not resp.ok:
-        ctx.note(quality_ok=False, query_type=query_type, expected_marker=marker,
+        ctx.note(recall_served=False, quality_ok=False, query_type=query_type, expected_marker=marker,
                  quality_assertion="fixed-fact-in-items" if sample is not None else "")
         return resp
     if sample is not None:
         from performance.targets.echomem.acceptance.semantic_corpus import assess_retrieval
         check = assess_retrieval(resp.json, sample)
-        ctx.note(quality_ok=check["quality_ok"], query_type=query_type,
+        ctx.note(recall_served=check.get("recall_served", False), quality_ok=check["quality_ok"], query_type=query_type,
                  hit_count=check["hit_count"], real_recall=check["hit_count"] > 0,
                  degraded=check["degraded"], expected_fact_found=check["matched_expected_fact"],
                  intent_rejected=check["intent_rejected"],

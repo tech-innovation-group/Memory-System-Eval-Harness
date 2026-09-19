@@ -22,6 +22,22 @@ def test_resource_socket_uses_selected_context(monkeypatch):
     assert docker_inspect._docker_socket_path() == "/tmp/selected.sock"
 
 
+def test_echomem_context_is_passed_explicitly(monkeypatch):
+    monkeypatch.delenv("DOCKER_CONTEXT", raising=False)
+    monkeypatch.setenv("ECHOMEM_DOCKER_CONTEXT", "dedicated-stress")
+    assert docker_inspect._docker_command("inspect", "target") == [
+        "docker", "--context", "dedicated-stress", "inspect", "target"
+    ]
+
+
+def test_standard_docker_context_takes_precedence(monkeypatch):
+    monkeypatch.setenv("DOCKER_CONTEXT", "operator-selected")
+    monkeypatch.setenv("ECHOMEM_DOCKER_CONTEXT", "profile-selected")
+    assert docker_inspect._docker_command("inspect", "target") == [
+        "docker", "inspect", "target"
+    ]
+
+
 def test_resource_socket_never_falls_back_from_remote_host(monkeypatch):
     monkeypatch.delenv("DOCKER_CONTEXT", raising=False)
     monkeypatch.setenv("DOCKER_HOST", "tcp://remote.example:2375")
@@ -34,3 +50,35 @@ def test_default_socket_without_docker_cli(monkeypatch):
     monkeypatch.delenv("DOCKER_HOST", raising=False)
     monkeypatch.setattr(docker_inspect.shutil, "which", lambda name: None)
     assert docker_inspect._docker_socket_path() == "/var/run/docker.sock"
+
+
+def test_tcp_docker_api_is_used_for_resource_sampling(monkeypatch):
+    calls = []
+
+    class Response:
+        status = 200
+
+        def read(self):
+            return b'{"cpu_stats": {}, "memory_stats": {}}'
+
+    class Connection:
+        def __init__(self, host, port, timeout):
+            calls.append((host, port, timeout))
+
+        def request(self, method, path):
+            calls.append((method, path))
+
+        def getresponse(self):
+            return Response()
+
+        def close(self):
+            pass
+
+    monkeypatch.setenv("DOCKER_HOST", "tcp://127.0.0.1:2375")
+    monkeypatch.delenv("DOCKER_CONTEXT", raising=False)
+    monkeypatch.setattr(docker_inspect.http.client, "HTTPConnection", Connection)
+    assert docker_inspect._docker_http_json("/containers/test/stats?stream=false") == {
+        "cpu_stats": {}, "memory_stats": {}
+    }
+    assert calls[0] == ("127.0.0.1", 2375, 15)
+    assert calls[1] == ("GET", "/containers/test/stats?stream=false")

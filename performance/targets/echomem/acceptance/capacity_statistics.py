@@ -38,6 +38,11 @@ def _valid_duration(value) -> bool:
             and math.isfinite(value) and value >= 0)
 
 
+def _valid_stage_duration(value) -> bool:
+    """Accept only executed stages; zero means skipped/circuit-open here."""
+    return _valid_duration(value) and value > 0
+
+
 def _status_code(row: dict) -> int | None:
     value = row.get("http_status")
     if isinstance(value, bool) or value is None:
@@ -75,7 +80,12 @@ def _failure_domain(row: dict, status: int | None) -> str | None:
         return "atomic_engine"
     if row.get("degraded"):
         return "routing_or_recall_orchestration"
-    return "recall_quality"
+    # Old synthetic rows do not have the new recall_served field. Preserve
+    # their historical classification while real rows distinguish an empty
+    # or intent-rejected recall from a quality-only mismatch.
+    if "recall_served" not in row:
+        return "recall_quality"
+    return "recall_empty_or_rejected"
 
 
 def error_breakdown(sent: list[dict]) -> dict:
@@ -108,7 +118,10 @@ def error_breakdown(sent: list[dict]) -> dict:
         if success:
             partition["strict_success"] += 1
         elif status == 200:
-            partition["http_200_quality_failure"] += 1
+            if row.get("recall_served"):
+                partition["http_200_quality_only"] += 1
+            else:
+                partition["http_200_quality_failure"] += 1
             quality_failed_200 += 1
             degraded_200 += bool(row.get("degraded"))
         elif status is None and (
@@ -153,6 +166,7 @@ def error_breakdown(sent: list[dict]) -> dict:
         "unknown_transport_errors": transport_types.get("unknown_transport_error", 0),
         "timeout_censored": timeout_censored,
         "http_200_quality_failures": quality_failed_200,
+        "http_200_quality_only": partition.get("http_200_quality_only", 0),
         "http_200_degraded": degraded_200,
         "http_200_non_degraded_quality_failures": quality_failed_200 - degraded_200,
         "reason_code_counts": dict(reason_counts),
@@ -266,14 +280,17 @@ def detect_congestion(measurement: dict, *, window_s: float = 10,
 def search_summary(rows: list[dict]) -> dict:
     sent = [r for r in rows if r.get("sent")]
     successful = [r for r in sent if r.get("success")]
+    quality_successful = [r for r in sent if r.get("quality_ok") and not r.get("degraded")]
+    if not any("quality_ok" in r for r in sent):
+        quality_successful = successful
     latency = [r["elapsed_s"] for r in sent if _valid_duration(r.get("elapsed_s"))]
     atomic = [engine.get("duration_seconds") for row in sent for engine in row.get("engine_results", [])
-              if engine.get("engine_id") == "atomic_engine" and _valid_duration(engine.get("duration_seconds"))]
+              if engine.get("engine_id") == "atomic_engine" and _valid_stage_duration(engine.get("duration_seconds"))]
     engine_values: dict[str, list[float]] = {}
     for row in sent:
         for engine in row.get("engine_results", []):
             duration = engine.get("duration_seconds")
-            if engine.get("engine_id") and _valid_duration(duration):
+            if engine.get("engine_id") and _valid_stage_duration(duration):
                 engine_values.setdefault(engine["engine_id"], []).append(duration)
     engine_timings = {engine: {"observations": len(values),
                                "mean_s": sum(values) / len(values),
@@ -326,9 +343,11 @@ def search_summary(rows: list[dict]) -> dict:
             "max_s": max(values) if values else None,
         }
     return {"planned": len(rows), "sent": len(sent), "success": len(successful),
+            "recall_served": len(successful),
             "not_sent": len(rows) - len(sent), "delivery_rate": len(sent) / len(rows) if rows else None,
-            "quality_rate": len(successful) / len(sent) if sent else None,
-            "quality_wilson_95": wilson(len(successful), len(sent)),
+            "recall_service_rate": len(successful) / len(sent) if sent else None,
+            "quality_rate": len(quality_successful) / len(sent) if sent else None,
+            "quality_wilson_95": wilson(len(quality_successful), len(sent)),
             "errors": len(sent) - len(successful), "degraded": sum(bool(r.get("degraded")) for r in sent),
             "http_status_counts": failures["http_status_counts"],
             "degraded_reason_counts": dict(reasons),

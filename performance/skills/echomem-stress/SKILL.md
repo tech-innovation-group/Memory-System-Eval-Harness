@@ -13,6 +13,19 @@ Run the repository's real HTTP six-metric suite as a guided product flow. Read
 `references/interactive-workflow.md` before starting a run. Use
 `performance/targets/echomem/README.md` as the canonical setup and CLI reference.
 
+## Portable chart-report workflow
+
+For Kimi, Codex, or another local coding assistant, read
+`references/chart-report-workflow.md` before executing or regenerating a report.
+These are repository-relative instructions, not Codex-tool dependencies. The
+assistant needs local file and shell access; the assistant model is independent
+of the LLM/Embedding used by the EchoMem service under test. A report-only request
+must not start a new paid workload. Select the generator by evidence type:
+M1-M6 uses the canonical suite; the bounded Commit diagnostic uses
+`scripts.build_commit_diagnostic_report`, never as a substitute for six metrics.
+Deliver the generated HTML path, evidence scope, and verification result, not
+just a prose summary or raw JSON.
+
 ## Non-negotiable evidence rules
 
 - Use a real EchoMem deployment, real LLM, real Embedding, and independent tenant
@@ -52,6 +65,10 @@ Run the repository's real HTTP six-metric suite as a guided product flow. Read
   not selected; never wait until the entire run ends before publishing the first
   report. After each checkpoint, tell the user the report path, update time, and
   newest measured denominator without flooding chat with per-request messages.
+- When one run selects M1 together with M2/M3, reuse M1 cross-tenant actors whose
+  Commit and recall validation completed. The shared seed must report
+  `seed_source=validated-identity-cache`; treating the same identities as a new
+  seed is a harness orchestration defect, not useful additional coverage.
 - Treat the repository report generator as the single implementation of visual
   layout. Do not hand-build a second HTML report in chat or with an ad-hoc
   script. Read `references/interactive-workflow.md#8-report-display-contract`
@@ -70,9 +87,9 @@ Run the repository's real HTTP six-metric suite as a guided product flow. Read
 2. Inspect prerequisites and present a compact readiness summary: EchoMem ready,
    Docker/container, profile, tenant count, LLM preflight, Embedding preflight,
    protected test endpoints, output directory, and destructive-test safety.
-3. If the requested scope is not already clear, default to M1-M3. On a new
-   machine, run a quick M1-M3 chain check first. Use full M1-M6, one metric,
-   resume, or report-only only when the user explicitly selects that scope.
+3. If the requested scope is not already clear, default to M1-M3. Use full
+   M1-M6, one metric, resume, or report-only only when the user explicitly
+   selects that scope.
 4. Preview the exact command, selected metrics, estimated destructive actions,
    and output directory. Obtain explicit user authorization before M4 fault
    injection, M5 kill/restart, root login, or use of remote/shared resources.
@@ -116,22 +133,27 @@ number as the default deployment baseline. If the team already has recorded
 model, reuse that evidence and run only the single-call identity/dimension
 preflight; do not spend quota repeating the provider sweep.
 
-The default first-pass capacity ceiling is 32 tenants and 32 observed in-flight
-requests. Pin the profile with:
+The default first-pass capacity ceiling is 32 tenants. The default concurrency
+topology targets 1, 8, 16, and 64 observed in-flight requests. Pin the profile
+with:
 
 ```json
 {
-  "m1_tenant_levels": [1, 2, 4, 8, 16, 32],
-  "m1_user_levels": [1, 2, 4, 8, 16, 32],
-  "required_concurrency": 32,
-  "required_embedding_model": "qwen3.7-text-embedding-flash"
+    "m1_tenant_levels": [1, 2, 4, 8, 16, 32],
+    "m1_user_levels": [1, 2, 4, 8, 16, 32],
+    "m1_concurrency_levels": [1, 8, 16, 64],
+    "m1_concurrency_tenants": 4,
+    "required_concurrency": 64,
+    "required_embedding_model": "qwen3.7-text-embedding-flash"
 }
 ```
 
-Explain that 32 configured hot users and 32 observed simultaneous in-flight
-requests are different facts. Report both. Users can append 64 and 128 levels
-later. Record EchoMem concurrency and queue settings for diagnosis, but never
-use them to lower the offered client load.
+Explain that configured actors and observed simultaneous in-flight requests are
+different facts. The default concurrency topology targets total in-flight
+levels 1, 8, 16, and 64 across four independent tenants; report the target and
+actual peak separately. Users can append 128 later. Record EchoMem concurrency
+and queue settings for diagnosis, but never use them to lower the offered
+client load.
 
 M3 must contain both equal-load fairness/priority evidence and a heterogeneous
 tenant case. The default heterogeneous case applies Search weights `[8,4,2,1]`
@@ -146,7 +168,7 @@ The final report must also expose three cross-metric audits:
 - endpoint and service-returned module timing distributions. Never infer internal
   router, recall, scheduler, or engine timings by subtracting unrelated clocks.
 
-When the profile enables `concurrency_topology`, run the 16/32/64/128 matrix for
+When the profile enables `concurrency_topology`, run the 1/8/16/64 matrix for
 four real layouts: one session per user with serial session access, multiple
 serial sessions per user, concurrent requests within one session, and unequal
 small-Search/large-Message+Commit tenant load. Treat each level as target client
@@ -166,13 +188,19 @@ summarize the seven supported Prometheus histograms from window deltas and show
 log/metric coverage side by side. A stage is unobservable only when neither source
 contains a real sample; never derive stage time by subtracting end-to-end values.
 
+The fixed `4U8G` resource check is platform-specific: enforce the exact
+4-CPU/8-GiB container contract only when the runner host is Linux. On macOS or
+Windows, keep the target running, record the host/container resource evidence,
+and run HTTP metrics without blocking on a 4U8G cgroup mismatch. The report
+must state that the numeric 4U8G check was skipped on a non-Linux host.
+
 ## Commands
 
 Run from the harness repository root with a profile and a secret env file that
 are outside Git:
 
 ```bash
-performance/targets/echomem/run_six_metrics.sh quick PROFILE OUTPUT ENV_FILE
+performance/targets/echomem/run_six_metrics.sh full PROFILE OUTPUT ENV_FILE
 performance/targets/echomem/run_six_metrics.sh full PROFILE OUTPUT ENV_FILE
 
 .venv/bin/python -m performance.targets.echomem.observation_run \
