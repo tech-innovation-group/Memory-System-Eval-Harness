@@ -105,6 +105,10 @@ def patch_source(source):
         if source.count(old) != 1:
             raise ValueError(f'Expected one anchor: {old[:100]}')
         source = source.replace(old, new, 1)
+    replace(
+        'ECHOMEM_HEALTH_TIMEOUT_S = int(os.getenv("ECHOMEM_HEALTH_TIMEOUT_S", "300"))',
+        'ECHOMEM_HEALTH_TIMEOUT_S = int(os.getenv("ECHOMEM_HEALTH_TIMEOUT_S", "900"))',
+    )
     replace('def parse_test_command(text:', '# M123 deterministic routing\n'+HELPERS+'\ndef parse_test_command(text:')
     replace('    retry_of: str = "",\n) -> dict[str, Any]:', '    retry_of: str = "",\n    test_type: str = "full",\n) -> dict[str, Any]:')
     replace('        "test_type": "full",\n        "source_ref": source_ref,', '        "test_type": test_type,\n        "source_ref": source_ref,')
