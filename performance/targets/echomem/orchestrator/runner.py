@@ -486,7 +486,7 @@ def _prepare_semantic_seed(base_url, tenant_config, max_tenants, seed_sessions, 
                 corpus = build_locomo_single_sentence_corpus(
                     identity, dataset_path=source_path, sample_id=sample_id,
                     session_key=session_key, sentence_id=sentence_id,
-                    question_variant=question_variant,
+                    question_variant=question_variant + index,
                     repeat_count=repeat_count,
                 )
             else:

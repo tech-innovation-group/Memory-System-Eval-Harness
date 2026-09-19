@@ -17,8 +17,27 @@ def test_repeated_sentence_preserves_date_needed_for_relative_time_qa():
     assert "20 January, 2023" in document
     assert "yesterday" in document
     assert corpus["recall_queries"][0]["expected_answer"] == "19 January, 2023"
-    other = build_locomo_single_sentence_corpus("other-tenant", repeat_count=100)
-    assert other["recall_queries"][0]["query"] == corpus["recall_queries"][0]["query"]
+    other = build_locomo_single_sentence_corpus(
+        "other-tenant", repeat_count=100, question_variant=1,
+    )
+    assert other["documents"][0].split(" Evidence marker:")[0] == document.split(" Evidence marker:")[0]
+    assert other["recall_queries"][0]["query"] != corpus["recall_queries"][0]["query"]
+    assert other["recall_queries"][0]["expected_answer"] == corpus["recall_queries"][0]["expected_answer"]
+    assert other["recall_queries"][0]["evidence_ids"] == corpus["recall_queries"][0]["evidence_ids"]
+    assert other["source"]["question_variant"] == 1
+
+
+def test_single_sentence_supports_64_unique_grounded_question_wordings():
+    corpora = [
+        build_locomo_single_sentence_corpus(
+            f"tenant-{index}/user-0", question_variant=index,
+        )
+        for index in range(64)
+    ]
+    assert len({row["recall_queries"][0]["query"] for row in corpora}) == 64
+    assert len({row["recall_queries"][0]["expected_answer"] for row in corpora}) == 1
+    assert len({tuple(row["recall_queries"][0]["evidence_ids"]) for row in corpora}) == 1
+    assert {row["source"]["question_variant"] for row in corpora} == set(range(64))
 
 
 def test_corpus_has_fixed_facts_paraphrases_and_non_recall_queries():

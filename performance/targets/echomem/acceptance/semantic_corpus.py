@@ -24,6 +24,41 @@ NO_RECALL = (
 
 DEFAULT_LOCOMO_DATASET = Path(__file__).resolve().parents[4] / "benchmarks/locomo/data/locomo10.json"
 
+_LOCOMO_QUESTION_PREFIXES = (
+    "",
+    "From our earlier conversation, ",
+    "Based on what you remember, ",
+    "Thinking back to our previous chat, ",
+    "Using the memory from our conversation, ",
+    "Please recall from our earlier discussion: ",
+    "According to what I told you before, ",
+    "Can you remember this from our past conversation: ",
+)
+_LOCOMO_QUESTION_SUFFIXES = (
+    "",
+    " Please answer using that remembered detail.",
+    " I mean the detail mentioned earlier.",
+    " Give the answer from the conversation memory.",
+    " Use only the remembered conversation.",
+    " I am referring to the event we discussed before.",
+    " Please provide the specific remembered answer.",
+    " Answer from the detail stored from our chat.",
+)
+
+
+def locomo_question_variant(question: str, variant: int) -> tuple[str, int]:
+    """Return one of 64 deterministic wordings without changing the question fact."""
+    if isinstance(variant, bool) or not isinstance(variant, int) or variant < 0:
+        raise ValueError("question_variant must be a non-negative integer")
+    count = len(_LOCOMO_QUESTION_PREFIXES) * len(_LOCOMO_QUESTION_SUFFIXES)
+    normalized = variant % count
+    prefix = _LOCOMO_QUESTION_PREFIXES[normalized % len(_LOCOMO_QUESTION_PREFIXES)]
+    suffix = _LOCOMO_QUESTION_SUFFIXES[normalized // len(_LOCOMO_QUESTION_PREFIXES)]
+    wording = question.strip()
+    if prefix and wording:
+        wording = prefix + wording[0].lower() + wording[1:]
+    return wording + suffix, normalized
+
 
 def build_locomo_session_corpus(
     identity: str,
@@ -143,11 +178,11 @@ def build_locomo_single_sentence_corpus(
     text = str(message.get("text") or "").strip()
     if not text:
         raise ValueError(f"LoCoMo sentence is empty: {sentence_id}")
-    # Keep the real LoCoMo QA wording tied to the selected evidence sentence.
-    # This prevents a fixed banker/date question from being paired with a
-    # different sentence when profiles switch the one-sentence fixture.
-    questions = (str(qa["question"]).strip(),)
-    question = questions[0]
+    # Keep every wording tied to the real LoCoMo QA. Prefix/suffix variation
+    # changes the phrasing seen by each tenant without inventing another fact.
+    question, normalized_variant = locomo_question_variant(
+        str(qa["question"]), question_variant,
+    )
     fact_id = f"{sample_id}-{session_key}-{sentence_id}-single-sentence"
     date_time = str(conversation.get(f"{session_key}_date_time") or "").strip()
     time_prefix = f"Conversation time: {date_time}. " if date_time else ""
@@ -157,7 +192,7 @@ def build_locomo_single_sentence_corpus(
         "documents": documents,
         "facts": [{"id": fact_id, "answer": str(qa["answer"]), "evidence": [sentence_id]}],
         "recall_queries": [{
-            "id": f"{fact_id}-q0",
+            "id": f"{fact_id}-q{normalized_variant}",
             "fact_id": fact_id,
             "query": question,
             "query_type": "short_fact",
@@ -175,7 +210,7 @@ def build_locomo_single_sentence_corpus(
         "source": {"kind": "locomo-single-sentence", "sample_id": sample_id,
                    "session_key": session_key, "sentence_id": sentence_id,
                    "session_messages": 1, "repeated_documents": repeat_count,
-                   "question_variant": 0},
+                   "question_variant": normalized_variant},
     }
     result["fingerprint"] = hashlib.sha256(
         json.dumps(result, sort_keys=True, ensure_ascii=False).encode()

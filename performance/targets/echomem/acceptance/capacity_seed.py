@@ -238,7 +238,7 @@ def provision_actors(base_url: str, tenants: int, users: int, *, memory_scale: i
                         sample_id=chosen_sample,
                         session_key=chosen_session,
                         sentence_id=str(sentence_id or "D1:2"),
-                        question_variant=question_variant,
+                        question_variant=question_variant + tenant_index,
                         repeat_count=repeat_count,
                     )
                 else:

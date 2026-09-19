@@ -16,6 +16,7 @@ from performance.targets.echomem.acceptance.observation import (
     jain,
     summarize_api_coverage,
     summarize_concurrency_configuration,
+    summarize_m1,
     summarize_m5,
     summarize_m6,
     summarize_m3,
@@ -41,6 +42,47 @@ def test_empty_report_tables_span_their_actual_columns(tmp_path: Path) -> None:
         empty = re.search(r'<td colspan="(\d+)">暂无数据</td>', table)
         if empty:
             assert int(empty.group(1)) == len(re.findall(r"<th\b", table))
+
+
+def test_m1_summary_reports_per_tenant_question_coverage() -> None:
+    actors = []
+    for index, question in enumerate(("question zero", "question one")):
+        actors.append({
+            "tenant_index": index,
+            "user_index": 0,
+            "corpus_source": {
+                "kind": "locomo-single-sentence",
+                "sample_id": "conv-30",
+                "session_key": "session_1",
+                "sentence_id": "D1:19",
+                "session_messages": 1,
+                "question_variant": index,
+            },
+            "queries": [{
+                "query_id": f"q{index}",
+                "query": question,
+                "expected_answer": "Finding Freedom",
+            }],
+            "input_documents": 100,
+            "input_characters": 1000,
+            "semantic_queries": 1,
+            "commit_http_status": 202,
+            "commit_state": "completed",
+            "status": "PASS",
+        })
+    summary = summarize_m1([{
+        "topology": "concurrency",
+        "levels_requested": [],
+        "levels": [],
+        "seed": {"status": "PASS", "actors": actors},
+    }], {})
+
+    assert summary["seed_contract"].startswith("每租户只注入同一个 LoCoMo session 的同一句证据")
+    assert summary["seed_tenant_count"] == 2
+    assert summary["seed_unique_questions"] == 2
+    assert summary["seed_question_variation_complete"] is True
+    assert summary["seed_assignments"][1]["question_variant"] == 1
+    assert summary["seed_assignments"][1]["question"] == "question one"
 
 
 def test_report_shows_verified_llm_and_embedding_models(tmp_path: Path) -> None:

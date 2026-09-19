@@ -650,12 +650,18 @@ def summarize_m1(reports: list[dict[str, Any]], profile: dict[str, Any]) -> dict
             if not isinstance(actor, dict):
                 continue
             source = actor.get("corpus_source") or {}
+            query = next(iter(actor.get("queries") or []), {})
             seed_rows.append({
                 "tenant_index": actor.get("tenant_index"),
                 "user_index": actor.get("user_index"),
                 "sample_id": source.get("assigned_sample_id") or source.get("sample_id"),
                 "session_key": source.get("assigned_session_key") or source.get("session_key"),
+                "sentence_id": source.get("sentence_id"),
                 "session_messages": source.get("session_messages"),
+                "question_variant": source.get("question_variant"),
+                "question_id": query.get("query_id"),
+                "question": query.get("query"),
+                "expected_answer": query.get("expected_answer"),
                 "input_documents": actor.get("input_documents"),
                 "input_characters": actor.get("input_characters"),
                 "semantic_queries": actor.get("semantic_queries"),
@@ -670,6 +676,15 @@ def summarize_m1(reports: list[dict[str, Any]], profile: dict[str, Any]) -> dict
         seed_documents = sum(int(row.get("input_documents") or 0) for row in seed_rows)
     if seed_characters == 0:
         seed_characters = sum(int(row.get("input_characters") or 0) for row in seed_rows)
+    seed_tenant_count = len({row.get("tenant_index") for row in seed_rows
+                             if row.get("tenant_index") is not None})
+    seed_unique_questions = len({str(row.get("question")) for row in seed_rows
+                                 if str(row.get("question") or "").strip()})
+    seed_contract = (
+        "每租户只注入同一个 LoCoMo session 的同一句证据；Search 问法覆盖另列"
+        if seed_rows and all(row.get("sentence_id") for row in seed_rows)
+        else "每租户一个完整 LoCoMo session；Search 只取该 session 的真实 QA 子集"
+    )
     return {
         "status": status,
         "reason": "容量与 DAU 仅作观测和情景换算，不使用性能门槛",
@@ -685,7 +700,7 @@ def summarize_m1(reports: list[dict[str, Any]], profile: dict[str, Any]) -> dict
         "levels": levels,
         "concurrency_rows": concurrency_rows,
         "memory_profile_comparison": memory_profile_comparison,
-        "seed_contract": "每租户一个完整 LoCoMo session；Search 只取该 session 的真实 QA 子集",
+        "seed_contract": seed_contract,
         "seed_memory_policy": next((report.get("seed_memory_policy") for report in reports
                                      if report.get("seed_memory_policy")), None),
         "seed_status": ("PASS" if seed_statuses and all(value == "PASS" for value in seed_statuses)
@@ -693,6 +708,11 @@ def summarize_m1(reports: list[dict[str, Any]], profile: dict[str, Any]) -> dict
         "seed_session_count": len(seed_rows),
         "seed_total_documents": seed_documents,
         "seed_total_input_characters": seed_characters,
+        "seed_tenant_count": seed_tenant_count,
+        "seed_unique_questions": seed_unique_questions,
+        "seed_question_variation_complete": bool(
+            seed_tenant_count and seed_unique_questions == seed_tenant_count
+        ),
         "seed_assignments": seed_rows,
         "dau_scenarios": estimates,
         "expected_windows": requested,
@@ -2073,10 +2093,18 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                 f"消息/文档={esc(metric.get('seed_total_documents'))}，"
                 f"字符={esc(metric.get('seed_total_input_characters'))}。</p>"
             )
+            visual += (
+                f"<p><b>租户问法覆盖：</b>唯一问法={esc(metric.get('seed_unique_questions'))} / "
+                f"租户={esc(metric.get('seed_tenant_count'))}；"
+                f"每租户不同问法={esc(metric.get('seed_question_variation_complete'))}。"
+                "问法变化只改变问题措辞，预期答案和 LoCoMo 证据句保持一致。</p>"
+            )
             visual += details("查看每个租户的完整 LoCoMo session 与 Commit 结果", table(
                 metric.get("seed_assignments", []), [
                     ("tenant_index", "租户序号"), ("sample_id", "LoCoMo sample"),
-                    ("session_key", "完整 session"), ("session_messages", "原始消息数"),
+                    ("session_key", "完整 session"), ("sentence_id", "证据句"),
+                    ("session_messages", "原始消息数"), ("question_variant", "问法变体"),
+                    ("question", "Search 问题"), ("expected_answer", "预期答案"),
                     ("input_documents", "注入文档数"), ("input_characters", "字符数"),
                     ("semantic_queries", "Search题数"), ("commit_http_status", "Commit HTTP"),
                     ("commit_state", "Commit终态"), ("elapsed_s", "注入耗时秒"),
