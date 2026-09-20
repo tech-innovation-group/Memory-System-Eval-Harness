@@ -65,6 +65,28 @@ EchoMem limits:         observed and reported; not used to cap client load
 Heterogeneous tenants: Search weights 8:4:2:1 / Commit weights 1:2:4:8
 ```
 
+For a high-concurrency or PR33 preview, add this configuration audit to the
+preview rather than treating the service limits as an implicit load plan:
+
+- HTTP/Retrieval: `scheduling.http.max_workers` and
+  `scheduling.retrieval.admission_permits`;
+- Recall outer gate and environment override:
+  `recall.max_inflight` / `ECHOMEM_RECALL_MAX_INFLIGHT`;
+- tenant `concurrency`/`qps`, Recall stage pools and queues
+  (`engine`, `intent_llm`, `query_embedding`, `rerank`), and fanout
+  `executor_workers`/`engine_max_inflight`;
+- LLM/Embedding total pools, per-stage shares, provider budgets, Commit
+  workers/queues/tenant quotas, tenant cache, CPU/memory and file descriptors.
+
+Show the resolved values and two configuration fingerprints (default and tuned)
+for a dedicated deployment. Restart it, verify ready plus
+`instance_profile_resolved` and `provider_budget_configured`, then run the same
+seed at C=1 before C=64. Keep provider 429/503, timeouts, empty recalls and
+pending work in the evidence; never silently lower the client target. The PR33
+robot profile is a deliberate narrow override of the generic 1/8/16/64 matrix:
+M1 uses C=1 and C=64 so the report can calculate the C=1 baseline ratio, while
+M2's tenant levels remain an independent 2/64 setting.
+
 M4 and M5 must target a dedicated test deployment. Remote login, shared compute,
 fault injection, and container kill/restart require explicit authorization for
 that run; having this skill installed is not authorization.

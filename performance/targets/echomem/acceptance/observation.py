@@ -619,21 +619,35 @@ def summarize_m1(reports: list[dict[str, Any]], profile: dict[str, Any]) -> dict
             "memory_profile_sampled": stage.get("sampled", False),
         })
     by_target = {row["target_concurrency"]: row for row in concurrency_rows}
-    row16 = by_target.get(16) or {}
+    configured_levels = {
+        int(value) for value in (profile.get("m1_concurrency_levels") or [])
+        if isinstance(value, (int, float, str)) and str(value).lstrip("-").isdigit()
+    }
+    # PR33 and the current generic profile both include C=1.  Keep the
+    # historical C=16 baseline only for an explicitly old [16, 64] profile so
+    # old evidence is not silently relabelled as a C=1 comparison.
+    if 1 in configured_levels or (not configured_levels and 1 in by_target):
+        baseline_target = 1
+    elif 16 in configured_levels or (not configured_levels and 16 in by_target):
+        baseline_target = 16
+    else:
+        baseline_target = 1
+    baseline_row = by_target.get(baseline_target) or {}
     row64 = by_target.get(64) or {}
-    p95_16 = row16.get("memory_profile_p95_s")
+    p95_baseline = baseline_row.get("memory_profile_p95_s")
     p95_64 = row64.get("memory_profile_p95_s")
     memory_profile_comparison = {
-        "baseline_concurrency": 16 if row16 else None,
+        "baseline_concurrency": baseline_target if baseline_row else None,
         "comparison_concurrency": 64 if row64 else None,
-        "p95_16_s": p95_16,
+        "p95_1_s": by_target.get(1, {}).get("memory_profile_p95_s"),
+        "p95_16_s": by_target.get(16, {}).get("memory_profile_p95_s"),
         "p95_64_s": p95_64,
-        "p95_amplification": (p95_64 / p95_16 if p95_16 and p95_64 is not None else None),
-        "comparison_ready": bool(p95_16 is not None and p95_64 is not None),
+        "p95_amplification": (p95_64 / p95_baseline if p95_baseline and p95_64 is not None else None),
+        "comparison_ready": bool(p95_baseline is not None and p95_64 is not None),
         "reason": (
-            "同一轮 16/64 档位均有 memory_profile Prometheus 增量样本"
-            if p95_16 is not None and p95_64 is not None
-            else "需要两个档位都采到 memory_profile 直方图样本；端到端耗时不能替代阶段数据"
+            f"同一轮 C={baseline_target}/C=64 档位均有 memory_profile Prometheus 增量样本"
+            if p95_baseline is not None and p95_64 is not None
+            else f"需要 C={baseline_target} 和 C=64 都采到 memory_profile 直方图样本；端到端耗时不能替代阶段数据"
         ),
     }
     seed_rows = []
@@ -2217,7 +2231,9 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                 )
                 visual += f"<p><b>耗时结论：</b>最高端到端 P95 出现在 {esc(slowest.get('concurrency'))} 并发；在该档位可观测模块中，P95 最大的是 {esc(dominant[0])}（{esc(dominant[1])} ms）。memory_profile 仅表示画像阶段本身，不等于整条 Recall 耗时。Atomic extraction、LLM provider、Embedding provider 或 Rerank 显示为缺失时，表示该并发窗口没有对应 trace 样本，不能解释为 0 ms。</p>"
             if comparison.get("comparison_ready"):
-                visual += f"<p><b>16→64 memory_profile 放大：</b>{esc(comparison.get('p95_amplification'))}；该结论只在两档都有真实阶段样本时成立。</p>"
+                baseline_label = comparison.get("baseline_concurrency") or 1
+                comparison_label = comparison.get("comparison_concurrency") or 64
+                visual += f"<p><b>C={esc(baseline_label)}→C={esc(comparison_label)} memory_profile 放大：</b>{esc(comparison.get('p95_amplification'))}；该结论只在两档都有真实阶段样本时成立。</p>"
             visual += bars("已测负载曲线：Search P95 ms", [
                 (f"{level.get('topology')} H={level.get('hot_users')} {level.get('load_mode')}",
                  (level.get("search") or {}).get("p95_s") * 1000
@@ -2242,7 +2258,12 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                         "p99_ms": (stage.get("p99_s") * 1000
                                    if stage.get("p99_s") is not None else None),
                     })
-            visual += details("查看每个 16/64 档位的模块直方图耗时", table(level_stage_rows, [
+            measured_targets = sorted({
+                row.get("concurrency") for row in concurrency_rows
+                if row.get("concurrency") is not None
+            })
+            target_label = "/".join(f"C={value}" for value in measured_targets) or "各并发"
+            visual += details(f"查看每个 {target_label} 档位的模块直方图耗时", table(level_stage_rows, [
                 ("topology", "拓扑"), ("hot_users", "租户数"), ("load_mode", "负载"),
                 ("module", "Prometheus模块"), ("labels", "标签"),
                 ("observations", "样本"), ("p50_ms", "P50 ms"),
@@ -2299,10 +2320,17 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                     "served": served, "served_rate": 100 * served / sent,
                     "empty_rate": 100 * empty / sent, "failed_rate": 100 * failed / sent,
                 })
+            configured_baseline = comparison.get("baseline_concurrency")
+            if configured_baseline is None:
+                configured_baseline = (
+                    1 if comparison.get("p95_1_s") is not None
+                    else 16 if comparison.get("p95_16_s") is not None
+                    else 1
+                )
             concurrency_baseline = next(
                 (
                     row for row in concurrency_rows
-                    if int(row.get("concurrency") or 0) == 1
+                    if int(row.get("concurrency") or 0) == int(configured_baseline)
                 ),
                 None,
             )
@@ -2351,11 +2379,11 @@ def write_observation_report(result: dict[str, Any], path: Path) -> None:
                 "回退值只用于趋势观察，不能与客户端端到端 P95 做包含关系判断。"
             )
             if concurrency_baseline is not None:
-                stage_chart_title = "不同并发下 Query / Recall 阶段 P95（ms，括号为相对 C=1 放大倍数）"
-                amplification_note = "放大倍数 = 当前并发档 P95 ÷ C=1 P95；C=1 固定为 1.00x。"
+                stage_chart_title = f"不同并发下 Query / Recall 阶段 P95（ms，括号为相对 C={configured_baseline} 放大倍数）"
+                amplification_note = f"放大倍数 = 当前并发档 P95 ÷ C={configured_baseline} P95；C={configured_baseline} 固定为 1.00x。"
             else:
-                stage_chart_title = "不同并发下 Query / Recall 阶段 P95（ms；本轮未测 C=1）"
-                amplification_note = "本轮没有 C=1 实测基线，因此不计算或展示放大倍数。"
+                stage_chart_title = f"不同并发下 Query / Recall 阶段 P95（ms；本轮未测 C={configured_baseline}）"
+                amplification_note = f"本轮没有 C={configured_baseline} 实测基线，因此不计算或展示放大倍数。"
             headline_visual = (
                 "<div class='primary-charts'>"
                 "<figure>" + hierarchy_bars(stage_chart_title, stage_groups)

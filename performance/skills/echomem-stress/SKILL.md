@@ -133,6 +133,50 @@ number as the default deployment baseline. If the team already has recorded
 model, reuse that evidence and run only the single-call identity/dimension
 preflight; do not spend quota repeating the provider sweep.
 
+### High-concurrency EchoMem configuration reminder
+
+Before a PR33-style comparison (M1 `C=1` baseline followed by `C=64`, or a
+larger client target), explicitly show the resolved EchoMem service settings
+and remind the user which server-side gates must be audited. The harness must
+never lower the offered client load because one of these gates is small, and it
+must not silently change the service configuration. Keep the default and
+tuned deployments in separate output directories and configuration
+fingerprints; tuning is for a dedicated test deployment only.
+
+Audit at least the following fields against the target version's schema and
+startup validation:
+
+- HTTP and Retrieval admission: `scheduling.http.max_workers` and
+  `scheduling.retrieval.admission_permits` (the previous 4:1 C=64 starting
+  check was 256 HTTP workers for 64 admission permits; a service-side target
+  of 600 used 2400/600 in the PR33 test and is a separate contract).
+- Recall's outer gate: `recall.max_inflight` and
+  `ECHOMEM_RECALL_MAX_INFLIGHT`; verify environment overrides do not replace
+  the JSON value unexpectedly.
+- Tenant limits: `scheduling.tenant.concurrency` and
+  `scheduling.tenant.qps`, including the single-hot-tenant case.
+- Recall stage pools and queues: `recall.concurrency.engine`,
+  `intent_llm`, `query_embedding`, and `rerank` `max_concurrent`,
+  `queue_capacity`, and `max_queued_per_tenant`.
+- Fanout and model pools: `scheduling.fanout.executor_workers` and
+  `engine_max_inflight`; LLM/Embedding total pools, stage shares, and
+  `provider_budget_llm`/`provider_budget_embed`. Preserve the version's
+  executor-to-inflight relationship; do not blindly set every worker to 600.
+- Commit: `scheduling.commit.executor_workers`, `gate_workers`, `queue_max`,
+  `tenant_quota`, `tenant_inflight_max`, plus
+  `commit_pipeline.queue_max` and `tenant_quota`. A 202 response still needs
+  terminal polling.
+- Tenant cache and host limits: `scheduling.tenant_cache.max_cached_tenants`,
+  `hard_cap`, container CPU/memory, file descriptors, and connection pools.
+
+After changing a dedicated deployment, restart it and verify readiness,
+`instance_profile_resolved`, `provider_budget_configured`, the effective
+Recall limit, and the actual container resources. Run the same seed first at
+`C=1` and then at `C=64`; retain 429/503, provider errors, timeouts, empty
+recalls, and pending work in the report. If startup validation rejects a
+combination, report the exact field and constraint instead of weakening the
+client target or deleting the failed sample.
+
 The default first-pass capacity ceiling is 32 tenants. The default concurrency
 topology targets 1, 8, 16, and 64 observed in-flight requests. Pin the profile
 with:

@@ -62,6 +62,7 @@ def test_combined_observation_uses_same_semantic_seed_hook(tmp_path, monkeypatch
     assert captured["seed"].keywords == {
         "reuse_seed": "/unit/cache", "dataset_path": "",
         "sample_id": "conv-30", "session_key": "session_1",
+        "sentence_id": "D1:2", "question_variant": 0, "repeat_count": 1,
         "search_timeout_s": 60,
     }
 

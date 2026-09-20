@@ -210,6 +210,13 @@ def write_test_plan_report(plan: dict[str, Any], path: Path) -> None:
 
     current_rows = current.get("rows") or []
     comparison = current.get("comparison") or {}
+    baseline_concurrency = comparison.get("baseline_concurrency") or 1
+    comparison_concurrency = comparison.get("comparison_concurrency") or 64
+    baseline_value = comparison.get("p95_baseline_ms")
+    if baseline_value is None:
+        baseline_value = comparison.get("p95_1_ms")
+    if baseline_value is None:
+        baseline_value = comparison.get("p95_16_ms")
     timing = current.get("timing") or {}
     timing_rows = timing.get("rows") or []
     timing_section = (
@@ -258,10 +265,18 @@ def write_test_plan_report(plan: dict[str, Any], path: Path) -> None:
         )
         + bars(
             [
-                {"label": "C=16 memory_profile P95", "value": comparison.get("p95_16_ms"), "display": f"{comparison.get('p95_16_ms')} ms"},
-                {"label": "C=64 memory_profile P95", "value": comparison.get("p95_64_ms"), "display": f"{comparison.get('p95_64_ms')} ms"},
+                {
+                    "label": f"C={baseline_concurrency} memory_profile P95",
+                    "value": baseline_value,
+                    "display": f"{baseline_value} ms",
+                },
+                {
+                    "label": f"C={comparison_concurrency} memory_profile P95",
+                    "value": comparison.get("p95_64_ms"),
+                    "display": f"{comparison.get('p95_64_ms')} ms",
+                },
             ],
-            title="已有阶段样本：16 -> 64（只画真实快照）",
+            title=f"已有阶段样本：C={baseline_concurrency} -> C={comparison_concurrency}（只画真实快照）",
             color="amber",
         )
         + f"<p><b>阶段放大倍数：</b>{esc(comparison.get('ratio'))}；<b>是否可比：</b>{esc(comparison.get('ready'))}。</p>"

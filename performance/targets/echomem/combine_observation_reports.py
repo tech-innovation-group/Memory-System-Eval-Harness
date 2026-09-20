@@ -63,7 +63,9 @@ def _merge_m1(summaries: list[tuple[str, dict[str, Any]]]) -> dict[str, Any]:
     rows.sort(key=lambda row: (row.get("target_concurrency") is None, row.get("target_concurrency") or 0))
     levels.sort(key=lambda row: (row.get("target_concurrency") is None, row.get("target_concurrency") or 0))
     by_target = {row.get("target_concurrency"): row for row in rows}
-    row16, row64 = by_target.get(16), by_target.get(64)
+    row1, row64 = by_target.get(1), by_target.get(64)
+    p95_1 = row1.get("memory_profile_p95_s") if row1 else None
+    p95_64 = row64.get("memory_profile_p95_s") if row64 else None
     base.update({
         "status": "MEASURED" if levels else "BLOCKED",
         "levels": levels,
@@ -77,18 +79,18 @@ def _merge_m1(summaries: list[tuple[str, dict[str, Any]]]) -> dict[str, Any]:
                                  for _, summary in summaries),
         "measured_windows": len(levels),
         "memory_profile_comparison": {
-            "baseline_concurrency": 16 if row16 else None,
+            "baseline_concurrency": 1 if row1 else None,
             "comparison_concurrency": 64 if row64 else None,
-            "p95_16_s": row16.get("memory_profile_p95_s") if row16 else None,
-            "p95_64_s": row64.get("memory_profile_p95_s") if row64 else None,
+            "p95_1_s": p95_1,
+            "p95_64_s": p95_64,
             "p95_amplification": (
-                row64.get("memory_profile_p95_s") / row16.get("memory_profile_p95_s")
-                if row16 and row64 and row16.get("memory_profile_p95_s")
+                p95_64 / p95_1
+                if p95_1 and p95_64 is not None
                 else None
             ),
-            "comparison_ready": bool(row16 and row64),
-            "reason": "跨运行合并后的 16/64 memory_profile 样本"
-                      if row16 and row64 else "缺少 16 或 64 档位的阶段样本",
+            "comparison_ready": bool(p95_1 is not None and p95_64 is not None),
+            "reason": "跨运行合并后的 C=1/C=64 memory_profile 样本"
+                      if p95_1 is not None and p95_64 is not None else "缺少 C=1 或 C=64 档位的阶段样本",
         },
     })
     return base

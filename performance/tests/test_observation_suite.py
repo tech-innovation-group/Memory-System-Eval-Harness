@@ -85,6 +85,35 @@ def test_m1_summary_reports_per_tenant_question_coverage() -> None:
     assert summary["seed_assignments"][1]["question"] == "question one"
 
 
+def test_m1_summary_compares_c64_to_c1_memory_profile() -> None:
+    summary = summarize_m1([{
+        "topology": "concurrency",
+        "levels_requested": [1, 64],
+        "levels": [
+            {
+                "status": "MEASURED",
+                "target_concurrency": 64,
+                "search": {"peak_inflight_requests": 64, "p95_s": 2.0},
+                "server_stage_timings": {"memory_profile": {"p95_s": 4.0}},
+            },
+            {
+                "status": "MEASURED",
+                "target_concurrency": 1,
+                "search": {"peak_inflight_requests": 1, "p95_s": 1.0},
+                "server_stage_timings": {"memory_profile": {"p95_s": 2.0}},
+            },
+        ],
+    }], {"required_concurrency": 64})
+
+    comparison = summary["memory_profile_comparison"]
+    assert comparison["baseline_concurrency"] == 1
+    assert comparison["comparison_concurrency"] == 64
+    assert comparison["p95_1_s"] == 2.0
+    assert comparison["p95_64_s"] == 4.0
+    assert comparison["p95_amplification"] == 2.0
+    assert comparison["comparison_ready"] is True
+
+
 def test_report_shows_verified_llm_and_embedding_models(tmp_path: Path) -> None:
     path = tmp_path / "report.html"
     result = {

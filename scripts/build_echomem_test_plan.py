@@ -136,9 +136,32 @@ def _current_evidence(evidence_dir: Path | None) -> dict[str, Any]:
         })
 
     comparison = m1.get("memory_profile_comparison") or {}
+    # New observation reports use the PR33 C=1 baseline.  Keep a fallback for
+    # older evidence directories whose comparison was hard-coded to C=16 so a
+    # historical report remains readable without relabelling its data.
+    baseline_concurrency = comparison.get("baseline_concurrency")
+    if baseline_concurrency is None:
+        available_targets = {row.get("concurrency") for row in rows}
+        baseline_concurrency = (
+            1 if comparison.get("p95_1_s") is not None or 1 in available_targets
+            else 16 if comparison.get("p95_16_s") is not None or 16 in available_targets
+            else 1
+        )
+    try:
+        baseline_concurrency = int(baseline_concurrency)
+    except (TypeError, ValueError):
+        baseline_concurrency = 1
+    p95_baseline = comparison.get(f"p95_{baseline_concurrency}_s")
+    if p95_baseline is None:
+        p95_baseline = comparison.get("p95_1_s") if baseline_concurrency == 1 else comparison.get("p95_16_s")
+    p95_1 = comparison.get("p95_1_s")
     p95_16 = comparison.get("p95_16_s")
     p95_64 = comparison.get("p95_64_s")
     comparison_view = {
+        "baseline_concurrency": baseline_concurrency,
+        "comparison_concurrency": comparison.get("comparison_concurrency") or 64,
+        "p95_baseline_ms": round(float(p95_baseline) * 1000, 3) if p95_baseline is not None else None,
+        "p95_1_ms": round(float(p95_1) * 1000, 3) if p95_1 is not None else None,
         "p95_16_ms": round(float(p95_16) * 1000, 3) if p95_16 is not None else None,
         "p95_64_ms": round(float(p95_64) * 1000, 3) if p95_64 is not None else None,
         "ratio": round(float(comparison["p95_amplification"]), 4)
@@ -147,14 +170,15 @@ def _current_evidence(evidence_dir: Path | None) -> dict[str, Any]:
     }
     selected_metrics = [str(code) for code in summary.get("selected_metrics") or []]
     selected_label = "/".join(selected_metrics) if selected_metrics else "未声明指标范围"
+    baseline_label = f"C={baseline_concurrency}"
     if rows and comparison_view["ready"]:
         summary_text = (
-            f"已有 {selected_label} 证据目录，其中 M1 同时采到 C=16/C=64 的 memory_profile 阶段样本；"
-            "这可以回答阶段 P95 的 64/16 比值，但不等于完整六项完成，也不等于服务容量边界。"
+            f"已有 {selected_label} 证据目录，其中 M1 同时采到 {baseline_label}/C=64 的 memory_profile 阶段样本；"
+            f"这可以回答阶段 P95 的 64/{baseline_concurrency} 比值，但不等于完整六项完成，也不等于服务容量边界。"
         )
     else:
         summary_text = (
-            "已有目录没有同时具备带边界的 C=16/C=64 阶段样本；"
+            f"已有目录没有同时具备带边界的 {baseline_label}/C=64 阶段样本；"
             "不能用端到端耗时或旧 HTML 数字代替 memory_profile 对比。"
         )
     caveats = [
@@ -1100,14 +1124,16 @@ def _plan(profile_path: Path, profile: dict[str, Any], evidence_dir: Path | None
     topologies = profile.get("m1_topologies")
     current = _current_evidence(evidence_dir)
     current_comparison = current.get("comparison") or {}
+    baseline_label = current_comparison.get("baseline_concurrency") or 1
+    comparison_label = current_comparison.get("comparison_concurrency") or 64
     if current_comparison.get("ready"):
         evidence_line = (
-            f"已有快照显示 memory_profile P95 C=16 {current_comparison.get('p95_16_ms')}ms、"
-            f"C=64 {current_comparison.get('p95_64_ms')}ms，阶段比值 {current_comparison.get('ratio')}x；"
+            f"已有快照显示 memory_profile P95 C={baseline_label} {current_comparison.get('p95_baseline_ms')}ms、"
+            f"C={comparison_label} {current_comparison.get('p95_64_ms')}ms，阶段比值 {current_comparison.get('ratio')}x；"
             "这不是完整六项结论。"
         )
     else:
-        evidence_line = "当前没有可审计的 16/64 阶段比值；必须保存两个有边界的运行窗口。"
+        evidence_line = f"当前没有可审计的 C={baseline_label}/C={comparison_label} 阶段比值；必须保存两个有边界的运行窗口。"
 
     state_rows = [
         {
