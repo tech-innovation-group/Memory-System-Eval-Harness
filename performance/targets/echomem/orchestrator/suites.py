@@ -47,6 +47,10 @@ def _case(**fields: Any) -> dict[str, Any]:
         "commit_tenant_counts": None,
         "commit_barrier_waves": 1,
         "commit_barrier_cooldown_s": 0.0,
+        "commit_payload_profile": "standard",
+        "barrier_max_workers": None,
+        "barrier_prepare_before_commit": False,
+        "barrier_prepare_at_s": 0.0,
         "commit_burst_window_s": None,
         "quick_barrier_count_cap": 0,
         "quick_commit_rpm": None,
@@ -488,71 +492,99 @@ def six_metric_cases(capacity_levels: list[int] | None = None) -> list[dict]:
     return cases
 
 
-def six_metric_observation_cases(*, quick: bool = False) -> list[dict]:
+def six_metric_observation_cases(
+    *,
+    quick: bool = False,
+    duration_s: float | None = None,
+    tail_s: float | None = None,
+    m2_commit_rpm: float | None = None,
+    m2_tenant_levels: list[int] | None = None,
+    m3_barrier_count: int | None = None,
+    search_workers: int | None = None,
+) -> list[dict]:
     """Observation-only M2/M3 matrix, including heterogeneous tenant load.
 
     M1 is executed by the T x U capacity runner and M4/M5/M6 are probes. The
     cases here therefore contain only the paired Search/Commit windows needed
     for fairness and flood observations. No case encodes a performance gate.
     """
-    duration = 15 if quick else 300
-    barrier = 8 if quick else 64
+    duration = (15 if quick else 300) if duration_s is None else float(duration_s)
+    tail = (30 if quick else 180) if tail_s is None else float(tail_s)
+    barrier = (8 if quick else 64) if m3_barrier_count is None else int(m3_barrier_count)
+    fairness_commit_rpm = (
+        (20.0 if quick else 2.0) if m2_commit_rpm is None else float(m2_commit_rpm)
+    )
+    read_workers = 1024 if search_workers is None else int(search_workers)
+    fairness_tenant_levels = [4, 8] if m2_tenant_levels is None else list(m2_tenant_levels)
+    if (len(fairness_tenant_levels) < 1
+            or any(type(n) is not int or n < 2 for n in fairness_tenant_levels)
+            or fairness_tenant_levels != sorted(set(fairness_tenant_levels))):
+        raise ValueError("m2_tenant_levels must contain increasing integer levels >= 2")
+    if duration <= 0 or tail < 0 or barrier < 1 or fairness_commit_rpm <= 0 or read_workers < 1:
+        raise ValueError("M2/M3 observation duration, tail, barrier and Commit rate must be positive")
+    measurement_start = 3 if quick else min(30.0, duration / 2)
+    flood_at = 3 if quick else min(30.0, duration / 2)
     common = {
         "duration_s": duration,
         "search_rps": 8.0,
-        "search_workers": 64,
+        "search_workers": read_workers,
         "commit_workers": 64,
         "sessions_per_tenant": 2,
         "messages_per_session": 4,
     }
+    fairness_cases = [
+        _case(
+            label=f"m2-fairness-{tenants}t", scene="scene_c_mixed", tenants=tenants,
+            commit_rpm=fairness_commit_rpm, commit_barrier=False,
+            commit_payload_profile="standard",
+            arrival_scope="per_tenant", commit_start_s=measurement_start,
+            arrival_end_s=duration, measurement_start_s=measurement_start,
+            measurement_end_s=duration, fairness_mode="independent-periodic-v1",
+            **{**common, "search_rps": 1.0, "duration_s": duration + tail},
+        )
+        for tenants in fairness_tenant_levels
+    ]
     return [
-        _case(
-            label="m2-fairness-4t", scene="scene_c_mixed", tenants=4,
-            commit_rpm=20.0 if quick else 2.0, commit_barrier=False,
-            arrival_scope="per_tenant", commit_start_s=3 if quick else 30,
-            arrival_end_s=duration, measurement_start_s=3 if quick else 30,
-            measurement_end_s=duration, fairness_mode="independent-periodic-v1",
-            **{**common, "search_rps": 1.0, "duration_s": duration + (30 if quick else 180)},
-        ),
-        _case(
-            label="m2-fairness-8t", scene="scene_c_mixed", tenants=8,
-            commit_rpm=20.0 if quick else 2.0, commit_barrier=False,
-            arrival_scope="per_tenant", commit_start_s=3 if quick else 30,
-            arrival_end_s=duration, measurement_start_s=3 if quick else 30,
-            measurement_end_s=duration, fairness_mode="independent-periodic-v1",
-            **{**common, "search_rps": 1.0, "duration_s": duration + (30 if quick else 180)},
-        ),
+        *fairness_cases,
         _case(
             label="m3-baseline", scene="scene_capacity", tenants=4,
-            commit_rpm=0.0, read_only=True, **common,
+            commit_rpm=0.0, read_only=True,
+            **{**common, "arrival_end_s": duration},
         ),
         _case(
             label="m3-flood-uniform", scene="scene_barrier", tenants=4,
             barrier_prepare_before_commit=True,
+            barrier_prepare_at_s=0.0, barrier_max_workers=32,
+            commit_payload_profile="standard",
             commit_rpm=0.0, commit_barrier=True,
             commit_barrier_count=barrier,
-            commit_tenant_distribution="uniform", barrier_at_s=3 if quick else 30,
-            blackbox_search_priority=True, **common,
+            commit_tenant_distribution="uniform", barrier_at_s=flood_at,
+            blackbox_search_priority=True,
+            **{**common, "arrival_end_s": duration},
         ),
         _case(
             label="m3-flood-single-tenant", scene="scene_barrier", tenants=4,
             barrier_prepare_before_commit=True,
+            barrier_prepare_at_s=0.0, barrier_max_workers=32,
+            commit_payload_profile="standard",
             commit_rpm=0.0, commit_barrier=True,
             commit_barrier_count=barrier,
             commit_tenant_distribution="explicit",
             commit_tenant_counts=[barrier, 0, 0, 0],
-            barrier_at_s=3 if quick else 30,
-            blackbox_search_priority=True, **common,
+            barrier_at_s=flood_at,
+            blackbox_search_priority=True,
+            **{**common, "arrival_end_s": duration},
         ),
         _case(
             label="m3-heterogeneous-tenants", scene="scene_c_mixed", tenants=4,
-            commit_rpm=20.0 if quick else 2.0, commit_barrier=False,
-            arrival_scope="per_tenant", commit_start_s=3 if quick else 30,
+            commit_rpm=fairness_commit_rpm, commit_barrier=False,
+            commit_payload_profile="standard",
+            arrival_scope="per_tenant", commit_start_s=measurement_start,
             arrival_end_s=duration, search_tenant_weights=[8, 4, 2, 1],
             commit_tenant_weights=[1, 2, 4, 8],
             heterogeneous_tenant_load=True,
             **{**common, "search_rps": 1.0,
-               "duration_s": duration + (30 if quick else 180)},
+               "duration_s": duration + tail},
         ),
     ]
 
@@ -588,6 +620,7 @@ def _apply_barrier_params(params: dict[str, Any], case: dict) -> None:
     scene_name = case["scene"]
     params["query_mode"] = case.get("query_mode", "recall")
     params["commit_poll_timeout_s"] = case.get("commit_poll_timeout_s", 180)
+    params["commit_payload_profile"] = str(case.get("commit_payload_profile", "standard"))
     if scene_name == "scene_d_burst":
         params["burst_commits"] = int(case.get("commit_barrier_count", 32))
         params["burst_window_s"] = float(case.get("commit_burst_window_s", 10.0))
@@ -602,10 +635,19 @@ def _apply_barrier_params(params: dict[str, Any], case: dict) -> None:
         return
     if scene_name == "scene_barrier":
         barrier_count = int(case.get("commit_barrier_count", 32))
+        configured_workers = case.get("barrier_max_workers")
+        barrier_workers = (
+            int(configured_workers)
+            if configured_workers is not None
+            else min(barrier_count, 32)
+        )
+        if barrier_workers < 1:
+            raise ValueError("barrier_max_workers must be >= 1")
         params.update(
             {
                 "barrier_count": barrier_count,
                 "barrier_prepare_before_commit": bool(case.get("barrier_prepare_before_commit", False)),
+                "barrier_prepare_at_s": float(case.get("barrier_prepare_at_s", 0.0)),
                 "barrier_at_s": float(case.get("barrier_at_s", 0)),
                 "barrier_distribution": str(
                     case.get("commit_tenant_distribution", "uniform")
@@ -613,7 +655,7 @@ def _apply_barrier_params(params: dict[str, Any], case: dict) -> None:
                 "barrier_zipf_exponent": float(case.get("commit_zipf_exponent", 2.0)),
                 "barrier_waves": int(case.get("commit_barrier_waves", 1)),
                 "barrier_cooldown_s": float(case.get("commit_barrier_cooldown_s", 0.0)),
-                "barrier_max_workers": min(barrier_count, 32),
+                "barrier_max_workers": barrier_workers,
             }
         )
         if case.get("commit_tenant_counts"):

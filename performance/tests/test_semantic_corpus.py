@@ -3,8 +3,41 @@
 from performance.targets.echomem.acceptance.semantic_corpus import (
     assess_retrieval,
     build_corpus,
+    build_locomo_fragment_corpus,
     build_locomo_session_corpus,
+    build_locomo_single_sentence_corpus,
 )
+
+
+def test_repeated_sentence_preserves_date_needed_for_relative_time_qa():
+    corpus = build_locomo_single_sentence_corpus("date-context", repeat_count=100)
+    assert len(corpus["documents"]) == 100
+    assert len(set(corpus["documents"])) == 1
+    document = corpus["documents"][0]
+    assert "20 January, 2023" in document
+    assert "yesterday" in document
+    assert corpus["recall_queries"][0]["expected_answer"] == "19 January, 2023"
+    other = build_locomo_single_sentence_corpus(
+        "other-tenant", repeat_count=100, question_variant=1,
+    )
+    assert other["documents"][0].split(" Evidence marker:")[0] == document.split(" Evidence marker:")[0]
+    assert other["recall_queries"][0]["query"] != corpus["recall_queries"][0]["query"]
+    assert other["recall_queries"][0]["expected_answer"] == corpus["recall_queries"][0]["expected_answer"]
+    assert other["recall_queries"][0]["evidence_ids"] == corpus["recall_queries"][0]["evidence_ids"]
+    assert other["source"]["question_variant"] == 1
+
+
+def test_single_sentence_supports_64_unique_grounded_question_wordings():
+    corpora = [
+        build_locomo_single_sentence_corpus(
+            f"tenant-{index}/user-0", question_variant=index,
+        )
+        for index in range(64)
+    ]
+    assert len({row["recall_queries"][0]["query"] for row in corpora}) == 64
+    assert len({row["recall_queries"][0]["expected_answer"] for row in corpora}) == 1
+    assert len({tuple(row["recall_queries"][0]["evidence_ids"]) for row in corpora}) == 1
+    assert {row["source"]["question_variant"] for row in corpora} == set(range(64))
 
 
 def test_corpus_has_fixed_facts_paraphrases_and_non_recall_queries():
@@ -77,6 +110,19 @@ def test_locomo_evidence_markers_are_tenant_specific_without_changing_questions(
     assert first["recall_queries"][0]["aliases"] != second["recall_queries"][0]["aliases"]
 
 
+def test_locomo_fragment_file_uses_tenant_local_evidence_not_cross_source_question():
+    path = "performance/targets/echomem/profiles/seed-data-64-tenants.json"
+    first = build_locomo_fragment_corpus("tenant-a", seed_path=path, tenant_index=0)
+    second = build_locomo_fragment_corpus("tenant-b", seed_path=path, tenant_index=1)
+    assert first["source"]["kind"] == "locomo-fragment-file"
+    assert first["source"]["declared_query_is_local"] is False
+    assert len(first["recall_queries"]) == 4
+    assert first["recall_queries"][0]["aliases"] != second["recall_queries"][0]["aliases"]
+    assert "Audrey set up" not in first["recall_queries"][0]["query"]
+    assert assess_retrieval({"items": [{"content": first["recall_queries"][0]["aliases"][0]}]},
+                            first["recall_queries"][0])["quality_ok"] is True
+
+
 def test_locomo_multi_evidence_question_requires_every_source_memory():
     corpus = build_locomo_session_corpus("tenant-a")
     sample = next(row for row in corpus["recall_queries"] if len(row["aliases"]) > 1)
@@ -86,3 +132,12 @@ def test_locomo_multi_evidence_question_requires_every_source_memory():
     assert partial["matched_evidence_count"] == 1
     assert complete["quality_ok"] is True
     assert complete["matched_evidence_count"] == len(sample["aliases"])
+
+
+def test_locomo_answer_match_survives_extraction_marker_rewrite():
+    sample = build_locomo_session_corpus("tenant-a")["recall_queries"][0]
+    answer = sample["expected_answer"]
+    result = assess_retrieval({"items": [{"content": answer}]}, sample)
+    assert result["marker_match"] is False
+    assert result["answer_match"] is True
+    assert result["matched_expected_fact"] is True

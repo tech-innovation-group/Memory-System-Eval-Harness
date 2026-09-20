@@ -45,6 +45,10 @@ class PublishedObservationError(RuntimeError):
 
 
 DEFAULT_M1_LEVELS = [1, 2, 4, 8, 16, 32]
+# Closed-loop total in-flight Search levels.  This is separate from the
+# tenant/user capacity ladders above: a concurrency run keeps its actor set
+# fixed and changes only the number of outstanding requests.
+DEFAULT_M1_CONCURRENCY_LEVELS = [1, 8, 16, 64]
 
 
 def _now() -> str:
@@ -65,15 +69,41 @@ def _git_commit() -> str | None:
 
 def _public_profile(profile: dict[str, Any]) -> dict[str, Any]:
     allowed = {
-        "name", "base_url", "resource_container", "capacity_levels",
+        "name", "base_url", "resource_container", "docker_context", "capacity_levels",
         "require_4u8g",
-        "m1_tenant_levels", "m1_user_levels", "dau_scenarios",
+        "m1_tenant_levels", "m1_user_levels", "m1_topologies",
+        "m1_concurrency_levels", "m1_concurrency_tenants", "dau_scenarios",
         "m1_search_workers", "m1_seed_validation_queries",
+        "m1_seed_profile", "m1_seed_workers", "m1_within_fixed_tenants",
+        "m1_seed_dataset", "m1_seed_sample", "m1_seed_session", "m1_seed_session_keys",
+        "m1_seed_fragment_file",
+        "m1_seed_sentence_id", "m1_seed_question_variant", "m1_seed_repeat_count",
+        "m1_seed_max_questions", "m1_seed_query_count",
+        "m1_seed_timeout_s", "m1_seed_full_session", "m1_recovery_timeout_s",
+        "m1_reuse_seed", "m1_reuse_preflight_checks",
+        "m1_duration_s", "m1_warmup_s", "m1_load_profile",
+        "m1_search_schedule", "m1_rewrite_queries",
+        "m1_continue_after_congestion",
+        "m2m3_duration_s", "m2m3_tail_s", "m2m3_search_workers",
+        "m2_commit_rpm", "m3_barrier_count",
         "required_concurrency", "required_embedding_model",
         "require_stage_observability",
         "preflight_config", "tenant_config",
+        "semantic_seed_mode", "semantic_seed_validation_queries", "semantic_seed_validation_query_ids",
+        "semantic_seed_sample", "semantic_seed_session", "semantic_seed_sentence_id",
+        "semantic_seed_question_variant", "semantic_seed_repeat_count",
+        "semantic_seed_workers", "semantic_seed_identity_cache", "semantic_seed_fragment_file",
     }
     return {key: profile.get(key) for key in allowed if profile.get(key) not in (None, "")}
+
+
+def _reuse_m1_seed_for_m2m3(profile: dict[str, Any], output: Path) -> None:
+    """Reuse M1's validated cross-tenant actors for the shared M2/M3 seed."""
+    if profile.get("semantic_seed_identity_cache"):
+        return
+    cache = output / "M1" / "cross-tenant"
+    if (cache / "identities.private.json").is_file() and (cache / "seed-evidence.json").is_file():
+        profile["semantic_seed_identity_cache"] = str(cache)
 
 
 def _combine_csv(suite: dict[str, Any], output: Path, filename: str) -> None:
@@ -136,36 +166,114 @@ def _collect_observation(profile: dict[str, Any], token: str) -> dict[str, Any]:
     return result
 
 
+def _m1_topologies(profile: dict[str, Any]) -> list[str]:
+    """Return the explicitly selected M1 topologies, or the full default set."""
+    configured = profile.get("m1_topologies")
+    if configured is None:
+        return ["cross-tenant", "within-tenant"]
+    if not isinstance(configured, list) or not configured:
+        raise ValueError("m1_topologies must be a non-empty list")
+    allowed = {"cross-tenant", "within-tenant", "concurrency"}
+    if any(value not in allowed for value in configured) or len(set(configured)) != len(configured):
+        raise ValueError("m1_topologies must contain unique values from cross-tenant/within-tenant/concurrency")
+    return list(configured)
+
+
+def _m1_reuse_seed(profile: dict[str, Any], topology: str) -> Path | None:
+    configured = profile.get("m1_reuse_seed")
+    if isinstance(configured, str) and configured:
+        return Path(configured)
+    if isinstance(configured, dict):
+        value = configured.get(topology)
+        if isinstance(value, str) and value:
+            return Path(value)
+    return None
+
+
 def _run_m1_profiles(profile: dict[str, Any], args: argparse.Namespace, output: Path) -> list[dict]:
     reports = []
+    selected_topologies = _m1_topologies(profile)
     levels_by_topology = {
-        "cross-tenant": _m1_levels(profile, "m1_tenant_levels", [1, 2] if args.quick else DEFAULT_M1_LEVELS),
-        "within-tenant": _m1_levels(profile, "m1_user_levels", [1, 2] if args.quick else DEFAULT_M1_LEVELS),
+        "cross-tenant": _m1_levels(profile, "m1_tenant_levels", DEFAULT_M1_LEVELS),
+        "within-tenant": _m1_levels(profile, "m1_user_levels", DEFAULT_M1_LEVELS),
+        "concurrency": _m1_levels(
+            profile, "m1_concurrency_levels", DEFAULT_M1_CONCURRENCY_LEVELS
+        ),
     }
-    for topology, levels in levels_by_topology.items():
+    for topology in selected_topologies:
+        levels = levels_by_topology[topology]
         target = output / "M1" / topology
         report_path = target / "report.json"
-        duration_s = 15 if args.quick else float(profile.get("m1_duration_s", 300))
-        warmup_s = 5 if args.quick else 30
+        duration_s = float(profile.get("m1_duration_s", 300))
+        warmup_s = float(profile.get("m1_warmup_s", 30))
+        load_profile = str(profile.get("m1_load_profile", "all"))
         expected_resume = {"topology": topology, "levels_requested": levels,
-            "assessment_mode": "observe", "load_profile": "all", "warmup_s": warmup_s,
+            "assessment_mode": "observe", "load_profile": load_profile, "warmup_s": warmup_s,
             "duration_s": duration_s, "per_user_search_rps": float(profile.get("m1_search_rps_per_user", 1)),
-            "search_workers_requested": int(profile.get("m1_search_workers", 1024))}
+            "search_workers_requested": int(profile.get("m1_search_workers", 1024)),
+            "search_schedule": str(profile.get("m1_search_schedule") or "poisson"),
+            "query_rewrite": ("deterministic-context-variants"
+                               if profile.get("m1_rewrite_queries") else "disabled"),
+            "continue_after_congestion": bool(profile.get("m1_continue_after_congestion", False)),
+            "reuse_preflight_checks": int(profile.get("m1_reuse_preflight_checks", 2)),
+            "seed_timeout_s": float(profile.get("m1_seed_timeout_s", 600)),
+            "seed_memory_policy": ("full-session" if profile.get("m1_seed_full_session")
+                                    else ("full-session" if profile.get("m1_seed_max_questions") is None
+                                          and str(profile.get("m1_seed_profile")) == "locomo-single-session"
+                                          else "bounded-session"))}
         if args.resume and report_path.is_file():
             resumed_report = read_json(report_path)
             _validate_m1_resume(resumed_report, expected_resume)
+            resumed_report["_report_path"] = str(report_path)
             reports.append(resumed_report)
             continue
-        reports.append(run_exploration(base_url=profile["base_url"], output=target,
-            topology=topology, levels=levels, fixed_tenants=4, warmup_s=warmup_s,
+        workers_by_topology = profile.get("m1_seed_workers_by_topology") or {}
+        seed_workers = workers_by_topology.get(topology, profile.get("m1_seed_workers"))
+        retry_failed = int(profile.get("m1_seed_retry_failed", 1))
+        report = run_exploration(base_url=profile["base_url"], output=target,
+            topology=topology, levels=levels,
+            fixed_tenants=int(profile.get(
+                "m1_concurrency_tenants" if topology == "concurrency" else "m1_within_fixed_tenants",
+                4 if topology == "concurrency" else 1)),
+            warmup_s=warmup_s,
             duration_s=duration_s, q=float(profile.get("m1_search_rps_per_user", 1)),
             target_container=str(profile.get("resource_container") or ""),
             manifest={"resource_evidence": profile["resource_evidence"],
-                      "seed_validation_queries": int(profile.get("m1_seed_validation_queries", 40))},
-            assessment_mode="observe", load_profile="all",
-            seed_validation_queries=(4 if args.quick else int(profile.get("m1_seed_validation_queries", 40))),
-            recovery_timeout_s=30 if args.quick else 300, persist_private_identities=False,
-            search_workers=int(profile.get("m1_search_workers", 1024))))
+                      "seed_validation_queries": int(profile.get("m1_seed_validation_queries", 40)),
+                      "seed_profile": str(profile.get("m1_seed_profile", "standard")),
+                      "seed_workers": seed_workers,
+                      "seed_timeout_s": float(profile.get("m1_seed_timeout_s", 600)),
+                      "seed_full_session": bool(profile.get("m1_seed_full_session", False))},
+            assessment_mode="observe", load_profile=load_profile,
+            seed_validation_queries=int(profile.get("m1_seed_validation_queries", 40)),
+            recovery_timeout_s=float(profile.get("m1_recovery_timeout_s", 60)),
+            persist_private_identities=bool(profile.get("m1_persist_seed_identities", True)),
+            search_workers=int(profile.get("m1_search_workers", 1024)),
+            seed_profile=str(profile.get("m1_seed_profile", "standard")),
+            seed_workers=seed_workers,
+            seed_timeout_s=float(profile.get("m1_seed_timeout_s", 600)),
+            seed_full_session=bool(profile.get("m1_seed_full_session", False)),
+            reuse_seed=_m1_reuse_seed(profile, topology),
+            retry_failed=retry_failed,
+            dataset_path=str(profile.get("m1_seed_dataset") or "") or None,
+            fragment_seed_file=str(profile.get("m1_seed_fragment_file") or "") or None,
+            sample_id=str(profile.get("m1_seed_sample") or "conv-30"),
+            session_key=str(profile.get("m1_seed_session") or "session_1"),
+            sentence_id=str(profile.get("m1_seed_sentence_id") or "D1:2"),
+            question_variant=int(profile.get("m1_seed_question_variant", 0)),
+            repeat_count=int(profile.get("m1_seed_repeat_count", 1)),
+            session_keys=[str(item) for item in (profile.get("m1_seed_session_keys") or [])] or None,
+            max_questions=(int(profile["m1_seed_max_questions"])
+                           if profile.get("m1_seed_max_questions") is not None else None),
+            query_count=(int(profile["m1_seed_query_count"])
+                         if profile.get("m1_seed_query_count") is not None else None),
+            search_schedule=str(profile.get("m1_search_schedule") or "poisson"),
+            rewrite_queries=bool(profile.get("m1_rewrite_queries", False)),
+            continue_after_congestion=bool(profile.get("m1_continue_after_congestion", False)),
+            docker_context=str(profile.get("docker_context") or ""),
+            reuse_preflight_checks=int(profile.get("m1_reuse_preflight_checks", 2)))
+        report["_report_path"] = str(report_path)
+        reports.append(report)
     return reports
 
 
@@ -203,7 +311,9 @@ def _validate_stage_observability_config(
         raise ValueError("M1-M3 stage observability requires resource_container for bounded Docker log collection")
 
 
-def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> dict[str, Any]:
+def _configure(profile: dict[str, Any], selected: list[str]) -> dict[str, Any]:
+    from performance.targets.echomem.extended_profile import expand_extended_profile
+    profile = expand_extended_profile(profile, selected)
     needs_m6_behaviors = "M6" in selected
     m6_only = set(selected) == {"M6"}
     needs_fault = "M4" in selected or needs_m6_behaviors
@@ -234,15 +344,16 @@ def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> 
             f"observed {sorted(observed_embeddings)!r}"
         )
     required_concurrency = int(profile.get("required_concurrency") or 0)
-    if "M1" in selected and not quick and required_concurrency > 0:
+    if "M1" in selected and required_concurrency > 0:
         configured_levels = [
             *_m1_levels(profile, "m1_tenant_levels", DEFAULT_M1_LEVELS),
             *_m1_levels(profile, "m1_user_levels", DEFAULT_M1_LEVELS),
+            *_m1_levels(profile, "m1_concurrency_levels", DEFAULT_M1_CONCURRENCY_LEVELS),
         ]
         if max(configured_levels, default=0) < required_concurrency:
             raise ValueError(
                 f"M1 levels stop below required_concurrency={required_concurrency}; "
-                "increase m1_tenant_levels or m1_user_levels"
+                "increase an M1 capacity/concurrency level"
             )
     tenant_document = read_json(Path(profile["tenant_config"]))
     configured_tenants = tenant_document.get("tenants", [])
@@ -253,6 +364,11 @@ def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> 
         if not env_name or not os.environ.get(env_name, ""):
             raise ValueError("Every observation tenant requires a non-empty auth_key_env")
     specs = load_tenant_specs(profile["tenant_config"])
+    if profile.get("extended_load_tests"):
+        required_extended = max(max(profile["concurrency_topology"]["levels"]),
+                                profile["concurrency_topology"].get("max_concurrency", 0))
+        if len(specs) < required_extended or len({spec.auth_key for spec in specs[:required_extended]}) != required_extended:
+            raise ValueError(f"extended_load_tests requires {required_extended} independently authenticated tenants")
     required = 8 if "M2" in selected else 4
     if len(specs) < required or len({spec.auth_key for spec in specs[:required]}) != required:
         raise ValueError(f"{required} independently authenticated tenants are required")
@@ -261,12 +377,12 @@ def _configure(profile: dict[str, Any], selected: list[str], *, quick: bool) -> 
     if "M6" in selected and not lanes:
         raise ValueError("No effective scheduler lanes could be derived from preflight_config")
     base_url = str(profile.get("base_url") or "").rstrip("/")
-    phase = 15 if quick or m6_only else 60
+    phase = 60
     fault = {
         "enabled": "M4" in selected or needs_m6_behaviors,
         "endpoint": base_url + "/api/inspect/test-control/fault",
         "token_env": "ECHOMEM_TEST_CONTROL_TOKEN",
-        "samples": 10 if quick else 100,
+        "samples": 100,
         "repeats": 3,
         "phase_duration_s": phase,
         "duration_s": min(300, phase * 3),
@@ -328,20 +444,32 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
         raise ValueError(f"profile {profile_name!r} was not found exactly once")
     selected = _metrics(args.metrics)
     m6_only = set(selected) == {"M6"}
-    profile = _configure(
-        _resolve_profile(matches[0], args.profiles), selected, quick=args.quick
-    )
+    docker_context = str(matches[0].get("docker_context") or "").strip()
+    if docker_context:
+        # Apply the profile before readiness/resource checks so every Docker
+        # operation observes the same daemon as the target container.
+        os.environ["DOCKER_CONTEXT"] = docker_context
+        os.environ["ECHOMEM_DOCKER_CONTEXT"] = docker_context
+    profile = _configure(_resolve_profile(matches[0], args.profiles), selected)
     output = args.out_dir.expanduser().resolve()
     output.mkdir(parents=True, exist_ok=True)
     lock = output_lock if output_lock is not None else acquire_output_lock(output)
-    started_at = _now()
+    manifest_path = output / "execution-manifest.json"
+    existing_manifest = read_json(manifest_path) if args.resume and manifest_path.is_file() else {}
+    started_at = str(existing_manifest.get("started_at") or _now())
+    stage_until = (
+        str(existing_manifest.get("finished_at"))
+        if existing_manifest.get("finished_at")
+        and existing_manifest.get("execution_status") != "EXECUTION_ERROR"
+        else None
+    )
     provenance = platform_snapshot()
-    (output / "execution-manifest.json").write_text(json.dumps({
+    manifest_path.write_text(json.dumps({
         "schema_version": 2,
         "metric_numbering": "capacity-fairness-priority-isolation-recovery-observability-v2",
         "started_at": started_at, "finished_at": None,
         "git_commit": provenance["git_commit"], "platform_provenance": provenance, "selected_metrics": selected,
-        "sampling_mode": "quick-non-complete" if args.quick else "full",
+        "sampling_mode": "full",
         "soak_enabled": False, "execution_status": "PARTIAL",
         "real_http_required": True, "real_llm_required": True,
         "real_embedding_required": True,
@@ -381,6 +509,7 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
                 str(profile.get("resource_container") or ""),
                 since=started_at,
                 output=output / "structured-stage-events.jsonl",
+                until=stage_until,
             )
             evidence.pop("events", None)
             suite["stage_observability"] = evidence
@@ -394,8 +523,11 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
             suite["tenant_observability_samples"] = list(observation_samples)
             suite["tenant_observability_monitor"] = dict(observation_monitor)
             refresh_stage_observability()
-            result = evaluate_observation(suite, profile, m1_reports, quick=args.quick, selected_metrics=selected)
+            result = evaluate_observation(suite, profile, m1_reports, quick=False, selected_metrics=selected)
             result.update(platform_provenance=provenance, checkpoint=error is None, pending_metrics=pending)
+            if pending and error is None:
+                # M1 seeding is active execution, even before it produces load samples.
+                result.update(status="PARTIAL", run_state="RUNNING")
             if "capacity_start_readiness" in suite:
                 result["capacity_start_readiness"] = suite["capacity_start_readiness"]
             if error is not None:
@@ -418,7 +550,8 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
                 if not suite["capacity_start_readiness"].get("ok"):
                     raise RuntimeError("capacity_control_preflight_failed")
                 m1_reports = _run_m1_profiles(profile, args, output)
-                suite["m1"] = {"reports": [{"topology": report.get("topology"), "status": report.get("status"),
+                suite["m1"] = {"topologies_requested": _m1_topologies(profile),
+                    "reports": [{"topology": report.get("topology"), "status": report.get("status"),
                     "path": str(output / "M1" / str(report.get("topology")) / "report.json")} for report in m1_reports]}
                 if any((level.get("recovery") or {}).get("state") not in {"RECOVERED", "NO_BOUNDARY_OBSERVED"}
                        for report in m1_reports for level in report.get("levels", [])):
@@ -428,12 +561,14 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
             except Exception as exc:
                 result = publish_stage(selected, exc)
                 raise PublishedObservationError(str(exc), result) from exc
+            _reuse_m1_seed_for_m2m3(profile, output)
             publish_stage([code for code in selected if code != "M1"])
 
         load_metrics = [name for name in selected if name in {"M2", "M3"}]
         scenarios = []
         if "M2" in load_metrics:
-            scenarios.extend(("m2-fairness-4t", "m2-fairness-8t"))
+            m2_tenant_levels = profile.get("m2_tenant_levels") or [4, 8]
+            scenarios.extend(f"m2-fairness-{int(level)}t" for level in m2_tenant_levels)
         if "M3" in load_metrics:
             scenarios.extend(("m3-baseline", "m3-flood-uniform", "m3-flood-single-tenant",
                               "m3-heterogeneous-tenants"))
@@ -451,7 +586,7 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
                     include_seed=True,
                     commit_poll_timeout_cap_s=45 if m6_only else None,
                 )
-                if args.quick or m6_only else None
+                if m6_only else None
             )
             try:
                 suite = run_suite(
@@ -477,6 +612,10 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
         probe_queries = (suite.get("seed") or {}).get("probe_queries")
         if probe_queries and isinstance(profile.get("fault_isolation"), dict):
             profile["fault_isolation"] = {**profile["fault_isolation"], "queries": probe_queries}
+        if probe_queries and isinstance(profile.get("concurrency_topology"), dict):
+            profile["concurrency_topology"] = {
+                **profile["concurrency_topology"], "queries": probe_queries,
+            }
         elif visibility and isinstance(profile.get("fault_isolation"), dict):
             profile["fault_isolation"] = {
                 **profile["fault_isolation"],
@@ -486,7 +625,7 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
         pending = [code for code in selected if code in {"M4", "M5", "M6"}]
         early_report = None
         if scenarios and pending:
-            early_report = evaluate_observation(suite, profile, m1_reports, quick=args.quick, selected_metrics=selected)
+            early_report = evaluate_observation(suite, profile, m1_reports, quick=False, selected_metrics=selected)
             early_report.update(platform_provenance=provenance, checkpoint=True, pending_metrics=pending)
             (output / "suite.json").write_text(json.dumps(suite, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             (output / "summary.json").write_text(json.dumps(early_report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -496,7 +635,7 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
         try:
             probes, commands = run_configured_probes(
                 profile, base_url=profile["base_url"], suite_dir=output,
-                auth_headers={}, tenant_config=tenant_config, quick=args.quick,
+                auth_headers={}, tenant_config=tenant_config, quick=False,
                 timeout_s=args.timeout_s,
             )
         except Exception as exc:
@@ -535,13 +674,13 @@ def run(args: argparse.Namespace, *, output_lock=None) -> dict[str, Any]:
         _combine_csv(suite, output, "records.csv")
         _combine_csv(suite, output, "metrics_samples.csv")
         result = evaluate_observation(
-            suite, profile, m1_reports, quick=args.quick,
+            suite, profile, m1_reports, quick=False,
             selected_metrics=selected,
         )
         result["platform_provenance"] = provenance
         (output / "summary.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         manifest = {
-            "schema_version": 1, "started_at": started_at, "finished_at": _now(),
+            "schema_version": 1, "started_at": started_at, "finished_at": stage_until or _now(),
             "git_commit": provenance["git_commit"], "platform_provenance": provenance, "selected_metrics": selected,
             "sampling_mode": result["sampling_mode"], "soak_enabled": False,
             "real_http_required": True, "real_llm_required": True,
@@ -569,9 +708,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--profiles", required=True, type=Path)
     parser.add_argument("--profile", help="profile name; optional when the file contains exactly one profile")
     parser.add_argument("--out-dir", required=True, type=Path)
-    parser.add_argument("--metrics", default="M1,M2,M3,M4,M5,M6")
+    parser.add_argument("--metrics", default="M1,M2,M3")
     parser.add_argument("--env-file", type=Path)
-    parser.add_argument("--quick", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--timeout-s", type=float, default=7200)
     return parser
@@ -622,7 +760,7 @@ def main(argv: list[str] | None = None) -> int:
             "schema_version": 1, "assessment": "observation-only",
             "instance_profile": args.profile or "local",
             "performance_thresholds_applied": False,
-            "sampling_mode": "quick-non-complete" if args.quick else "full",
+            "sampling_mode": "full",
             "status": status, "selected_metrics": selected,
             "model_preflight": model_preflight,
             "allowed_statuses": ["MEASURED", "PARTIAL", "BLOCKED", "EXECUTION_ERROR"],

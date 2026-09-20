@@ -59,10 +59,33 @@ Also display the distinction between configured actors and measured overlap:
 
 ```text
 Hot-user levels:       1,2,4,8,16,32
-Required concurrency:  32 simultaneous in-flight requests
+Concurrency levels:    1,8,16,64 total simultaneous in-flight requests
+Required concurrency:  64 simultaneous in-flight requests
 EchoMem limits:         observed and reported; not used to cap client load
 Heterogeneous tenants: Search weights 8:4:2:1 / Commit weights 1:2:4:8
 ```
+
+For a high-concurrency or PR33 preview, add this configuration audit to the
+preview rather than treating the service limits as an implicit load plan:
+
+- HTTP/Retrieval: `scheduling.http.max_workers` and
+  `scheduling.retrieval.admission_permits`;
+- Recall outer gate and environment override:
+  `recall.max_inflight` / `ECHOMEM_RECALL_MAX_INFLIGHT`;
+- tenant `concurrency`/`qps`, Recall stage pools and queues
+  (`engine`, `intent_llm`, `query_embedding`, `rerank`), and fanout
+  `executor_workers`/`engine_max_inflight`;
+- LLM/Embedding total pools, per-stage shares, provider budgets, Commit
+  workers/queues/tenant quotas, tenant cache, CPU/memory and file descriptors.
+
+Show the resolved values and two configuration fingerprints (default and tuned)
+for a dedicated deployment. Restart it, verify ready plus
+`instance_profile_resolved` and `provider_budget_configured`, then run the same
+seed at C=1 before C=64. Keep provider 429/503, timeouts, empty recalls and
+pending work in the evidence; never silently lower the client target. The PR33
+robot profile is a deliberate narrow override of the generic 1/8/16/64 matrix:
+M1 uses C=1 and C=64 so the report can calculate the C=1 baseline ratio, while
+M2's tenant levels remain an independent 2/64 setting.
 
 M4 and M5 must target a dedicated test deployment. Remote login, shared compute,
 fault injection, and container kill/restart require explicit authorization for
@@ -97,19 +120,7 @@ chmod 600 .local-stress/tenants.json .local-stress/test.env
    `require_4u8g` according to the actual test objective, and identify the
    dedicated recovery container. Keep profiles and env files out of Git.
 
-Run a quick chain check before a formal run:
-
-```bash
-performance/targets/echomem/run_six_metrics.sh quick \
-  .local-stress/six-metrics.profile.json \
-  results/local-six-metrics-quick \
-  .local-stress/test.env
-```
-
-Quick results are `PARTIAL` by design. They must never be reported as a capacity
-boundary or formal acceptance result.
-
-After the command exits, verify the report contract:
+After a formal run exits, verify the report contract:
 
 ```bash
 test -f "OUTPUT/report.html"
@@ -345,6 +356,11 @@ timings, show observation count and P50/P95/P99 plus queue wait when available;
 identify whether each value came from a trace-correlated JSON log or a Prometheus
 window delta. Never mix endpoint latency, model latency, and internal stage time
 in one unlabeled series.
+
+固定 4U8G 资源校验只在 Linux runner 上执行。macOS/Windows 仍记录可读取的容器或主机
+资源证据，但不因 CPU/内存没有精确匹配 4U8G 而阻塞 HTTP 压测；报告要写明数值校验被
+非 Linux 平台跳过。若某个指标确实需要 Docker 控制（例如 M5 重启），仍需单独满足该
+指标的容器条件。
 
 On every live refresh, preserve completed sections and prior denominators. The
 agent must verify that `report.html` exists, its modification time advanced, its

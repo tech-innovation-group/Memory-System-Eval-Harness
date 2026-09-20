@@ -98,7 +98,7 @@ def resolve_resume_csv(source: str | Path) -> Path:
     found = find_qa_resume_csv(source)
     if found is not None:
         return found
-    path = Path(source).expanduser().resolve()
+    path = Path(source).expanduser().absolute()
     if not path.is_dir() and not path.is_file():
         raise ValueError(f"QA resume source does not exist: {path}")
     raise ValueError(
@@ -114,7 +114,7 @@ def find_qa_resume_csv(source: str | Path) -> Path | None:
     the import phase has no qa_results.csv yet, in which case resume should
     run the full QA instead of failing.
     """
-    path = Path(source).expanduser().resolve()
+    path = Path(source).expanduser().absolute()
     if path.is_file():
         return path
     if not path.is_dir():

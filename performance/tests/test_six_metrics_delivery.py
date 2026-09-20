@@ -151,6 +151,41 @@ def test_readiness_allows_unrestricted_local_container(delivery_profile, monkeyp
     assert result["resource_evidence"]["memory_bytes"] == 0
 
 
+@pytest.mark.parametrize("host_platform", ["Darwin", "Windows"])
+def test_readiness_does_not_enforce_4u8g_on_non_linux(delivery_profile, monkeypatch, host_platform):
+    monkeypatch.setenv("ECHOMEM_TEST_CONTROL_TOKEN", "unit-test-token")
+    inspected = {"HostConfig": {"NanoCpus": 2_000_000_000, "Memory": 2 * 1024**3},
+                 "State": {"Running": True}, "Config": {"Env": []}}
+    with patch("performance.targets.echomem.acceptance.readiness.platform.system", return_value=host_platform), \
+         patch("performance.targets.echomem.acceptance.readiness.inspect_container", return_value=inspected), \
+         patch("performance.targets.echomem.acceptance.readiness._get", side_effect=[
+             (200, {"ready": True}), (200, {}), (200, {"faults": {}}), (200, {"rows": []})]):
+        result = check_readiness(delivery_profile)
+    assert result["ok"] is True
+    evidence = result["resource_evidence"]
+    assert evidence["host_platform"] == host_platform
+    assert evidence["four_u8g_requested"] is True
+    assert evidence["four_u8g_check_applied"] is False
+    assert evidence["four_u8g_check_reason"] == "non_linux_resource_check_skipped"
+    assert evidence["resource_policy"] == "host-default"
+
+
+def test_readiness_still_enforces_4u8g_on_linux(delivery_profile, monkeypatch):
+    monkeypatch.setenv("ECHOMEM_TEST_CONTROL_TOKEN", "unit-test-token")
+    inspected = {"HostConfig": {"NanoCpus": 2_000_000_000, "Memory": 2 * 1024**3},
+                 "State": {"Running": True}, "Config": {"Env": []}}
+    with patch("performance.targets.echomem.acceptance.readiness.platform.system", return_value="Linux"), \
+         patch("performance.targets.echomem.acceptance.readiness.inspect_container", return_value=inspected), \
+         patch("performance.targets.echomem.acceptance.readiness._get", return_value=(200, {"ready": True})):
+        result = check_readiness({**delivery_profile,
+                                  "fault_isolation": {"enabled": False},
+                                  "tenant_observability": {"enabled": False}})
+    assert result["ok"] is False
+    evidence = result["resource_evidence"]
+    assert evidence["four_u8g_check_applied"] is True
+    assert evidence["resource_policy"] == "fixed-4u8g"
+
+
 def test_readiness_missing_token_never_calls_protected_api(delivery_profile, monkeypatch):
     monkeypatch.delenv("ECHOMEM_TEST_CONTROL_TOKEN", raising=False)
     with patch("performance.targets.echomem.acceptance.readiness.inspect_container", return_value=docker_result()), \

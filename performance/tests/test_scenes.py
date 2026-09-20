@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from performance.engine import Engine, load_scene
-from performance.profile import Profile, load_profile
+from performance.profile import Profile, TenantSpec, load_profile
 
 SCENES_DIR = Path(__file__).resolve().parent.parent / "targets" / "echomem" / "scenes"
 
@@ -197,3 +197,31 @@ def test_scene_d_burst(server):
     assert all(r.worker_id == -1 for r in burst)
     burst_ops = {r.op for r in burst}
     assert {"open", "add", "commit_submit", "commit_done"} <= burst_ops
+
+
+def test_scene_barrier_prepares_concurrently_and_filters_zero_tenants(server):
+    """A single-tenant flood must not fail Ctx.at_time on zero-count tenants."""
+    _, _, base_url = server
+    scene = load_scene(SCENES_DIR / "scene_barrier.py")
+    profile = _profile(
+        base_url,
+        workers=2,
+        duration_s=1.5,
+        messages_per_session=1,
+        barrier_count=4,
+        barrier_distribution="explicit",
+        commit_tenant_counts=[4, 0],
+        barrier_prepare_before_commit=True,
+        barrier_prepare_at_s=0.0,
+        barrier_at_s=0.1,
+        barrier_max_workers=2,
+    )
+    profile.tenants = [TenantSpec(name="tenant-0"), TenantSpec(name="tenant-1")]
+    result = Engine(profile, scene).run()
+    records = result.records
+    assert len([row for row in records if row.op == "open"]) == 4
+    assert len([row for row in records if row.op == "add"]) == 4
+    assert len([row for row in records if row.op == "commit_submit"]) == 4
+    assert len([row for row in records if row.op == "commit_done"]) == 4
+    assert not any(row.op == "commit_preparation_failed" for row in records)
+    assert {row.tenant_idx for row in records if row.op == "commit_submit"} == {0}

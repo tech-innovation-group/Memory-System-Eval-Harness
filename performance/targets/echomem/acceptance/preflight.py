@@ -33,6 +33,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
+from performance.targets.echomem.probes.failure_evidence import failure_evidence
 
 REQUIRED_FIELDS = ("id", "kind", "api_base", "model")
 
@@ -242,6 +243,15 @@ def probe_endpoint(engine: dict[str, Any], *, timeout_s: float = 20.0) -> dict[s
             "error": "",
         }
     except urllib.error.HTTPError as exc:
+        try:
+            raw_error = exc.read(32768).decode("utf-8", errors="replace")
+            try:
+                error_payload = json.loads(raw_error)
+            except ValueError:
+                error_payload = raw_error
+            evidence = failure_evidence({"error": error_payload})
+        except OSError:
+            evidence = failure_evidence({})
         return {
             "id": engine["id"],
             "kind": engine["kind"],
@@ -251,7 +261,11 @@ def probe_endpoint(engine: dict[str, Any], *, timeout_s: float = 20.0) -> dict[s
             "status": "error",
             "code": exc.code,
             "elapsed_s": round(time.monotonic() - started, 3),
-            "error": f"HTTP {exc.code}（模型 {engine['model']} 可能不被该 endpoint 支持）",
+            "error": f"Provider HTTP {exc.code}: " + (
+                ",".join(evidence["categories"] + evidence["provider_codes"])
+                or ("模型可能不被该 endpoint 支持，请核对模型名和路径" if exc.code == 404
+                    else "未提供可安全导出的错误分类")),
+            "failure_evidence": evidence,
         }
     except (ValueError, UnicodeError):
         return {"id": engine["id"], "kind": engine["kind"], "api_base": engine["api_base"],
